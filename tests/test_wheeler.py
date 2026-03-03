@@ -203,6 +203,24 @@ class TestCLI:
     def test_handle_unknown_command(self):
         assert _handle_command("/notacommand") is False
 
+    def test_create_session_succeeds(self):
+        """PromptSession creation should not crash (catches bad kwargs)."""
+        from wheeler.cli import _create_session
+        pt_session = _create_session()
+        assert pt_session is not None
+
+    def test_prompt_is_async(self):
+        """REPL uses prompt_async, not prompt (which conflicts with asyncio.run)."""
+        import inspect
+        from wheeler.cli import repl
+        source = inspect.getsource(repl)
+        assert "prompt_async" in source, "repl() must use prompt_async to avoid nested event loop"
+        assert "pt_session.prompt(" not in source.replace("prompt_async", ""), \
+            "repl() should not use sync prompt()"
+
+    def test_handle_init_is_command(self):
+        assert _handle_command("/init") is True
+
 
 # ---------------------------------------------------------------------------
 # Engine (import-only — actual SDK calls need a live CLI)
