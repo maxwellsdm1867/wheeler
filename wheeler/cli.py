@@ -453,7 +453,7 @@ async def repl(resume_id: str | None = None) -> None:
 
 app = typer.Typer(
     name="wheeler",
-    help="Wheeler: a CLI research assistant for scientists.",
+    help="Wheeler: a thinking partner for scientists.",
     add_completion=False,
 )
 

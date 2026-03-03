@@ -1,6 +1,6 @@
 # Wheeler
 
-A thinking partner for scientists. CLI research assistant with knowledge graph,
+A thinking partner for scientists. CLI co-scientist with knowledge graph,
 citation validation, and mode-based execution control.
 
 ## Architecture

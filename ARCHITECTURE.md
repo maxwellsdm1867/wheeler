@@ -2,7 +2,7 @@
 
 ## Vision
 
-A CLI-based scientific research assistant that wraps Claude Code with an orchestration layer, knowledge graph, and pluggable MCP servers. Think "Claude Code for Scientists" — persistent research context, interactive planning mode, writing mode, and composable execution through swappable MCP backends.
+A CLI-based co-scientist that wraps Claude Code with an orchestration layer, knowledge graph, and pluggable MCP servers. Think "Claude Code for Scientists" — persistent research context, interactive planning mode, writing mode, and composable execution through swappable MCP backends.
 
 ### The Wheeler-Bohr Dynamic
 
@@ -147,7 +147,7 @@ options = ClaudeAgentOptions(
     hooks={
         "PreToolUse": [HookMatcher(matcher="Bash", hooks=[enforce_planning_mode])]
     },
-    system_prompt="You are a research assistant with access to a knowledge graph..."
+    system_prompt="You are Wheeler, a co-scientist with access to a knowledge graph..."
 )
 ```
 
@@ -398,7 +398,7 @@ class Mode(Enum):
 
 ```python
 SYSTEM_PROMPTS = {
-    Mode.CHAT: """You are a research assistant with full access to the scientist's 
+    Mode.CHAT: """You are Wheeler, a co-scientist with full access to the scientist's
     knowledge graph. Before answering any question, query the graph for relevant 
     context. Reference specific experiments, findings, and papers by their IDs.
     Do NOT execute any code or analyses — discuss only.""",

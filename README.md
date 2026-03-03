@@ -2,7 +2,7 @@
 
 A thinking partner for scientists. Named after John Archibald Wheeler, Bohr's collaborator on nuclear fission theory.
 
-Wheeler is a CLI research assistant that wraps Claude with a knowledge graph, citation validation, and mode-based execution control. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
+Wheeler is a CLI co-scientist that wraps Claude with a knowledge graph, citation validation, and mode-based execution control. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
 
 ## What it does
 

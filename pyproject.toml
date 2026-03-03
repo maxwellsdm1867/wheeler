@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wheeler"
 version = "0.1.0"
-description = "A CLI research assistant for scientists, powered by Claude"
+description = "A thinking partner for scientists, powered by Claude"
 requires-python = ">=3.10"
 dependencies = [
     "claude-agent-sdk",
