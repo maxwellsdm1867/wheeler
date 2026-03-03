@@ -87,7 +87,7 @@ _SLASH_COMMANDS = [
 
 def _get_completer() -> FuzzyWordCompleter:
     """Build a fuzzy completer for slash commands."""
-    return FuzzyWordCompleter(_SLASH_COMMANDS, sentence=True)
+    return FuzzyWordCompleter(_SLASH_COMMANDS, WORD=True)
 
 
 def _get_toolbar():
