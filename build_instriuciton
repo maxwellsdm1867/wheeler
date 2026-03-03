@@ -1,0 +1,356 @@
+# Wheeler — Build Instructions for Claude Code
+
+Read ARCHITECTURE.md for the full technical spec. This document tells you 
+WHAT to build, in what order, and the design philosophy behind every decision.
+
+## Philosophy
+
+Wheeler is a thinking partner for scientists, not an autonomous agent.
+Named after John Archibald Wheeler (Bohr's thinking partner on nuclear fission).
+
+The single most important principle: **EVERYTHING IS A REFERENCE.**
+
+Every factual claim about our research must trace to a node in the knowledge
+graph. Every node must trace to data. Every response gets logged with what was
+cited and whether the citations checked out. The graph is not just a knowledge
+store — it is the audit trail for the entire research conversation.
+
+This is an anti-hallucination architecture. If Claude can't point to a graph
+node, the claim is ungrounded and must be flagged.
+
+### The Wheeler-Bohr Dynamic
+
+The real Bohr-Wheeler collaboration had three patterns we embody:
+
+1. **"Discharge" pattern** — Bohr brought half-formed ideas, not polished conclusions. Wheeler accepts messy thinking and helps structure/challenge it.
+2. **Library-first** — They ran to Princeton's library to grab Rayleigh's papers before theorizing. Our graph is that library.
+3. **"It from bit"** — Nothing is real until you ask a question and get a definite answer. A finding doesn't exist until there's a graph node; a claim isn't grounded until the validator checks it.
+
+The "Copenhagen Spirit": informal debate, flat hierarchy, arguing is productive. Wheeler challenges assumptions, flags sparse graph areas, asks questions rather than pads thin answers.
+
+### Why Wheeler vs. Existing Tools
+
+- **Google AI Co-Scientist**: Multi-agent Gemini, generates hypotheses from published literature — but doesn't have YOUR unpublished data.
+- **ELNs (Sapio ELaiN)**: Document what happened, don't reason about it.
+- **Neo4j LLM Graph Builder**: Generic building blocks, not a research workflow.
+- **Standard RAG**: Retrieves chunks, doesn't maintain typed provenance chains (Finding → Analysis → Dataset → Experiment).
+
+---
+
+## Core Architecture
+
+Four-layer stack following the "thin orchestrator" pattern:
+
+```
+CLI Commands (/plan, /execute, /chat, /write)
+    ↓
+Mode State Machine (constrains what tools Claude can use)
+    ↓  
+Claude Agent SDK (runs on Max subscription — confirmed, no API charges)
+    ↓
+MCP Servers (Neo4j graph, MATLAB, paper search)
+```
+
+### Engine: Claude Agent SDK (Python)
+
+The Agent SDK spawns Claude Code CLI as a subprocess internally. It runs on 
+your Max subscription — we confirmed this empirically (10 SDK calls, credit 
+balance unchanged). `total_cost_usd` in responses is informational only.
+
+Key SDK features to use:
+- `query()` for single-shot queries
+- `ClaudeSDKClient` for custom tools + hooks
+- `ClaudeAgentOptions` for tool restriction, system prompts, MCP config
+- In-process MCP servers via `create_sdk_mcp_server()` (Python functions as tools)
+- `allowed_tools` list to enforce mode restrictions
+- `--agents` / agents param for subagent spawning (fresh 200k context per task)
+
+### Modes
+
+Four modes, each restricting available tools:
+
+| Mode | Allowed | Blocked | Purpose |
+|------|---------|---------|---------|
+| CHAT | Read, Grep, Glob, graph reads | Bash, Write, MATLAB | Discuss, query graph |
+| PLANNING | Read, Write, graph read/write, paper search | Bash, MATLAB | Design research plans |
+| WRITING | Read, Write, Edit, graph reads | Bash, MATLAB | Draft papers, responses |
+| EXECUTE | Everything + subagents | Nothing | Run analyses, update graph |
+
+Mode enforcement: use `allowed_tools` in `ClaudeAgentOptions`, NOT hooks. 
+Claude never even sees restricted tools. Transitions via slash commands 
+(/chat, /plan, /write, /execute).
+
+### Knowledge Graph: Neo4j + neo4j-agent-memory
+
+Docker: `docker run -d -p 7687:7687 -p 7474:7474 -e NEO4J_AUTH=neo4j/research-graph neo4j:community`
+MCP: `mcp-neo4j-cypher` (official, maintained by Neo4j Labs)
+Foundation: `neo4j-agent-memory` (`pip install neo4j-agent-memory`) — graph-native agent memory with entity resolution (exact/fuzzy/semantic), vector+graph search, and provenance tracking. Extend its MemoryClient with Wheeler's domain schema rather than building from scratch.
+
+Node types:
+- Experiment, Finding, Hypothesis, OpenQuestion, Paper
+- CellType, Analysis, Dataset, Plan, Task
+
+Node ID format: `{PREFIX}-{8_hex_chars}` (e.g., F-3a2b1c9d, A-7e2d4f6a)
+Prefixes: F=Finding, H=Hypothesis, Q=OpenQuestion, E=Experiment, 
+A=Analysis, D=Dataset, P=Paper, C=CellType, PL=Plan, T=Task
+
+Key relationships:
+- (Analysis)-[:USED_DATA]->(Dataset)
+- (Analysis)-[:GENERATED]->(Finding)
+- (Finding)-[:SUPPORTS|CONTRADICTS]->(Hypothesis)
+- (Experiment)-[:PRODUCED]->(Finding)
+- (OpenQuestion)-[:AROSE_FROM]->(Finding)
+
+Every node should have: id, description, date_created. 
+Findings need: confidence level, source analysis link.
+Analyses need full provenance (content-addressable, inspired by Git/W3C PROV):
+- `script_path`: path to the script file
+- `script_hash`: SHA256 of file contents AT EXECUTION TIME (not current disk state)
+- `language`: matlab or python
+- `language_version`: e.g., "R2024a", "3.11"
+- `parameters`: JSON of all input parameters
+- `executed_at`: timestamp
+- `duration_seconds`: how long it ran
+- `output_path`: where results were written
+- `output_hash`: SHA256 of output file
+
+This is a cryptographic receipt, not a scientist's claim. If the script changes after execution, `wheeler-tools graph stale` detects hash mismatch and flags all downstream findings as potentially stale.
+
+---
+
+## The Citation & Validation System (CRITICAL)
+
+This is what makes Wheeler different from just "Claude with a graph."
+
+### Citation Format
+
+When Claude references research facts, it MUST cite graph nodes:
+
+```
+"Contrast response index was 0.73 [F-3a2b] from the parasol analysis [A-7e2d] 
+using the 2024 March recordings [D-9f1c]."
+```
+
+The system prompt must enforce this. Uncited claims about our research are 
+treated as ungrounded.
+
+### Post-Response Validation (DETERMINISTIC — not LLM)
+
+After EVERY Claude response, run a deterministic validation step:
+
+1. **Extract citations**: Regex parse all [X-xxxxxxxx] patterns from response
+2. **Existence check**: Cypher query — does each node ID exist in Neo4j?
+3. **Content match**: Does the node's description relate to the claim? 
+   (This can be a simple keyword overlap, not an LLM call)
+4. **Provenance check**: Does the node have upstream links?
+   - Finding → must link to Analysis or Experiment
+   - Analysis → must link to Dataset and have script_path + script_hash
+   - Analysis → if script on disk has different hash than stored, flag as STALE
+   - Hypothesis → must link to at least one Finding
+5. **Flag results**: 
+   - ✅ VALID — node exists with full provenance chain
+   - ⚠️ WEAK — node exists but missing provenance links
+   - 🔄 STALE — node exists but upstream script has changed since execution
+   - ❌ INVALID — node ID not found (hallucinated citation)
+   - 🔲 UNCITED — factual claim with no citation at all
+
+Build this as `wheeler-tools validate` — a CLI command that takes response 
+text and returns validation results. It's Cypher queries and regex, not LLM.
+
+### Provenance Ledger (EVERYTHING GETS LOGGED)
+
+Every interaction gets a log entry. This is the audit trail.
+
+```python
+@dataclass
+class LedgerEntry:
+    timestamp: datetime
+    session_id: str
+    mode: str                    # chat/planning/writing/execute
+    query: str                   # What the scientist asked
+    response_hash: str           # SHA256 of Claude's response
+    citations_found: list[str]   # ["F-3a2b", "A-7e2d", "D-9f1c"]
+    citations_valid: list[str]   # Subset that passed validation
+    citations_invalid: list[str] # Subset that failed
+    citations_weak: list[str]    # Exist but no provenance
+    uncited_claims: int          # Count of flagged uncited claims
+    tools_used: list[str]        # What tools Claude invoked
+    cost_equivalent: float       # Informational only
+```
+
+Store ledger entries as nodes in Neo4j too:
+- (:Response {id, timestamp, session_id, mode, query_hash, response_hash})
+- (Response)-[:CITED]->(Finding)
+- (Response)-[:CITED]->(Analysis)
+- etc.
+
+This means you can later query: "Show me all responses that cited Finding F-3a2b"
+or "Which findings have never been cited in a writing-mode response?"
+
+---
+
+## System Prompts
+
+Each mode gets a system prompt. The KEY addition across all modes:
+
+```
+CITATION RULE: When you make any factual claim about our research data, 
+results, analyses, or experiments, you MUST cite the relevant graph node 
+using [NODE_ID] format (e.g., [F-3a2b]). If you cannot find a node to 
+cite, explicitly state: "This claim is not yet tracked in the graph — 
+should I add it?"
+
+Never fabricate a node ID. If unsure whether a node exists, query the 
+graph first.
+```
+
+Mode-specific prompts:
+
+**CHAT**: "You are Wheeler, a thinking partner. Help reason about research. 
+Query the graph freely. Cite nodes for any factual claim. Challenge 
+assumptions and ask probing questions."
+
+**PLANNING**: "Help design research plans with clear objectives, tasks, 
+dependencies, and verification criteria. Check the graph for what data 
+exists and what's been tried. Cite relevant prior findings."
+
+**WRITING**: "Draft scientific text grounded in graph data. EVERY 
+quantitative claim must cite a Finding node. EVERY method reference must 
+cite an Analysis node. Ungrounded claims get flagged by the validation 
+system."
+
+**EXECUTE**: "Execute approved tasks. After every analysis: (1) capture
+outputs, (2) create Analysis node with full provenance — script_hash,
+language_version, parameters, output_hash are captured automatically by the
+post-execution hook, (3) create Finding nodes linked to Analysis, (4) link
+Analysis to Dataset nodes. Findings without provenance are worthless."
+
+---
+
+## Graph Context Injection (Size-Limited)
+
+Before every query, inject a SMALL slice of graph state into the prompt:
+- Top 5 recent Findings (description + confidence)
+- Top 5 open Questions (question + priority)
+- Top 3 active Hypotheses (statement)
+- Active Plan metadata (objective + task count, NOT full task list)
+
+Target: < 500 tokens of injected context. The graph holds full state; 
+Claude queries it on demand for details.
+
+---
+
+## wheeler-tools CLI (Deterministic Operations)
+
+Build a Typer CLI for mechanical operations that would waste tokens if 
+Claude generated them ad-hoc:
+
+```
+wheeler-tools graph init              # Apply schema constraints + indexes
+wheeler-tools graph status            # Node/edge counts
+wheeler-tools graph add-finding       # Create Finding node
+wheeler-tools graph add-question      # Create OpenQuestion node
+wheeler-tools graph link              # Create relationship between nodes
+
+wheeler-tools validate <response>     # Citation validation (the critical one)
+wheeler-tools validate --file resp.md # Validate from file
+
+wheeler-tools plan create             # Create Plan node
+wheeler-tools plan advance            # Mark task complete
+
+wheeler-tools state show              # Current session state
+wheeler-tools state set-mode          # Change mode
+
+wheeler-tools graph stale             # Compare script hashes on disk to stored values,
+                                      # flag findings with changed upstream analyses
+
+wheeler-tools ledger show             # Recent ledger entries
+wheeler-tools ledger query            # Query provenance trail
+```
+
+---
+
+## File System Structure
+
+```
+wheeler/
+├── CLAUDE.md              # Claude Code reads this automatically
+├── ARCHITECTURE.md        # Full technical spec (this doc, condensed)
+├── wheeler.yaml           # Configuration (Neo4j, MCP servers)
+├── pyproject.toml         # Package config
+├── wheeler/
+│   ├── __init__.py
+│   ├── cli.py             # Main CLI, interactive loop, slash commands
+│   ├── engine.py          # WheelerEngine wrapping Agent SDK
+│   ├── config.py          # YAML config loader (Pydantic)
+│   ├── modes/
+│   │   ├── __init__.py
+│   │   └── state.py       # Mode state machine, tool restrictions
+│   ├── graph/
+│   │   ├── __init__.py
+│   │   ├── context.py     # Size-limited graph context injection
+│   │   └── schema.py      # Neo4j schema (constraints, indexes)
+│   ├── validation/
+│   │   ├── __init__.py
+│   │   ├── citations.py   # Extract + validate citations (regex + Cypher)
+│   │   └── ledger.py      # Provenance ledger (log every interaction)
+│   ├── prompts/
+│   │   ├── __init__.py
+│   │   └── system.py      # System prompts per mode (with citation rule)
+│   └── tools/
+│       ├── __init__.py
+│       └── cli.py          # wheeler-tools deterministic CLI
+└── tests/
+    ├── test_modes.py
+    ├── test_citations.py   # Test citation extraction + validation
+    └── test_engine.py
+```
+
+---
+
+## Implementation Order
+
+### Phase 1: Graph + Validation Foundation
+1. Docker Neo4j setup
+2. Install `neo4j-agent-memory` and extend MemoryClient with Wheeler schema
+3. Schema initialization (constraints, indexes, Analysis nodes with full provenance properties)
+4. Citation extraction (regex, pure Python, no Neo4j needed to test)
+5. Citation validation (Cypher queries against Neo4j)
+6. Provenance ledger data model
+7. wheeler-tools graph commands
+8. wheeler-tools validate command
+
+### Phase 2: Engine + Modes  
+1. WheelerEngine wrapping Agent SDK with mode-aware ClaudeAgentOptions
+2. Mode state machine with allowed_tools per mode
+3. System prompts with citation rule
+4. Graph context injection (size-limited)
+5. Interactive CLI loop with slash commands
+6. Post-response validation hook (run after every Claude response)
+
+### Phase 3: MCP Servers
+1. mcp-neo4j-cypher configuration
+2. matlab-mcp-tools setup (requires MATLAB Engine API, Python 3.10/3.11)
+3. paper-search-mcp setup
+4. Subagent definitions for execute mode
+
+### Phase 4: Writing + Polish
+1. Writing mode with enforced citation checking
+2. Session save/resume
+3. Provenance queries ("how did we get to this finding?")
+4. wheeler-tools ledger commands
+
+---
+
+## Key Technical Notes
+
+- Python 3.11 required (MATLAB Engine API constraint)
+- Agent SDK: `pip install claude-agent-sdk` (bundles Claude Code CLI)
+- Graph memory: `pip install neo4j-agent-memory` (extend MemoryClient with Wheeler schema)
+- Agent SDK confirmed working on Max subscription (no API charges)
+- Neo4j Community Edition: free, GPLv3, Docker one-liner
+- Mode enforcement via allowed_tools (not hooks) — cleaner, Claude never sees blocked tools
+- Subagents in execute mode get fresh 200k context each (GSD pattern)
+- Keep orchestrator context < 15%, each agent < 50%
+- Size-limit all injected context (5 findings, 5 questions, 3 hypotheses)
+- Deterministic validation ONLY — never use Claude to validate Claude's own citations

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "neo4j": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-neo4j-cypher@latest"],
+      "env": {
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USERNAME": "neo4j",
+        "NEO4J_PASSWORD": "research-graph",
+        "NEO4J_DATABASE": "neo4j"
+      }
+    },
+    "papers": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["paper-search-mcp@latest"]
+    }
+  }
+}

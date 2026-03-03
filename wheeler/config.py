@@ -1,0 +1,39 @@
+"""Configuration loader: YAML file + Pydantic model."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+import yaml
+
+
+_DEFAULT_CONFIG_PATH = Path("wheeler.yaml")
+
+
+class Neo4jConfig(BaseModel):
+    uri: str = "bolt://localhost:7687"
+    username: str = "neo4j"
+    password: str = "research-graph"
+    database: str = "neo4j"
+
+
+class WheelerConfig(BaseModel):
+    neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
+    max_turns: int = 10
+    context_max_findings: int = 5
+    context_max_questions: int = 5
+    context_max_hypotheses: int = 3
+
+
+def load_config(path: Path | None = None) -> WheelerConfig:
+    """Load configuration from a YAML file.
+
+    Falls back to defaults if the file doesn't exist.
+    """
+    config_path = path or _DEFAULT_CONFIG_PATH
+    if config_path.exists():
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        return WheelerConfig(**data)
+    return WheelerConfig()

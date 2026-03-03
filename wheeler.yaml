@@ -1,0 +1,10 @@
+neo4j:
+  uri: bolt://localhost:7687
+  username: neo4j
+  password: research-graph
+  database: neo4j
+
+max_turns: 10
+context_max_findings: 5
+context_max_questions: 5
+context_max_hypotheses: 3
