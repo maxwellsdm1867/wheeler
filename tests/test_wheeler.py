@@ -209,6 +209,44 @@ class TestCLI:
         pt_session = _create_session()
         assert pt_session is not None
 
+    def test_slash_completer_shows_all_on_slash(self):
+        """Typing '/' should show all commands."""
+        from prompt_toolkit.document import Document
+        from wheeler.cli import SlashCommandCompleter, _COMMAND_META
+        completer = SlashCommandCompleter()
+        doc = Document("/", cursor_position=1)
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == len(_COMMAND_META)
+
+    def test_slash_completer_filters(self):
+        """Typing '/ch' should filter to /chat."""
+        from prompt_toolkit.document import Document
+        from wheeler.cli import SlashCommandCompleter
+        completer = SlashCommandCompleter()
+        doc = Document("/ch", cursor_position=3)
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 1
+        assert completions[0].text == "/chat"
+
+    def test_slash_completer_has_descriptions(self):
+        """Every completion should have a description."""
+        from prompt_toolkit.document import Document
+        from wheeler.cli import SlashCommandCompleter
+        completer = SlashCommandCompleter()
+        doc = Document("/", cursor_position=1)
+        completions = list(completer.get_completions(doc, None))
+        for c in completions:
+            assert c.display_meta, f"{c.text} missing description"
+
+    def test_slash_completer_ignores_normal_text(self):
+        """Regular text should not trigger completions."""
+        from prompt_toolkit.document import Document
+        from wheeler.cli import SlashCommandCompleter
+        completer = SlashCommandCompleter()
+        doc = Document("hello", cursor_position=5)
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 0
+
     def test_prompt_is_async(self):
         """REPL uses prompt_async, not prompt (which conflicts with asyncio.run)."""
         import inspect

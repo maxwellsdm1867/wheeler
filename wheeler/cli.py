@@ -10,7 +10,7 @@ from pathlib import Path
 import typer
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import FuzzyWordCompleter
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
@@ -85,9 +85,46 @@ _SLASH_COMMANDS = [
 ]
 
 
-def _get_completer() -> FuzzyWordCompleter:
-    """Build a fuzzy completer for slash commands."""
-    return FuzzyWordCompleter(_SLASH_COMMANDS, WORD=True)
+_COMMAND_META = {
+    "/chat": "Switch to chat mode (read-only)",
+    "/planning": "Switch to planning mode",
+    "/writing": "Switch to writing mode (strict citations)",
+    "/execute": "Switch to execute mode (full access)",
+    "/mode": "Show or switch current mode",
+    "/help": "Show all commands",
+    "/save": "Save current session",
+    "/sessions": "List saved sessions",
+    "/resume": "Resume a saved session",
+    "/graph": "Knowledge graph status",
+    "/init": "Scan workspace, discover files",
+    "/quit": "Exit Wheeler",
+    "/exit": "Exit Wheeler",
+}
+
+
+class SlashCommandCompleter(Completer):
+    """Claude Code-style slash command completer.
+
+    Shows all commands immediately when '/' is typed, with descriptions.
+    Filters as you type after the slash.
+    """
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor.lstrip()
+
+        # Only complete at the start of input, and only for slash commands
+        if not text.startswith("/"):
+            return
+
+        query = text.lower()
+        for cmd, desc in _COMMAND_META.items():
+            if cmd.startswith(query):
+                yield Completion(
+                    cmd,
+                    start_position=-len(text),
+                    display=cmd,
+                    display_meta=desc,
+                )
 
 
 def _get_toolbar():
@@ -95,29 +132,35 @@ def _get_toolbar():
     mode = _current_mode.value
     return HTML(
         f"  <b>[{mode}]</b>"
-        "  <style fg='ansigray'>Enter: send</style>"
-        "  <style fg='ansigray'>| Ctrl+R: history search</style>"
-        "  <style fg='ansigray'>| /help: commands</style>"
+        "  <style fg='ansigray'>  /: commands</style>"
+        "  <style fg='ansigray'>| Alt+Enter: newline</style>"
+        "  <style fg='ansigray'>| Ctrl+R: history</style>"
     )
 
 
 def _get_pt_style() -> PTStyle:
-    """prompt_toolkit style for the input prompt."""
+    """prompt_toolkit style — Claude Code inspired."""
     return PTStyle.from_dict({
-        "prompt": "#00cc66 bold",
-        "mode": "#00bbcc bold",
-        "bottom-toolbar": "bg:#1a1a2e #aaaaaa",
-        "completion-menu.completion": "bg:#333333 #ffffff",
-        "completion-menu.completion.current": "bg:#0077cc #ffffff",
-        "auto-suggestion": "#666666",
+        "prompt": "#d4a064 bold",
+        "mode": "#d4a064",
+        "bottom-toolbar": "bg:#1a1a2e #777777",
+        "bottom-toolbar.text": "#777777",
+        # Completion menu — clean dark style
+        "completion-menu": "bg:#1e1e2e #cccccc",
+        "completion-menu.completion": "bg:#1e1e2e #cccccc",
+        "completion-menu.completion.current": "bg:#3a3a5e #ffffff",
+        "completion-menu.meta": "bg:#1e1e2e #666688",
+        "completion-menu.meta.completion": "bg:#1e1e2e #666688",
+        "completion-menu.meta.completion.current": "bg:#3a3a5e #9999bb",
+        "auto-suggestion": "#444444",
     })
 
 
 def _build_prompt_text() -> list:
     """Build prompt_toolkit formatted text."""
     return [
-        ("class:mode", f"[{_current_mode.value}]"),
-        ("class:prompt", " >>> "),
+        ("class:mode", f"[{_current_mode.value}] "),
+        ("class:prompt", "> "),
     ]
 
 
@@ -136,8 +179,8 @@ def _create_keybindings() -> KeyBindings:
 def _create_session() -> PromptSession:
     """Create a prompt_toolkit session with all UX features."""
     return PromptSession(
-        completer=_get_completer(),
-        complete_while_typing=False,
+        completer=SlashCommandCompleter(),
+        complete_while_typing=True,
         history=FileHistory(str(_HISTORY_FILE)),
         auto_suggest=AutoSuggestFromHistory(),
         enable_history_search=True,
@@ -265,30 +308,14 @@ def _handle_command(text: str, session: Session | None = None) -> bool:
         return True
 
     if cmd == "/help":
-        table = Table(
-            show_header=False,
-            box=None,
-            padding=(0, 2),
-            title="[bold]Wheeler Commands[/bold]",
-            title_style="cyan",
-        )
-        table.add_column(style="bold green")
-        table.add_column()
-        table.add_row("/chat", "Switch to chat mode (read-only)")
-        table.add_row("/planning", "Switch to planning mode")
-        table.add_row("/writing", "Switch to writing mode (strict citations)")
-        table.add_row("/execute", "Switch to execute mode (full access)")
-        table.add_row("/mode", "Show current mode")
-        table.add_row("/save [title]", "Save current session")
-        table.add_row("/sessions", "List saved sessions")
-        table.add_row("/resume <id>", "Resume a saved session")
-        table.add_row("/init", "Scan workspace, show scripts & data files")
-        table.add_row("/quit", "Exit Wheeler")
-        console.print(table)
-        console.print(
-            "\n[dim]Tab: autocomplete | Ctrl+R: search history | "
-            "Alt+Enter: new line[/dim]"
-        )
+        console.print()
+        for command, desc in _COMMAND_META.items():
+            if command == "/exit":
+                continue  # don't duplicate /quit
+            console.print(f"  [bold]{command:<14}[/bold] [dim]{desc}[/dim]")
+        console.print()
+        console.print("[dim]  Type / to see commands inline. Alt+Enter for newline.[/dim]")
+        console.print()
         return True
 
     return False
@@ -345,20 +372,12 @@ async def repl(resume_id: str | None = None) -> None:
     else:
         session = new_session()
 
-    # Welcome banner
-    console.print(
-        Panel(
-            f"[bold cyan]Wheeler[/bold cyan] v{__version__} — "
-            f"thinking partner for scientists\n"
-            f"[dim]Session: {session.session_id}[/dim]",
-            border_style="dim",
-            expand=False,
-        )
-    )
-    console.print(
-        "[dim]Tab: autocomplete commands | /help for all commands | "
-        "/quit to exit[/dim]\n",
-    )
+    # Welcome banner — Claude Code style
+    console.print()
+    console.print(f"[bold]Wheeler[/bold] v{__version__}")
+    console.print(f"[dim]Session: {session.session_id}[/dim]")
+    console.print(f"[dim]Type / for commands, /help for details[/dim]")
+    console.print()
 
     # prompt_toolkit session with autocomplete + history
     pt_session = _create_session()
