@@ -29,6 +29,8 @@ If a claim can't cite a node, it must be flagged as ungrounded.
 - `wheeler/graph/context.py` — Size-limited graph context injection (< 500 tokens)
 - `wheeler/graph/schema.py` — Neo4j schema constraints and indexes
 - `wheeler/prompts/system.py` — System prompts per mode (all include citation rule)
+- `wheeler/workspace.py` — Workspace scanner: file discovery, context formatting
+- `wheeler/graph/provenance.py` — File hashing, analysis provenance, staleness detection
 - `wheeler/tools/cli.py` — wheeler-tools deterministic CLI
 - `wheeler/config.py` — YAML config loader
 
@@ -41,6 +43,16 @@ EXECUTE: Everything. Must log all findings to graph with provenance.
 
 Enforce via `allowed_tools` in ClaudeAgentOptions, not hooks.
 
+## Workspace Awareness
+
+On every query, the engine scans the project directory and injects a compact workspace summary
+into the system prompt (scripts, data files, key paths). This gives Wheeler Claude Code-like
+awareness of what files exist without needing the graph populated.
+
+`/init` command scans the workspace and displays discovered scripts and data files in a table.
+
+Config in `wheeler.yaml` under `workspace:` — `project_dir`, `scan_patterns`, `exclude_dirs`.
+
 ## Design Principles
 
 1. Thin orchestrator — CLI coordinates, never does heavy lifting
@@ -50,6 +62,17 @@ Enforce via `allowed_tools` in ClaudeAgentOptions, not hooks.
 5. Fresh agent contexts — subagents in execute mode get clean 200k windows
 6. Provenance ledger — every interaction logged with citation audit results
 7. Wheeler-Bohr spirit — accept messy thinking, challenge assumptions, flag sparse graph areas, ask questions rather than pad thin answers. A finding doesn't exist until there's a graph node; a claim isn't grounded until the validator checks it.
+8. Task routing — tag tasks by assignee (scientist/wheeler/pair) and cognitive type. Never try to do the scientist's thinking.
+9. Anchor figures — display canonical visualizations when referencing datasets or analyses. The scientist's visual intuition is the fastest validation tool.
+10. Queue over autonomy — plan together, queue approved tasks, reconvene with results + flagged checkpoints. Human at every decision point, machine doing the grinding.
+
+## Personality
+
+Wheeler helps the scientist sharpen the question, not think for them. The value is in the conversation, not the report. When planning, propose tasks tagged by who should do them. When executing queued work, flag decision points as checkpoints rather than guessing. Always display anchor figures when referencing datasets or analyses. The scientist's visual intuition and domain judgment are the fastest and most reliable validation tools available.
+
+## Working Style
+
+Use teams of agents as much as possible. Parallelize independent work across multiple agents — research, implementation, testing, and validation should run concurrently when they don't depend on each other. Prefer spawning a team over doing everything sequentially in a single context.
 
 ## Stack
 

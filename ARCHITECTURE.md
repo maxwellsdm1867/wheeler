@@ -16,16 +16,25 @@ Named after John Archibald Wheeler, Bohr's thinking partner on nuclear fission. 
 
 The "Copenhagen Spirit" means informal debate, flat hierarchy, and the premise that arguing is productive. Wheeler should challenge assumptions, flag sparse graph areas, and ask questions rather than pad thin answers.
 
+### Wheeler vs. Kosmos Philosophy
+
+Kosmos (Edison Scientific, arxiv 2511.02824, $70M, 37 authors) asks "what can AI discover autonomously?" Wheeler asks "what question should we be asking?" Kosmos gives you a 30-page report and you spend hours figuring out whether to trust it. Wheeler sits with you while you think out loud, helps you sharpen the question, then you both know exactly what you're looking for and why. The thinking happens in the conversation, not in the report. This is the Bohr discharge pattern — Bohr needed to TALK through fission, not receive a report about it.
+
+Kosmos's 57.9% accuracy on interpretation/synthesis statements (vs 85.5% on data analysis) proves the point: the machine is good at grinding through data, bad at deciding what matters. Wheeler keeps humans at the decision points and lets the machine do the grinding. This is architecturally faster AND more trustworthy — a scientist's 5-second judgment call at a fork prevents the 3-hour rabbit hole Kosmos goes down (Edison admits Kosmos "often goes down rabbit holes or chases statistically significant yet scientifically irrelevant findings" and they run it multiple times to compensate).
+
+Kosmos VALIDATES Wheeler's core architecture (structured knowledge model, citation tracing, parallel agents, fresh context) while being philosophically opposite (autonomous vs collaborative).
+
 ### Why Wheeler (Competitive Positioning)
 
 | Tool | What it does | What it lacks |
 |------|-------------|---------------|
 | **Google AI Co-Scientist** | Multi-agent Gemini system, generates hypotheses from published literature | Doesn't have YOUR unpublished data, experiments, or local analyses |
+| **Edison Kosmos** | $70M autonomous AI scientist, 12-hour runs, structured world model, 79.4% overall accuracy | No private data access, rabbit holes on interpretation (57.9%), post-hoc human review instead of inline validation, no task routing by cognitive type |
 | **ELNs (Sapio ELaiN, etc.)** | Document what happened | Don't reason about it — no hypothesis tracking, no provenance chains |
 | **Neo4j LLM Graph Builder** | Generic graph construction from text | Building blocks, not a research workflow — no modes, no citation validation |
 | **Standard RAG** | Retrieves text chunks by similarity | No typed provenance chains (Finding → Analysis → Dataset → Experiment) |
 
-Wheeler's differentiator: typed provenance from raw data to published claim, deterministic citation validation, mode-based execution control, and a personality that challenges rather than complies.
+Wheeler's differentiator: typed provenance from raw data to published claim, deterministic citation validation (not post-hoc human review), mode-based execution control, task routing by cognitive type (scientist vs machine), queue-based execution preserving trust, anchor figures for visual checksumming, and a personality that challenges rather than complies.
 
 ---
 
@@ -217,10 +226,20 @@ Node Types:
   (:CellType {name, classification})
   (:Analysis {id, description, script_path, script_hash: sha256, language: matlab|python,
               language_version: "R2024a"|"3.11", parameters: json, executed_at, duration_seconds,
-              output_path, output_hash: sha256})
-  (:Dataset {id, path, type, description, date_collected})
+              output_path, output_hash: sha256,
+              anchor_figure: string (path to PNG), anchor_figure_hash: sha256})
+  (:Dataset {id, path, type, description, date_collected,
+             anchor_figure: string (path to PNG), anchor_figure_hash: sha256})
   (:Plan {id, objective, status, created_date})
-  (:Task {id, description, status, execution_type, depends_on})
+  (:Task {id, description, status, execution_type, depends_on,
+          assignee: "scientist"|"wheeler"|"pair",
+          cognitive_type: "math"|"conceptual"|"literature"|"code_interactive"|
+            "code_boilerplate"|"data_wrangling"|"graph_ops"|"writing_draft"|
+            "writing_revision"|"interpretation"|"experimental_design",
+          execution_mode: "interactive"|"queued"|"background",
+          checkpoint_reason: null|"fork_decision"|"interpretation"|"judgment"|
+            "anomaly"|"anchor_review",
+          queued_at, completed_at})
 
 Relationship Types:
   (Experiment)-[:PRODUCED]->(Finding)
@@ -386,18 +405,35 @@ SYSTEM_PROMPTS = {
     
     Mode.PLANNING: """You are helping plan a research investigation. You have access
     to the knowledge graph showing all past experiments, findings, and open questions.
-    
+
+    Before proposing new work, query the graph for: open questions without linked
+    analyses, hypotheses without supporting findings, stale findings. Propose
+    investigation tasks based on what's MISSING.
+
     For each plan, output structured JSON with:
     - objective: string
-    - tasks: [{id, description, execution_type: matlab|python|literature, 
-               depends_on: [task_ids], estimated_time}]
+    - tasks: [{id, description, execution_type: matlab|python|literature,
+               depends_on: [task_ids], estimated_time,
+               assignee: "scientist"|"wheeler"|"pair",
+               cognitive_type: "math"|"conceptual"|"literature"|...}]
     - rationale: why this approach
-    
+
+    When decomposing work, tag each task by assignee. The scientist is strong in
+    math, physics intuition, conceptual reasoning, and wants interactive coding
+    where they check every step. Wheeler handles literature search, boilerplate,
+    graph ops, data wrangling, and drafts. Never try to do the scientist's
+    thinking — route it to them.
+
     Do NOT execute any code. Propose only. Wait for scientist approval.""",
     
     Mode.WRITING: """You are helping write scientific text. You have access to the
-    knowledge graph for facts, findings, and citations. Always ground claims in 
+    knowledge graph for facts, findings, and citations. Always ground claims in
     specific data from the graph. Use formal scientific writing style.
+
+    EPISTEMIC STATUS: Mark every claim as either ✅ graph-grounded (node exists
+    with verified provenance) or ⚠️ interpretation (reasoning not validated by
+    graph). This distinction must be visible in drafts.
+
     Current context: {active_plan} {relevant_findings}""",
     
     Mode.EXECUTE: """You are executing approved research tasks. For each task:
@@ -437,6 +473,27 @@ async def mode_enforcement_hook(input_data, tool_use_id, context):
     
     # Execute mode: allow everything
     return {}
+```
+
+### Workspace Context Injection
+
+Before every query, the engine scans the project directory (`wheeler/workspace.py`) and injects a compact summary into the system prompt:
+
+```
+## Workspace: /path/to/project
+Scripts (14): wheeler/ (8 files), tests/ (6 files)
+Data files (2): data/ (epochs.mat, responses.csv)
+Key paths: wheeler/, tests/, data/
+```
+
+This gives Wheeler awareness of what scripts and data files exist — like Claude Code knowing the codebase — without requiring the graph to be populated first. The `/init` slash command displays the full scan results in a Rich table.
+
+Configuration in `wheeler.yaml`:
+```yaml
+workspace:
+  project_dir: "."
+  scan_patterns: ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
+  exclude_dirs: [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]
 ```
 
 ### Graph Context Injection
@@ -510,6 +567,73 @@ async def capture_analysis_provenance(script_path: str, params: dict, output_pat
 ```
 
 **Staleness detection**: `wheeler-tools graph stale` walks all Analysis nodes, re-hashes the script at `script_path`, compares to stored `script_hash`. Mismatches flag the Analysis and all downstream Findings as STALE — the result may no longer be reproducible from the current code.
+
+---
+
+## Big Concepts
+
+### Concept 6: Task Routing
+
+Plans decompose into tasks tagged by who should do them:
+- **"scientist"**: math derivations, conceptual modeling, experimental design, interpretation, interactive step-by-step coding
+- **"wheeler"**: literature search, boilerplate code, graph ops, data wrangling, first-draft writing
+- **"pair"**: analysis walkthroughs, debugging, writing revision
+
+For v1 this is PLANNING MODE OUTPUT FORMAT ONLY — Wheeler generates tagged task lists, scientist decides when to act. No parallel execution yet.
+
+Planning mode guidance: "When decomposing work, tag each task by assignee. The scientist is strong in math, physics intuition, conceptual reasoning, and wants interactive coding where they check every step. Wheeler handles literature search, boilerplate, graph ops, data wrangling, and drafts. Never try to do the scientist's thinking — route it to them."
+
+### Concept 7: Anchor Figures
+
+Every Dataset and Analysis node can have an `anchor_figure` — a canonical visualization the scientist recognizes at a glance. A VISUAL CHECKSUM. Programmatic validation catches file corruption; anchor figures catch semantic errors (wrong cell, wrong condition, flipped sign) that only a trained eye spots.
+
+Behavior: display anchor figures whenever Wheeler references a Dataset or Analysis. Scientist flags "doesn't look right" = hard stop.
+
+Anchor figure generation configured per data type in `wheeler.yaml`:
+```yaml
+anchor_figures:
+  contrast_response: "scripts/plot_contrast_response.m"
+  spike_raster: "scripts/plot_raster.m"
+```
+
+For v1: display only. v2+: auto-generation after analysis completion.
+
+### Concept 8: Queue-Based Execution
+
+The morning session produces a task queue. You and Wheeler talk through the problem, sharpen the question, approve tasks — then `/queue` kicks them off. Wheeler works in the background while you do other things. Decision points surface as flagged checkpoints rather than rabbit holes. You reconvene when there's something to review.
+
+This is NOT Kosmos-style 12-hour autonomy. This is: plan together (15 min), queue approved tasks, Wheeler grinds (20 min), reconvene with results + flagged checkpoints. Human at every decision point, machine doing the grinding.
+
+New CLI commands (Phase 2+):
+- `/queue` — execute all approved tasks from current plan
+- `/status` — show progress on queued tasks
+- `/reconvene` — show completed results + flagged checkpoints
+
+For v1: Task nodes get the schema fields. `/queue` is manual (you tell Wheeler to do each task). v2+: actual background execution with checkpoint surfacing.
+
+---
+
+## Kosmos-Inspired Improvements
+
+### 1. Graph-Driven Task Proposal
+
+In planning mode, Wheeler queries the graph for open questions without linked analyses, hypotheses without supporting findings, stale findings (old analysis, script hash changed), and PROPOSES investigation tasks based on what's MISSING. Kosmos's world model proposes next-cycle tasks from accumulated state — Wheeler's graph does the same but with human approval at every step.
+
+### 2. Investigation Cycles (Human-Gated)
+
+`/investigate` command (Phase 3). Given objective + dataset, Wheeler runs N cycles of: autonomous work (analysis + lit search + graph update) → checkpoint (surfaces results + anchor figures + flagged decisions to scientist) → scientist approves/steers → next cycle. NOT 20 autonomous cycles like Kosmos. More like 3-5 cycles with human gate at each checkpoint. This combines Kosmos's iterative depth with Wheeler's human-in-the-loop trust.
+
+### 3. Discovery Synthesis
+
+After a series of execute-mode analyses or an investigation run, Wheeler auto-generates a structured summary: findings discovered, how they connect to existing hypotheses, new open questions generated, graph changes made. This feeds directly into writing mode. Not a full Kosmos-style paper — a reconvene summary.
+
+### 4. Epistemic Status Markers
+
+In writing mode, visually distinguish validated claims (grounded in graph, provenance verified) from interpretive claims (reasoning, not graph-validated). Kosmos's data statements are 85.5% accurate but synthesis drops to 57.9% — Wheeler makes this distinction visible. Claims marked as ✅ graph-grounded or ⚠️ interpretation.
+
+### 5. Scaling Metrics
+
+Track findings per execute session, graph nodes per week, hypotheses validated over time. Kosmos's strongest result is linear scaling of findings with cycles. Wheeler should demonstrate similar compounding value.
 
 ---
 

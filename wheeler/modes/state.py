@@ -26,10 +26,16 @@ ALLOWED_TOOLS: dict[Mode, list[str]] = {
 
 # Negative block-list per mode (used by hooks as secondary enforcement)
 DISALLOWED_TOOLS: dict[Mode, list[str]] = {
-    Mode.CHAT: ["Bash", "Write", "Edit", "NotebookEdit"],
+    Mode.CHAT: ["Bash", "Write", "Edit", "NotebookEdit", "mcp__neo4j__write_neo4j_cypher"],
     Mode.PLANNING: ["Bash", "Edit", "NotebookEdit"],
     Mode.WRITING: ["Bash"],
     Mode.EXECUTE: [],
+}
+
+# Read-only MCP tools whitelisted in all modes
+_MCP_READONLY_TOOLS = {
+    "mcp__matlab__check_matlab_code",
+    "mcp__matlab__detect_matlab_toolboxes",
 }
 
 
@@ -62,6 +68,21 @@ def make_mode_enforcement_hook(
                     ),
                 }
             }
+
+        # Block MATLAB execution tools in non-EXECUTE modes (whitelist read-only)
+        if mode != Mode.EXECUTE and tool_name.startswith("mcp__matlab__"):
+            if tool_name not in _MCP_READONLY_TOOLS:
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": (
+                            f"{mode.value} mode — MATLAB execution tools require "
+                            f"EXECUTE mode. Read-only tools (check, detect) are allowed."
+                        ),
+                    }
+                }
+
         return {}
 
     return mode_enforcement_hook

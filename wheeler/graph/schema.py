@@ -40,6 +40,9 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (e:Experiment) ON (e.date)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.doi)",
     "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.date)",
+    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.script_hash)",
+    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.script_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.executed_at)",
     "CREATE INDEX IF NOT EXISTS FOR (pl:Plan) ON (pl.status)",
 ]
 

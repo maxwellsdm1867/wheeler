@@ -213,6 +213,19 @@ class TestEngine:
         from wheeler.engine import run_query
         assert callable(run_query)
 
+    def test_config_has_mcp_path(self):
+        from wheeler.config import WheelerConfig
+        config = WheelerConfig()
+        assert config.mcp_config_path == ".mcp.json"
+
+    def test_run_query_accepts_config(self):
+        """Verify run_query accepts a WheelerConfig parameter."""
+        import inspect
+        from wheeler.engine import run_query
+        from wheeler.config import WheelerConfig
+        sig = inspect.signature(run_query)
+        assert "config" in sig.parameters
+
     def test_engine_uses_correct_options_structure(self):
         """Verify ClaudeAgentOptions can be constructed with our params."""
         from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
@@ -229,6 +242,64 @@ class TestEngine:
             max_turns=10,
         )
         assert opts.system_prompt == SYSTEM_PROMPTS[Mode.CHAT]
-        assert opts.disallowed_tools == ["Bash", "Write", "Edit", "NotebookEdit"]
+        assert opts.disallowed_tools == ["Bash", "Write", "Edit", "NotebookEdit", "mcp__neo4j__write_neo4j_cypher"]
         assert opts.permission_mode == "bypassPermissions"
         assert opts.max_turns == 10
+
+
+# ---------------------------------------------------------------------------
+# MCP tool blocking
+# ---------------------------------------------------------------------------
+
+class TestMCPToolBlocking:
+    @pytest.fixture
+    def chat_hook(self):
+        return make_mode_enforcement_hook(lambda: Mode.CHAT)
+
+    @pytest.fixture
+    def execute_hook(self):
+        return make_mode_enforcement_hook(lambda: Mode.EXECUTE)
+
+    @pytest.fixture
+    def planning_hook(self):
+        return make_mode_enforcement_hook(lambda: Mode.PLANNING)
+
+    @pytest.mark.asyncio
+    async def test_chat_blocks_neo4j_write(self, chat_hook):
+        result = await chat_hook({"tool_name": "mcp__neo4j__write_neo4j_cypher"}, None, {})
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    @pytest.mark.asyncio
+    async def test_chat_allows_neo4j_read(self, chat_hook):
+        result = await chat_hook({"tool_name": "mcp__neo4j__read_neo4j_cypher"}, None, {})
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_chat_blocks_matlab_execution(self, chat_hook):
+        result = await chat_hook({"tool_name": "mcp__matlab__run_matlab_file"}, None, {})
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    @pytest.mark.asyncio
+    async def test_chat_allows_matlab_readonly(self, chat_hook):
+        result = await chat_hook({"tool_name": "mcp__matlab__check_matlab_code"}, None, {})
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_chat_allows_matlab_detect(self, chat_hook):
+        result = await chat_hook({"tool_name": "mcp__matlab__detect_matlab_toolboxes"}, None, {})
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_planning_blocks_matlab_execution(self, planning_hook):
+        result = await planning_hook({"tool_name": "mcp__matlab__evaluate_matlab_code"}, None, {})
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    @pytest.mark.asyncio
+    async def test_execute_allows_matlab_execution(self, execute_hook):
+        result = await execute_hook({"tool_name": "mcp__matlab__run_matlab_file"}, None, {})
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_execute_allows_neo4j_write(self, execute_hook):
+        result = await execute_hook({"tool_name": "mcp__neo4j__write_neo4j_cypher"}, None, {})
+        assert result == {}

@@ -12,3 +12,8 @@ context_max_hypotheses: 3
 data_sources:
   epicTreeGUI_root: "/Users/maxwellsdm/Documents/GitHub/epicTreeGUI"
   data_dir: "/Users/maxwellsdm/Documents/GitHub/epicTreeGUI/examples/data"
+
+workspace:
+  project_dir: "."
+  scan_patterns: ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
+  exclude_dirs: [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]

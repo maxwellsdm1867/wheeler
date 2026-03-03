@@ -24,6 +24,12 @@ class DataSourcesConfig(BaseModel):
     h5_dir: str = ""
 
 
+class WorkspaceConfig(BaseModel):
+    project_dir: str = "."
+    scan_patterns: list[str] = ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
+    exclude_dirs: list[str] = [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]
+
+
 class WheelerConfig(BaseModel):
     neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
     mcp_config_path: str = ".mcp.json"
@@ -32,6 +38,7 @@ class WheelerConfig(BaseModel):
     context_max_questions: int = 5
     context_max_hypotheses: int = 3
     data_sources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
+    workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
 
 
 def load_config(path: Path | None = None) -> WheelerConfig:

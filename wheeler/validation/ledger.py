@@ -20,7 +20,8 @@ class LedgerEntry:
     citations_valid: list[str]
     citations_invalid: list[str]
     citations_missing_provenance: list[str]
-    ungrounded: bool
+    citations_stale: list[str] = field(default_factory=list)
+    ungrounded: bool = False
 
     @property
     def pass_rate(self) -> float:
@@ -50,6 +51,9 @@ def create_entry(
         for r in citation_results
         if r.status == CitationStatus.MISSING_PROVENANCE
     ]
+    stale = [
+        r.node_id for r in citation_results if r.status == CitationStatus.STALE
+    ]
     # Ungrounded if no citations at all, or any are invalid
     ungrounded = len(found) == 0 or len(invalid) > 0
 
@@ -61,6 +65,7 @@ def create_entry(
         citations_valid=valid,
         citations_invalid=invalid,
         citations_missing_provenance=missing_prov,
+        citations_stale=stale,
         ungrounded=ungrounded,
     )
 
@@ -82,6 +87,7 @@ async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> None:
                 "  citations_valid: $citations_valid,"
                 "  citations_invalid: $citations_invalid,"
                 "  citations_missing_provenance: $citations_missing_provenance,"
+                "  citations_stale: $citations_stale,"
                 "  ungrounded: $ungrounded,"
                 "  pass_rate: $pass_rate"
                 "})",
@@ -92,6 +98,7 @@ async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> None:
                 citations_valid=entry.citations_valid,
                 citations_invalid=entry.citations_invalid,
                 citations_missing_provenance=entry.citations_missing_provenance,
+                citations_stale=entry.citations_stale,
                 ungrounded=entry.ungrounded,
                 pass_rate=entry.pass_rate,
             )

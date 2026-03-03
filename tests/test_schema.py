@@ -49,6 +49,13 @@ class TestSchema:
     def test_indexes_exist(self):
         assert len(INDEXES) > 0
 
+    def test_provenance_indexes(self):
+        """Verify provenance-related indexes exist."""
+        index_strs = " ".join(INDEXES)
+        assert "script_hash" in index_strs
+        assert "script_path" in index_strs
+        assert "executed_at" in index_strs
+
     def test_allowed_relationships(self):
         expected = {
             "PRODUCED", "SUPPORTS", "CONTRADICTS", "USED_DATA",

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -17,6 +20,7 @@ from claude_agent_sdk import (
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.context import fetch_context
+from wheeler.workspace import scan_workspace, format_workspace_context
 from wheeler.modes import DISALLOWED_TOOLS, Mode
 from wheeler.modes.state import make_mode_enforcement_hook
 from wheeler.prompts import SYSTEM_PROMPTS
@@ -46,7 +50,7 @@ async def run_query(
             if graph_context:
                 system_prompt = system_prompt + "\n\n" + graph_context
         except Exception:
-            pass  # gracefully degrade if Neo4j is down
+            logger.debug("Graph context fetch failed", exc_info=True)
 
     # Annotate available graph tools in the system prompt
     tool_names = [t["name"] for t in TOOL_DEFINITIONS]
@@ -78,6 +82,20 @@ async def run_query(
             "get_responses/run_analysis → log Finding to graph"
         )
 
+    # Inject workspace context
+    if config is not None:
+        try:
+            ws_summary = scan_workspace(config.workspace)
+            ws_context = format_workspace_context(ws_summary)
+            if ws_context:
+                system_prompt += "\n\n" + ws_context
+                logger.debug(
+                    "Workspace context injected: %d scripts, %d data files",
+                    len(ws_summary.scripts), len(ws_summary.data_files),
+                )
+        except Exception:
+            logger.debug("Workspace scan failed", exc_info=True)
+
     # Inject session context from resumed sessions
     if session_context:
         system_prompt = system_prompt + "\n\n" + session_context
@@ -93,7 +111,7 @@ async def run_query(
                     mcp_data = json.load(f)
                 mcp_servers = mcp_data.get("mcpServers", {})
             except Exception:
-                pass  # MCP config loading shouldn't break queries
+                logger.debug("MCP config load failed", exc_info=True)
 
     options_kwargs: dict = dict(
         system_prompt=system_prompt,

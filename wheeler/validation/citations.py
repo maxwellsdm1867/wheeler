@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from neo4j import AsyncGraphDatabase
 
@@ -21,6 +22,7 @@ class CitationStatus(Enum):
     VALID = "valid"
     NOT_FOUND = "not_found"
     MISSING_PROVENANCE = "missing_provenance"
+    STALE = "stale"
 
 
 @dataclass
@@ -132,6 +134,24 @@ async def validate_citations(
                                 f"{label} lacks required provenance: "
                                 f"{rel_pattern} from {target_pattern}"
                             )
+
+                # Check staleness for Analysis nodes
+                if prov_status == CitationStatus.VALID and label == "Analysis":
+                    try:
+                        from wheeler.graph.provenance import hash_file
+                        node_data = record["n"]
+                        sp = node_data.get("script_path")
+                        sh = node_data.get("script_hash")
+                        if sp and sh:
+                            p = Path(sp)
+                            if not p.exists():
+                                prov_status = CitationStatus.STALE
+                                prov_detail = f"Script file not found: {sp}"
+                            elif hash_file(p) != sh:
+                                prov_status = CitationStatus.STALE
+                                prov_detail = f"Script has been modified since analysis ran"
+                    except Exception:
+                        pass  # staleness check failure shouldn't block validation
 
                 results.append(CitationResult(
                     node_id=node_id,

@@ -5,7 +5,7 @@ import textwrap
 import pytest
 import yaml
 
-from wheeler.config import DataSourcesConfig, WheelerConfig, load_config
+from wheeler.config import DataSourcesConfig, WorkspaceConfig, WheelerConfig, load_config
 from wheeler.tools.graph_tools import TOOL_DEFINITIONS
 
 
@@ -54,6 +54,42 @@ class TestDataSourcesConfig:
         cfg = load_config(config_file)
         assert cfg.data_sources.epicTreeGUI_root == ""
         assert cfg.data_sources.data_dir == ""
+
+
+class TestWorkspaceConfigIntegration:
+    def test_wheeler_config_has_workspace(self):
+        cfg = WheelerConfig()
+        assert hasattr(cfg, "workspace")
+        assert isinstance(cfg.workspace, WorkspaceConfig)
+
+    def test_workspace_defaults(self):
+        cfg = WheelerConfig()
+        assert cfg.workspace.project_dir == "."
+        assert "*.py" in cfg.workspace.scan_patterns
+
+    def test_workspace_from_yaml(self, tmp_path):
+        yaml_content = textwrap.dedent("""\
+            workspace:
+              project_dir: /my/project
+              scan_patterns: ["*.r"]
+              exclude_dirs: ["build"]
+        """)
+        config_file = tmp_path / "wheeler.yaml"
+        config_file.write_text(yaml_content)
+        cfg = load_config(config_file)
+        assert cfg.workspace.project_dir == "/my/project"
+        assert cfg.workspace.scan_patterns == ["*.r"]
+        assert cfg.workspace.exclude_dirs == ["build"]
+
+    def test_missing_workspace_in_yaml(self, tmp_path):
+        yaml_content = textwrap.dedent("""\
+            neo4j:
+              uri: bolt://localhost:7687
+        """)
+        config_file = tmp_path / "wheeler.yaml"
+        config_file.write_text(yaml_content)
+        cfg = load_config(config_file)
+        assert cfg.workspace.project_dir == "."
 
 
 class TestDatasetTools:

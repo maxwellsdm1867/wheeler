@@ -232,6 +232,138 @@ def graph_link(
 
 
 # ---------------------------------------------------------------------------
+# graph trace
+# ---------------------------------------------------------------------------
+
+
+@graph_app.command("trace")
+def graph_trace(
+    node_id: str = typer.Argument(help="Node ID to trace (e.g., F-3a2b)"),
+) -> None:
+    """Trace provenance chain backwards from a node."""
+    from rich.tree import Tree
+    from wheeler.graph.trace import trace_node
+
+    config = load_config()
+    try:
+        result = asyncio.run(trace_node(node_id, config))
+    except Exception as exc:
+        console.print(f"[red]Trace failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if result is None:
+        console.print(f"[red]Node not found:[/red] {node_id}")
+        raise typer.Exit(1)
+
+    # Build a Rich tree
+    root_text = f"[bold cyan][{result.root_id}][/bold cyan] {result.root_label}"
+    if result.root_description:
+        root_text += f": {result.root_description}"
+    tree = Tree(root_text)
+
+    if not result.chain:
+        tree.add("[dim]No upstream provenance found[/dim]")
+    else:
+        for step in result.chain:
+            step_text = (
+                f"[cyan][{step.node_id}][/cyan] {step.label}"
+                f" [dim]—[{step.relationship}]→[/dim]"
+            )
+            if step.description:
+                step_text += f" {step.description}"
+            branch = tree.add(step_text)
+            for key, val in step.properties.items():
+                branch.add(f"[dim]{key}:[/dim] {val}")
+
+    console.print(tree)
+
+
+# ---------------------------------------------------------------------------
+# graph stale
+# ---------------------------------------------------------------------------
+
+
+@graph_app.command("stale")
+def graph_stale() -> None:
+    """Detect Analysis nodes with stale script hashes."""
+    from wheeler.graph.provenance import detect_stale_analyses
+
+    config = load_config()
+    try:
+        stale = asyncio.run(detect_stale_analyses(config))
+    except Exception as exc:
+        console.print(f"[red]Failed to detect stale analyses:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not stale:
+        console.print("[green]No stale analyses found.[/green]")
+        return
+
+    table = Table(title="Stale Analyses")
+    table.add_column("Node ID", style="cyan")
+    table.add_column("Script Path")
+    table.add_column("Status", style="yellow")
+    table.add_column("Executed At")
+
+    for s in stale:
+        status = "FILE MISSING" if s.current_hash == "FILE_NOT_FOUND" else "HASH CHANGED"
+        table.add_row(s.node_id, s.script_path, status, s.executed_at or "unknown")
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# graph add-analysis
+# ---------------------------------------------------------------------------
+
+
+@graph_app.command("add-analysis")
+def graph_add_analysis(
+    script: str = typer.Option(..., "--script", "-s", help="Path to analysis script"),
+    language: str = typer.Option(..., "--language", "-l", help="Language (e.g., matlab, python)"),
+    version: str = typer.Option("", "--version", "-v", help="Language version"),
+    params: str = typer.Option("", "--params", "-p", help="Parameters used"),
+    output: str = typer.Option("", "--output", "-o", help="Path to output file"),
+) -> None:
+    """Add an Analysis node with provenance tracking."""
+    from pathlib import Path as P
+    from wheeler.graph.provenance import AnalysisProvenance, create_analysis_node, hash_file
+
+    config = load_config()
+    script_path = P(script)
+    if not script_path.exists():
+        console.print(f"[red]Script not found:[/red] {script}")
+        raise typer.Exit(1)
+
+    script_hash = hash_file(script_path)
+    output_hash = ""
+    if output:
+        output_path = P(output)
+        if output_path.exists():
+            output_hash = hash_file(output_path)
+
+    prov = AnalysisProvenance(
+        script_path=str(script_path.resolve()),
+        script_hash=script_hash,
+        language=language,
+        language_version=version,
+        parameters=params,
+        output_path=output,
+        output_hash=output_hash,
+    )
+
+    try:
+        node_id = asyncio.run(create_analysis_node(prov, config))
+        console.print(
+            f"[green]Created Analysis:[/green] [{node_id}]\n"
+            f"  Script: {script} (SHA-256: {script_hash[:12]}...)\n"
+            f"  Language: {language} {version}"
+        )
+    except Exception as exc:
+        console.print(f"[red]Failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # validate
 # ---------------------------------------------------------------------------
 
@@ -267,6 +399,7 @@ def validate(
             CitationStatus.VALID: "green",
             CitationStatus.NOT_FOUND: "red",
             CitationStatus.MISSING_PROVENANCE: "yellow",
+            CitationStatus.STALE: "yellow",
         }[r.status]
         table.add_row(
             r.node_id,

@@ -93,6 +93,18 @@ class TestCitationResult:
         )
         assert r.status == CitationStatus.NOT_FOUND
 
+    def test_stale_status_exists(self):
+        assert CitationStatus.STALE.value == "stale"
+
+    def test_stale_result(self):
+        r = CitationResult(
+            node_id="A-abcd",
+            status=CitationStatus.STALE,
+            label="Analysis",
+            details="Script has been modified since analysis ran",
+        )
+        assert r.status == CitationStatus.STALE
+
 
 class TestKeywordOverlap:
     def test_full_overlap(self):

@@ -15,6 +15,11 @@
       "type": "stdio",
       "command": "uvx",
       "args": ["paper-search-mcp@latest"]
+    },
+    "matlab": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["matlab-mcp-tools@latest"]
     }
   }
 }
