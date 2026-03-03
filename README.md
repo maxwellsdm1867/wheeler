@@ -132,6 +132,35 @@ Citation validation flags:
 - **INVALID** — node ID not found (hallucinated)
 - **UNCITED** — factual claim with no citation
 
+## Data Integration (Optional)
+
+Wheeler can connect to external data sources like [epicTreeGUI](https://github.com/your-org/epicTreeGUI) for neurophysiology data. This is fully plug-and-play — if unconfigured, Wheeler works exactly as before.
+
+### Setup
+
+Add a `data_sources` section to `wheeler.yaml`:
+
+```yaml
+data_sources:
+  epicTreeGUI_root: "/path/to/epicTreeGUI"
+  data_dir: "/path/to/your/data"
+```
+
+The MATLAB wrapper functions in `matlab/` handle all communication between Wheeler and epicTreeGUI. They return structured JSON that the agent can parse, and are called via the existing `matlab-mcp-tools` MCP server.
+
+### MATLAB Workflow
+
+```
+wheeler_setup(epicTreeGUI_root)          # Set up MATLAB paths
+wheeler_list_data(data_dir)              # List available .mat files
+wheeler_load_data(filepath, {splitters}) # Load data, build tree
+wheeler_tree_info(var_name, node_path)   # Inspect a node
+wheeler_get_responses(var_name, node_path, stream)  # Get response data
+wheeler_run_analysis(var_name, node_path, type)     # Run analysis
+```
+
+Results flow into the knowledge graph via `add_dataset` and standard finding/analysis tools, maintaining full provenance.
+
 ## Stack
 
 - **Engine**: Claude Agent SDK (Python) on Max subscription

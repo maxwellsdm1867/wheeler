@@ -18,12 +18,20 @@ class Neo4jConfig(BaseModel):
     database: str = "neo4j"
 
 
+class DataSourcesConfig(BaseModel):
+    epicTreeGUI_root: str = ""
+    data_dir: str = ""
+    h5_dir: str = ""
+
+
 class WheelerConfig(BaseModel):
     neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
+    mcp_config_path: str = ".mcp.json"
     max_turns: int = 10
     context_max_findings: int = 5
     context_max_questions: int = 5
     context_max_hypotheses: int = 3
+    data_sources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
 
 
 def load_config(path: Path | None = None) -> WheelerConfig:

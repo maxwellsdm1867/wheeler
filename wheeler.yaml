@@ -8,3 +8,7 @@ max_turns: 10
 context_max_findings: 5
 context_max_questions: 5
 context_max_hypotheses: 3
+
+data_sources:
+  epicTreeGUI_root: "/Users/maxwellsdm/Documents/GitHub/epicTreeGUI"
+  data_dir: "/Users/maxwellsdm/Documents/GitHub/epicTreeGUI/examples/data"
