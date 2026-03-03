@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from neo4j import AsyncGraphDatabase
+from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
 
 from wheeler.config import WheelerConfig
 
@@ -68,6 +68,7 @@ async def _get_driver(config: WheelerConfig):
     return AsyncGraphDatabase.driver(
         config.neo4j.uri,
         auth=(config.neo4j.username, config.neo4j.password),
+        notifications_min_severity=NotificationMinimumSeverity.OFF,
     )
 
 

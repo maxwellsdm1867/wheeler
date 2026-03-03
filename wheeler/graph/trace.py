@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from neo4j import AsyncGraphDatabase
+from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.schema import PREFIX_TO_LABEL
@@ -42,6 +42,7 @@ async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
     driver = AsyncGraphDatabase.driver(
         config.neo4j.uri,
         auth=(config.neo4j.username, config.neo4j.password),
+        notifications_min_severity=NotificationMinimumSeverity.OFF,
     )
     try:
         async with driver.session(database=config.neo4j.database) as session:

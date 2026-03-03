@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from neo4j import AsyncGraphDatabase
+from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
 
 from wheeler.config import WheelerConfig
 
@@ -53,6 +53,7 @@ async def create_analysis_node(
     driver = AsyncGraphDatabase.driver(
         config.neo4j.uri,
         auth=(config.neo4j.username, config.neo4j.password),
+        notifications_min_severity=NotificationMinimumSeverity.OFF,
     )
     node_id = _generate_id()
     now = datetime.now(timezone.utc).isoformat()
@@ -92,6 +93,7 @@ async def detect_stale_analyses(config: WheelerConfig) -> list[StaleAnalysis]:
     driver = AsyncGraphDatabase.driver(
         config.neo4j.uri,
         auth=(config.neo4j.username, config.neo4j.password),
+        notifications_min_severity=NotificationMinimumSeverity.OFF,
     )
     stale: list[StaleAnalysis] = []
     try:

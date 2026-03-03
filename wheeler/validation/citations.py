@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from neo4j import AsyncGraphDatabase
+from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.schema import PREFIX_TO_LABEL
@@ -77,6 +77,7 @@ async def validate_citations(
     driver = AsyncGraphDatabase.driver(
         config.neo4j.uri,
         auth=(config.neo4j.username, config.neo4j.password),
+        notifications_min_severity=NotificationMinimumSeverity.OFF,
     )
     results: list[CitationResult] = []
     try:
