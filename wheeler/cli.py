@@ -365,7 +365,7 @@ async def repl(resume_id: str | None = None) -> None:
 
     while True:
         try:
-            user_input = pt_session.prompt(_build_prompt_text)
+            user_input = await pt_session.prompt_async(_build_prompt_text)
         except (EOFError, KeyboardInterrupt):
             if session.turns:
                 try:
