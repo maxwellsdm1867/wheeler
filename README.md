@@ -1,6 +1,6 @@
 # Wheeler
 
-A thinking partner for scientists. Named after John Archibald Wheeler, Bohr's collaborator on nuclear fission theory.
+A thinking partner for scientists. Named after John Archibald Wheeler.
 
 Wheeler is a co-scientist that runs natively inside Claude Code via `/wh:*` slash commands, backed by a knowledge graph, citation validation, and a fluid workflow cycle. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
 
