@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
 
-from wheeler.config import WorkspaceConfig
+from wheeler.config import ProjectPaths, WorkspaceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,63 @@ def invalidate_workspace_cache() -> None:
     logger.debug("Workspace cache invalidated")
 
 
-def scan_workspace(config: WorkspaceConfig) -> WorkspaceSummary:
-    """Walk project_dir, collect files matching scan_patterns.
+def _scan_directory(
+    directory: Path,
+    root: Path,
+    config: WorkspaceConfig,
+    summary: WorkspaceSummary,
+    seen: set[str],
+) -> None:
+    """Scan a single directory tree and append results to *summary*."""
+    if not directory.is_dir():
+        return
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+
+        # Use path relative to root when inside root, otherwise absolute
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            rel = path  # external directory — store absolute
+
+        rel_str = str(rel)
+        if rel_str in seen:
+            continue
+
+        # Check exclusions against parts
+        if any(part in config.exclude_dirs for part in rel.parts):
+            continue
+
+        if not any(fnmatch(path.name, pat) for pat in config.scan_patterns):
+            continue
+
+        seen.add(rel_str)
+        ext = path.suffix.lower()
+        category = _categorize(ext)
+        info = FileInfo(
+            path=rel_str,
+            category=category,
+            extension=ext,
+            size_bytes=path.stat().st_size,
+        )
+
+        if category == "script":
+            summary.scripts.append(info)
+        elif category == "data":
+            summary.data_files.append(info)
+
+        summary.total_files += 1
+
+
+def scan_workspace(
+    config: WorkspaceConfig,
+    paths: ProjectPaths | None = None,
+) -> WorkspaceSummary:
+    """Walk project_dir and configured paths, collect files matching scan_patterns.
+
+    If *paths* is provided, directories listed under ``paths.code`` and
+    ``paths.data`` are scanned in addition to ``config.project_dir``.
 
     Results are cached after the first scan. Call invalidate_workspace_cache()
     to force a re-scan (e.g. after /init).
@@ -66,41 +121,20 @@ def scan_workspace(config: WorkspaceConfig) -> WorkspaceSummary:
         return _cached_summary
 
     summary = WorkspaceSummary(project_dir=root_str)
+    seen: set[str] = set()
 
-    if not root.is_dir():
-        logger.debug("Workspace dir does not exist: %s", root)
-        return summary
+    # Scan main project directory
+    _scan_directory(root, root, config, summary, seen)
 
-    logger.debug("Scanning workspace: %s", root)
-
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-
-        # Check exclusions
-        rel = path.relative_to(root)
-        if any(part in config.exclude_dirs for part in rel.parts):
-            continue
-
-        # Check against scan patterns
-        if not any(fnmatch(path.name, pat) for pat in config.scan_patterns):
-            continue
-
-        ext = path.suffix.lower()
-        category = _categorize(ext)
-        info = FileInfo(
-            path=str(rel),
-            category=category,
-            extension=ext,
-            size_bytes=path.stat().st_size,
-        )
-
-        if category == "script":
-            summary.scripts.append(info)
-        elif category == "data":
-            summary.data_files.append(info)
-
-        summary.total_files += 1
+    # Scan additional directories from ProjectPaths
+    if paths is not None:
+        for extra_dir in paths.code + paths.data:
+            extra = Path(extra_dir)
+            if not extra.is_absolute():
+                extra = root / extra
+            extra = extra.resolve()
+            if extra != root:
+                _scan_directory(extra, root, config, summary, seen)
 
     _cached_summary = summary
     _cache_key = root_str

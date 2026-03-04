@@ -176,7 +176,7 @@ async def validate_citations(text: str) -> dict:
 @mcp.tool()
 async def scan_workspace() -> dict:
     """Scan the project directory for scripts and data files."""
-    summary = workspace.scan_workspace(_config.workspace)
+    summary = workspace.scan_workspace(_config.workspace, _config.paths)
     return {
         "project_dir": summary.project_dir,
         "total_files": summary.total_files,

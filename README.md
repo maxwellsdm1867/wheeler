@@ -31,7 +31,8 @@ Wheeler operates in a fluid cycle. Structure scales with presence — loose and 
 The scientist and Wheeler thinking through a problem in conversation. This is where the science happens.
 
 ```bash
-cd ~/wheeler && claude    # start Claude Code in wheeler directory
+cd ~/my-project && claude # start Claude Code in your project directory
+/wh:init                  # set up project paths, config, and graph (first time)
 /wh:discuss               # sharpen the question before planning
 /wh:plan                  # structured investigation plan
 /wh:chat                  # quick discussion
@@ -247,11 +248,36 @@ The project `.mcp.json` configures all MCP servers. After setup, restart Claude 
 
 Wheeler MCP server (`wheeler/mcp_server.py`) is a thin FastMCP wrapper over the same modules the CLI uses. Run standalone: `python -m wheeler.mcp_server`
 
+## Getting Started
+
+Run `/wh:init` in any project directory. Wheeler walks you through:
+1. Describing your project
+2. Pointing to where your code, data, results, figures, and docs live
+3. Creating Wheeler-managed directories (`.plans/`, `.logs/`, `.wheeler/`)
+4. Writing `wheeler.yaml` with your project layout
+5. Connecting to the knowledge graph and seeding your first research question
+
+This produces a `wheeler.yaml` like:
+
+```yaml
+project:
+  name: "retinal-circuits"
+  description: "Horizontal cell feedback in primate retina"
+paths:
+  code: ["scripts", "~/MATLAB/shared-lib"]
+  data: ["data", "/shared/ephys/2024"]
+  results: ["results"]
+  figures: ["figures"]
+  docs: ["writing"]
+```
+
+Paths can be relative (to project root) or absolute (shared drives, external data). The workspace scanner uses these to discover scripts and data files across all configured locations.
+
 ## Data Integration
 
 Wheeler connects to MATLAB via `matlab-mcp-tools` for electrophysiology analysis. Results flow into the knowledge graph with full provenance (script hash, parameters, output hash).
 
-Configure in `wheeler.yaml`:
+Legacy per-project data source config is still supported:
 
 ```yaml
 data_sources:
@@ -273,9 +299,10 @@ wheeler/validation/ledger.py    Provenance ledger
 wheeler/graph/context.py        Graph context injection (< 500 tokens)
 wheeler/graph/schema.py         Neo4j schema constraints
 wheeler/graph/provenance.py     File hashing, staleness detection
-wheeler/workspace.py            Workspace scanner
+wheeler/workspace.py            Workspace scanner (uses paths config)
+wheeler/scaffold.py             Project scaffolding (init, dir detection)
 wheeler/tools/graph_tools.py    In-process graph tools
-wheeler/config.py               YAML config loader
+wheeler/config.py               YAML config loader (ProjectPaths, ProjectMeta)
 ```
 
 ## Stack

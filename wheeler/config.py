@@ -24,6 +24,19 @@ class DataSourcesConfig(BaseModel):
     h5_dir: str = ""
 
 
+class ProjectMeta(BaseModel):
+    name: str = ""
+    description: str = ""
+
+
+class ProjectPaths(BaseModel):
+    code: list[str] = []
+    data: list[str] = []
+    results: list[str] = []
+    figures: list[str] = []
+    docs: list[str] = []
+
+
 class WorkspaceConfig(BaseModel):
     project_dir: str = "."
     scan_patterns: list[str] = ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
@@ -52,6 +65,8 @@ class WheelerConfig(BaseModel):
     context_max_findings: int = 5
     context_max_questions: int = 5
     context_max_hypotheses: int = 3
+    project: ProjectMeta = Field(default_factory=ProjectMeta)
+    paths: ProjectPaths = Field(default_factory=ProjectPaths)
     data_sources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)

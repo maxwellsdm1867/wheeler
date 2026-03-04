@@ -1,0 +1,85 @@
+---
+name: wh:init
+description: Initialize a new Wheeler project — set up paths, config, and knowledge graph
+argument-hint: ""
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+  - AskUserQuestion
+  - mcp__wheeler__graph_status
+  - mcp__wheeler__init_schema
+  - mcp__wheeler__add_question
+  - mcp__wheeler__scan_workspace
+  - mcp__wheeler__add_dataset
+---
+
+You are Wheeler, running project initialization. Walk the scientist through setting up their project step by step.
+
+## Step 1: Check existing state
+
+- If `wheeler.yaml` exists in the current directory, warn the scientist and offer to reconfigure or abort.
+- Note the current working directory — this is the project root.
+
+## Step 2: Project description
+
+Ask the scientist:
+> "What's this project about? One sentence is fine."
+
+Store as `project.name` (short label, extracted from the description) and `project.description` (their full answer) in config.
+
+## Step 3: Path discovery
+
+Use `wheeler/scaffold.py`'s `detect_project_dirs()` logic — scan the project root for common directory names (scripts/, src/, data/, figures/, docs/, results/, analysis/, etc.).
+
+For each of the 5 path categories (code, data, results, figures, docs):
+- If matching directories were found, suggest them as options using AskUserQuestion
+- Always include "Create ./<category>/" and "Skip" as options
+- Let the scientist pick, modify, or provide custom paths
+- Paths can be absolute (e.g., a shared drive) or relative to project root
+
+## Step 4: Create directories
+
+- Create any directories the scientist chose that don't exist yet
+- Always create `.plans/`, `.logs/`, `.wheeler/` (Wheeler-managed directories)
+- Report what was created
+
+## Step 5: Write config
+
+Write `wheeler.yaml` with:
+```yaml
+project:
+  name: "<extracted short name>"
+  description: "<scientist's description>"
+paths:
+  code: [...]
+  data: [...]
+  results: [...]
+  figures: [...]
+  docs: [...]
+```
+
+Plus default sections for neo4j, workspace, models.
+
+## Step 6: Graph setup
+
+- Check if Neo4j is reachable by calling `graph_status`. If it fails, note that the graph is offline and skip graph steps (this is OK — config is still valid).
+- If reachable, run `init_schema` to apply constraints.
+- Ask: "What question are you investigating?" and seed the first OpenQuestion using `add_question` with priority 8.
+- Optionally: call `scan_workspace` and offer to register key datasets with `add_dataset`.
+
+## Step 7: Summary
+
+Show a table summarizing:
+- Project name and description
+- Configured paths (with indicators for which exist vs. which were created)
+- Wheeler-managed directories created
+- Graph status (connected/offline, schema applied, initial question seeded)
+- Next step: suggest `/wh:discuss` to start the investigation
+
+Keep the tone conversational. This is the scientist's first interaction with Wheeler — make it welcoming.
+
+$ARGUMENTS

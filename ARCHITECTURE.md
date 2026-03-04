@@ -505,15 +505,26 @@ Data files (2): data/ (epochs.mat, responses.csv)
 Key paths: wheeler/, tests/, data/
 ```
 
-This gives Wheeler awareness of what scripts and data files exist — like Claude Code knowing the codebase — without requiring the graph to be populated first. The `/init` slash command displays the full scan results in a Rich table.
+This gives Wheeler awareness of what scripts and data files exist — like Claude Code knowing the codebase — without requiring the graph to be populated first. The `/wh:init` slash command walks the scientist through configuring project paths and displays the full scan results.
 
 Configuration in `wheeler.yaml`:
 ```yaml
+project:
+  name: "retinal-circuits"
+  description: "Horizontal cell feedback in primate retina"
+paths:
+  code: ["scripts", "~/MATLAB/shared-lib"]
+  data: ["data", "/shared/ephys/2024"]
+  results: ["results"]
+  figures: ["figures"]
+  docs: ["writing"]
 workspace:
   project_dir: "."
   scan_patterns: ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
   exclude_dirs: [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]
 ```
+
+The `paths` section (configured by `/wh:init`) tells the workspace scanner where to look beyond the project root. Directories in `paths.code` and `paths.data` are scanned in addition to `workspace.project_dir`. This lets Wheeler discover scripts on a shared drive or data on a network mount.
 
 ### Graph Context Injection
 
