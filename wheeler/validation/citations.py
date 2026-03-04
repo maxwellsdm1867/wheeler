@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
-
 from wheeler.config import WheelerConfig
 from wheeler.graph.schema import PREFIX_TO_LABEL
 
@@ -74,11 +72,8 @@ async def validate_citations(
     if not node_ids:
         return []
 
-    driver = AsyncGraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-        notifications_min_severity=NotificationMinimumSeverity.OFF,
-    )
+    from wheeler.graph.context import _get_driver
+    driver = _get_driver(config)
     results: list[CitationResult] = []
     try:
         async with driver.session(database=config.neo4j.database) as session:
@@ -161,7 +156,7 @@ async def validate_citations(
                     details=prov_detail,
                 ))
     finally:
-        await driver.close()
+        pass  # Driver is a singleton — don't close it
     return results
 
 

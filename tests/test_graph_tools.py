@@ -87,6 +87,6 @@ class TestToolImports:
         from wheeler.tools.graph_tools import execute_tool
         assert callable(execute_tool)
 
-    def test_tool_definitions_accessible_from_engine(self):
-        from wheeler.engine import TOOL_DEFINITIONS as imported
-        assert len(imported) == 10
+    def test_tool_definitions_accessible(self):
+        from wheeler.tools.graph_tools import TOOL_DEFINITIONS
+        assert len(TOOL_DEFINITIONS) == 10

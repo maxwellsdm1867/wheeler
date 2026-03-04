@@ -70,6 +70,25 @@ Wheeler's differentiator: typed provenance from raw data to published claim, det
      │Graph   │ │Exec   │ │Search       │
      │MCP     │ │MCP(s) │ │MCP          │
      └────────┘ └───────┘ └─────────────┘
+
+### Wheeler MCP Server (parallel access path)
+
+Claude Code can also access Wheeler's core functionality directly via MCP,
+bypassing the CLI/Agent SDK layer entirely:
+
+```
+Claude Code ──(stdio)──> wheeler-mcp ──> wheeler.graph.context
+                                     ──> wheeler.validation.citations
+                                     ──> wheeler.tools.graph_tools
+                                     ──> wheeler.workspace
+                                     ──> wheeler.graph.provenance
+                                     ──> wheeler.graph.schema
+```
+
+This is a thin FastMCP wrapper (`wheeler/mcp_server.py`) over the same modules
+the CLI uses. 18 tools: graph CRUD, citation validation, workspace scanning,
+and provenance. Config loaded once at startup from `wheeler.yaml`. No engine/SDK
+dependency — imports only data modules.
 ```
 
 ---
@@ -733,10 +752,20 @@ An MCP server wrapping DuckDB would expose tools like `query_data`, `list_datase
     "papers": {
       "command": "docker",
       "args": ["run", "-i", "--rm", "mcp/paper-search"]
+    },
+    "wheeler": {
+      "type": "stdio",
+      "command": "/path/to/wheeler/.venv/bin/python",
+      "args": ["-m", "wheeler.mcp_server"]
     }
   }
 }
 ```
+
+The `wheeler` MCP server exposes 18 tools wrapping existing modules. It uses
+a singleton Neo4j driver (shared with `graph/context.py`) and loads config
+from `wheeler.yaml` at startup. See `wheeler/mcp_server.py` for the full
+tool list.
 
 ---
 

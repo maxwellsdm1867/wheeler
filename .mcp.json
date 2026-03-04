@@ -20,6 +20,11 @@
       "type": "stdio",
       "command": "uvx",
       "args": ["matlab-mcp-tools@latest"]
+    },
+    "wheeler": {
+      "type": "stdio",
+      "command": "/Users/maxwellsdm/Documents/GitHub/wheeler/.venv/bin/python",
+      "args": ["-m", "wheeler.mcp_server"]
     }
   }
 }

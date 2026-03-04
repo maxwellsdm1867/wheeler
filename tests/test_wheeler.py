@@ -259,12 +259,30 @@ class TestCLI:
     def test_handle_init_is_command(self):
         assert _handle_command("/init") is True
 
+    def test_handle_graph_returns_async_signal(self):
+        """The /graph command returns 'graph' so the REPL can await it."""
+        assert _handle_command("/graph") == "graph"
+
+    def test_thinking_verbs_populated(self):
+        """Ensure thinking verbs list is non-empty for spinner."""
+        from wheeler.cli import _THINKING_VERBS
+        assert len(_THINKING_VERBS) >= 10
+        assert all(isinstance(v, str) for v in _THINKING_VERBS)
+
 
 # ---------------------------------------------------------------------------
 # Engine (import-only — actual SDK calls need a live CLI)
 # ---------------------------------------------------------------------------
 
 class TestEngine:
+    def test_api_key_stripped_from_env(self):
+        """CRITICAL: ANTHROPIC_API_KEY must never leak into SDK subprocess."""
+        import os
+        # After importing wheeler.engine, the key should be gone
+        import wheeler.engine  # noqa: F401
+        assert "ANTHROPIC_API_KEY" not in os.environ, \
+            "ANTHROPIC_API_KEY found in os.environ — Wheeler would use API billing!"
+
     def test_run_query_is_importable(self):
         from wheeler.engine import run_query
         assert callable(run_query)
@@ -273,6 +291,22 @@ class TestEngine:
         from wheeler.config import WheelerConfig
         config = WheelerConfig()
         assert config.mcp_config_path == ".mcp.json"
+
+    def test_model_per_mode_defaults(self):
+        """Each mode should have a model configured."""
+        from wheeler.config import WheelerConfig
+        config = WheelerConfig()
+        assert config.models.chat == "sonnet"
+        assert config.models.planning == "opus"    # scientific reasoning needs best model
+        assert config.models.writing == "opus"     # nuanced prose needs best model
+        assert config.models.execute == "sonnet"   # code gen, tool use
+
+    def test_model_per_mode_custom(self):
+        """Model config should be overridable."""
+        from wheeler.config import WheelerConfig, ModelsConfig
+        config = WheelerConfig(models=ModelsConfig(chat="haiku", execute="sonnet"))
+        assert config.models.chat == "haiku"
+        assert config.models.execute == "sonnet"
 
     def test_run_query_accepts_config(self):
         """Verify run_query accepts a WheelerConfig parameter."""

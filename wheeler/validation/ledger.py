@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
-
 from wheeler.config import WheelerConfig
 from wheeler.validation.citations import CitationResult, CitationStatus
 
@@ -72,11 +70,8 @@ def create_entry(
 
 async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> None:
     """Store a ledger entry as a Ledger node in Neo4j."""
-    driver = AsyncGraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-        notifications_min_severity=NotificationMinimumSeverity.OFF,
-    )
+    from wheeler.graph.context import _get_driver
+    driver = _get_driver(config)
     try:
         async with driver.session(database=config.neo4j.database) as session:
             await session.run(
@@ -104,4 +99,4 @@ async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> None:
                 pass_rate=entry.pass_rate,
             )
     finally:
-        await driver.close()
+        pass  # Driver is a singleton — don't close it

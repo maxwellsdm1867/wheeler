@@ -2,29 +2,95 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    HookMatcher,
-    ResultMessage,
-    TextBlock,
-    query,
-)
+# --- API key guardrail ---
+# Wheeler runs on Max subscription via Claude CLI subprocess.
+# If ANTHROPIC_API_KEY leaks into the environment, the CLI uses API billing
+# instead of Max. Strip it so the CLI always falls back to OAuth/Max auth.
+_STRIPPED_API_KEY = os.environ.pop("ANTHROPIC_API_KEY", None)
+if _STRIPPED_API_KEY:
+    logger.info(
+        "Stripped ANTHROPIC_API_KEY from environment — "
+        "Wheeler uses Max subscription, not API billing"
+    )
 
 from wheeler.config import WheelerConfig
-from wheeler.graph.context import fetch_context
-from wheeler.workspace import scan_workspace, format_workspace_context
 from wheeler.modes import DISALLOWED_TOOLS, Mode
 from wheeler.modes.state import make_mode_enforcement_hook
 from wheeler.prompts import SYSTEM_PROMPTS
-from wheeler.tools.graph_tools import TOOL_DEFINITIONS
+
+# SDK stderr log file — captures raw JS stack traces, MCP failures, etc.
+_stderr_file = None
+
+
+def _get_stderr_log_file():
+    """Return a file handle for SDK stderr, writing to ~/.wheeler/sdk_stderr.log."""
+    global _stderr_file
+    if _stderr_file is not None:
+        return _stderr_file
+    log_dir = Path.home() / ".wheeler"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    _stderr_file = open(log_dir / "sdk_stderr.log", "a")
+    return _stderr_file
+
+
+# Heavy imports deferred to first query call
+_sdk_loaded = False
+_sdk = {}  # populated by _ensure_sdk()
+
+# MCP config cache — parsed once, reused across queries
+_mcp_cache: dict | None = None
+_mcp_cache_path: str | None = None
+
+
+def _load_mcp_servers(config_path: str) -> dict:
+    """Load MCP server config from disk, cached after first read."""
+    global _mcp_cache, _mcp_cache_path
+    if _mcp_cache is not None and _mcp_cache_path == config_path:
+        return _mcp_cache
+    path = Path(config_path)
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        _mcp_cache = data.get("mcpServers", {})
+        _mcp_cache_path = config_path
+        return _mcp_cache
+    except Exception:
+        logger.debug("MCP config load failed", exc_info=True)
+        return {}
+
+
+def _ensure_sdk():
+    global _sdk_loaded, _sdk
+    if _sdk_loaded:
+        return
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        HookMatcher,
+        ResultMessage,
+        TextBlock,
+        query,
+    )
+    _sdk.update(
+        AssistantMessage=AssistantMessage,
+        ClaudeAgentOptions=ClaudeAgentOptions,
+        HookMatcher=HookMatcher,
+        ResultMessage=ResultMessage,
+        TextBlock=TextBlock,
+        query=query,
+    )
+    _sdk_loaded = True
 
 
 async def run_query(
@@ -39,20 +105,53 @@ async def run_query(
 
     Yields text chunks as they arrive from the assistant.
     """
+    _ensure_sdk()
+
     hook = make_mode_enforcement_hook(get_mode)
 
     system_prompt = SYSTEM_PROMPTS[mode]
 
-    # Inject graph context for non-execute modes
-    if mode is not Mode.EXECUTE and config is not None:
+    # --- Parallel context gathering ---
+    # Graph context + workspace scan run concurrently (saves ~130ms).
+    graph_context = ""
+    ws_context = ""
+
+    async def _fetch_graph():
+        if mode is Mode.EXECUTE or config is None:
+            return ""
         try:
-            graph_context = await fetch_context(config)
-            if graph_context:
-                system_prompt = system_prompt + "\n\n" + graph_context
+            from wheeler.graph.context import fetch_context
+            return await fetch_context(config)
         except Exception:
             logger.debug("Graph context fetch failed", exc_info=True)
+            return ""
+
+    async def _fetch_workspace():
+        if config is None:
+            return ""
+        try:
+            from wheeler.workspace import scan_workspace, format_workspace_context
+            ws_summary = scan_workspace(config.workspace)
+            ctx = format_workspace_context(ws_summary)
+            if ctx:
+                logger.debug(
+                    "Workspace context: %d scripts, %d data files",
+                    len(ws_summary.scripts), len(ws_summary.data_files),
+                )
+            return ctx
+        except Exception:
+            logger.debug("Workspace scan failed", exc_info=True)
+            return ""
+
+    graph_context, ws_context = await asyncio.gather(
+        _fetch_graph(), _fetch_workspace()
+    )
+
+    if graph_context:
+        system_prompt = system_prompt + "\n\n" + graph_context
 
     # Annotate available graph tools in the system prompt
+    from wheeler.tools.graph_tools import TOOL_DEFINITIONS
     tool_names = [t["name"] for t in TOOL_DEFINITIONS]
     system_prompt += (
         "\n\n## Available Graph Tools\n"
@@ -82,19 +181,8 @@ async def run_query(
             "get_responses/run_analysis → log Finding to graph"
         )
 
-    # Inject workspace context
-    if config is not None:
-        try:
-            ws_summary = scan_workspace(config.workspace)
-            ws_context = format_workspace_context(ws_summary)
-            if ws_context:
-                system_prompt += "\n\n" + ws_context
-                logger.debug(
-                    "Workspace context injected: %d scripts, %d data files",
-                    len(ws_summary.scripts), len(ws_summary.data_files),
-                )
-        except Exception:
-            logger.debug("Workspace scan failed", exc_info=True)
+    if ws_context:
+        system_prompt += "\n\n" + ws_context
 
     # Inject session context from resumed sessions
     if session_context:
@@ -102,16 +190,34 @@ async def run_query(
 
     max_turns = config.max_turns if config else 10
 
-    mcp_servers = {}
+    mcp_servers = _load_mcp_servers(config.mcp_config_path) if config else {}
+
+    # Select model based on mode
+    model = None
     if config:
-        mcp_path = Path(config.mcp_config_path)
-        if mcp_path.exists():
-            try:
-                with open(mcp_path) as f:
-                    mcp_data = json.load(f)
-                mcp_servers = mcp_data.get("mcpServers", {})
-            except Exception:
-                logger.debug("MCP config load failed", exc_info=True)
+        mode_to_field = {
+            Mode.CHAT: config.models.chat,
+            Mode.PLANNING: config.models.planning,
+            Mode.WRITING: config.models.writing,
+            Mode.EXECUTE: config.models.execute,
+        }
+        model = mode_to_field.get(mode)
+        if model:
+            logger.debug("Mode %s using model: %s", mode.value, model)
+
+    HookMatcher = _sdk["HookMatcher"]
+    ClaudeAgentOptions = _sdk["ClaudeAgentOptions"]
+
+    # Route SDK subprocess stderr to log file instead of terminal.
+    # The SDK dumps raw JS stack traces that bypass the stderr callback,
+    # so we redirect at the file-descriptor level.
+    _stderr_log = logging.getLogger(__name__ + ".sdk_stderr")
+    _log_file = _get_stderr_log_file()
+
+    def _on_stderr(line: str) -> None:
+        stripped = line.rstrip()
+        if stripped:
+            _stderr_log.debug("%s", stripped)
 
     options_kwargs: dict = dict(
         system_prompt=system_prompt,
@@ -121,13 +227,21 @@ async def run_query(
         },
         permission_mode="bypassPermissions",
         max_turns=max_turns,
+        debug_stderr=_log_file,
+        stderr=_on_stderr,
     )
+    if model:
+        options_kwargs["model"] = model
     if mcp_servers:
         options_kwargs["mcp_servers"] = mcp_servers
 
     options = ClaudeAgentOptions(**options_kwargs)
 
-    async for message in query(prompt=prompt, options=options):
+    AssistantMessage = _sdk["AssistantMessage"]
+    ResultMessage = _sdk["ResultMessage"]
+    TextBlock = _sdk["TextBlock"]
+
+    async for message in _sdk["query"](prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):

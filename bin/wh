@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# Wheeler CLI launcher — drops into the Wheeler project environment
+# and invokes Claude Code with mode-appropriate model selection.
+#
+# Interactive modes load .claude/commands/<mode>.md as the initial prompt.
+# Background modes use claude -p with the command content.
+#
+# Install: sudo ln -sf ~/Documents/GitHub/wheeler/bin/wh /usr/local/bin/wh
+
+set -euo pipefail
+
+# ── Config ──────────────────────────────────────────────────────────
+WHEELER_DIR="${WHEELER_DIR:-$HOME/Documents/GitHub/wheeler}"
+CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+
+# Strip API key — Wheeler runs on Max subscription only
+unset ANTHROPIC_API_KEY 2>/dev/null || true
+
+# ── Colors ──────────────────────────────────────────────────────────
+AMBER='\033[38;2;212;160;100m'
+DIM='\033[38;2;85;85;85m'
+BLUE='\033[38;2;96;165;250m'
+PURPLE='\033[38;2;167;139;250m'
+GREEN='\033[38;2;52;211;153m'
+ORANGE='\033[38;2;249;115;22m'
+RED='\033[38;2;239;68;68m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# ── Helpers ─────────────────────────────────────────────────────────
+banner() {
+    local mode="$1" model="$2" color="$3"
+    echo ""
+    echo -e "  ${AMBER}${BOLD}Wheeler${RESET} ${DIM}co-scientist${RESET}"
+    echo -e "  ${color}${BOLD}${mode}${RESET} ${DIM}→ ${model}${RESET}"
+    echo -e "  ${DIM}${WHEELER_DIR}${RESET}"
+    echo ""
+}
+
+die() {
+    echo -e "  ${RED}error:${RESET} $1" >&2
+    exit 1
+}
+
+usage() {
+    echo ""
+    echo -e "  ${AMBER}${BOLD}Wheeler${RESET} ${DIM}— a thinking partner for scientists${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Together → Handoff → Independent → Reconvene${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Together (interactive)${RESET}"
+    echo -e "    ${AMBER}wh${RESET}                  ${DIM}Planning mode (opus) — default${RESET}"
+    echo -e "    ${AMBER}wh plan${RESET}              ${DIM}Planning mode (opus) — sharpen questions${RESET}"
+    echo -e "    ${AMBER}wh chat${RESET}              ${DIM}Quick discussion (sonnet)${RESET}"
+    echo -e "    ${AMBER}wh execute${RESET}           ${DIM}Execute mode (sonnet) — run analyses${RESET}"
+    echo -e "    ${AMBER}wh write${RESET}             ${DIM}Draft text with strict citations (opus)${RESET}"
+    echo -e "    ${AMBER}wh ingest${RESET}            ${DIM}Bootstrap graph from data (sonnet)${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Handoff${RESET}"
+    echo -e "    ${AMBER}wh handoff${RESET}           ${DIM}Propose tasks for independent execution (opus)${RESET}"
+    echo ""
+    echo ""
+    echo -e "  ${BOLD}Independent (headless, logged to .logs/)${RESET}"
+    echo -e "    ${AMBER}wh queue${RESET} \"prompt\"    ${DIM}Queue a task (sonnet, 10 turns)${RESET}"
+    echo -e "    ${AMBER}wh quick${RESET} \"prompt\"    ${DIM}Fast one-shot (haiku, 3 turns)${RESET}"
+    echo -e "    ${AMBER}wh status${RESET}            ${DIM}Graph status (haiku, 2 turns)${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Reconvene${RESET}"
+    echo -e "    ${AMBER}wh reconvene${RESET}         ${DIM}Review independent results (opus)${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Options${RESET}"
+    echo -e "    ${DIM}Extra flags pass through to claude:${RESET}"
+    echo -e "    ${AMBER}wh plan --verbose${RESET}"
+    echo -e "    ${AMBER}wh execute --resume${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Environment${RESET}"
+    echo -e "    ${DIM}WHEELER_MODEL=sonnet wh plan${RESET}  ${DIM}Override model${RESET}"
+    echo -e "    ${DIM}WHEELER_DIR=/path/to/project${RESET}       ${DIM}Override project dir${RESET}"
+    echo ""
+}
+
+# Read a .claude/commands/*.md file and pass it as --prompt
+run_interactive() {
+    local cmd_file="$1" model="$2" color="$3" mode_name="$4"
+    shift 4
+    MODEL="${WHEELER_MODEL:-$model}"
+    banner "$mode_name" "$MODEL" "$color"
+    if [[ -f "$WHEELER_DIR/.claude/commands/${cmd_file}.md" ]]; then
+        exec "$CLAUDE_BIN" \
+            --model "$MODEL" \
+            --prompt "$(cat "$WHEELER_DIR/.claude/commands/${cmd_file}.md")" \
+            "$@"
+    else
+        # Fallback: no command file, just launch with model
+        exec "$CLAUDE_BIN" --model "$MODEL" "$@"
+    fi
+}
+
+# Run headless with a command file as system context + user prompt
+# If log=true, tee output to .logs/<timestamp>.json
+run_headless() {
+    local cmd_file="$1" prompt="$2" model="$3" color="$4" mode_name="$5" max_turns="$6" fmt="$7" log="${8:-false}"
+    shift 7; shift 2>/dev/null || true
+    MODEL="${WHEELER_MODEL:-$model}"
+    banner "$mode_name" "$MODEL" "$color"
+
+    # Build command array
+    local -a cmd=("$CLAUDE_BIN" -p "$prompt" --model "$MODEL" --output-format "$fmt" --max-turns "$max_turns")
+    if [[ -f "$WHEELER_DIR/.claude/commands/${cmd_file}.md" ]]; then
+        cmd+=(--system-prompt "$(cat "$WHEELER_DIR/.claude/commands/${cmd_file}.md")")
+    fi
+    cmd+=("$@")
+
+    if [[ "$log" == "true" ]]; then
+        mkdir -p "$WHEELER_DIR/.logs"
+        local logfile="$WHEELER_DIR/.logs/$(date +%Y%m%d-%H%M%S)-${mode_name}.json"
+        echo -e "  ${DIM}logging to: .logs/$(basename "$logfile")${RESET}"
+        echo ""
+        local t_start
+        t_start=$(date +%s)
+        "${cmd[@]}" | tee "$logfile"
+        local t_end
+        t_end=$(date +%s)
+        local duration=$(( t_end - t_start ))
+        # Structured task log: wraps raw output + citation validation + checkpoint detection
+        echo ""
+        "$WHEELER_DIR/.venv/bin/python" -m wheeler.task_log "$logfile" "$prompt" "$MODEL" "$duration" 2>/dev/null || true
+    else
+        exec "${cmd[@]}"
+    fi
+}
+
+# ── Validate ────────────────────────────────────────────────────────
+command -v "$CLAUDE_BIN" >/dev/null 2>&1 || die "claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
+[[ -d "$WHEELER_DIR" ]] || die "Wheeler project not found at $WHEELER_DIR"
+[[ -f "$WHEELER_DIR/CLAUDE.md" ]] || die "No CLAUDE.md in $WHEELER_DIR — is this the right project?"
+
+# ── Navigate ────────────────────────────────────────────────────────
+cd "$WHEELER_DIR"
+
+# ── Parse subcommand ────────────────────────────────────────────────
+SUBCMD="${1:-plan}"
+shift 2>/dev/null || true
+
+case "$SUBCMD" in
+
+    # ── Interactive modes ───────────────────────────────────────────
+    plan|planning)
+        run_interactive "plan" "opus" "$PURPLE" "planning" "$@"
+        ;;
+
+    execute|exec)
+        run_interactive "execute" "sonnet" "$ORANGE" "execute" "$@"
+        ;;
+
+    reconvene|recon)
+        # Inject recent log data into reconvene prompt
+        MODEL="${WHEELER_MODEL:-opus}"
+        banner "reconvene" "$MODEL" "$PURPLE"
+        LOG_SUMMARY=$("$WHEELER_DIR/.venv/bin/python" -m wheeler.log_summary --logs-dir "$WHEELER_DIR/.logs" 2>/dev/null || echo "")
+        RECON_PROMPT="$(cat "$WHEELER_DIR/.claude/commands/reconvene.md")"
+        if [[ -n "$LOG_SUMMARY" ]]; then
+            RECON_PROMPT="${RECON_PROMPT}
+
+---
+
+${LOG_SUMMARY}"
+        fi
+        exec "$CLAUDE_BIN" \
+            --model "$MODEL" \
+            --prompt "$RECON_PROMPT" \
+            "$@"
+        ;;
+
+    ingest|bootstrap)
+        run_interactive "ingest" "sonnet" "$GREEN" "ingest" "$@"
+        ;;
+
+    chat)
+        run_interactive "chat" "sonnet" "$BLUE" "chat" "$@"
+        ;;
+
+    write|writing)
+        run_interactive "write" "opus" "$GREEN" "writing" "$@"
+        ;;
+
+    handoff|hand)
+        run_interactive "handoff" "opus" "$PURPLE" "handoff" "$@"
+        ;;
+
+    # ── Independent / headless commands ─────────────────────────────
+    queue|q)
+        PROMPT="${1:?Usage: wh queue \"prompt here\"}"
+        shift
+        run_headless "queue" "$PROMPT" "sonnet" "$DIM" "queue" "10" "json" "true" "$@"
+        ;;
+
+    quick)
+        PROMPT="${1:?Usage: wh quick \"prompt here\"}"
+        shift
+        run_headless "queue" "$PROMPT" "haiku" "$DIM" "quick" "3" "json" "true" "$@"
+        ;;
+
+    status|st)
+        run_headless "status" "Run the status check described in your system prompt." "haiku" "$DIM" "status" "2" "text" "$@"
+        ;;
+
+    # ── Meta ────────────────────────────────────────────────────────
+    help|-h|--help)
+        usage
+        exit 0
+        ;;
+
+    -*)
+        # No subcommand, just flags → default to plan
+        run_interactive "plan" "opus" "$PURPLE" "planning" "$SUBCMD" "$@"
+        ;;
+
+    *)
+        echo -e "  ${RED}Unknown command:${RESET} $SUBCMD"
+        usage
+        exit 1
+        ;;
+esac

@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import random
 import sys
+import threading
+import time
 from pathlib import Path
+
+# --- API key guardrail (must happen before any SDK import) ---
+# Wheeler runs on Max subscription. Strip API key so the Claude CLI subprocess
+# uses OAuth/Max auth instead of API billing.
+if os.environ.pop("ANTHROPIC_API_KEY", None):
+    print("  [wheeler] Stripped ANTHROPIC_API_KEY — using Max subscription")
 
 import typer
 from prompt_toolkit import PromptSession
@@ -16,6 +26,8 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style as PTStyle
 from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
@@ -24,9 +36,7 @@ from rich.theme import Theme
 from rich.tree import Tree
 
 from wheeler import __version__
-from wheeler.config import load_config
-from wheeler.engine import run_query
-from wheeler.workspace import scan_workspace, format_workspace_context
+from wheeler.config import WheelerConfig, load_config
 from wheeler.modes import Mode
 from wheeler.sessions import (
     Session,
@@ -35,12 +45,6 @@ from wheeler.sessions import (
     new_session,
     save_session,
 )
-from wheeler.validation.citations import (
-    CitationStatus,
-    extract_citations,
-    validate_citations,
-)
-from wheeler.validation.ledger import create_entry, store_entry
 
 # --- Theme: warm amber/gold primary, muted grays ---
 _AMBER = "#D4A064"
@@ -59,6 +63,17 @@ _MODE_COLORS = {
     Mode.WRITING: "#34D399",   # emerald
     Mode.EXECUTE: "#F97316",   # orange
 }
+
+# --- Thinking verbs (Claude Code inspired) ---
+_THINKING_VERBS = [
+    "Thinking", "Reasoning", "Considering", "Analyzing", "Pondering",
+    "Cogitating", "Reflecting", "Evaluating", "Examining", "Weighing",
+    "Contemplating", "Synthesizing", "Processing", "Deducing", "Inferring",
+    "Hypothesizing", "Investigating", "Deliberating", "Formulating", "Assessing",
+    "Correlating", "Integrating", "Interpreting", "Calibrating", "Distilling",
+    "Cross-referencing", "Mapping", "Connecting", "Probing", "Triangulating",
+]
+
 
 theme = Theme({
     "wheeler": f"bold {_AMBER}",
@@ -108,6 +123,7 @@ _SLASH_COMMANDS = [
     "/resume",
     "/graph",
     "/init",
+    "/handoff",
     "/quit",
     "/exit",
 ]
@@ -124,6 +140,7 @@ _COMMAND_META = {
     "/resume": "Resume a saved session",
     "/graph": "Knowledge graph status",
     "/init": "Scan workspace, discover files",
+    "/handoff": "Propose tasks for independent execution",
     "/quit": "Exit Wheeler",
     "/exit": "Exit Wheeler",
 }
@@ -132,6 +149,7 @@ _COMMAND_GROUPS = {
     "Modes": ["/chat", "/planning", "/writing", "/execute", "/mode"],
     "Session": ["/save", "/sessions", "/resume"],
     "Tools": ["/init", "/graph"],
+    "Workflow": ["/handoff"],
     "": ["/help", "/quit"],
 }
 
@@ -207,6 +225,17 @@ def _create_keybindings() -> KeyBindings:
     return kb
 
 
+def _get_rprompt(session: Session | None = None) -> HTML:
+    """Right-side prompt: turn count + session hint."""
+    color = _MODE_COLORS.get(_current_mode, _AMBER)
+    turn_count = len(session.turns) // 2 if session else 0
+    if turn_count > 0:
+        return HTML(
+            f"<style fg='#333333'>turn {turn_count}</style>"
+        )
+    return HTML("")
+
+
 def _create_session() -> PromptSession:
     """Create a prompt_toolkit session with all UX features."""
     return PromptSession(
@@ -219,6 +248,7 @@ def _create_session() -> PromptSession:
         bottom_toolbar=_get_toolbar,
         style=_get_pt_style(),
         mouse_support=True,
+        complete_in_thread=True,
     )
 
 
@@ -230,21 +260,57 @@ def _display_welcome(session: Session) -> None:
     title = Text()
     title.append("Wheeler", style=f"bold {_AMBER}")
     title.append(f" v{__version__}", style=_DIM)
-    console.print(title)
-    console.print(
-        f"[{_DIM}]Session {session.session_id}  "
-        f"[{_MUTED}]|[/{_MUTED}]  Type [bold]/[/bold] for commands[/{_DIM}]"
-    )
-    console.print(Rule(style=_DIM))
+    subtitle = Text()
+    subtitle.append(f"Session {session.session_id}", style=_DIM)
+    subtitle.append("  |  ", style=_MUTED)
+    subtitle.append("Type ", style=_DIM)
+    subtitle.append("/", style=f"bold {_AMBER}")
+    subtitle.append(" for commands", style=_DIM)
+    subtitle.append("  |  ", style=_MUTED)
+    mode_color = _MODE_COLORS[_current_mode]
+    subtitle.append(f"{_current_mode.value}", style=f"bold {mode_color}")
+
+    console.print(Panel(
+        Text.assemble(title, "\n", subtitle),
+        border_style=_DIM,
+        padding=(0, 1),
+    ))
 
 
-def _display_mode_switch(mode: Mode) -> None:
-    """Show mode switch confirmation."""
+def _get_mode_model(mode: Mode, config: WheelerConfig | None = None) -> str:
+    """Get the model name for a mode from config."""
+    try:
+        if config is None:
+            config = load_config()
+        mode_to_field = {
+            Mode.CHAT: config.models.chat,
+            Mode.PLANNING: config.models.planning,
+            Mode.WRITING: config.models.writing,
+            Mode.EXECUTE: config.models.execute,
+        }
+        return mode_to_field.get(mode, "sonnet")
+    except Exception:
+        return "sonnet"
+
+
+def _display_mode_switch(mode: Mode, config: WheelerConfig | None = None) -> None:
+    """Show mode switch confirmation with capability hint."""
     color = _MODE_COLORS[mode]
-    console.print(f"  [{color}]●[/{color}] Switched to [{color} bold]{mode.value}[/{color} bold]")
+    hints = {
+        Mode.CHAT: "read-only, graph queries",
+        Mode.PLANNING: "read + write, graph, paper search",
+        Mode.WRITING: "read + write + edit, strict citations",
+        Mode.EXECUTE: "full access, logs to graph",
+    }
+    hint = hints.get(mode, "")
+    model = _get_mode_model(mode, config)
+    console.print(
+        f"  [{color}]●[/{color}] [{color} bold]{mode.value}[/{color} bold]"
+        f"  [{_DIM}]{hint}[/{_DIM}]  [{_MUTED}]{model}[/{_MUTED}]"
+    )
 
 
-def _display_mode_list() -> None:
+def _display_mode_list(config: WheelerConfig | None = None) -> None:
     """Show all modes with indicators."""
     console.print()
     for m in Mode:
@@ -254,7 +320,12 @@ def _display_mode_list() -> None:
         else:
             marker = f"[{_DIM}]○[/{_DIM}]"
         desc = _mode_description(m)
-        console.print(f"  {marker} [{color} bold]{m.value:<10}[/{color} bold] [{_MUTED}]{desc}[/{_MUTED}]")
+        model = _get_mode_model(m, config)
+        console.print(
+            f"  {marker} [{color} bold]{m.value:<10}[/{color} bold]"
+            f" [{_MUTED}]{desc:<40}[/{_MUTED}]"
+            f" [{_DIM}]{model}[/{_DIM}]"
+        )
     console.print()
 
 
@@ -300,10 +371,38 @@ def _display_sessions() -> None:
     console.print(table)
 
 
+async def _display_graph_status_async(config: WheelerConfig | None = None) -> None:
+    """Query and display knowledge graph node counts."""
+    try:
+        from wheeler.graph.schema import get_status
+        if config is None:
+            config = load_config()
+        counts = await get_status(config)
+        total = sum(counts.values())
+        if total == 0:
+            console.print(f"  [{_MUTED}]Graph is empty. Use /init or add nodes in execute mode.[/{_MUTED}]")
+            return
+
+        console.print()
+        tree = Tree(
+            f"[{_AMBER} bold]Knowledge Graph[/{_AMBER} bold] [{_DIM}]({total} nodes)[/{_DIM}]",
+            guide_style=_DIM,
+        )
+        for label, count in sorted(counts.items()):
+            if count > 0:
+                tree.add(f"[{_FG}]{label}[/{_FG}] [{_DIM}]{count}[/{_DIM}]")
+        console.print(tree)
+        console.print()
+    except Exception as exc:
+        console.print(f"  [wheeler.error]Graph query failed:[/wheeler.error] {exc}")
+
+
 def _display_init() -> None:
     """Scan workspace and display as a tree."""
     try:
         config = load_config()
+        from wheeler.workspace import scan_workspace, invalidate_workspace_cache
+        invalidate_workspace_cache()  # Force fresh scan on /init
         summary = scan_workspace(config.workspace)
 
         if summary.total_files == 0:
@@ -366,6 +465,7 @@ def _display_validation_summary(results: list) -> None:
     """Show compact citation validation bar."""
     if not results:
         return
+    from wheeler.validation.citations import CitationStatus
     parts = []
     for r in results:
         if r.status == CitationStatus.VALID:
@@ -381,6 +481,68 @@ def _display_validation_summary(results: list) -> None:
     console.print(f"  [{_DIM}]citations[/{_DIM}]  {' '.join(parts)}")
 
 
+def _format_duration(seconds: float) -> str:
+    """Format seconds as compact duration string."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+
+
+def _format_count(n: int) -> str:
+    """Format character count compactly."""
+    if n >= 1000:
+        return f"{n / 1000:.1f}k"
+    return str(n)
+
+
+def _start_escape_listener(cancel_event: threading.Event) -> threading.Thread:
+    """Listen for Escape key press in a background thread.
+
+    Sets cancel_event when Escape (0x1b) is detected, allowing the
+    streaming loop to break cleanly.
+    """
+    import tty
+    import termios
+
+    def _listen():
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            while not cancel_event.is_set():
+                ch = sys.stdin.read(1)
+                if ch == "\x1b":  # Escape
+                    cancel_event.set()
+                    break
+        except Exception:
+            pass
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    t = threading.Thread(target=_listen, daemon=True)
+    t.start()
+    return t
+
+
+async def _prewarm(config) -> None:
+    """Pre-warm expensive resources while user reads welcome banner."""
+    try:
+        from wheeler.workspace import scan_workspace
+        scan_workspace(config.workspace)
+    except Exception:
+        pass
+    try:
+        from wheeler.graph.context import prewarm_driver
+        await prewarm_driver(config)
+    except Exception:
+        pass
+    try:
+        from wheeler.engine import _ensure_sdk
+        _ensure_sdk()
+    except Exception:
+        pass
+
+
 def _mode_description(mode: Mode) -> str:
     """Short description for each mode."""
     return {
@@ -391,10 +553,28 @@ def _mode_description(mode: Mode) -> str:
     }[mode]
 
 
+def _load_handoff_prompt() -> str | None:
+    """Load handoff.md and wrap it as an in-session instruction."""
+    handoff_path = Path(__file__).parent.parent / ".claude" / "commands" / "handoff.md"
+    if not handoff_path.exists():
+        return None
+    instructions = handoff_path.read_text().strip()
+    return (
+        f"[HANDOFF MODE — assess this conversation and propose independent tasks]\n\n"
+        f"{instructions}\n\n"
+        f"Review our conversation above and produce a handoff proposal. "
+        f"After approval, write the tasks to .logs/handoff-queue.sh as a runnable script "
+        f"(each line: wh queue \"self-contained prompt\"). "
+        f"The scientist runs `source .logs/handoff-queue.sh` — no copy-paste."
+    )
+
+
 # --- Command handling ---
 
-def _handle_command(text: str, session: Session | None = None) -> bool:
-    """Handle slash commands. Returns True if the input was a command."""
+def _handle_command(
+    text: str, session: Session | None = None, config: WheelerConfig | None = None,
+) -> bool | str:
+    """Handle slash commands. Returns True if handled, a string for async commands, False otherwise."""
     parts = text.strip().split(maxsplit=1)
     cmd = parts[0].lower()
 
@@ -412,18 +592,18 @@ def _handle_command(text: str, session: Session | None = None) -> bool:
     for m in Mode:
         if cmd == f"/{m.value}":
             set_mode(m)
-            _display_mode_switch(m)
+            _display_mode_switch(m, config)
             return True
 
     if cmd == "/mode":
         if len(parts) < 2:
-            _display_mode_list()
+            _display_mode_list(config)
             return True
         name = parts[1].strip().lower()
         for m in Mode:
             if m.value == name:
                 set_mode(m)
-                _display_mode_switch(m)
+                _display_mode_switch(m, config)
                 return True
         console.print(f"  [wheeler.error]Unknown mode:[/wheeler.error] {name}")
         return True
@@ -449,12 +629,15 @@ def _handle_command(text: str, session: Session | None = None) -> bool:
         return True
 
     if cmd == "/graph":
-        console.print(f"  [{_DIM}]Querying knowledge graph status...[/{_DIM}]")
-        return True
+        # Handled async in the REPL loop
+        return "graph"
 
     if cmd == "/init":
         _display_init()
         return True
+
+    if cmd == "/handoff":
+        return "handoff"
 
     if cmd == "/help":
         _display_help()
@@ -488,11 +671,17 @@ async def repl(resume_id: str | None = None) -> None:
 
     _display_welcome(session)
 
+    # Pre-warm expensive resources while user reads the welcome banner
+    asyncio.create_task(_prewarm(config))
+
     pt_session = _create_session()
 
     while True:
         try:
-            user_input = await pt_session.prompt_async(_build_prompt_text)
+            user_input = await pt_session.prompt_async(
+                _build_prompt_text,
+                rprompt=lambda: _get_rprompt(session),
+            )
         except (EOFError, KeyboardInterrupt):
             if session.turns:
                 try:
@@ -522,7 +711,20 @@ async def repl(resume_id: str | None = None) -> None:
                 else:
                     console.print(f"  [wheeler.error]Session not found:[/wheeler.error] {rid}")
                 continue
-            if _handle_command(text, session):
+            result = _handle_command(text, session, config)
+            if result == "graph":
+                await _display_graph_status_async(config)
+                continue
+            if result == "handoff":
+                # Inject handoff prompt into the conversation (keeps session context)
+                handoff_prompt = _load_handoff_prompt()
+                if handoff_prompt:
+                    text = handoff_prompt
+                    # Fall through to normal query processing below
+                else:
+                    console.print(f"  [{_MUTED}]Handoff prompt not found.[/{_MUTED}]")
+                    continue
+            elif result:
                 continue
 
         # Record user turn
@@ -531,47 +733,148 @@ async def repl(resume_id: str | None = None) -> None:
         # Build session context for resumed sessions
         session_context = session.summary_context() if len(session.turns) > 1 else ""
 
-        # Stream the response
+        # Stream the response with live markdown rendering.
+        # Ctrl+C or Escape interrupts cleanly, keeping any partial response.
+        _tick_stop = threading.Event()
+        _cancel = threading.Event()
+        live: Live | None = None
+        first_chunk = True
+        full_response = ""
+        interrupted = False
         try:
-            full_response = ""
-            first_chunk = True
+            verb = random.choice(_THINKING_VERBS)
+            t_start = time.monotonic()
+            t_first_token = None
             spinner = console.status(
-                f"  [{_DIM}]thinking...[/{_DIM}]", spinner="dots",
+                f"  [{_DIM}]{verb}...[/{_DIM}]",
+                spinner="dots",
                 spinner_style=_AMBER,
             )
             spinner.start()
 
+            # Thread-based tick: updates spinner with elapsed time every 500ms.
+            # Must be a thread because the SDK blocks the event loop during thinking.
+            def _tick():
+                while not _tick_stop.wait(0.5):
+                    elapsed = time.monotonic() - t_start
+                    try:
+                        spinner.update(
+                            f"  [{_DIM}]{verb}... ({_format_duration(elapsed)})[/{_DIM}]"
+                        )
+                    except Exception:
+                        break
+
+            tick_thread = threading.Thread(target=_tick, daemon=True)
+            tick_thread.start()
+
+            # Listen for Escape key to cancel mid-stream
+            _esc_thread = _start_escape_listener(_cancel)
+
+            # Throttle live markdown re-renders (expensive for large responses)
+            _last_render = 0.0
+            _RENDER_INTERVAL = 0.25  # seconds between re-renders
+
+            from wheeler.engine import run_query
             async for chunk in run_query(
                 text, _current_mode, get_mode,
                 config=config, session_context=session_context,
             ):
+                if _cancel.is_set():
+                    interrupted = True
+                    break
                 if first_chunk:
+                    t_first_token = time.monotonic()
+                    _tick_stop.set()
                     spinner.stop()
-                    console.print()
+                    live = Live(
+                        Markdown(chunk),
+                        console=console,
+                        refresh_per_second=4,
+                    )
+                    live.start()
                     first_chunk = False
                 full_response += chunk
-                console.print(chunk, end="", highlight=False)
+                now = time.monotonic()
+                if now - _last_render >= _RENDER_INTERVAL:
+                    live.update(Markdown(full_response))
+                    _last_render = now
 
+            _tick_stop.set()
+            _cancel.set()  # stop escape listener
             if first_chunk:
                 spinner.stop()
-            console.print()
+            if live:
+                if full_response:
+                    live.update(Markdown(full_response))
+                live.stop()
+                live = None
+            if interrupted:
+                console.print(f"  [{_YELLOW}]interrupted[/{_YELLOW}]")
+
+        except KeyboardInterrupt:
+            interrupted = True
+            _tick_stop.set()
+            _cancel.set()
+            if first_chunk:
+                spinner.stop()
+            if live:
+                if full_response:
+                    live.update(Markdown(full_response))
+                live.stop()
+                live = None
+            console.print(f"  [{_YELLOW}]interrupted[/{_YELLOW}]")
+
         except Exception as exc:
+            _tick_stop.set()
+            _cancel.set()
             if first_chunk:
                 spinner.stop()
+            if live:
+                try:
+                    live.stop()
+                except Exception:
+                    pass
+                live = None
             console.print(f"  [wheeler.error]Error:[/wheeler.error] {exc}")
             continue
+
+        # Post-response summary line
+        t_end = time.monotonic()
+        total_s = t_end - t_start
+        think_s = (t_first_token - t_start) if t_first_token else total_s
+        stream_s = total_s - think_s
+        char_count = _format_count(len(full_response))
+        parts = [f"{_format_duration(total_s)}"]
+        if full_response:
+            parts.append(f"\u2191 {char_count} chars")
+        if think_s >= 1 and stream_s >= 1:
+            parts.append(f"thought for {_format_duration(think_s)}")
+        if interrupted:
+            parts.append("interrupted")
+        console.print(f"  [{_DIM}]{' \u00b7 '.join(parts)}[/{_DIM}]")
 
         # Record assistant turn
         session.add_turn("assistant", full_response, _current_mode.value)
 
         # Post-response citation validation + ledger
+        # Runs on every response: validates cited nodes, flags ungrounded responses,
+        # and logs the result to the provenance ledger in Neo4j.
         try:
-            citations = extract_citations(full_response)
-            if citations:
+            from wheeler.validation.citations import extract_citations, validate_citations
+            from wheeler.validation.ledger import create_entry, store_entry
+            cited = extract_citations(full_response)
+            if cited:
                 results = await validate_citations(full_response, config)
                 _display_validation_summary(results)
                 entry = create_entry(_current_mode.value, text, results)
                 await store_entry(entry, config)
+            elif full_response and len(full_response) > 80:
+                # Non-trivial response with zero citations — log as ungrounded
+                entry = create_entry(_current_mode.value, text, [])
+                await store_entry(entry, config)
+                console.print(
+                    f"  [{_DIM}]citations[/{_DIM}]  [{_YELLOW}]none — ungrounded[/{_YELLOW}]"
+                )
         except Exception:
             pass
 
@@ -586,6 +889,14 @@ app = typer.Typer(
 @app.command()
 def main() -> None:
     """Start the Wheeler REPL."""
+    # Log to ~/.wheeler/wheeler.log — captures SDK stderr, MCP failures, etc.
+    log_file = _CONFIG_DIR / "wheeler.log"
+    logging.basicConfig(
+        filename=str(log_file),
+        level=logging.DEBUG,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
     try:
         asyncio.run(repl())
     except SystemExit:

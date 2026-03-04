@@ -15,6 +15,7 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "prompt-toolkit>=3.0",
+    "fastmcp>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,7 @@ test = [
 [project.scripts]
 wheeler = "wheeler.cli:app"
 wheeler-tools = "wheeler.tools.cli:app"
+wheeler-mcp = "wheeler.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["wheeler*"]

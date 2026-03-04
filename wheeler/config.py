@@ -30,6 +30,21 @@ class WorkspaceConfig(BaseModel):
     exclude_dirs: list[str] = [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]
 
 
+class ModelsConfig(BaseModel):
+    """Model selection per mode. Use aliases (sonnet, opus, haiku) or full names.
+
+    Reasoning:
+    - planning: Opus — scientific reasoning, sharpening questions, hypotheses
+    - writing: Opus — drafting findings, nuanced prose, revision
+    - execute: Sonnet — code generation, tool use, script execution
+    - chat: Sonnet — discussion, quick queries
+    """
+    chat: str = "sonnet"
+    planning: str = "opus"
+    writing: str = "opus"
+    execute: str = "sonnet"
+
+
 class WheelerConfig(BaseModel):
     neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
     mcp_config_path: str = ".mcp.json"
@@ -39,6 +54,7 @@ class WheelerConfig(BaseModel):
     context_max_hypotheses: int = 3
     data_sources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
 
 
 def load_config(path: Path | None = None) -> WheelerConfig:

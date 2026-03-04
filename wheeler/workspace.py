@@ -11,6 +11,10 @@ from wheeler.config import WorkspaceConfig
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache — scan once, reuse across queries.
+# Invalidated by invalidate_workspace_cache() (called from /init).
+_cached_summary: WorkspaceSummary | None = None
+_cache_key: str | None = None  # project_dir used for cache
 
 _SCRIPT_EXTENSIONS = {".py", ".m"}
 _DATA_EXTENSIONS = {".mat", ".h5", ".csv", ".hdf5"}
@@ -40,10 +44,28 @@ def _categorize(ext: str) -> str:
     return "other"
 
 
+def invalidate_workspace_cache() -> None:
+    """Clear cached workspace summary. Call from /init."""
+    global _cached_summary, _cache_key
+    _cached_summary = None
+    _cache_key = None
+    logger.debug("Workspace cache invalidated")
+
+
 def scan_workspace(config: WorkspaceConfig) -> WorkspaceSummary:
-    """Walk project_dir, collect files matching scan_patterns."""
+    """Walk project_dir, collect files matching scan_patterns.
+
+    Results are cached after the first scan. Call invalidate_workspace_cache()
+    to force a re-scan (e.g. after /init).
+    """
+    global _cached_summary, _cache_key
     root = Path(config.project_dir).resolve()
-    summary = WorkspaceSummary(project_dir=str(root))
+    root_str = str(root)
+
+    if _cached_summary is not None and _cache_key == root_str:
+        return _cached_summary
+
+    summary = WorkspaceSummary(project_dir=root_str)
 
     if not root.is_dir():
         logger.debug("Workspace dir does not exist: %s", root)
@@ -80,6 +102,9 @@ def scan_workspace(config: WorkspaceConfig) -> WorkspaceSummary:
 
         summary.total_files += 1
 
+    _cached_summary = summary
+    _cache_key = root_str
+    logger.debug("Workspace scan cached: %d files", summary.total_files)
     return summary
 
 

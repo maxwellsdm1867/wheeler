@@ -10,8 +10,6 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
-
 from wheeler.config import WheelerConfig
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS, PREFIX_TO_LABEL
 
@@ -25,11 +23,8 @@ def _now() -> str:
 
 
 async def _get_session(config: WheelerConfig):
-    driver = AsyncGraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-        notifications_min_severity=NotificationMinimumSeverity.OFF,
-    )
+    from wheeler.graph.context import _get_driver
+    driver = _get_driver(config)
     return driver, driver.session(database=config.neo4j.database)
 
 
@@ -204,32 +199,29 @@ async def execute_tool(
 ) -> str:
     """Execute a graph tool and return a JSON string result."""
     driver, session = await _get_session(config)
-    try:
-        async with session as s:
-            if tool_name == "add_finding":
-                return await _add_finding(s, args)
-            elif tool_name == "add_hypothesis":
-                return await _add_hypothesis(s, args)
-            elif tool_name == "add_question":
-                return await _add_question(s, args)
-            elif tool_name == "link_nodes":
-                return await _link_nodes(s, args)
-            elif tool_name == "query_findings":
-                return await _query_findings(s, args)
-            elif tool_name == "query_open_questions":
-                return await _query_open_questions(s, args)
-            elif tool_name == "query_hypotheses":
-                return await _query_hypotheses(s, args)
-            elif tool_name == "graph_gaps":
-                return await _graph_gaps(s)
-            elif tool_name == "add_dataset":
-                return await _add_dataset(s, args)
-            elif tool_name == "query_datasets":
-                return await _query_datasets(s, args)
-            else:
-                return json.dumps({"error": f"Unknown tool: {tool_name}"})
-    finally:
-        await driver.close()
+    async with session as s:
+        if tool_name == "add_finding":
+            return await _add_finding(s, args)
+        elif tool_name == "add_hypothesis":
+            return await _add_hypothesis(s, args)
+        elif tool_name == "add_question":
+            return await _add_question(s, args)
+        elif tool_name == "link_nodes":
+            return await _link_nodes(s, args)
+        elif tool_name == "query_findings":
+            return await _query_findings(s, args)
+        elif tool_name == "query_open_questions":
+            return await _query_open_questions(s, args)
+        elif tool_name == "query_hypotheses":
+            return await _query_hypotheses(s, args)
+        elif tool_name == "graph_gaps":
+            return await _graph_gaps(s)
+        elif tool_name == "add_dataset":
+            return await _add_dataset(s, args)
+        elif tool_name == "query_datasets":
+            return await _query_datasets(s, args)
+        else:
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
 
 async def _add_finding(session, args: dict) -> str:

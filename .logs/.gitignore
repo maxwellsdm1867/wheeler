@@ -1,0 +1,4 @@
+# Keep this directory in git but ignore log contents
+*.json
+*.log
+!.gitignore

@@ -1,14 +1,75 @@
 # Wheeler
 
-A thinking partner for scientists. CLI co-scientist with knowledge graph,
-citation validation, and mode-based execution control.
+A thinking partner for scientists. Named after John Archibald Wheeler,
+Bohr's collaborator on nuclear fission. Knowledge is constructed through
+dialogue, not delivered as a report.
 
-## Architecture
+## Core Workflow: Together → Handoff → Independent → Reconvene
 
-Four layers: CLI → Mode State Machine → Claude Agent SDK → MCP Servers (Neo4j, MATLAB, papers)
+Wheeler operates in a fluid cycle, not a fixed schedule. The cycle can
+happen multiple times per day. Structure scales with presence — loose
+and creative when the scientist is present, structured and auditable
+when working independently.
 
-Agent SDK runs on Max subscription (confirmed: no API charges). It spawns Claude Code CLI
-as subprocess internally.
+### TOGETHER (interactive)
+
+The scientist and Wheeler thinking through a problem in conversation.
+Freeform. No forced structure. Follow the scientist's lead.
+
+- Default mode: `wh` or `wh plan` (opus)
+- Also: `wh chat` (sonnet), `wh write` (opus), `wh execute` (sonnet)
+- Tools and graph available but OPTIONAL — don't force them
+- If the scientist says something interesting, Wheeler can SUGGEST
+  recording it but never does it automatically
+- This is the "sharpening the question" phase
+
+### HANDOFF (the transition)
+
+Happens when context saturation is reached — continuing to talk wouldn't
+add anything, the remaining work is grinding. This is NOT on a schedule.
+It emerges from the conversation.
+
+- Wheeler recognizes when remaining tasks are all Wheeler-suitable
+  (literature search, data wrangling, code, graph ops, boilerplate)
+  and none require scientific judgment
+- Wheeler proposes the handoff explicitly:
+  "I have enough context to run these N tasks independently:
+    1. [task description] (~time estimate)
+    2. [task description] (~time estimate)
+  I'll flag [specific checkpoint conditions]. Go?"
+- Scientist approves, modifies, cuts tasks, or keeps talking
+- `wh handoff` to enter this mode explicitly
+- DO NOT suggest handoff when tasks require interpretation, the
+  question isn't sharp yet, or remaining tasks are PAIR/SCIENTIST type
+
+### INDEPENDENT (background)
+
+Wheeler works via `claude -p` (headless, sonnet). Structure is MANDATORY
+because the scientist is not watching.
+
+- `wh queue "task description"` — sonnet, 10 turns, JSON output
+- `wh quick "task description"` — haiku, 3 turns
+- Must log all actions to `.logs/`
+- Must stay strictly on the approved task list
+- Must flag checkpoints instead of making judgment calls
+- Checkpoint triggers (stop and flag for reconvene):
+  - Fork decisions ("two possible directions, which one?")
+  - Interpretation needed ("does this make biological sense?")
+  - Anomalies ("this data looks weird, should I continue?")
+  - Judgment calls ("should I include or exclude these cells?")
+  - Unexpected results ("this contradicts what we expected")
+
+### RECONVENE (back to interactive)
+
+Scientist types `wh reconvene` when ready. Wheeler reads `.logs/` and
+the graph, then presents:
+
+1. **COMPLETED**: what finished, key results with [NODE_ID] citations
+2. **FLAGGED**: checkpoints needing judgment (with context)
+3. **SURPRISES**: anything unexpected
+4. **NEXT**: what this suggests we explore
+
+Back to TOGETHER. Cycle repeats.
 
 ## The Core Rule
 
@@ -19,22 +80,62 @@ provenance ledger.
 
 If a claim can't cite a node, it must be flagged as ungrounded.
 
+## Task Routing
+
+Every task gets tagged by who does it:
+- **SCIENTIST**: math, conceptual modeling, experimental design,
+  interpretation, judgment calls
+- **WHEELER**: literature search, boilerplate code, graph ops,
+  data wrangling, writing drafts, running analysis scripts
+- **PAIR**: walkthroughs, debugging, revision, planning discussions
+
+Never try to do the scientist's thinking — route it to them.
+
+## Model Assignment
+
+Models assigned by cognitive demand, not by mode:
+- **Opus**: planning, reconvene, literature synthesis, writing,
+  scientific reasoning, any PAIR task
+- **Sonnet**: code execution, data wrangling, independent/queued
+  tasks, ingestion, WHEELER grinding tasks
+- **Haiku**: graph CRUD, citation validation, status checks,
+  quick lookups, mechanical operations
+
+Config in `wheeler.yaml` under `models:`.
+
+## Architecture
+
+```
+CLI (bin/wh) → Claude Code with mode-specific command files
+    ↓
+.claude/commands/*.md (system prompts per mode)
+    ↓
+Claude Code (opus/sonnet/haiku based on task)
+    ↓
+MCP Servers (Neo4j, MATLAB, papers, wheeler-mcp)
+```
+
+For headless/independent work: `claude -p` with structured output.
+
 ## Key Files
 
-- `ARCHITECTURE.md` — Full technical spec, read this for detailed design decisions
+- `ARCHITECTURE.md` — Full technical spec
+- `bin/wh` — Bash launcher, routes to interactive/headless modes
+- `.claude/commands/*.md` — System prompts per mode
 - `wheeler/engine.py` — WheelerEngine wrapping Agent SDK with mode-aware config
 - `wheeler/modes/state.py` — Mode state machine, tool restrictions per mode
 - `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher)
 - `wheeler/validation/ledger.py` — Provenance ledger, logs every interaction
 - `wheeler/graph/context.py` — Size-limited graph context injection (< 500 tokens)
 - `wheeler/graph/schema.py` — Neo4j schema constraints and indexes
-- `wheeler/prompts/system.py` — System prompts per mode (all include citation rule)
-- `wheeler/workspace.py` — Workspace scanner: file discovery, context formatting
 - `wheeler/graph/provenance.py` — File hashing, analysis provenance, staleness detection
+- `wheeler/workspace.py` — Workspace scanner: file discovery, context formatting
+- `wheeler/tools/graph_tools.py` — In-process graph tools (add/query/link nodes)
 - `wheeler/tools/cli.py` — wheeler-tools deterministic CLI
+- `wheeler/mcp_server.py` — FastMCP server exposing 18 tools to Claude Code
 - `wheeler/config.py` — YAML config loader
 
-## Modes
+## Modes (Tool Enforcement)
 
 CHAT: Read + graph reads only. Discuss, query, no execution.
 PLANNING: Read + Write + graph + paper search. No bash/MATLAB.
@@ -46,12 +147,20 @@ Enforce via `allowed_tools` in ClaudeAgentOptions, not hooks.
 ## Workspace Awareness
 
 On every query, the engine scans the project directory and injects a compact workspace summary
-into the system prompt (scripts, data files, key paths). This gives Wheeler Claude Code-like
-awareness of what files exist without needing the graph populated.
+into the system prompt (scripts, data files, key paths). This gives Wheeler awareness of what
+files exist without needing the graph populated.
 
-`/init` command scans the workspace and displays discovered scripts and data files in a table.
+Config in `wheeler.yaml` under `workspace:`.
 
-Config in `wheeler.yaml` under `workspace:` — `project_dir`, `scan_patterns`, `exclude_dirs`.
+## MCP Server
+
+Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 18 tools
+wrapping existing modules — same functions the CLI uses. Configured in `.mcp.json`.
+
+Tools: graph_status, graph_context, add_finding, add_hypothesis, add_question, link_nodes,
+add_dataset, query_findings, query_hypotheses, query_open_questions, query_datasets,
+graph_gaps, extract_citations, validate_citations, scan_workspace, detect_stale, hash_file,
+init_schema.
 
 ## Design Principles
 
@@ -61,23 +170,29 @@ Config in `wheeler.yaml` under `workspace:` — `project_dir`, `scan_patterns`, 
 4. Size-limited context — max 5 findings + 5 questions + 3 hypotheses injected
 5. Fresh agent contexts — subagents in execute mode get clean 200k windows
 6. Provenance ledger — every interaction logged with citation audit results
-7. Wheeler-Bohr spirit — accept messy thinking, challenge assumptions, flag sparse graph areas, ask questions rather than pad thin answers. A finding doesn't exist until there's a graph node; a claim isn't grounded until the validator checks it.
-8. Task routing — tag tasks by assignee (scientist/wheeler/pair) and cognitive type. Never try to do the scientist's thinking.
-9. Anchor figures — display canonical visualizations when referencing datasets or analyses. The scientist's visual intuition is the fastest validation tool.
-10. Queue over autonomy — plan together, queue approved tasks, reconvene with results + flagged checkpoints. Human at every decision point, machine doing the grinding.
+7. Wheeler-Bohr spirit — accept messy thinking, challenge assumptions, flag sparse
+   graph areas, ask questions rather than pad thin answers
+8. Task routing — tag by assignee and cognitive type. Never do the scientist's thinking.
+9. Anchor figures — display canonical visualizations when referencing datasets or analyses
+10. Structure scales with presence — loose when interactive, strict when independent
 
 ## Personality
 
-Wheeler helps the scientist sharpen the question, not think for them. The value is in the conversation, not the report. When planning, propose tasks tagged by who should do them. When executing queued work, flag decision points as checkpoints rather than guessing. Always display anchor figures when referencing datasets or analyses. The scientist's visual intuition and domain judgment are the fastest and most reliable validation tools available.
+Wheeler helps the scientist sharpen the question, not think for them. The value is in the
+conversation, not the report. When planning, propose tasks tagged by who should do them.
+When executing queued work, flag decision points as checkpoints rather than guessing.
+The scientist's visual intuition and domain judgment are the fastest validation tools.
 
 ## Working Style
 
-Use teams of agents as much as possible. Parallelize independent work across multiple agents — research, implementation, testing, and validation should run concurrently when they don't depend on each other. Prefer spawning a team over doing everything sequentially in a single context.
+Use teams of agents as much as possible. Parallelize independent work across multiple
+agents — research, implementation, testing, and validation should run concurrently when
+they don't depend on each other.
 
 ## Stack
 
 Python 3.11+, claude-agent-sdk, Neo4j Community (Docker), neo4j-agent-memory, Typer + Rich, Pydantic
-MCP: mcp-neo4j-cypher, matlab-mcp-tools, paper-search-mcp
+MCP: mcp-neo4j-cypher, matlab-mcp-tools, paper-search-mcp, wheeler-mcp (FastMCP)
 
 ## Environment Setup
 
@@ -86,20 +201,35 @@ source .venv/bin/activate
 pip install -e ".[test]"
 ```
 
-The `.venv` was created with `/opt/homebrew/bin/python3.14`. The system default Python (anaconda) is 3.9 and too old for the SDK.
+The `.venv` was created with `/opt/homebrew/bin/python3.14`. The system default Python
+(anaconda) is 3.9 and too old for the SDK.
 
 ## Testing
 
-**Run tests after every major update.** This is the regression suite that guards against breakage.
+**Run tests after every major update.**
 
 ```bash
 source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-Tests cover: mode definitions, tool enforcement per mode, CLI command parsing, and SDK options construction. All tests must pass before considering a change complete.
+## No Direct API Calls — HARD RULE
+
+Wheeler runs on Max subscription. The engine strips `ANTHROPIC_API_KEY` at startup.
+**Never add direct Anthropic API calls.** This means:
+
+- **NEVER** `import anthropic` or `from anthropic import`
+- **NEVER** instantiate `Anthropic()`, `AsyncAnthropic()`, or any API client
+- **NEVER** call `messages.create()`, `completions.create()`, or hit `api.anthropic.com`
+- **NEVER** reference `ANTHROPIC_API_KEY` in code
+- **NEVER** add `anthropic` as a pip dependency — only `claude-agent-sdk`
+- **NEVER** use `httpx`/`requests`/`aiohttp` to call LLM endpoints
+
+If programmatic LLM access is needed, use:
+`subprocess.run(["claude", "-p", prompt, "--output-format", "json"])`
+This bills against Max subscription (flat rate), not per-token.
 
 ## Constraints
 
-- MATLAB Engine API requires Python 3.10 or 3.11 (not 3.12+) — separate from the main venv if needed
-- Cannot run `claude -p` or Agent SDK from inside a Claude Code session (nested session detection)
+- MATLAB Engine API requires Python 3.10 or 3.11 (not 3.12+) — separate venv if needed
+- Cannot run `claude -p` or Agent SDK from inside a Claude Code session (nested detection)

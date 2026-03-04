@@ -13,6 +13,12 @@ data_sources:
   epicTreeGUI_root: "/Users/maxwellsdm/Documents/GitHub/epicTreeGUI"
   data_dir: "/Users/maxwellsdm/Documents/GitHub/epicTreeGUI/examples/data"
 
+models:
+  chat: sonnet       # discussion, quick queries
+  planning: opus     # scientific reasoning — the whole point of Wheeler
+  writing: opus      # drafting findings, nuanced prose, revision
+  execute: sonnet    # code gen, tool use, script execution
+
 workspace:
   project_dir: "."
   scan_patterns: ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
