@@ -120,39 +120,3 @@ class TestDatasetTools:
             assert "description" in tool
             assert "parameters" in tool
             assert "required" in tool
-
-
-class TestPromptInjection:
-    def test_no_injection_when_unconfigured(self):
-        """System prompt should NOT contain epicTreeGUI text when data_sources is empty."""
-        from wheeler.prompts import SYSTEM_PROMPTS
-        from wheeler.modes.state import Mode
-
-        cfg = WheelerConfig()
-        # Simulate what engine.py does
-        system_prompt = SYSTEM_PROMPTS[Mode.EXECUTE]
-        if cfg.data_sources.epicTreeGUI_root:
-            system_prompt += "epicTreeGUI"
-
-        assert "epicTreeGUI" not in system_prompt
-
-    def test_injection_when_configured(self):
-        """System prompt SHOULD contain epicTreeGUI text when data_sources is set."""
-        from wheeler.prompts import SYSTEM_PROMPTS
-        from wheeler.modes.state import Mode
-
-        cfg = WheelerConfig(data_sources={
-            "epicTreeGUI_root": "/path/to/epic",
-            "data_dir": "/path/to/data",
-        })
-        system_prompt = SYSTEM_PROMPTS[Mode.EXECUTE]
-        if cfg.data_sources.epicTreeGUI_root:
-            system_prompt += (
-                "\n\n## Data Access: epicTreeGUI\n"
-                f"Data directory: {cfg.data_sources.data_dir}\n"
-                f"epicTreeGUI root: {cfg.data_sources.epicTreeGUI_root}\n"
-            )
-
-        assert "epicTreeGUI" in system_prompt
-        assert "/path/to/data" in system_prompt
-        assert "/path/to/epic" in system_prompt

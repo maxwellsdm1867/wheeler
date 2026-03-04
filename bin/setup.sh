@@ -110,16 +110,10 @@ cat > "$COMP_DIR/_wh" << 'ZSHCOMP'
 _wh() {
     local -a subcommands
     subcommands=(
-        'plan:Planning mode (opus) — sharpen questions'
-        'chat:Quick discussion (sonnet)'
-        'execute:Execute mode (sonnet) — run analyses'
-        'write:Draft text with strict citations (opus)'
-        'ingest:Bootstrap graph from data (sonnet)'
-        'handoff:Propose tasks for independent execution (opus)'
         'queue:Queue a background task (sonnet)'
         'quick:Fast one-shot task (haiku)'
         'status:Graph status check (haiku)'
-        'reconvene:Review independent results (opus)'
+        'hooks:Git hook management'
         'help:Show usage'
     )
     _describe 'subcommand' subcommands
@@ -130,6 +124,6 @@ ZSHCOMP
 step "Zsh completions installed to $COMP_DIR/_wh"
 
 echo ""
-echo -e "  ${GREEN}${BOLD}Done.${RESET} Run ${AMBER}wh${RESET} to start Wheeler."
+echo -e "  ${GREEN}${BOLD}Done.${RESET} Run ${AMBER}claude${RESET} in this directory, then use ${AMBER}/wh:plan${RESET} to start Wheeler."
 echo -e "  ${DIM}For zsh completions, ensure $COMP_DIR is in your \$fpath${RESET}"
 echo ""

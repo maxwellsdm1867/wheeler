@@ -16,8 +16,8 @@ when working independently.
 The scientist and Wheeler thinking through a problem in conversation.
 Freeform. No forced structure. Follow the scientist's lead.
 
-- Default mode: `wh` or `wh plan` (opus)
-- Also: `wh chat` (sonnet), `wh write` (opus), `wh execute` (sonnet)
+- Default mode: `/wh:plan` (opus)
+- Also: `/wh:chat` (sonnet), `/wh:write` (opus), `/wh:execute` (sonnet)
 - Tools and graph available but OPTIONAL — don't force them
 - If the scientist says something interesting, Wheeler can SUGGEST
   recording it but never does it automatically
@@ -38,7 +38,7 @@ It emerges from the conversation.
     2. [task description] (~time estimate)
   I'll flag [specific checkpoint conditions]. Go?"
 - Scientist approves, modifies, cuts tasks, or keeps talking
-- `wh handoff` to enter this mode explicitly
+- `/wh:handoff` to enter this mode explicitly
 - DO NOT suggest handoff when tasks require interpretation, the
   question isn't sharp yet, or remaining tasks are PAIR/SCIENTIST type
 
@@ -61,7 +61,7 @@ because the scientist is not watching.
 
 ### RECONVENE (back to interactive)
 
-Scientist types `wh reconvene` when ready. Wheeler reads `.logs/` and
+Scientist types `/wh:reconvene` when ready. Wheeler reads `.logs/` and
 the graph, then presents:
 
 1. **COMPLETED**: what finished, key results with [NODE_ID] citations
@@ -106,9 +106,9 @@ Config in `wheeler.yaml` under `models:`.
 ## Architecture
 
 ```
-CLI (bin/wh) → Claude Code with mode-specific command files
+Claude Code + /wh:* slash commands + MCP servers
     ↓
-.claude/commands/*.md (system prompts per mode)
+.claude/commands/wh/*.md (YAML frontmatter + system prompts)
     ↓
 Claude Code (opus/sonnet/haiku based on task)
     ↓
@@ -120,10 +120,8 @@ For headless/independent work: `claude -p` with structured output.
 ## Key Files
 
 - `ARCHITECTURE.md` — Full technical spec
-- `bin/wh` — Bash launcher, routes to interactive/headless modes
-- `.claude/commands/*.md` — System prompts per mode
-- `wheeler/engine.py` — WheelerEngine wrapping Agent SDK with mode-aware config
-- `wheeler/modes/state.py` — Mode state machine, tool restrictions per mode
+- `bin/wh` — Bash launcher, headless task runner (queue/quick/status/hooks)
+- `.claude/commands/wh/*.md` — Slash commands with YAML frontmatter (tool restrictions)
 - `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher)
 - `wheeler/validation/ledger.py` — Provenance ledger, logs every interaction
 - `wheeler/graph/context.py` — Size-limited graph context injection (< 500 tokens)
@@ -142,13 +140,12 @@ PLANNING: Read + Write + graph + paper search. No bash/MATLAB.
 WRITING: Read + Write + Edit + graph reads. No execution. Strict citation enforcement.
 EXECUTE: Everything. Must log all findings to graph with provenance.
 
-Enforce via `allowed_tools` in ClaudeAgentOptions, not hooks.
+Enforce via `allowed-tools` in YAML frontmatter of each slash command file.
 
 ## Workspace Awareness
 
-On every query, the engine scans the project directory and injects a compact workspace summary
-into the system prompt (scripts, data files, key paths). This gives Wheeler awareness of what
-files exist without needing the graph populated.
+The `scan_workspace` MCP tool discovers project files on demand. Slash commands in execute
+and ingest modes call this tool to discover available scripts and data files.
 
 Config in `wheeler.yaml` under `workspace:`.
 
@@ -191,7 +188,7 @@ they don't depend on each other.
 
 ## Stack
 
-Python 3.11+, claude-agent-sdk, Neo4j Community (Docker), neo4j-agent-memory, Typer + Rich, Pydantic
+Python 3.11+, Neo4j Community (Docker), Typer + Rich, Pydantic
 MCP: mcp-neo4j-cypher, matlab-mcp-tools, paper-search-mcp, wheeler-mcp (FastMCP)
 
 ## Environment Setup
@@ -239,7 +236,7 @@ Wheeler runs on Max subscription. The engine strips `ANTHROPIC_API_KEY` at start
 - **NEVER** instantiate `Anthropic()`, `AsyncAnthropic()`, or any API client
 - **NEVER** call `messages.create()`, `completions.create()`, or hit `api.anthropic.com`
 - **NEVER** reference `ANTHROPIC_API_KEY` in code
-- **NEVER** add `anthropic` as a pip dependency — only `claude-agent-sdk`
+- **NEVER** add `anthropic` as a pip dependency
 - **NEVER** use `httpx`/`requests`/`aiohttp` to call LLM endpoints
 
 If programmatic LLM access is needed, use:
@@ -249,4 +246,3 @@ This bills against Max subscription (flat rate), not per-token.
 ## Constraints
 
 - MATLAB Engine API requires Python 3.10 or 3.11 (not 3.12+) — separate venv if needed
-- Cannot run `claude -p` or Agent SDK from inside a Claude Code session (nested detection)

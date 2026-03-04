@@ -2,7 +2,7 @@
 
 A thinking partner for scientists. Named after John Archibald Wheeler, Bohr's collaborator on nuclear fission theory.
 
-Wheeler is a CLI co-scientist that wraps Claude Code with a knowledge graph, citation validation, and a fluid workflow cycle. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
+Wheeler is a co-scientist that runs natively inside Claude Code via `/wh:*` slash commands, backed by a knowledge graph, citation validation, and a fluid workflow cycle. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
 
 ## How it works
 
@@ -29,15 +29,17 @@ Wheeler operates in a fluid cycle. Structure scales with presence — loose and 
 The scientist and Wheeler thinking through a problem in conversation. This is where the science happens.
 
 ```bash
-wh              # planning mode (opus) — default
-wh plan         # same as above
-wh chat         # quick discussion (sonnet)
-wh write        # draft text with strict citations (opus)
-wh execute      # run analyses, update graph (sonnet)
-wh ingest       # bootstrap graph from data (sonnet)
+cd ~/wheeler && claude    # start Claude Code in wheeler directory
+/wh:plan                  # planning mode — sharpen questions
+/wh:chat                  # quick discussion
+/wh:write                 # draft text with strict citations
+/wh:execute               # run analyses, update graph
+/wh:ingest                # bootstrap graph from data
 ```
 
 Freeform. No forced structure. The graph, MCP tools, and citation system are all available but optional. If you want to just think out loud about a weird spike pattern, do that. If you want to query the graph, do that.
+
+If you say something interesting — a strong claim, a new hypothesis, an insight worth preserving — Wheeler will suggest recording it to the graph. But never automatically. You decide what's worth keeping.
 
 The existing modes (chat, plan, write, execute) are all flavors of Together — they're tools within this phase, not separate workflows.
 
@@ -46,8 +48,7 @@ The existing modes (chat, plan, write, execute) are all flavors of Together — 
 When context saturation is reached — the question is sharp and remaining work is grinding that doesn't need your judgment.
 
 ```
-/handoff          # from inside a session (keeps conversation context)
-wh handoff        # standalone (opus)
+/wh:handoff       # inside Claude Code (keeps conversation context)
 ```
 
 Wheeler proposes tasks explicitly:
@@ -55,19 +56,19 @@ Wheeler proposes tasks explicitly:
 ```
 I have enough context to run these 3 tasks independently:
 
-1. Search for papers on HC feedback in primate retina (~5 min)
+1. Search for papers on HC feedback in primate retina (~5 min, sonnet)
    Checkpoint if: lit search contradicts our HC hypothesis
    wh queue "Search PubMed and Semantic Scholar for papers on horizontal cell
    feedback mechanisms in primate retina. Add relevant papers as REF nodes,
    link to H-004. Focus on marmoset and macaque."
 
-2. Run contrast model comparison on June dataset (~10 min)
+2. Run contrast model comparison on June dataset (~10 min, sonnet)
    Checkpoint if: neither model clearly wins (ambiguous R^2)
    wh queue "Load June dataset D-9f1c, run Naka-Rushton and gain control
    models on all ON parasol cells. Create Finding nodes with confidence
    scores. Compare R^2 values."
 
-3. Update graph with today's hypotheses (~2 min)
+3. Update graph with today's hypotheses (~2 min, haiku)
    wh queue "Add hypothesis: ON-pathway cells have higher contrast
    sensitivity due to HC feedback. Link to F-3a2b and F-7c1d as
    supporting evidence."
@@ -124,7 +125,7 @@ Flagged tasks get `status: "flagged"` in the log and surface during reconvene.
 ### Reconvene (back to interactive)
 
 ```bash
-wh reconvene    # opus, reads .logs/ + queries graph
+/wh:reconvene    # reads .logs/ + queries graph
 ```
 
 Wheeler presents a structured synthesis:
@@ -151,30 +152,27 @@ Citation validation is deterministic (regex + Cypher), never LLM self-judgment:
 | UNGROUNDED | Non-trivial claim with zero citations |
 
 Enforced on all paths:
-- **Interactive (REPL)** — validated after every response
+- **Interactive (slash commands)** — `validate_citations` MCP tool available in write mode
 - **Headless (queue/quick)** — validated post-hoc, appended to structured log
 - **MCP** — `validate_citations` tool available for manual checks
 
 ## Architecture
 
 ```
-bin/wh (bash launcher)
+Claude Code (interactive)
     |
-    |-- Interactive: claude --model opus/sonnet --prompt <mode>.md
+    |-- /wh:* slash commands (.claude/commands/wh/*.md)
     |       |
-    |       |-- .claude/commands/*.md (system prompts per mode)
-    |       |-- wheeler/cli.py (REPL with /commands, citation validation)
-    |       |-- wheeler/engine.py (Agent SDK, mode enforcement, context injection)
-    |       |
-    |       MCP Servers: Neo4j, MATLAB, papers, wheeler-mcp
+    |       |-- YAML frontmatter (allowed-tools per mode)
+    |       |-- MCP Servers: Neo4j, MATLAB, papers, wheeler-mcp
     |
-    |-- Headless: claude -p "task" --output-format json
+bin/wh (headless)
+    |
+    |-- wh queue/quick: claude -p with structured logging
     |       |
-    |       |-- .claude/commands/queue.md (background task protocol)
+    |       |-- .claude/commands/wh/queue.md (background task protocol)
     |       |-- wheeler/task_log.py (structured logging, checkpoint detection)
     |       |-- .logs/*.json (structured task logs)
-    |
-    |-- Reconvene: wheeler/log_summary.py -> inject into prompt
 ```
 
 ### Key principle: Structure scales with presence
@@ -257,16 +255,12 @@ data_sources:
 ## Key Files
 
 ```
-bin/wh                          Bash launcher (routes interactive/headless)
+bin/wh                          Bash launcher (headless tasks + hooks)
 bin/setup.sh                    One-time setup
-.claude/commands/*.md           System prompts per mode
-wheeler/cli.py                  Interactive REPL (/commands, citations, sessions)
-wheeler/engine.py               Agent SDK wrapper, mode enforcement, context injection
+.claude/commands/wh/*.md        Slash commands with YAML frontmatter
 wheeler/task_log.py             Structured logging for independent tasks
 wheeler/log_summary.py          Log reader for reconvene injection
-wheeler/validate_output.py      Post-hoc citation validation (legacy, used by REPL)
 wheeler/mcp_server.py           FastMCP server (18 tools)
-wheeler/modes/state.py          Mode state machine
 wheeler/validation/citations.py Citation extraction (regex) + validation (Cypher)
 wheeler/validation/ledger.py    Provenance ledger
 wheeler/graph/context.py        Graph context injection (< 500 tokens)
@@ -279,7 +273,7 @@ wheeler/config.py               YAML config loader
 
 ## Stack
 
-- **Engine**: Claude Agent SDK (Python) on Max subscription
+- **Engine**: Claude Code with /wh:* slash commands
 - **Graph**: Neo4j Community (Docker)
 - **CLI**: Typer + Rich
 - **Models**: Pydantic
@@ -290,7 +284,7 @@ wheeler/config.py               YAML config loader
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v    # 220 tests
+python -m pytest tests/ -v
 ```
 
 ## License

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Wheeler CLI launcher — drops into the Wheeler project environment
-# and invokes Claude Code with mode-appropriate model selection.
+# Wheeler CLI launcher — headless task runner and utilities.
 #
-# Interactive modes load .claude/commands/<mode>.md as the initial prompt.
-# Background modes use claude -p with the command content.
+# Interactive modes now run natively inside Claude Code via /wh:* slash commands.
+# This script handles headless/independent work and development utilities.
 #
 # Install: sudo ln -sf ~/Documents/GitHub/wheeler/bin/wh /usr/local/bin/wh
 
@@ -46,58 +45,30 @@ usage() {
     echo ""
     echo -e "  ${AMBER}${BOLD}Wheeler${RESET} ${DIM}— a thinking partner for scientists${RESET}"
     echo ""
-    echo -e "  ${BOLD}Together → Handoff → Independent → Reconvene${RESET}"
-    echo ""
-    echo -e "  ${BOLD}Together (interactive)${RESET}"
-    echo -e "    ${AMBER}wh${RESET}                  ${DIM}Planning mode (opus) — default${RESET}"
-    echo -e "    ${AMBER}wh plan${RESET}              ${DIM}Planning mode (opus) — sharpen questions${RESET}"
-    echo -e "    ${AMBER}wh chat${RESET}              ${DIM}Quick discussion (sonnet)${RESET}"
-    echo -e "    ${AMBER}wh execute${RESET}           ${DIM}Execute mode (sonnet) — run analyses${RESET}"
-    echo -e "    ${AMBER}wh write${RESET}             ${DIM}Draft text with strict citations (opus)${RESET}"
-    echo -e "    ${AMBER}wh ingest${RESET}            ${DIM}Bootstrap graph from data (sonnet)${RESET}"
-    echo ""
-    echo -e "  ${BOLD}Handoff${RESET}"
-    echo -e "    ${AMBER}wh handoff${RESET}           ${DIM}Propose tasks for independent execution (opus)${RESET}"
-    echo ""
+    echo -e "  ${BOLD}Interactive (inside Claude Code)${RESET}"
+    echo -e "    ${DIM}cd ~/wheeler && claude${RESET}"
+    echo -e "    ${AMBER}/wh:plan${RESET}              ${DIM}Planning mode — sharpen questions${RESET}"
+    echo -e "    ${AMBER}/wh:chat${RESET}              ${DIM}Quick discussion${RESET}"
+    echo -e "    ${AMBER}/wh:execute${RESET}           ${DIM}Execute mode — run analyses${RESET}"
+    echo -e "    ${AMBER}/wh:write${RESET}             ${DIM}Draft text with strict citations${RESET}"
+    echo -e "    ${AMBER}/wh:ingest${RESET}            ${DIM}Bootstrap graph from data${RESET}"
+    echo -e "    ${AMBER}/wh:handoff${RESET}           ${DIM}Propose tasks for independent execution${RESET}"
+    echo -e "    ${AMBER}/wh:reconvene${RESET}         ${DIM}Review independent results${RESET}"
+    echo -e "    ${AMBER}/wh:status${RESET}            ${DIM}Graph status check${RESET}"
     echo ""
     echo -e "  ${BOLD}Independent (headless, logged to .logs/)${RESET}"
     echo -e "    ${AMBER}wh queue${RESET} \"prompt\"    ${DIM}Queue a task (sonnet, 10 turns)${RESET}"
     echo -e "    ${AMBER}wh quick${RESET} \"prompt\"    ${DIM}Fast one-shot (haiku, 3 turns)${RESET}"
     echo -e "    ${AMBER}wh status${RESET}            ${DIM}Graph status (haiku, 2 turns)${RESET}"
     echo ""
-    echo -e "  ${BOLD}Reconvene${RESET}"
-    echo -e "    ${AMBER}wh reconvene${RESET}         ${DIM}Review independent results (opus)${RESET}"
-    echo ""
     echo -e "  ${BOLD}Development${RESET}"
     echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
     echo -e "    ${AMBER}wh hooks test${RESET}        ${DIM}Run all checks without committing${RESET}"
     echo ""
     echo -e "  ${BOLD}Options${RESET}"
-    echo -e "    ${DIM}Extra flags pass through to claude:${RESET}"
-    echo -e "    ${AMBER}wh plan --verbose${RESET}"
-    echo -e "    ${AMBER}wh execute --resume${RESET}"
-    echo ""
-    echo -e "  ${BOLD}Environment${RESET}"
-    echo -e "    ${DIM}WHEELER_MODEL=sonnet wh plan${RESET}  ${DIM}Override model${RESET}"
+    echo -e "    ${DIM}WHEELER_MODEL=sonnet wh queue \"...\"${RESET}  ${DIM}Override model${RESET}"
     echo -e "    ${DIM}WHEELER_DIR=/path/to/project${RESET}       ${DIM}Override project dir${RESET}"
     echo ""
-}
-
-# Read a .claude/commands/*.md file and pass it as --prompt
-run_interactive() {
-    local cmd_file="$1" model="$2" color="$3" mode_name="$4"
-    shift 4
-    MODEL="${WHEELER_MODEL:-$model}"
-    banner "$mode_name" "$MODEL" "$color"
-    if [[ -f "$WHEELER_DIR/.claude/commands/${cmd_file}.md" ]]; then
-        exec "$CLAUDE_BIN" \
-            --model "$MODEL" \
-            --prompt "$(cat "$WHEELER_DIR/.claude/commands/${cmd_file}.md")" \
-            "$@"
-    else
-        # Fallback: no command file, just launch with model
-        exec "$CLAUDE_BIN" --model "$MODEL" "$@"
-    fi
 }
 
 # Run headless with a command file as system context + user prompt
@@ -110,8 +81,8 @@ run_headless() {
 
     # Build command array
     local -a cmd=("$CLAUDE_BIN" -p "$prompt" --model "$MODEL" --output-format "$fmt" --max-turns "$max_turns")
-    if [[ -f "$WHEELER_DIR/.claude/commands/${cmd_file}.md" ]]; then
-        cmd+=(--system-prompt "$(cat "$WHEELER_DIR/.claude/commands/${cmd_file}.md")")
+    if [[ -f "$WHEELER_DIR/.claude/commands/wh/${cmd_file}.md" ]]; then
+        cmd+=(--system-prompt "$(cat "$WHEELER_DIR/.claude/commands/wh/${cmd_file}.md")")
     fi
     cmd+=("$@")
 
@@ -149,54 +120,10 @@ fi
 cd "$WHEELER_DIR"
 
 # ── Parse subcommand ────────────────────────────────────────────────
-SUBCMD="${1:-plan}"
+SUBCMD="${1:-help}"
 shift 2>/dev/null || true
 
 case "$SUBCMD" in
-
-    # ── Interactive modes ───────────────────────────────────────────
-    plan|planning)
-        run_interactive "plan" "opus" "$PURPLE" "planning" "$@"
-        ;;
-
-    execute|exec)
-        run_interactive "execute" "sonnet" "$ORANGE" "execute" "$@"
-        ;;
-
-    reconvene|recon)
-        # Inject recent log data into reconvene prompt
-        MODEL="${WHEELER_MODEL:-opus}"
-        banner "reconvene" "$MODEL" "$PURPLE"
-        LOG_SUMMARY=$("$WHEELER_DIR/.venv/bin/python" -m wheeler.log_summary --logs-dir "$WHEELER_DIR/.logs" 2>/dev/null || echo "")
-        RECON_PROMPT="$(cat "$WHEELER_DIR/.claude/commands/reconvene.md")"
-        if [[ -n "$LOG_SUMMARY" ]]; then
-            RECON_PROMPT="${RECON_PROMPT}
-
----
-
-${LOG_SUMMARY}"
-        fi
-        exec "$CLAUDE_BIN" \
-            --model "$MODEL" \
-            --prompt "$RECON_PROMPT" \
-            "$@"
-        ;;
-
-    ingest|bootstrap)
-        run_interactive "ingest" "sonnet" "$GREEN" "ingest" "$@"
-        ;;
-
-    chat)
-        run_interactive "chat" "sonnet" "$BLUE" "chat" "$@"
-        ;;
-
-    write|writing)
-        run_interactive "write" "opus" "$GREEN" "writing" "$@"
-        ;;
-
-    handoff|hand)
-        run_interactive "handoff" "opus" "$PURPLE" "handoff" "$@"
-        ;;
 
     # ── Independent / headless commands ─────────────────────────────
     queue|q)
@@ -247,11 +174,6 @@ ${LOG_SUMMARY}"
     help|-h|--help)
         usage
         exit 0
-        ;;
-
-    -*)
-        # No subcommand, just flags → default to plan
-        run_interactive "plan" "opus" "$PURPLE" "planning" "$SUBCMD" "$@"
         ;;
 
     *)
