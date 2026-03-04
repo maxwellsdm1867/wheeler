@@ -1,8 +1,12 @@
 ---
 name: wh:status
-description: Show current knowledge graph state
+description: Show investigation progress and route to next action
 argument-hint: ""
 allowed-tools:
+  - Read
+  - Bash
+  - Glob
+  - Grep
   - mcp__wheeler__graph_status
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
@@ -11,14 +15,57 @@ allowed-tools:
   - mcp__neo4j__read_neo4j_cypher
 ---
 
-Show the current state of the knowledge graph. Be concise. Use wheeler MCP tools for all queries.
+Show the current state of everything and suggest what to do next.
 
-1. Call `graph_status` for node counts by type (Finding, Hypothesis, OpenQuestion, Dataset, Analysis, Experiment, Paper, CellType, Plan, Task)
-2. Call `query_findings` for the 5 most recent findings with their confidence scores
-3. Call `query_open_questions` for open questions sorted by priority (top 5)
-4. Call `graph_gaps` for unsupported hypotheses and unlinked questions
-5. Call `detect_stale` for stale analyses (script_hash doesn't match current file, or file missing)
-6. Query total relationships via `read_neo4j_cypher`
+## Step 1: Investigation Status
+Check `.plans/` for:
+- `.continue-here.md` — paused work from a previous session
+- `*-CONTEXT.md` — discussions that haven't been planned yet
+- Active investigation plans (status: approved or in-progress)
+- Completed investigations
+
+## Step 2: Task Status
+Check `.logs/` for:
+- Run `python -m wheeler.log_summary` via Bash
+- Unreviewed completed tasks
+- Flagged checkpoints needing judgment
+- Failed tasks
+
+## Step 3: Graph Status
+Use wheeler MCP tools:
+- `graph_status` — node counts by type
+- `query_findings` — 5 most recent findings with confidence scores
+- `query_open_questions` — top 5 open questions by priority
+- `graph_gaps` — unsupported hypotheses, unlinked questions
+- `detect_stale` — analyses with changed scripts
+
+## Step 4: Present and Route
+
+```
+## Active Work
+<investigations in progress, paused work, pending contexts>
+
+## Recent Results
+<unreviewed logs, recent findings, flagged checkpoints>
+
+## Graph Summary
+<node counts, recent findings, open questions, gaps>
+
+## Suggested Next Action
+/wh:<command> — <reasoning>
+```
+
+### Routing Logic
+
+| Situation | Suggest |
+|-----------|---------|
+| `.continue-here.md` exists | `/wh:resume` — pick up paused work |
+| Unreviewed task logs | `/wh:reconvene` — review results |
+| CONTEXT.md without matching plan | `/wh:plan` — plan the discussed investigation |
+| Approved plan not yet executed | `/wh:execute` or `/wh:handoff` — start execution |
+| Flagged checkpoints | Present inline for quick decisions |
+| No active work, graph has gaps | `/wh:plan` — start new investigation |
+| Everything clean | "All caught up. What do you want to explore?" |
 
 Format as a compact summary, not a wall of text.
 

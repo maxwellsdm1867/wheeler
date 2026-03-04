@@ -4,7 +4,7 @@ A thinking partner for scientists. Named after John Archibald Wheeler,
 Bohr's collaborator on nuclear fission. Knowledge is constructed through
 dialogue, not delivered as a report.
 
-## Core Workflow: Together → Handoff → Independent → Reconvene
+## Core Workflow: Discuss → Plan → Handoff → Independent → Reconvene
 
 Wheeler operates in a fluid cycle, not a fixed schedule. The cycle can
 happen multiple times per day. Structure scales with presence — loose
@@ -16,12 +16,13 @@ when working independently.
 The scientist and Wheeler thinking through a problem in conversation.
 Freeform. No forced structure. Follow the scientist's lead.
 
-- Default mode: `/wh:plan` (opus)
-- Also: `/wh:chat` (sonnet), `/wh:write` (opus), `/wh:execute` (sonnet)
+- Start with `/wh:discuss` to sharpen the question, then `/wh:plan` to structure the investigation
+- Also: `/wh:chat` (quick discussion), `/wh:write` (drafting), `/wh:execute` (running analyses)
 - Tools and graph available but OPTIONAL — don't force them
 - If the scientist says something interesting, Wheeler can SUGGEST
   recording it but never does it automatically
-- This is the "sharpening the question" phase
+- `/wh:pause` captures state when stopping mid-investigation
+- `/wh:resume` restores context when returning
 
 ### HANDOFF (the transition)
 

@@ -20,21 +20,25 @@ have data from one prep so far.
 
 Every response gets deterministic citation validation — regex extracts node IDs, Cypher checks they exist with full provenance chains. Not LLM self-judgment.
 
-## Together -> Handoff -> Independent -> Reconvene
+## Discuss -> Plan -> Handoff -> Independent -> Reconvene
 
 Wheeler operates in a fluid cycle. Structure scales with presence — loose and creative when the scientist is present, structured and auditable when working independently.
 
-### Together (interactive)
+### Discuss + Plan (interactive)
 
 The scientist and Wheeler thinking through a problem in conversation. This is where the science happens.
 
 ```bash
 cd ~/wheeler && claude    # start Claude Code in wheeler directory
-/wh:plan                  # planning mode — sharpen questions
+/wh:discuss               # sharpen the question before planning
+/wh:plan                  # structured investigation plan
 /wh:chat                  # quick discussion
 /wh:write                 # draft text with strict citations
 /wh:execute               # run analyses, update graph
 /wh:ingest                # bootstrap graph from data
+/wh:status                # progress check + routing
+/wh:pause                 # capture state for later
+/wh:resume                # restore context from previous session
 ```
 
 Freeform. No forced structure. The graph, MCP tools, and citation system are all available but optional. If you want to just think out loud about a weird spike pattern, do that. If you want to query the graph, do that.
@@ -51,11 +55,12 @@ When context saturation is reached — the question is sharp and remaining work 
 /wh:handoff       # inside Claude Code (keeps conversation context)
 ```
 
-Wheeler proposes tasks explicitly:
+Wheeler proposes tasks grouped into dependency waves:
 
 ```
 I have enough context to run these 3 tasks independently:
 
+## Wave 1 (parallel)
 1. Search for papers on HC feedback in primate retina (~5 min, sonnet)
    Checkpoint if: lit search contradicts our HC hypothesis
    wh queue "Search PubMed and Semantic Scholar for papers on horizontal cell

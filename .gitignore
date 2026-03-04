@@ -7,3 +7,6 @@ build/
 .pytest_cache/
 *.egg
 .env
+.plans/
+.logs/
+.wheeler/

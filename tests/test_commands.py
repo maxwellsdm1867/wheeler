@@ -17,6 +17,9 @@ EXPECTED_COMMANDS = [
     "ingest",
     "status",
     "queue",
+    "pause",
+    "resume",
+    "discuss",
 ]
 STALE_ROOT = Path(__file__).parent.parent / ".claude" / "commands"
 

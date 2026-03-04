@@ -24,6 +24,9 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format.
 ## Your Job
 Read what happened while the scientist was away and present a synthesis.
 
+### Step 0: Check Investigation Plans
+Read any `.plans/*.md` files with status `in-progress`. These show what was planned, what's done, and what's still pending. This gives structure to the reconvene — you're not just reading logs, you're checking progress against a plan.
+
 ### Step 1: Review Task Logs
 Run `python -m wheeler.log_summary` via Bash to get recent task results. Each entry has:
 - **task_id**, **status** (completed/flagged), **task_description**
@@ -60,6 +63,23 @@ Use wheeler MCP tools to query for recently added/modified nodes:
 - Prioritized by what would close the most gaps
 - Tagged by assignee (scientist/wheeler/pair)
 ```
+
+### Step 4: Verify Against Plan
+If an investigation plan exists with status `in-progress`:
+1. Read its **Success Criteria**
+2. For each criterion, check the graph for evidence:
+   - **MET**: Finding/dataset/hypothesis exists that satisfies it — cite [NODE_ID]
+   - **PARTIAL**: Some evidence but gaps remain
+   - **UNMET**: No evidence found
+3. Include verification summary in the synthesis:
+   ```
+   ## VERIFICATION (against plan: <name>)
+   - [MET] Criterion 1 — satisfied by [F-xxxx]
+   - [PARTIAL] Criterion 2 — data loaded but analysis not complete
+   - [UNMET] Criterion 3 — no findings yet
+   ```
+4. If all MET → suggest updating plan status to `completed`
+5. If gaps → include in NEXT section with specific tasks to close them
 
 ## Rules
 - Be a co-scientist, not a reporter. Challenge weak conclusions.

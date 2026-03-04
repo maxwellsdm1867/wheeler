@@ -4,6 +4,7 @@ description: Planning mode — sharpen questions, propose investigations
 argument-hint: "[topic]"
 allowed-tools:
   - Read
+  - Write
   - Glob
   - Grep
   - WebSearch
@@ -33,13 +34,84 @@ Follow the scientist's lead. If they want to discuss ideas, just discuss. Don't 
 
 When the scientist asks you to plan something specific, THEN use `graph_context` and `graph_gaps` wheeler MCP tools to understand current state.
 
-## Task Structure
-For each plan, output:
+## Investigation Plans
+
+When the question is sharp enough, write a structured plan to `.plans/<name>.md`. This is the artifact that connects planning to execution — handoff and execute read it.
+
+### Plan format:
+
+```markdown
+# Investigation: <name>
+Created: <date>
+Status: draft | approved | in-progress | completed
+
+## Objective
+What we're trying to learn. One clear question.
+
+## Current State
+What the graph already knows (cite nodes). Where the gaps are.
+
+## Tasks
+
+### 1. <task title>
+- **assignee**: scientist | wheeler | pair
+- **type**: math | conceptual | literature | code | data_wrangling | graph_ops | writing | interpretation | experimental_design
+- **model**: opus | sonnet | haiku
+- **depends_on**: [] or [task numbers]
+- **checkpoint_if**: [conditions that should pause execution]
+- **description**: What to do, with enough context for cold-start execution
+
+### 2. <task title>
+...
+
+## Success Criteria
+How do we know we answered the question? What findings would close the investigation?
+
+## Rationale
+Why this approach. What alternatives were considered.
+```
+
+### Plan format (continued):
+
+Add `wave` to each task based on dependencies:
+```markdown
+### 1. <task title>
+- **wave**: 1
+- **assignee**: wheeler
+...
+
+### 3. <task title>
+- **wave**: 2
+- **depends_on**: [1, 2]
+...
+```
+
+Wave assignment: `task.wave = max(wave of each dependency) + 1`. Tasks with no dependencies are wave 1.
+
+### Plan verification (before approval)
+After writing a plan, self-check before presenting to the scientist:
+
+1. **Coverage**: Does every aspect of the objective have at least one task?
+2. **Context compliance**: If a `*-CONTEXT.md` exists for this investigation, do all tasks honor the locked decisions? Are deferred ideas excluded?
+3. **Checkpoints**: Do tasks that might need judgment have `checkpoint_if` conditions?
+4. **Success criteria**: Are they observable and testable against the graph? (Not "understand X" but "Finding exists showing X with confidence > 0.7")
+5. **Dependencies**: Is the wave assignment consistent? No circular dependencies?
+6. **Scope**: Are WHEELER tasks actually WHEELER-suitable? Are SCIENTIST tasks properly routed?
+
+If any check fails, fix the plan before presenting it.
+
+### Plan lifecycle:
+1. **Draft** — Wheeler proposes, self-verifies, scientist discusses and refines
+2. **Approved** — Scientist says go. Update status to `approved`.
+3. **In-progress** — `/wh:execute` or `/wh:handoff` picks up the plan and runs WHEELER tasks
+4. **Completed** — Success criteria verified against graph. Results confirmed.
+
+Plans live in `.plans/` so they persist across sessions and are readable by any mode.
+
+## Legacy task format
+For quick plans that don't need a file, output inline:
 - **Objective**: What we're trying to learn
-- **Tasks**: Each tagged with:
-  - `assignee`: scientist (math, physics intuition, conceptual) | wheeler (lit search, boilerplate, graph ops, data wrangling) | pair (interactive coding, interpretation)
-  - `cognitive_type`: math | conceptual | literature | code_interactive | code_boilerplate | data_wrangling | graph_ops | writing_draft | interpretation | experimental_design
-  - `depends_on`: which tasks must complete first
+- **Tasks**: Each tagged with assignee, type, model, depends_on
 - **Rationale**: Why this approach, what alternatives were considered
 
 ## Rules
