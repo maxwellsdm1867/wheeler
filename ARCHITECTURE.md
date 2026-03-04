@@ -18,7 +18,7 @@ Named after John Archibald Wheeler, Bohr's thinking partner on nuclear fission. 
 
 The "Copenhagen Spirit" means informal debate, flat hierarchy, and the premise that arguing is productive. Wheeler should challenge assumptions, flag sparse graph areas, and ask questions rather than pad thin answers.
 
-### Wheeler vs. Kosmos Philosophy
+### Wheeler vs. Kosmos
 
 Kosmos (Edison Scientific, arxiv 2511.02824, $70M, 37 authors) asks "what can AI discover autonomously?" Wheeler asks "what question should we be asking?" Kosmos gives you a 30-page report and you spend hours figuring out whether to trust it. Wheeler sits with you while you think out loud, helps you sharpen the question, then you both know exactly what you're looking for and why. The thinking happens in the conversation, not in the report. This is the Bohr discharge pattern — Bohr needed to TALK through fission, not receive a report about it.
 
@@ -26,7 +26,7 @@ Kosmos's 57.9% accuracy on interpretation/synthesis statements (vs 85.5% on data
 
 Kosmos VALIDATES Wheeler's core architecture (structured knowledge model, citation tracing, parallel agents, fresh context) while being philosophically opposite (autonomous vs collaborative).
 
-### Why Wheeler (Competitive Positioning)
+### Competitive Positioning
 
 | Tool | What it does | What it lacks |
 |------|-------------|---------------|
@@ -65,73 +65,43 @@ Claude Code (interactive, Max subscription)
 
 ### Why Slash Commands, Not Agent SDK
 
-The original plan called for a Python orchestration layer using `claude-agent-sdk` with
-programmatic hooks for mode enforcement. In practice, Claude Code's native slash command
-system does everything we need:
+The original plan called for a Python orchestration layer using `claude-agent-sdk` with programmatic hooks for mode enforcement. In practice, Claude Code's native slash command system does everything we need:
 
-- **Mode enforcement**: YAML `allowed-tools` frontmatter restricts tools per command —
-  `/wh:chat` can't write files, `/wh:plan` can't run code, `/wh:execute` gets everything.
+- **Mode enforcement**: YAML `allowed-tools` frontmatter restricts tools per command — `/wh:chat` can't write files, `/wh:plan` can't run code, `/wh:execute` gets everything.
 - **System prompts**: The markdown body of each slash command IS the system prompt.
 - **Context injection**: CLAUDE.md is loaded automatically. Graph context comes from MCP tools.
 - **No custom code for orchestration**: Zero Python needed to wire modes together.
 
-This eliminated ~1500 lines of planned orchestration code (mode state machine, hook
-enforcement, system prompt injection, permission control) in favor of ~12 markdown files.
+This eliminated ~1500 lines of planned orchestration code (mode state machine, hook enforcement, system prompt injection, permission control) in favor of ~12 markdown files.
 
-### Wheeler MCP Server
+### Two MCP Access Patterns
 
-Claude Code accesses Wheeler's core functionality via MCP:
+Wheeler uses both raw and domain-specific graph access:
 
-```
-Claude Code ──(stdio)──> wheeler-mcp ──> wheeler.graph.context
-                                     ──> wheeler.validation.citations
-                                     ──> wheeler.tools.graph_tools
-                                     ──> wheeler.workspace
-                                     ──> wheeler.graph.provenance
-                                     ──> wheeler.graph.schema
-```
+1. **`mcp-neo4j-cypher`** — raw Cypher for ad-hoc graph queries. Available as `mcp__neo4j__read_neo4j_cypher` and `mcp__neo4j__write_neo4j_cypher`.
 
-Thin FastMCP wrapper (`wheeler/mcp_server.py`) over the same modules the CLI uses.
-18 tools: graph CRUD, citation validation, workspace scanning, and provenance.
-Config loaded once at startup from `wheeler.yaml`.
+2. **Wheeler MCP server** (`wheeler/mcp_server.py`) — 18 domain-specific tools like `add_finding`, `query_open_questions`, `link_nodes`, `validate_citations` that internally call Neo4j but expose a science-friendly interface. Claude doesn't need to write Cypher for common operations.
 
 ### Headless / Independent Work
 
-For background tasks (`wh queue`, `wh quick`), Wheeler uses `claude -p` (headless mode)
-with structured JSON output. This runs on the Max subscription without API keys.
-The `bin/wh` bash launcher handles invocation, logging, and checkpoint detection.
-
-```bash
-wh queue "task description"    # sonnet, 10 turns, logged to .logs/
-wh quick "task description"    # haiku, 3 turns, fast
-```
+For background tasks (`wh queue`, `wh quick`), Wheeler uses `claude -p` (headless mode) with structured JSON output. This runs on the Max subscription without API keys. The `bin/wh` bash launcher handles invocation, logging, and checkpoint detection.
 
 No Agent SDK dependency — just subprocess calls to the Claude CLI.
 
+### MCP Swappability
+
+MCP servers are swappable by design. When transitioning analyses from MATLAB to Python, swap the server config. The graph, the plans, the provenance chains — none of it breaks. You can run both simultaneously during the transition.
+
 ---
 
-## Component 2: Knowledge Graph
+## Knowledge Graph
 
-### Recommendation: Neo4j (Community Edition) in Docker
+### Why Neo4j
 
-**Foundation: `neo4j-agent-memory`** (Neo4j Labs, `pip install neo4j-agent-memory`)
-
-Rather than writing graph memory from scratch, we extend `neo4j-agent-memory` which provides:
-- Graph-native memory with provenance tracking
-- Entity resolution (exact, fuzzy, and semantic matching)
-- Vector + graph hybrid search
-- Short-term / long-term memory layers
-
-We extend its `MemoryClient` with Wheeler's domain schema (Findings, Analyses, Hypotheses, etc.) and citation validation. This gives us the memory infrastructure for free while we focus on the research-specific logic.
-
-**Why Neo4j over alternatives:**
-
-- **Official MCP server exists** (`mcp-neo4j-cypher`): Already built, maintained by Neo4j Labs. Supports schema inspection, read/write Cypher queries. Can be added to Claude Code with one config line.
-- **`neo4j-agent-memory`**: Graph-native agent memory with entity resolution and provenance — our foundation layer.
-- **Cypher query language**: Expressive enough for complex provenance queries ("show me all analyses that used data from experiment X and led to findings about ON-pathway nonlinearities").
+- **Official MCP server** (`mcp-neo4j-cypher`): maintained by Neo4j Labs, schema inspection, read/write Cypher
+- **Cypher query language**: expressive enough for provenance queries ("show me all analyses that used data from experiment X and led to findings about ON-pathway nonlinearities")
+- **Browser UI**: visual graph explorer at localhost:7474 for inspecting research state
 - **Docker one-liner**: `docker run -p 7687:7687 -p 7474:7474 neo4j:community`
-- **Browser UI**: Neo4j comes with a visual graph explorer at localhost:7474 — great for visually inspecting your research state.
-- **Free**: Community Edition is fully open source (GPLv3).
 
 **Alternatives considered:**
 
@@ -142,19 +112,7 @@ We extend its `MemoryClient` with Wheeler's domain schema (Findings, Analyses, H
 | SQLite + graph schema | Simple, zero-config | Awkward graph queries, no traversal optimization |
 | Memgraph | Fast, Python-friendly, C++ core | Smaller ecosystem than Neo4j |
 
-### MCP Integration (Implemented)
-
-Wheeler uses **both** access patterns:
-
-1. **`mcp-neo4j-cypher`** server — raw Cypher for ad-hoc graph queries. Available as
-   `mcp__neo4j__read_neo4j_cypher` and `mcp__neo4j__write_neo4j_cypher`.
-
-2. **Wheeler MCP server** (`wheeler/mcp_server.py`) — 18 domain-specific tools like
-   `add_finding`, `query_open_questions`, `link_nodes`, `validate_citations` that
-   internally call Neo4j but expose a science-friendly interface. Claude doesn't
-   need to write Cypher for common operations.
-
-### Proposed Schema
+### Schema
 
 ```
 Node Types:
@@ -196,205 +154,19 @@ Relationship Types:
   (OpenQuestion)-[:AROSE_FROM]->(Finding)
 ```
 
-**Analysis node provenance** (content-addressable, inspired by Git/W3C PROV): Analysis nodes store `script_hash` (SHA256 of file contents at execution time), `language_version` (e.g., "R2024a"), and `parameters` (JSON) alongside `script_path`. This is a cryptographic receipt — not "the scientist says they used gamma=2.2" but "the system proves exactly what ran." If the current script on disk has a different hash than what's stored, downstream findings are flagged as potentially stale. The xKG paper (arxiv 2510.17795) reinforces the principle that code should be a first-class graph citizen with executability as a quality gate, though our specific schema is our own design.
+### Provenance Design
 
----
+**Content-addressable analysis nodes** (inspired by Git/W3C PROV): Analysis nodes store `script_hash` (SHA256 of file contents at execution time), `language_version` (e.g., "R2024a"), and `parameters` (JSON) alongside `script_path`. This is a cryptographic receipt — not "the scientist says they used gamma=2.2" but "the system proves exactly what ran."
 
-## Component 3: MATLAB Execution
+**Provenance capture** in `/wh:execute` mode: Wheeler calls MCP tools to build the chain — `hash_file` before execution, then `add_finding`/`add_dataset` for results, then `link_nodes` to connect Analysis → Dataset (USED_DATA) and Analysis → Finding (GENERATED).
 
-### Existing MCP Servers
+**Staleness detection**: The `detect_stale` MCP tool walks all Analysis nodes, re-hashes the script at `script_path`, and compares to stored `script_hash`. Mismatches flag the Analysis and all downstream Findings as STALE — the result may no longer be reproducible from the current code.
 
-Three MATLAB MCP servers already exist on GitHub:
-
-1. **`jigarbhoye04/MatlabMCP`** — Uses FastMCP framework, connects to shared MATLAB session via Engine API. Tools: `runMatlabCode`, `getVariable`. Async execution via `asyncio.to_thread`.
-
-2. **`Tsuchijo/matlab-mcp`** — Creates and executes MATLAB scripts/functions. Saves scripts to disk. Requires Python 3.11 (MATLAB Engine limitation).
-
-3. **`neuromechanist/matlab-mcp-tools`** — Most full-featured. Supports section execution (MATLAB cells via `%%`), workspace inspection, plot capture, new script creation. BSD-3-Clause license.
-
-### Recommendation: Start with `neuromechanist/matlab-mcp-tools`
-
-Best fit because:
-- Cell-based execution (%%): matches how electrophysiology analysis scripts are typically structured
-- Plot/figure capture: critical for your visual analyses
-- Workspace variable inspection: lets Claude see what's loaded
-- Active development, clean license
-
-### Setup
-
-```bash
-git clone https://github.com/neuromechanist/matlab-mcp-tools
-cd matlab-mcp-tools
-./setup-matlab-mcp.sh
-```
-
-Config for Claude Code:
-```json
-{
-  "mcpServers": {
-    "matlab": {
-      "command": "matlab-mcp-server",
-      "env": {
-        "MATLAB_PATH": "/Applications/MATLAB_R2024a.app"
-      }
-    }
-  }
-}
-```
-
-### MATLAB Licensing Note
-
-- UW likely has a network license server — check with IT
-- MATLAB Engine API for Python requires Python 3.10 or 3.11 (not 3.12+)
-- The Engine connects to a shared MATLAB session: run `matlab.engine.shareEngine` in MATLAB first
-
-### Swappability
-
-The key architectural point: when you transition analyses to Python, you just swap the MCP server config. The graph, the plans, the provenance — none of it breaks. You can even run both simultaneously during the transition period.
-
----
-
-## Component 4: Literature Search
-
-### Existing MCP Servers
-
-The MCP ecosystem has extensive coverage for academic literature:
-
-| Server | Sources | Key Features |
-|--------|---------|-------------|
-| `openags/paper-search-mcp` | arXiv, PubMed, bioRxiv, medRxiv, Semantic Scholar, Google Scholar | Multi-source, PDF download, MIT license |
-| `JackKuo666/semanticscholar-mcp-server` | Semantic Scholar | Paper search, author details, citation/reference graphs |
-| `aeghnnsw/pubmed-mcp` | PubMed | E-utilities API, batch operations, full metadata |
-| `JackKuo666/pubmed-mcp-server` | PubMed | Search, filter, retrieve, PDF download, analysis |
-
-### Recommendation: `openags/paper-search-mcp`
-
-Best for your use case because:
-- Covers all the sources you'd need (PubMed for neuroscience, bioRxiv for preprints, Semantic Scholar for citation graphs)
-- Single server, multiple sources — no need to manage 3 separate servers
-- PDF download capability — can pull full texts for deeper analysis
-- Simple Docker deployment: `docker run -i --rm mcp/paper-search`
-
-### Setup
-
-```json
-{
-  "mcpServers": {
-    "papers": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "mcp/paper-search"]
-    }
-  }
-}
-```
-
-Or with Semantic Scholar API key for better rate limits:
-```json
-{
-  "mcpServers": {
-    "papers": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/paper-search-mcp", "-m", "paper_search_mcp.server"],
-      "env": {
-        "SEMANTIC_SCHOLAR_API_KEY": "your-key"
-      }
-    }
-  }
-}
-```
-
----
-
-## Component 5: Slash Command Architecture
-
-Modes are implemented as slash commands in `.claude/commands/wh/*.md`. Each file has:
-1. **YAML frontmatter** — `allowed-tools` list that restricts what Claude can use
-2. **Markdown body** — system prompt defining Wheeler's behavior in that mode
-
-### Mode Enforcement via Frontmatter
-
-```yaml
-# .claude/commands/wh/chat.md
----
-name: wh:chat
-allowed-tools:
-  - Read
-  - Glob
-  - Grep
-  - mcp__wheeler__query_*
-  - mcp__wheeler__graph_context
-  - mcp__neo4j__read_neo4j_cypher
----
-```
-
-No Python hooks needed. Claude Code's native `allowed-tools` frontmatter blocks
-disallowed tools at the framework level.
-
-### Available Slash Commands
-
-| Command | Mode | Can do | Can't do |
-|---------|------|--------|----------|
-| `/wh:init` | Setup | Scaffold project, write config, seed graph | — |
-| `/wh:chat` | Chat | Read files, query graph | Write, execute |
-| `/wh:discuss` | Discussion | Read, query graph, structured reasoning | Write, execute |
-| `/wh:plan` | Planning | Read, write plans, graph, paper search | Execute code |
-| `/wh:write` | Writing | Read, write, edit, graph reads | Execute code |
-| `/wh:execute` | Execute | Everything, full provenance logging | — |
-| `/wh:handoff` | Transition | Propose independent tasks, write queue | — |
-| `/wh:queue` | Background | Independent task protocol | Judgment calls |
-| `/wh:ingest` | Bootstrap | Scan workspace, populate graph | — |
-| `/wh:reconvene` | Review | Read logs, query graph, present results | — |
-| `/wh:status` | Status | Query graph, read plans/logs | — |
-| `/wh:pause` | State | Capture context to `.plans/CONTEXT/` | — |
-| `/wh:resume` | Restore | Read context files, restore state | — |
-
-### Bundled Commands (Installation)
-
-Slash commands live in two places:
-- `.claude/commands/wh/*.md` — active commands used by Claude Code
-- `wheeler/_data/commands/*.md` — bundled copies shipped with the pip package
-
-`wheeler install` copies from `_data/` to `~/.claude/commands/wh/`.
-`wheeler install --link` creates symlinks instead (for development).
-The installer (`wheeler/installer.py`) tracks file hashes in a manifest for updates.
-
-### Workspace Context Injection
-
-Before every query, the engine scans the project directory (`wheeler/workspace.py`) and injects a compact summary into the system prompt:
-
-```
-## Workspace: /path/to/project
-Scripts (14): wheeler/ (8 files), tests/ (6 files)
-Data files (2): data/ (epochs.mat, responses.csv)
-Key paths: wheeler/, tests/, data/
-```
-
-This gives Wheeler awareness of what scripts and data files exist — like Claude Code knowing the codebase — without requiring the graph to be populated first. The `/wh:init` slash command walks the scientist through configuring project paths and displays the full scan results.
-
-Configuration in `wheeler.yaml`:
-```yaml
-project:
-  name: "retinal-circuits"
-  description: "Horizontal cell feedback in primate retina"
-paths:
-  code: ["scripts", "~/MATLAB/shared-lib"]
-  data: ["data", "/shared/ephys/2024"]
-  results: ["results"]
-  figures: ["figures"]
-  docs: ["writing"]
-workspace:
-  project_dir: "."
-  scan_patterns: ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
-  exclude_dirs: [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]
-```
-
-The `paths` section (configured by `/wh:init`) tells the workspace scanner where to look beyond the project root. Directories in `paths.code` and `paths.data` are scanned in addition to `workspace.project_dir`. This lets Wheeler discover scripts on a shared drive or data on a network mount.
+The xKG paper (arxiv 2510.17795) reinforces the principle that code should be a first-class graph citizen with executability as a quality gate, though our specific schema is our own design.
 
 ### Graph Context Injection
 
-Slash commands instruct Wheeler to call the `graph_context` MCP tool, which returns
-a size-limited summary (max 5 findings + 5 questions + 3 hypotheses, configured in
-`wheeler.yaml`). The implementation lives in `wheeler/graph/context.py`:
+Slash commands instruct Wheeler to call the `graph_context` MCP tool, which returns a size-limited summary (max 5 findings + 5 questions + 3 hypotheses, configured in `wheeler.yaml`). The implementation lives in `wheeler/graph/context.py`:
 
 ```
 graph_context MCP tool
@@ -404,207 +176,76 @@ graph_context MCP tool
         → return to Claude as tool result
 ```
 
-No programmatic prompt injection — Claude calls the tool when the slash command
-tells it to, and incorporates the result into its reasoning naturally.
-
-### Provenance Capture (Execute Mode)
-
-The `/wh:execute` slash command instructs Wheeler to log provenance after every
-analysis. Wheeler calls MCP tools to build the chain:
-
-1. `hash_file` — SHA-256 of the script before execution
-2. Run the analysis (MATLAB MCP or Python)
-3. `add_finding` / `add_dataset` — create result nodes
-4. `link_nodes` — connect Analysis → Dataset (USED_DATA) and Analysis → Finding (GENERATED)
-
-The Analysis node stores `script_path`, `script_hash`, `executed_at`, and links
-to inputs and outputs. This is a cryptographic receipt — not "the scientist says
-they used gamma=2.2" but "the system proves exactly what ran."
-
-**Staleness detection**: The `detect_stale` MCP tool (backed by
-`wheeler/graph/provenance.py`) walks all Analysis nodes, re-hashes the script
-at `script_path`, and compares to stored `script_hash`. Mismatches flag the
-Analysis and all downstream Findings as STALE.
+No programmatic prompt injection — Claude calls the tool when the slash command tells it to, and incorporates the result into its reasoning naturally.
 
 ---
 
-## Big Concepts
+## Design Concepts
 
-### Concept 6: Task Routing
+### Task Routing
 
-Plans decompose into tasks tagged by who should do them:
-- **"scientist"**: math derivations, conceptual modeling, experimental design, interpretation, interactive step-by-step coding
-- **"wheeler"**: literature search, boilerplate code, graph ops, data wrangling, first-draft writing
-- **"pair"**: analysis walkthroughs, debugging, writing revision
+Every task gets tagged by who does it:
 
-For v1 this is PLANNING MODE OUTPUT FORMAT ONLY — Wheeler generates tagged task lists, scientist decides when to act. No parallel execution yet.
+- **SCIENTIST**: math, conceptual modeling, experimental design, interpretation, judgment calls
+- **WHEELER**: literature search, boilerplate code, graph ops, data wrangling, writing drafts
+- **PAIR**: walkthroughs, debugging, revision, planning discussions
 
-Planning mode guidance: "When decomposing work, tag each task by assignee. The scientist is strong in math, physics intuition, conceptual reasoning, and wants interactive coding where they check every step. Wheeler handles literature search, boilerplate, graph ops, data wrangling, and drafts. Never try to do the scientist's thinking — route it to them."
+Wheeler never tries to do the scientist's thinking — route it to them. Planning mode generates tagged task lists; the scientist decides what to act on.
 
-### Concept 7: Anchor Figures
+### Anchor Figures
 
 Every Dataset and Analysis node can have an `anchor_figure` — a canonical visualization the scientist recognizes at a glance. A VISUAL CHECKSUM. Programmatic validation catches file corruption; anchor figures catch semantic errors (wrong cell, wrong condition, flipped sign) that only a trained eye spots.
 
-Behavior: display anchor figures whenever Wheeler references a Dataset or Analysis. Scientist flags "doesn't look right" = hard stop.
+Display anchor figures whenever Wheeler references a Dataset or Analysis. Scientist flags "doesn't look right" = hard stop.
 
-Anchor figure generation configured per data type in `wheeler.yaml`:
-```yaml
-anchor_figures:
-  contrast_response: "scripts/plot_contrast_response.m"
-  spike_raster: "scripts/plot_raster.m"
-```
+### Queue-Based Execution
 
-For v1: display only. v2+: auto-generation after analysis completion.
+Plan together (15 min), queue approved tasks, Wheeler grinds (20 min), reconvene with results + flagged checkpoints. Human at every decision point, machine doing the grinding.
 
-### Concept 8: Queue-Based Execution
+This is NOT Kosmos-style 12-hour autonomy. Decision points surface as flagged checkpoints rather than rabbit holes. The `/wh:handoff` → `wh queue` → `/wh:reconvene` cycle keeps the scientist in control while Wheeler does the work.
 
-The morning session produces a task queue. You and Wheeler talk through the problem, sharpen the question, approve tasks — then `/queue` kicks them off. Wheeler works in the background while you do other things. Decision points surface as flagged checkpoints rather than rabbit holes. You reconvene when there's something to review.
+### Epistemic Status Markers
 
-This is NOT Kosmos-style 12-hour autonomy. This is: plan together (15 min), queue approved tasks, Wheeler grinds (20 min), reconvene with results + flagged checkpoints. Human at every decision point, machine doing the grinding.
-
-New CLI commands (Phase 2+):
-- `/queue` — execute all approved tasks from current plan
-- `/status` — show progress on queued tasks
-- `/reconvene` — show completed results + flagged checkpoints
-
-For v1: Task nodes get the schema fields. `/queue` is manual (you tell Wheeler to do each task). v2+: actual background execution with checkpoint surfacing.
+In writing mode, visually distinguish validated claims (grounded in graph, provenance verified) from interpretive claims (reasoning, not graph-validated). Claims marked as graph-grounded or interpretation. This distinction must be visible in drafts.
 
 ---
 
 ## Kosmos-Inspired Improvements
 
-### 1. Graph-Driven Task Proposal
+### Graph-Driven Task Proposal
 
-In planning mode, Wheeler queries the graph for open questions without linked analyses, hypotheses without supporting findings, stale findings (old analysis, script hash changed), and PROPOSES investigation tasks based on what's MISSING. Kosmos's world model proposes next-cycle tasks from accumulated state — Wheeler's graph does the same but with human approval at every step.
+In planning mode, Wheeler queries the graph for open questions without linked analyses, hypotheses without supporting findings, stale findings — and PROPOSES investigation tasks based on what's MISSING. Kosmos's world model proposes next-cycle tasks from accumulated state; Wheeler's graph does the same but with human approval at every step.
 
-### 2. Investigation Cycles (Human-Gated)
+### Investigation Cycles (Human-Gated)
 
-`/investigate` command (Phase 3). Given objective + dataset, Wheeler runs N cycles of: autonomous work (analysis + lit search + graph update) → checkpoint (surfaces results + anchor figures + flagged decisions to scientist) → scientist approves/steers → next cycle. NOT 20 autonomous cycles like Kosmos. More like 3-5 cycles with human gate at each checkpoint. This combines Kosmos's iterative depth with Wheeler's human-in-the-loop trust.
+Given objective + dataset, Wheeler runs N cycles of: autonomous work → checkpoint → scientist approves/steers → next cycle. NOT 20 autonomous cycles like Kosmos. More like 3-5 cycles with human gate at each checkpoint. Combines Kosmos's iterative depth with Wheeler's human-in-the-loop trust.
 
-### 3. Discovery Synthesis
+### Discovery Synthesis
 
-After a series of execute-mode analyses or an investigation run, Wheeler auto-generates a structured summary: findings discovered, how they connect to existing hypotheses, new open questions generated, graph changes made. This feeds directly into writing mode. Not a full Kosmos-style paper — a reconvene summary.
+After a series of analyses, Wheeler auto-generates a structured summary: findings discovered, how they connect to existing hypotheses, new open questions generated, graph changes made. Feeds directly into writing mode via `/wh:reconvene`.
 
-### 4. Epistemic Status Markers
-
-In writing mode, visually distinguish validated claims (grounded in graph, provenance verified) from interpretive claims (reasoning, not graph-validated). Kosmos's data statements are 85.5% accurate but synthesis drops to 57.9% — Wheeler makes this distinction visible. Claims marked as ✅ graph-grounded or ⚠️ interpretation.
-
-### 5. Scaling Metrics
+### Scaling Metrics
 
 Track findings per execute session, graph nodes per week, hypotheses validated over time. Kosmos's strongest result is linear scaling of findings with cycles. Wheeler should demonstrate similar compounding value.
 
 ---
 
-## Component 6: Data Layer (Future)
+## Future: Data Layer (DuckDB)
 
-Not needed for MVP but important for full vision.
-
-### Recommendation: DuckDB
+Not needed yet but important for the full vision. DuckDB for structured queries over large datasets:
 
 - Columnar, analytical queries, zero config
-- Native Parquet support (great for large datasets)
-- Python API is excellent
+- Native Parquet support
 - Can query directly from file paths without import
-- Free and open source
-
-For your specific data types:
-- **Spike recordings**: Store metadata in DuckDB, raw data stays as .mat or .h5 files on disk
-- **Single-cell transcriptomics**: .h5ad files stay on disk, metadata in DuckDB
-- **Stimulus parameters**: Directly in DuckDB tables
+- **Spike recordings**: metadata in DuckDB, raw data stays as .mat/.h5
+- **Single-cell transcriptomics**: .h5ad on disk, metadata in DuckDB
+- **Stimulus parameters**: directly in DuckDB tables
 
 An MCP server wrapping DuckDB would expose tools like `query_data`, `list_datasets`, `get_dataset_info`.
 
 ---
 
-## Implementation Status
-
-### Done
-
-- Neo4j schema with typed nodes and provenance constraints
-- 12 slash commands covering the full workflow cycle (init, discuss, plan, execute, write, handoff, queue, reconvene, status, pause, resume, chat, ingest)
-- Wheeler MCP server with 18 tools (graph CRUD, citations, workspace, provenance)
-- Deterministic citation validation (regex + Cypher)
-- Workspace scanner with configurable `ProjectPaths`
-- Project scaffolding (`/wh:init`)
-- Headless task runner (`bin/wh queue/quick`)
-- Structured task logging with checkpoint detection
-- Installer with manifest tracking (`wheeler install`)
-- Pre-commit/pre-push hooks (API key safety, tests, mypy, ruff)
-- MATLAB MCP server configured and available
-- Config system with Pydantic models (`wheeler.yaml`)
-
-### Next
-
-- Literature search MCP integration (`paper-search-mcp`)
-- DuckDB data layer for structured queries over large datasets
-- Investigation cycles (`/wh:investigate`) — multi-cycle execution with human gates
-- Scaling metrics — findings per session, graph growth over time
-- Packaging for other scientists (getting-started guide, domain templates)
-
----
-
-## MCP Server Config
-
-The project `.mcp.json` configures all MCP servers. `/wh:init` creates this
-file via `merge_mcp_config()` from `wheeler/installer.py`.
-
-### Currently active
-
-```json
-{
-  "mcpServers": {
-    "neo4j": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["mcp-neo4j-cypher@latest"],
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "research-graph",
-        "NEO4J_DATABASE": "neo4j"
-      }
-    },
-    "wheeler": {
-      "type": "stdio",
-      "command": "/path/to/.venv/bin/python",
-      "args": ["-m", "wheeler.mcp_server"]
-    }
-  }
-}
-```
-
-- **neo4j** (`mcp-neo4j-cypher`): Raw Cypher read/write + schema inspection.
-  Used by slash commands that need ad-hoc graph queries.
-- **wheeler** (FastMCP, `wheeler/mcp_server.py`): 18 domain tools wrapping
-  existing modules — graph CRUD, citation validation, workspace scanning,
-  provenance. Loads config from `wheeler.yaml` at startup.
-
-### Available (add when needed)
-
-```json
-{
-  "matlab": {
-    "command": "matlab-mcp-server",
-    "env": { "MATLAB_PATH": "/Applications/MATLAB_R2024a.app" }
-  },
-  "papers": {
-    "command": "docker",
-    "args": ["run", "-i", "--rm", "mcp/paper-search"]
-  }
-}
-```
-
-- **matlab** (`neuromechanist/matlab-mcp-tools`): MATLAB execution, plot
-  capture, workspace inspection. Requires Python 3.10-3.11 for Engine API.
-- **papers** (`openags/paper-search-mcp`): Literature search across PubMed,
-  arXiv, bioRxiv, Semantic Scholar.
-
-MCP servers are swappable — when transitioning analyses from MATLAB to Python,
-swap the server config. The graph, plans, and provenance chains don't break.
-
----
-
-## Key Design Decisions Summary
+## Key Design Decisions
 
 | Decision | Choice | Rationale |
 | -------- | ------ | --------- |
@@ -612,34 +253,10 @@ swap the server config. The graph, plans, and provenance chains don't break.
 | Graph DB | Neo4j Community in Docker | Official MCP server, Cypher is expressive, visual browser at :7474, free |
 | Mode enforcement | YAML frontmatter `allowed-tools` | Replaces ~1500 lines of planned Python hooks with ~12 markdown files |
 | Independent work | `claude -p` via `bin/wh` | Headless mode, structured JSON output, no API key needed |
-| MATLAB | `matlab-mcp-tools` server | Cell execution, plot capture, workspace inspection |
+| MATLAB | `matlab-mcp-tools` server | Cell execution, plot capture, workspace inspection; swappable when migrating to Python |
 | Literature | `paper-search-mcp` | Multi-source (PubMed, arXiv, Semantic Scholar), PDF download |
 | CLI | Typer + Rich | `wheeler-tools` deterministic CLI for graph ops, citations, workspace |
 | Data models | Pydantic | Type-safe config, provenance, citations |
 | Config | YAML (`wheeler.yaml`) | Human-readable, `ProjectPaths` for flexible project layout |
 | Installation | `wheeler install` + manifest | Copies slash commands to `~/.claude/`, tracks hashes for updates |
-
----
-
-## What Wheeler Built vs. What Already Existed
-
-### Already existed (configured, not built)
-
-- Claude Code — interactive agent with tool use, MCP support, slash commands
-- Neo4j + `mcp-neo4j-cypher` — graph database with MCP server
-- MATLAB MCP — `matlab-mcp-tools`
-- Literature search MCP — `paper-search-mcp`
-
-### Wheeler built (the unique parts)
-
-- **Slash commands** (~12 markdown files) — mode-specific system prompts + tool restrictions
-- **Wheeler MCP server** (`wheeler/mcp_server.py`) — 18 FastMCP tools wrapping graph, citations, workspace
-- **Citation validation** (`wheeler/validation/`) — regex extraction + Cypher validation, deterministic
-- **Knowledge graph schema** (`wheeler/graph/`) — typed nodes, provenance chains, staleness detection
-- **Workspace scanner** (`wheeler/workspace.py`) — file discovery across configured `ProjectPaths`
-- **Project scaffolding** (`wheeler/scaffold.py`) — `/wh:init` directory detection, config writing
-- **Task logging** (`wheeler/task_log.py`) — structured logs for independent work, checkpoint detection
-- **Config system** (`wheeler/config.py`) — Pydantic models, `ProjectPaths`, `ProjectMeta`
-- **CLI tools** (`wheeler/tools/cli.py`) — deterministic graph ops, citation checks
-- **Installer** (`wheeler/installer.py`) — install/update/sync slash commands with manifest tracking
-- **Headless launcher** (`bin/wh`) — `claude -p` wrapper with logging and hooks
+| Data layer (future) | DuckDB | Zero-config, columnar, great for scientific data |
