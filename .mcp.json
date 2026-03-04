@@ -11,16 +11,6 @@
         "NEO4J_DATABASE": "neo4j"
       }
     },
-    "papers": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["paper-search-mcp@latest"]
-    },
-    "matlab": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["matlab-mcp-tools@latest"]
-    },
     "wheeler": {
       "type": "stdio",
       "command": "/Users/maxwellsdm/Documents/GitHub/wheeler/.venv/bin/python",
