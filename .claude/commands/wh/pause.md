@@ -7,6 +7,8 @@ allowed-tools:
   - Write
   - Glob
   - Grep
+  - TaskList
+  - TaskGet
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
@@ -39,17 +41,27 @@ Review the full conversation and extract:
 - Analysis in progress
 - Handoff tasks queued or proposed
 
-### 4. Open Decisions
+### 4. Team Task Status
+If an agent team is active, use `TaskList` and `TaskGet` to capture:
+- Team name
+- Completed tasks and their results
+- In-progress tasks
+- Pending/blocked tasks
+- Any checkpoint messages received
+
+Include this in the `.continue-here.md` so the next session knows to check `TaskList`.
+
+### 5. Open Decisions
 - Checkpoints flagged but not resolved
 - Forks where we haven't chosen a direction
 - Questions the scientist needs to answer
 
-### 5. Context That Would Be Lost
+### 6. Context That Would Be Lost
 - Insights from discussion that aren't in the graph yet
 - Reasoning behind decisions (the "why" that's only in conversation)
 - Hypotheses discussed but not formally recorded
 
-### 6. Suggested Next Action
+### 7. Suggested Next Action
 - What the scientist should do when they return
 - Which `/wh:*` command to start with
 
@@ -61,6 +73,7 @@ Paused: <timestamp>
 Investigation: <name or topic>
 Last mode: <plan|chat|execute|write|etc.>
 Active plan: <path or "none">
+Active team: <team name or "none">
 
 ## Current Position
 <Where we are in the investigation>
@@ -70,6 +83,9 @@ Active plan: <path or "none">
 
 ## Pending
 - <what's queued or in progress>
+
+## Team Status
+<team task summary if active, or "No active team">
 
 ## Open Decisions
 - <checkpoints, forks, questions needing judgment>
@@ -84,6 +100,7 @@ Active plan: <path or "none">
 ## Rules
 - Call `graph_context` to capture current graph state
 - Check `.plans/` for any active investigation plans and note their status
+- Check `TaskList` for any active team tasks and include their status
 - Check `.logs/` for any recent unreviewed task results
 - Be concise but complete — this file IS the handoff
 - After writing, tell the scientist the file is saved and what to do when they return

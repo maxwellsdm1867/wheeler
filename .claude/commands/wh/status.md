@@ -7,6 +7,8 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
+  - TaskList
+  - TaskGet
   - mcp__wheeler__graph_status
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
@@ -25,7 +27,16 @@ Check `.plans/` for:
 - Completed investigations
 
 ## Step 2: Task Status
-Check `.logs/` for:
+
+### Team tasks (check first)
+Use `TaskList` to check for active agent team tasks. If a team exists, show:
+- Completed tasks (with brief results)
+- In-progress tasks
+- Flagged checkpoints needing judgment
+- Pending/blocked tasks
+
+### Headless logs (fallback)
+If no team tasks found, check `.logs/`:
 - Run `python -m wheeler.log_summary` via Bash
 - Unreviewed completed tasks
 - Flagged checkpoints needing judgment
@@ -46,7 +57,7 @@ Use wheeler MCP tools:
 <investigations in progress, paused work, pending contexts>
 
 ## Recent Results
-<unreviewed logs, recent findings, flagged checkpoints>
+<team tasks or unreviewed logs, recent findings, flagged checkpoints>
 
 ## Graph Summary
 <node counts, recent findings, open questions, gaps>
@@ -60,7 +71,8 @@ Use wheeler MCP tools:
 | Situation | Suggest |
 |-----------|---------|
 | `.continue-here.md` exists | `/wh:resume` — pick up paused work |
-| Unreviewed task logs | `/wh:reconvene` — review results |
+| Active team with completed tasks | `/wh:reconvene` — review team results |
+| Unreviewed headless task logs | `/wh:reconvene` — review results |
 | CONTEXT.md without matching plan | `/wh:plan` — plan the discussed investigation |
 | Approved plan not yet executed | `/wh:execute` or `/wh:handoff` — start execution |
 | Flagged checkpoints | Present inline for quick decisions |

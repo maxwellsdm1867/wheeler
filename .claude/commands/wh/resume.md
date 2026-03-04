@@ -7,6 +7,8 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
+  - TaskList
+  - TaskGet
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
@@ -24,8 +26,14 @@ Read `.plans/.continue-here.md` if it exists. This has the full state from when 
 ## Step 2: Check Active Plans
 Read any `.plans/*.md` files (not .continue-here.md). Look for investigations with status `approved` or `in-progress`. These are active work.
 
-## Step 3: Check for Unreviewed Logs
-Run `python -m wheeler.log_summary` via Bash to see if any independent tasks completed since the last session. If there are unreviewed results, note them.
+## Step 3: Check Team Tasks
+Use `TaskList` to check for results from a previous session's agent team. If tasks exist, summarize:
+- Completed tasks and their results (use `TaskGet` for details)
+- In-progress or pending tasks that may need attention
+- Flagged checkpoints awaiting judgment
+
+## Step 3b: Check Headless Logs (fallback)
+If no team tasks found, run `python -m wheeler.log_summary` via Bash to see if any headless tasks completed since the last session. If there are unreviewed results, note them.
 
 ## Step 4: Query Graph State
 Call `graph_context` and `graph_gaps` wheeler MCP tools to understand current knowledge state. Look for:
@@ -42,7 +50,7 @@ Present a concise summary:
 <from .continue-here.md or inferred from plans/graph>
 
 ## Since Last Session
-- <completed tasks from .logs/>
+- <completed team tasks or headless tasks>
 - <new graph nodes>
 - <flagged checkpoints>
 
@@ -58,7 +66,8 @@ Choose the best next action based on what you find:
 
 | Situation | Route |
 |-----------|-------|
-| Unreviewed task logs exist | `/wh:reconvene` — review results first |
+| Active team with completed tasks | `/wh:reconvene` — review team results |
+| Unreviewed headless task logs | `/wh:reconvene` — review results first |
 | Plan approved but not executed | `/wh:execute` — pick up the plan |
 | Checkpoints need scientist judgment | Present them inline for quick decisions |
 | Investigation complete, need to write up | `/wh:write` — draft results |

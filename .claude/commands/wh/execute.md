@@ -75,9 +75,9 @@ Example:
 - **Wave 3** (sequential): model comparison — depends on both analyses
 
 **Execution**:
-- For each wave, use `TeamCreate` + background `Agent` per task
+- Use `TeamCreate` + spawn `Agent` per task (using `wheeler-worker` or `wheeler-researcher` subagent_type as appropriate, `run_in_background: true`)
 - All agents share the live Neo4j graph — one agent's `add_finding` is immediately queryable by another
-- Agents flag checkpoints via `add_question` which surface in real time
+- Agents flag checkpoints via `add_question` + `SendMessage` which surface in real time
 - Wait for all tasks in a wave to complete before starting the next wave
 - If a task in wave N fails or hits a checkpoint, downstream waves pause
 

@@ -7,6 +7,10 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
+  - TaskList
+  - TaskGet
+  - SendMessage
+  - TeamDelete
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
@@ -27,14 +31,23 @@ Read what happened while the scientist was away and present a synthesis.
 ### Step 0: Check Investigation Plans
 Read any `.plans/*.md` files with status `in-progress`. These show what was planned, what's done, and what's still pending. This gives structure to the reconvene — you're not just reading logs, you're checking progress against a plan.
 
-### Step 1: Review Task Logs
+### Step 1: Check Team Tasks
+Use `TaskList` to check for completed, flagged, or in-progress tasks from an active agent team. For each completed task, use `TaskGet` to read the full results. This is the primary source of independent work results.
+
+Look for:
+- **Completed tasks** — what finished and what it produced
+- **In-progress tasks** — still running (agents may be idle waiting for input)
+- **Flagged checkpoints** — agents hit decision points and sent messages
+
+### Step 1b: Check Headless Logs (fallback)
+If no team tasks are found, fall back to headless task logs:
 Run `python -m wheeler.log_summary` via Bash to get recent task results. Each entry has:
 - **task_id**, **status** (completed/flagged), **task_description**
 - **checkpoint_flags** — decisions deferred to the scientist
 - **result** — what the task produced
 - **citation_validation** — pass rate, invalid/stale citations
 
-If no logs are found, fall back to querying the graph for recent activity and say so.
+If neither team tasks nor logs are found, fall back to querying the graph for recent activity and say so.
 
 ### Step 2: Query the Graph
 Use wheeler MCP tools to query for recently added/modified nodes:
@@ -81,13 +94,17 @@ If an investigation plan exists with status `in-progress`:
 4. If all MET → suggest updating plan status to `completed`
 5. If gaps → include in NEXT section with specific tasks to close them
 
+## Cleanup
+After review, offer cleanup options:
+- **Team cleanup**: If an agent team is active and all tasks are done, offer to shut down the team (`SendMessage` shutdown requests to agents, then `TeamDelete`)
+- **Log archive**: If headless logs were reviewed, offer `python -m wheeler.log_summary --archive`
+
 ## Rules
 - Be a co-scientist, not a reporter. Challenge weak conclusions.
 - Distinguish real anomalies from noise — flag but don't over-interpret.
 - If a finding seems important but the graph around it is sparse, say so.
 - Display anchor figures for any findings that reference visual data.
-- After review, offer to archive processed logs: `python -m wheeler.log_summary --archive`
 
-Start by reviewing the task logs, then query the graph for additional context.
+Start by checking team tasks, then headless logs, then query the graph for additional context.
 
 $ARGUMENTS
