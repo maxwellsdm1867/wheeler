@@ -2,7 +2,9 @@
 
 ## Vision
 
-A co-scientist that runs natively inside Claude Code via `/wh:*` slash commands, backed by a knowledge graph, MCP servers, and a fluid workflow cycle. No custom orchestration layer — Claude Code *is* the orchestrator. Wheeler adds domain-specific modes, citation validation, provenance tracking, and structured independent work.
+Wheeler is a research operating system that runs inside Claude Code. It gives scientists a thinking partner with a memory — a knowledge graph where every claim traces to data, every analysis has a cryptographic receipt, and every conversation builds on the last.
+
+No custom orchestration layer. Claude Code *is* the orchestrator. Wheeler adds the research layer: `/wh:*` slash commands for domain-specific modes, MCP servers for the knowledge graph and tool execution, citation validation that's deterministic (regex + Cypher, never LLM self-judgment), and a fluid workflow cycle that's loose when the scientist is present and structured when Wheeler works independently.
 
 ### The Wheeler-Bohr Dynamic
 
@@ -390,75 +392,39 @@ The `paths` section (configured by `/wh:init`) tells the workspace scanner where
 
 ### Graph Context Injection
 
-Before every query, the orchestrator pulls relevant context:
+Slash commands instruct Wheeler to call the `graph_context` MCP tool, which returns
+a size-limited summary (max 5 findings + 5 questions + 3 hypotheses, configured in
+`wheeler.yaml`). The implementation lives in `wheeler/graph/context.py`:
 
-```python
-async def inject_graph_context(user_input: str) -> str:
-    """Pre-query: pull relevant graph context and prepend to prompt."""
-    
-    # Get recent findings
-    recent = await graph.query(
-        "MATCH (f:Finding) RETURN f ORDER BY f.date DESC LIMIT 5"
-    )
-    
-    # Get open questions
-    questions = await graph.query(
-        "MATCH (q:OpenQuestion) RETURN q ORDER BY q.priority DESC LIMIT 5"
-    )
-    
-    # Get active plan if any
-    plan = await graph.query(
-        "MATCH (p:Plan {status: 'active'})-[:CONTAINS]->(t:Task) RETURN p, t"
-    )
-    
-    context = f"""
-    ## Research Context (from knowledge graph)
-    
-    ### Recent Findings
-    {format_findings(recent)}
-    
-    ### Open Questions  
-    {format_questions(questions)}
-    
-    ### Active Plan
-    {format_plan(plan)}
-    
-    ## Scientist's Request
-    {user_input}
-    """
-    return context
 ```
+graph_context MCP tool
+    → fetch_context(config)
+        → Cypher: recent findings, open questions, active hypotheses
+        → format as compact markdown (< 500 tokens)
+        → return to Claude as tool result
+```
+
+No programmatic prompt injection — Claude calls the tool when the slash command
+tells it to, and incorporates the result into its reasoning naturally.
 
 ### Provenance Capture (Execute Mode)
 
-When code runs through Wheeler, a post-execution hook automatically captures provenance:
+The `/wh:execute` slash command instructs Wheeler to log provenance after every
+analysis. Wheeler calls MCP tools to build the chain:
 
-```python
-async def capture_analysis_provenance(script_path: str, params: dict, output_path: str):
-    """Post-execution: create Analysis node with cryptographic provenance."""
-    import hashlib
+1. `hash_file` — SHA-256 of the script before execution
+2. Run the analysis (MATLAB MCP or Python)
+3. `add_finding` / `add_dataset` — create result nodes
+4. `link_nodes` — connect Analysis → Dataset (USED_DATA) and Analysis → Finding (GENERATED)
 
-    script_hash = hashlib.sha256(Path(script_path).read_bytes()).hexdigest()
-    output_hash = hashlib.sha256(Path(output_path).read_bytes()).hexdigest()
+The Analysis node stores `script_path`, `script_hash`, `executed_at`, and links
+to inputs and outputs. This is a cryptographic receipt — not "the scientist says
+they used gamma=2.2" but "the system proves exactly what ran."
 
-    # Detect language version from active MCP server
-    lang_version = await detect_language_version()  # "R2024a" or "3.11"
-
-    await graph.write("""
-        CREATE (a:Analysis {
-            id: $id,
-            script_path: $script_path,
-            script_hash: $script_hash,
-            language_version: $lang_version,
-            parameters: $params,
-            executed_at: datetime(),
-            output_path: $output_path,
-            output_hash: $output_hash
-        })
-    """, ...)
-```
-
-**Staleness detection**: `wheeler-tools graph stale` walks all Analysis nodes, re-hashes the script at `script_path`, compares to stored `script_hash`. Mismatches flag the Analysis and all downstream Findings as STALE — the result may no longer be reproducible from the current code.
+**Staleness detection**: The `detect_stale` MCP tool (backed by
+`wheeler/graph/provenance.py`) walks all Analysis nodes, re-hashes the script
+at `script_path`, and compares to stored `script_hash`. Mismatches flag the
+Analysis and all downstream Findings as STALE.
 
 ---
 
