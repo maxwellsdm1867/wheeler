@@ -1,8 +1,10 @@
 # Wheeler
 
-A thinking partner for scientists. Named after John Archibald Wheeler.
+A thinking partner for scientists. Named after John Archibald Wheeler — Niels Bohr's longtime collaborator, known for coining terms like "black hole" and "quantum foam."
 
-Wheeler is a co-scientist that runs natively inside Claude Code via `/wh:*` slash commands, backed by a knowledge graph, citation validation, and a fluid workflow cycle. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
+Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud, circling an idea from every angle. Wheeler would push back, sharpen the question, sketch the math, test whether the intuition held. Neither could have done it alone — Bohr's physical intuition needed Wheeler's rigor, and Wheeler's formalism needed Bohr's instinct for what mattered. The best ideas emerged from the conversation itself, not from either person working in isolation.
+
+That's the model here. Wheeler is a co-scientist that runs natively inside Claude Code via `/wh:*` slash commands, backed by a knowledge graph, citation validation, and a fluid workflow cycle. You think out loud. Wheeler pushes back, queries the graph, checks the data, drafts the text. Every factual claim traces to a graph node. Every graph node traces to data. Every interaction is logged.
 
 ## How it works
 
