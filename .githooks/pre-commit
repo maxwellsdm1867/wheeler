@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Wheeler pre-commit hook
+# Checks: API key safety, tests, type checking, linting
+# Install: cp .githooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Bypass:  git commit --no-verify
+
+set -euo pipefail
+
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+DIM='\033[90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+FAILED=0
+
+pass() { echo -e "  ${GREEN}✓${RESET} $1"; }
+fail() { echo -e "  ${RED}✗${RESET} $1"; FAILED=1; }
+warn() { echo -e "  ${YELLOW}!${RESET} $1"; }
+info() { echo -e "  ${DIM}$1${RESET}"; }
+
+echo ""
+echo -e "  ${BOLD}Wheeler pre-commit${RESET}"
+echo ""
+
+# ── Check 1: API key safety ──────────────────────────────────────
+# Grep staged file contents (not working tree) for forbidden patterns
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+
+if [[ -n "$STAGED_FILES" ]]; then
+    API_PATTERNS=(
+        'ANTHROPIC_API_KEY'
+        'api\.anthropic\.com'
+        'import anthropic'
+        'from anthropic import'
+        'anthropic\.Anthropic\(\)'
+        'sk-ant-[a-zA-Z0-9_-]+'
+    )
+
+    API_FOUND=0
+    for pattern in "${API_PATTERNS[@]}"; do
+        # Check staged content, not working tree
+        while IFS=: read -r file line content; do
+            # Skip this hook file itself, CLAUDE.md (documents the rule), and test files
+            case "$file" in
+                .githooks/*|CLAUDE.md|README.md|ARCHITECTURE.md|tests/*) continue ;;
+            esac
+            echo -e "  ${RED}BLOCKED${RESET}: Direct API reference in ${BOLD}${file}:${line}${RESET}"
+            echo -e "  ${DIM}${content}${RESET}"
+            API_FOUND=1
+        done < <(git diff --cached -U0 --diff-filter=ACM -- $STAGED_FILES 2>/dev/null | \
+            awk -v pat="$pattern" '
+                /^--- / { next }
+                /^\+\+\+ / { file=substr($0,7); next }
+                /^@@ / { split($3,a,","); line=substr(a[1],2); next }
+                /^\+/ && $0 ~ pat { gsub(/^\+/, "", $0); print file ":" line ":" $0; line++ }
+                /^\+/ { line++ }
+            ')
+    done
+
+    if [[ $API_FOUND -eq 1 ]]; then
+        echo ""
+        fail "API key safety — Wheeler uses claude -p, not direct API calls."
+        echo ""
+    else
+        pass "API key safety"
+    fi
+else
+    pass "API key safety (no staged files)"
+fi
+
+# ── Check 2: Tests pass ──────────────────────────────────────────
+if [[ -d ".venv" ]]; then
+    info "Running tests..."
+    TEST_OUTPUT=$(.venv/bin/python -m pytest tests/ -q --tb=short 2>&1) || true
+    TEST_EXIT=${PIPESTATUS[0]:-$?}
+
+    # Check if pytest actually reported failures
+    if echo "$TEST_OUTPUT" | grep -qE "^(FAILED|ERROR)" || echo "$TEST_OUTPUT" | grep -qE "[0-9]+ failed"; then
+        FAIL_COUNT=$(echo "$TEST_OUTPUT" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo "?")
+        fail "Tests — ${FAIL_COUNT} failed"
+        echo "$TEST_OUTPUT" | grep -E "^(FAILED|ERROR|tests/)" | head -10 | while read -r line; do
+            echo -e "    ${DIM}${line}${RESET}"
+        done
+    else
+        PASS_COUNT=$(echo "$TEST_OUTPUT" | grep -oE '[0-9]+ passed' | head -1 || echo "")
+        pass "Tests ${DIM}(${PASS_COUNT})${RESET}"
+    fi
+else
+    warn "Tests skipped — .venv not found"
+fi
+
+# ── Check 3: Type checking ───────────────────────────────────────
+if command -v .venv/bin/mypy >/dev/null 2>&1; then
+    info "Running mypy..."
+    MYPY_OUTPUT=$(.venv/bin/mypy wheeler/ --ignore-missing-imports 2>&1) || true
+    if echo "$MYPY_OUTPUT" | grep -qE "^wheeler/.*: error:"; then
+        ERROR_COUNT=$(echo "$MYPY_OUTPUT" | grep -cE "^wheeler/.*: error:" || echo "?")
+        fail "Type checking — ${ERROR_COUNT} errors"
+        echo "$MYPY_OUTPUT" | grep -E "^wheeler/.*: error:" | head -5 | while read -r line; do
+            echo -e "    ${DIM}${line}${RESET}"
+        done
+    else
+        pass "Type checking"
+    fi
+else
+    warn "Type checking skipped — mypy not installed"
+fi
+
+# ── Check 4: Linting ─────────────────────────────────────────────
+if command -v .venv/bin/ruff >/dev/null 2>&1; then
+    info "Running ruff..."
+    RUFF_OUTPUT=$(.venv/bin/ruff check wheeler/ 2>&1) || true
+    if [[ -n "$RUFF_OUTPUT" ]] && echo "$RUFF_OUTPUT" | grep -qE "^wheeler/"; then
+        ERROR_COUNT=$(echo "$RUFF_OUTPUT" | grep -cE "^wheeler/" || echo "?")
+        fail "Linting — ${ERROR_COUNT} issues"
+        echo "$RUFF_OUTPUT" | head -5 | while read -r line; do
+            echo -e "    ${DIM}${line}${RESET}"
+        done
+    else
+        pass "Linting"
+    fi
+else
+    warn "Linting skipped — ruff not installed"
+fi
+
+# ── Result ────────────────────────────────────────────────────────
+echo ""
+if [[ $FAILED -eq 1 ]]; then
+    echo -e "  ${RED}${BOLD}Commit blocked.${RESET} Fix the issues above."
+    echo -e "  ${DIM}Tip: Use --no-verify to bypass. But fix the issues.${RESET}"
+    echo ""
+    exit 1
+else
+    echo -e "  ${GREEN}${BOLD}All checks passed.${RESET}"
+    echo ""
+    exit 0
+fi

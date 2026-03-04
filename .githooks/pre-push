@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Wheeler pre-push hook
+# Runs the full test suite before pushing to remote.
+# Catches anything that snuck past with --no-verify.
+
+set -euo pipefail
+
+RED='\033[31m'
+GREEN='\033[32m'
+DIM='\033[90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+echo ""
+echo -e "  ${BOLD}Wheeler pre-push${RESET}"
+echo ""
+
+if [[ ! -d ".venv" ]]; then
+    echo -e "  ${RED}✗${RESET} .venv not found — skipping tests"
+    exit 0
+fi
+
+echo -e "  ${DIM}Running full test suite...${RESET}"
+echo ""
+
+if .venv/bin/python -m pytest tests/ -v 2>&1; then
+    echo ""
+    echo -e "  ${GREEN}${BOLD}All tests passed. Pushing.${RESET}"
+    echo ""
+    exit 0
+else
+    echo ""
+    echo -e "  ${RED}${BOLD}Push blocked.${RESET} Tests are failing."
+    echo -e "  ${DIM}Fix tests before pushing. Use --no-verify to bypass.${RESET}"
+    echo ""
+    exit 1
+fi

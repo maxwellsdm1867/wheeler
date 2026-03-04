@@ -82,6 +82,16 @@ else
     warn "Claude Code CLI not found — install: npm install -g @anthropic-ai/claude-code"
 fi
 
+# ── Git hooks ─────────────────────────────────────────────────────
+if [[ -d "$WHEELER_DIR/.git" ]]; then
+    cp "$WHEELER_DIR/.githooks/pre-commit" "$WHEELER_DIR/.git/hooks/pre-commit"
+    cp "$WHEELER_DIR/.githooks/pre-push" "$WHEELER_DIR/.git/hooks/pre-push"
+    chmod +x "$WHEELER_DIR/.git/hooks/pre-commit" "$WHEELER_DIR/.git/hooks/pre-push"
+    step "Git hooks installed (pre-commit + pre-push)"
+else
+    warn "Not a git repo — skipping hook installation"
+fi
+
 # ── wh launcher ────────────────────────────────────────────────────
 chmod +x "$WHEELER_DIR/bin/wh"
 if [[ -L /usr/local/bin/wh ]] || [[ -f /usr/local/bin/wh ]]; then

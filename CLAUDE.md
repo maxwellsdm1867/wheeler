@@ -213,6 +213,23 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
+## Git Hooks
+
+Pre-commit and pre-push hooks guard the codebase. Install with `wh hooks install`
+or `bin/setup.sh` (auto-installs).
+
+**Pre-commit** (runs before every commit):
+1. API key safety — greps staged files for forbidden patterns (ANTHROPIC_API_KEY,
+   import anthropic, sk-ant-*, etc.). Blocks instantly.
+2. Tests pass — `pytest tests/ -q`. Blocks if any fail.
+3. Type checking — `mypy wheeler/`. Blocks on errors. Skips if mypy not installed.
+4. Linting — `ruff check wheeler/`. Blocks on errors. Skips if ruff not installed.
+
+**Pre-push** (runs before every push):
+- Full test suite with verbose output. Catches anything bypassed with --no-verify.
+
+Run checks manually without committing: `wh hooks test`
+
 ## No Direct API Calls — HARD RULE
 
 Wheeler runs on Max subscription. The engine strips `ANTHROPIC_API_KEY` at startup.

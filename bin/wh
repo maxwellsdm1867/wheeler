@@ -68,6 +68,10 @@ usage() {
     echo -e "  ${BOLD}Reconvene${RESET}"
     echo -e "    ${AMBER}wh reconvene${RESET}         ${DIM}Review independent results (opus)${RESET}"
     echo ""
+    echo -e "  ${BOLD}Development${RESET}"
+    echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
+    echo -e "    ${AMBER}wh hooks test${RESET}        ${DIM}Run all checks without committing${RESET}"
+    echo ""
     echo -e "  ${BOLD}Options${RESET}"
     echo -e "    ${DIM}Extra flags pass through to claude:${RESET}"
     echo -e "    ${AMBER}wh plan --verbose${RESET}"
@@ -203,6 +207,34 @@ ${LOG_SUMMARY}"
 
     status|st)
         run_headless "status" "Run the status check described in your system prompt." "haiku" "$DIM" "status" "2" "text" "$@"
+        ;;
+
+    # ── Hooks ─────────────────────────────────────────────────────
+    hooks)
+        HOOKS_CMD="${1:-}"
+        shift 2>/dev/null || true
+        case "$HOOKS_CMD" in
+            install)
+                if [[ ! -d "$WHEELER_DIR/.git" ]]; then
+                    die "Not a git repository"
+                fi
+                cp "$WHEELER_DIR/.githooks/pre-commit" "$WHEELER_DIR/.git/hooks/pre-commit"
+                cp "$WHEELER_DIR/.githooks/pre-push" "$WHEELER_DIR/.git/hooks/pre-push"
+                chmod +x "$WHEELER_DIR/.git/hooks/pre-commit" "$WHEELER_DIR/.git/hooks/pre-push"
+                echo -e "  ${GREEN}✓${RESET} Hooks installed to .git/hooks/"
+                ;;
+            test)
+                echo -e "  ${AMBER}${BOLD}Running all pre-commit checks...${RESET}"
+                echo ""
+                bash "$WHEELER_DIR/.githooks/pre-commit"
+                ;;
+            *)
+                echo -e "  ${BOLD}Usage:${RESET}"
+                echo -e "    ${AMBER}wh hooks install${RESET}   ${DIM}Install git hooks${RESET}"
+                echo -e "    ${AMBER}wh hooks test${RESET}      ${DIM}Run all checks manually${RESET}"
+                ;;
+        esac
+        exit 0
         ;;
 
     # ── Meta ────────────────────────────────────────────────────────
