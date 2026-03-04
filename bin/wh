@@ -139,6 +139,12 @@ command -v "$CLAUDE_BIN" >/dev/null 2>&1 || die "claude CLI not found. Install: 
 [[ -d "$WHEELER_DIR" ]] || die "Wheeler project not found at $WHEELER_DIR"
 [[ -f "$WHEELER_DIR/CLAUDE.md" ]] || die "No CLAUDE.md in $WHEELER_DIR — is this the right project?"
 
+# ── Pre-flight checks ─────────────────────────────────────────────
+# Quick Neo4j connectivity check — if it's down, MCP servers will hang
+if ! nc -z localhost 7687 2>/dev/null; then
+    echo -e "  ${AMBER}!${RESET} ${DIM}Neo4j not reachable on localhost:7687 — graph tools may be slow${RESET}"
+fi
+
 # ── Navigate ────────────────────────────────────────────────────────
 cd "$WHEELER_DIR"
 

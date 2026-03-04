@@ -181,7 +181,8 @@ def _get_toolbar():
     color = _MODE_COLORS.get(_current_mode, _AMBER)
     return HTML(
         f"  <style fg='{color}' bold='true'>{_current_mode.value}</style>"
-        f"  <style fg='#555555'>  /: commands  |  Alt+Enter: newline  |  Ctrl+R: history</style>"
+        f"  <style fg='#333333'>  \u2502  </style>"
+        f"<style fg='#555555'>/: commands  \u00b7  Alt+Enter: newline</style>"
     )
 
 
@@ -207,10 +208,8 @@ def _build_prompt_text() -> list:
     """Build prompt_toolkit formatted text."""
     color = _MODE_COLORS.get(_current_mode, _AMBER)
     return [
-        ("", " "),
-        (f"fg:{color} bold", f"{_current_mode.value}"),
-        ("", " "),
-        (f"fg:{_AMBER} bold", "> "),
+        ("", "  "),
+        (f"fg:{color}", "\u276f "),
     ]
 
 
@@ -226,12 +225,11 @@ def _create_keybindings() -> KeyBindings:
 
 
 def _get_rprompt(session: Session | None = None) -> HTML:
-    """Right-side prompt: turn count + session hint."""
-    color = _MODE_COLORS.get(_current_mode, _AMBER)
+    """Right-side prompt: subtle turn count."""
     turn_count = len(session.turns) // 2 if session else 0
     if turn_count > 0:
         return HTML(
-            f"<style fg='#333333'>turn {turn_count}</style>"
+            f"<style fg='#2a2a2a'>{turn_count}</style>"
         )
     return HTML("")
 

@@ -5,7 +5,7 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format. All
 
 ## Background Task Protocol
 1. Parse the task description
-2. Query the graph for relevant context before starting
+2. Check the graph context already in your system prompt — only query for specific nodes you need beyond that
 3. Execute the task completely
 4. Log ALL results to the graph:
    - Findings with confidence scores

@@ -40,4 +40,4 @@ After ingestion, report:
 - Relationships created
 - Suggested next steps (what analyses to run on the ingested data)
 
-Start by scanning the workspace and listing available data files.
+The workspace summary is already in your system prompt. Start by reviewing what files are listed there, then ask what to ingest.

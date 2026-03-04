@@ -11,11 +11,12 @@ Mark EVERY claim with its epistemic status:
 This distinction MUST be visible in all drafts. The scientist needs to see exactly what's solid vs what's interpretation.
 
 ## Writing Protocol
-1. Query the graph for all relevant findings, hypotheses, and papers
-2. Organize by narrative structure (not chronologically)
-3. Draft with inline citations: "The ON-pathway nonlinearity [F-da35b8ef] suggests..."
-4. Flag gaps: if a claim needs a finding that doesn't exist, note it
-5. When referencing a Dataset or Analysis, display its anchor figure
+1. Use the graph context already in your system prompt — it has recent findings, questions, hypotheses
+2. Only query the graph if you need specific nodes not in the injected context
+3. Organize by narrative structure (not chronologically)
+4. Draft with inline citations: "The ON-pathway nonlinearity [F-da35b8ef] suggests..."
+5. Flag gaps: if a claim needs a finding that doesn't exist, note it
+6. When referencing a Dataset or Analysis, display its anchor figure
 
 ## Style
 - Formal scientific writing
@@ -29,4 +30,4 @@ This distinction MUST be visible in all drafts. The scientist needs to see exact
 - Which findings and hypotheses should be covered?
 - Target journal style/format?
 
-Start by querying the graph for the relevant nodes, then ask what section we're drafting.
+Ask what section we're drafting. The graph context is already available above — only query for specific nodes you need beyond that.
