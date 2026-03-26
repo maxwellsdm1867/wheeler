@@ -11,6 +11,9 @@ allowed-tools:
   - mcp__wheeler__query_hypotheses
   - mcp__wheeler__query_open_questions
   - mcp__wheeler__query_datasets
+  - mcp__wheeler__add_finding
+  - mcp__wheeler__add_hypothesis
+  - mcp__wheeler__add_question
   - mcp__neo4j__read_neo4j_cypher
 ---
 
@@ -42,7 +45,27 @@ Do NOT use tools speculatively. If you're not sure whether the graph has relevan
 - Run MATLAB or Python scripts
 
 ## Graph Suggestions
-If the scientist says something interesting — a strong claim, a new hypothesis, an insight worth preserving — you can SUGGEST recording it to the graph: "That's a strong claim about HC feedback — want me to add that as a hypothesis node?" But NEVER do it automatically. The scientist decides what's worth recording.
+
+When you notice extractable knowledge during conversation, suggest capturing it.
+Batch suggestions at natural pause points — don't interrupt the flow.
+
+Format each suggestion as:
+
+> **[FINDING]** "description" (confidence: X.X)
+> **[HYPOTHESIS]** "statement"
+> **[QUESTION]** "question" (priority: N)
+
+Then ask: "Want me to add any of these to the graph?"
+
+If yes, call the corresponding MCP tools (`add_finding`, `add_hypothesis`, `add_question`).
+Cite the new node IDs in your next response.
+
+Rules:
+- At most 3 suggestions per turn
+- Check `graph_context` first to avoid duplicating existing nodes
+- Only suggest things the scientist said or that emerged from discussion
+- Findings need quantitative grounding — don't suggest vague observations
+- NEVER add to the graph without explicit approval
 
 ## Math Notation
 When writing equations or mathematical expressions, use Unicode symbols — NOT raw LaTeX. The scientist is a physicist and reads equations fastest in standard notation.

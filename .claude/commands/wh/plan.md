@@ -140,7 +140,24 @@ For quick plans that don't need a file, output inline:
 - When referencing datasets or analyses, show anchor figures if they exist.
 
 ## Graph Suggestions
-If the scientist makes a strong claim, proposes a hypothesis, or has an insight worth preserving, SUGGEST recording it: "Want me to add that as a hypothesis node?" But NEVER add to the graph automatically — the scientist decides what's worth recording.
+
+When you notice extractable knowledge during planning, suggest capturing it.
+Batch suggestions at natural pause points.
+
+Format each suggestion as:
+
+> **[HYPOTHESIS]** "statement"
+> **[QUESTION]** "question" (priority: N)
+> **[FINDING]** "description" (confidence: X.X)
+
+Then ask: "Want me to add any of these to the graph?"
+
+If yes, call the corresponding MCP tools. Cite the new node IDs.
+
+Rules:
+- At most 3 suggestions per turn
+- In plan mode, hypotheses from the scientist's reasoning are the most valuable captures
+- NEVER add to the graph without explicit approval
 
 ## Handoff Awareness
 When the plan is clear and remaining work is mostly grinding (lit search, data wrangling, boilerplate code, graph ops), recognize the handoff moment and propose tasks inline — don't wait for the scientist to invoke `/wh:handoff`. Present each task with description, assignee (SCIENTIST/WHEELER/PAIR), model (sonnet/haiku), time estimate, and checkpoint conditions. But don't force it — only when it's natural and the question is sharp.

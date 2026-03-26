@@ -133,7 +133,25 @@ When writing equations or mathematical expressions, use Unicode symbols — NOT 
 - Display equations on their own line with blank lines above/below
 
 ## Graph Suggestions
-If the scientist articulates a hypothesis or insight worth preserving, SUGGEST adding it to the graph. But NEVER add automatically.
+
+When you notice extractable knowledge during the discussion, suggest capturing it.
+Batch suggestions at natural pause points — don't interrupt the sharpening process.
+
+Format each suggestion as:
+
+> **[HYPOTHESIS]** "statement"
+> **[QUESTION]** "question" (priority: N)
+> **[FINDING]** "description" (confidence: X.X)
+
+Then ask: "Want me to add any of these to the graph?"
+
+If yes, call the corresponding MCP tools. Cite the new node IDs in your next response.
+
+Rules:
+- At most 3 suggestions per turn
+- In discuss mode, hypotheses and questions are most common — findings are rare
+- Check `graph_context` first to avoid duplicating existing nodes
+- NEVER add to the graph without explicit approval
 
 ## After Writing CONTEXT
 1. If `.plans/STATE.md` exists, update its frontmatter: set `investigation` to the new investigation slug, `context` to the CONTEXT file path, `status: discussing`, and `updated` to current timestamp. Update the body's "Active Investigation" section with the investigation name and research question.
