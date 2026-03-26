@@ -8,9 +8,7 @@ Run: python -m wheeler.mcp_server
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sys
 
 from fastmcp import FastMCP
 
@@ -24,6 +22,22 @@ from wheeler import workspace
 # Configure logging and load config once at startup
 configure_logging()
 _config: WheelerConfig = load_config()
+
+# Lazy-loaded singleton for semantic search
+_embedding_store: object | None = None
+
+
+def _get_embedding_store():
+    """Return the singleton EmbeddingStore, creating it on first call."""
+    global _embedding_store
+    if _embedding_store is None:
+        from wheeler.search.embeddings import EmbeddingStore
+
+        store_path = _config.search.store_path
+        _embedding_store = EmbeddingStore(store_path)
+        _embedding_store.load()
+    return _embedding_store
+
 
 mcp = FastMCP(
     "wheeler",
@@ -189,6 +203,75 @@ async def graph_gaps() -> dict:
     """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses."""
     result = await graph_tools.execute_tool("graph_gaps", {}, _config)
     return json.loads(result)
+
+
+# --- Semantic search ---
+
+
+@mcp.tool()
+async def search_findings(query: str, limit: int = 10, label: str = "") -> dict:
+    """Semantic search across knowledge graph nodes by meaning, not just keywords.
+
+    Uses embeddings to find findings, hypotheses, questions, and other nodes
+    that are semantically similar to the query text. Much more powerful than
+    keyword search — finds conceptually related results even with different wording.
+
+    Args:
+        query: Natural language search query
+        limit: Maximum results (default 10)
+        label: Optional filter by node type (Finding, Hypothesis, OpenQuestion, Paper, Dataset, Document)
+    """
+    try:
+        store = _get_embedding_store()
+        results = store.search(query, limit=limit, label_filter=label or None)
+        return {
+            "results": [
+                {
+                    "node_id": r.node_id,
+                    "label": r.label,
+                    "text": r.text,
+                    "score": round(r.score, 4),
+                }
+                for r in results
+            ],
+            "count": len(results),
+            "query": query,
+        }
+    except ImportError:
+        return {
+            "error": "Semantic search not available. Install with: pip install wheeler[search]",
+            "results": [],
+            "count": 0,
+        }
+    except Exception as exc:
+        return {
+            "error": f"Search failed: {exc}",
+            "results": [],
+            "count": 0,
+        }
+
+
+@mcp.tool()
+async def index_node(node_id: str, label: str, text: str) -> dict:
+    """Add or update a node's semantic embedding for search.
+
+    Call this after creating or updating a node to make it searchable.
+    The embedding is generated from the text content using a local model.
+
+    Args:
+        node_id: The node ID (e.g., F-3a2b)
+        label: Node type (Finding, Hypothesis, etc.)
+        text: The text content to embed
+    """
+    try:
+        store = _get_embedding_store()
+        store.add(node_id, label, text)
+        store.save()
+        return {"status": "indexed", "node_id": node_id, "label": label}
+    except ImportError:
+        return {"error": "Semantic search not available. Install with: pip install wheeler[search]"}
+    except Exception as exc:
+        return {"error": f"Indexing failed: {exc}"}
 
 
 # --- Citation validation ---

@@ -62,8 +62,24 @@ class ModelsConfig(BaseModel):
     execute: str = "sonnet"
 
 
+class SearchConfig(BaseModel):
+    """Semantic search configuration."""
+
+    enabled: bool = True
+    store_path: str = ".wheeler/embeddings"
+    model: str = "BAAI/bge-small-en-v1.5"
+
+
+class GraphConfig(BaseModel):
+    """Graph backend selection."""
+    backend: str = "neo4j"  # "neo4j" or "kuzu"
+    kuzu_path: str = ".kuzu"
+
+
 class WheelerConfig(BaseModel):
     neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
+    graph: GraphConfig = Field(default_factory=GraphConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
     mcp_config_path: str = ".mcp.json"
     max_turns: int = 10
     context_max_findings: int = 5

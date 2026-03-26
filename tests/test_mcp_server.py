@@ -1,6 +1,7 @@
 """Tests for wheeler.mcp_server module."""
 
 import json
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,11 +11,6 @@ from wheeler.mcp_server import mcp
 
 class TestToolRegistration:
     """Verify all expected tools are registered with FastMCP."""
-
-    @pytest.fixture()
-    def tools(self):
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(mcp.list_tools())
 
     @pytest.mark.asyncio
     async def test_all_expected_tools_registered(self):
@@ -44,13 +40,15 @@ class TestToolRegistration:
             "init_schema",
             "query_papers",
             "query_documents",
+            "search_findings",
+            "index_node",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 23
+        assert len(tools) == 25
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
@@ -187,3 +185,83 @@ class TestValidateCitations:
         assert result["valid"] == 1
         assert result["results"][0]["status"] == "valid"
         assert result["results"][1]["status"] == "not_found"
+
+
+class TestSearchFindings:
+    """search_findings delegates to EmbeddingStore — mock it."""
+
+    @pytest.mark.asyncio
+    async def test_search_returns_structure(self):
+        @dataclass
+        class FakeResult:
+            node_id: str
+            label: str
+            text: str
+            score: float
+
+        mock_results = [
+            FakeResult(node_id="F-test1234", label="Finding", text="test finding", score=0.95),
+        ]
+        mock_store = MagicMock()
+        mock_store.search.return_value = mock_results
+        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+            from wheeler.mcp_server import search_findings
+
+            result = await search_findings("test query", limit=5)
+        assert result["count"] == 1
+        assert result["results"][0]["node_id"] == "F-test1234"
+        assert result["results"][0]["score"] == 0.95
+        assert result["query"] == "test query"
+
+    @pytest.mark.asyncio
+    async def test_search_handles_import_error(self):
+        with patch("wheeler.mcp_server._get_embedding_store", side_effect=ImportError("no fastembed")):
+            from wheeler.mcp_server import search_findings
+
+            result = await search_findings("test")
+        assert "error" in result
+        assert result["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_search_passes_label_filter(self):
+        mock_store = MagicMock()
+        mock_store.search.return_value = []
+        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+            from wheeler.mcp_server import search_findings
+
+            await search_findings("test", label="Finding")
+        mock_store.search.assert_called_once_with("test", limit=10, label_filter="Finding")
+
+    @pytest.mark.asyncio
+    async def test_search_empty_label_passes_none(self):
+        mock_store = MagicMock()
+        mock_store.search.return_value = []
+        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+            from wheeler.mcp_server import search_findings
+
+            await search_findings("test", label="")
+        mock_store.search.assert_called_once_with("test", limit=10, label_filter=None)
+
+
+class TestIndexNode:
+    """index_node delegates to EmbeddingStore — mock it."""
+
+    @pytest.mark.asyncio
+    async def test_index_node_delegates(self):
+        mock_store = MagicMock()
+        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+            from wheeler.mcp_server import index_node
+
+            result = await index_node("F-test1234", "Finding", "test text")
+        assert result["status"] == "indexed"
+        assert result["node_id"] == "F-test1234"
+        mock_store.add.assert_called_once_with("F-test1234", "Finding", "test text")
+        mock_store.save.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_index_handles_import_error(self):
+        with patch("wheeler.mcp_server._get_embedding_store", side_effect=ImportError("no fastembed")):
+            from wheeler.mcp_server import index_node
+
+            result = await index_node("F-test1234", "Finding", "test text")
+        assert "error" in result

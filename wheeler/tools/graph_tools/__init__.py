@@ -11,11 +11,11 @@ import json
 import logging
 
 from wheeler.config import WheelerConfig
-
-logger = logging.getLogger(__name__)
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS
 
 from . import mutations, queries
+
+logger = logging.getLogger(__name__)
 
 # --- Tool registry: maps tool names to handler functions ---
 
@@ -210,6 +210,32 @@ TOOL_DEFINITIONS = [
             "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
         },
         "required": [],
+    },
+    {
+        "name": "search_findings",
+        "description": (
+            "Semantic search across knowledge graph nodes by meaning. "
+            "Finds conceptually related results even with different wording."
+        ),
+        "parameters": {
+            "query": {"type": "string", "description": "Natural language search query"},
+            "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+            "label": {"type": "string", "description": "Filter by node type (Finding, Hypothesis, etc.)", "default": ""},
+        },
+        "required": ["query"],
+    },
+    {
+        "name": "index_node",
+        "description": (
+            "Add or update a node's semantic embedding for search. "
+            "Call after creating or updating a node."
+        ),
+        "parameters": {
+            "node_id": {"type": "string", "description": "Node ID (e.g., F-3a2b)"},
+            "label": {"type": "string", "description": "Node type (Finding, Hypothesis, etc.)"},
+            "text": {"type": "string", "description": "Text content to embed"},
+        },
+        "required": ["node_id", "label", "text"],
     },
 ]
 

@@ -19,7 +19,7 @@ The workflow is the skeleton. The graph is the connective tissue.
 
 > Named after John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
-Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
+Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Zero-config graph backend (Kuzu) -- no Docker required. Powered by Claude Max subscription.
 
 ---
 
@@ -135,7 +135,7 @@ In write mode, research claims are validated deterministically (regex + Cypher, 
 
 ## Setup
 
-**Prerequisites:** Python 3.11+, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), Docker (for Neo4j)
+**Prerequisites:** Python 3.11+, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription)
 
 Everything runs locally. No cloud accounts, no API keys, no data leaves your machine.
 
@@ -148,11 +148,27 @@ bash bin/setup.sh
 Or manually:
 
 ```bash
-docker compose up -d                    # start Neo4j
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[test]"
 wheeler-tools graph init
 ```
+
+**Graph backend** — Wheeler supports two backends, configured in `wheeler.yaml`:
+
+| Backend | Setup | Best for |
+|---------|-------|----------|
+| **Kuzu** (recommended) | Zero-config. ~4MB pip package, data in `.kuzu/` | Solo research, laptops, getting started |
+| **Neo4j** | `docker compose up -d` | Multi-user, existing Neo4j workflows |
+
+Set `graph.backend: kuzu` or `graph.backend: neo4j` in `wheeler.yaml`. Kuzu needs no Docker, no server, no configuration.
+
+**Semantic search** (optional):
+
+```bash
+pip install -e ".[search]"             # adds fastembed (~33MB model, local-only)
+```
+
+Enables `search_findings` and `index_node` MCP tools for meaning-based search across the graph. Configure via `search.enabled`, `search.store_path`, and `search.model` in `wheeler.yaml`. Embeddings persist to `.wheeler/embeddings/`.
 
 After setup, restart Claude Code and verify MCP servers with `/mcp`.
 
@@ -183,7 +199,7 @@ Claude Code (interactive)
     │       └── System prompt: workflow protocol
     │
     ├── MCP Servers
-    │       ├── wheeler (23 tools) — graph CRUD, context, citations, provenance
+    │       ├── wheeler (25 tools) — graph CRUD, context, citations, search, provenance
     │       ├── neo4j — raw Cypher for ad-hoc queries
     │       ├── matlab — MATLAB execution (optional)
     │       └── papers — literature search (optional)
@@ -205,13 +221,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
 ```text
 wheeler/
 ├── config.py                # Pydantic models, YAML loader, logging config
-├── mcp_server.py            # FastMCP — 23 tools exposed to Claude Code
+├── mcp_server.py            # FastMCP — 25 tools exposed to Claude Code
 ├── graph/
-│   ├── driver.py            # Centralized Neo4j driver
+│   ├── backend.py           # GraphBackend ABC + get_backend() factory
+│   ├── driver.py            # Neo4j driver (legacy, used by neo4j backend)
 │   ├── schema.py            # Node types, relationships, constraints
 │   ├── context.py           # Tier-separated context injection
 │   ├── provenance.py        # Script hashing, staleness detection
 │   └── trace.py             # Provenance chain traversal
+├── search/
+│   ├── embeddings.py        # EmbeddingStore — fastembed + persistence
+│   └── ...                  # Semantic search over graph nodes
 ├── tools/
 │   ├── graph_tools/         # Mutations + queries + registry dispatch
 │   └── cli.py               # CLI (Typer + Rich)
@@ -256,7 +276,7 @@ The workflow and memory are in place. The next layer is agents that watch the gr
   <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/tests-209%20passing-brightgreen" alt="tests 209 passing">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license MIT">
-  <img src="https://img.shields.io/badge/neo4j-knowledge%20graph-008CC1?logo=neo4j&logoColor=white" alt="Neo4j">
-  <img src="https://img.shields.io/badge/MCP-23%20tools-orange" alt="MCP 23 tools">
+  <img src="https://img.shields.io/badge/graph-Neo4j%20%7C%20Kuzu-008CC1" alt="Neo4j | Kuzu">
+  <img src="https://img.shields.io/badge/MCP-25%20tools-orange" alt="MCP 25 tools">
   <img src="https://img.shields.io/badge/Claude%20Code-native-cc785c?logo=anthropic&logoColor=white" alt="Claude Code native">
 </p>

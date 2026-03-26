@@ -139,6 +139,8 @@ Claude Code + /wh:* slash commands + MCP servers
 Claude Code (opus/sonnet/haiku based on task)
     ↓
 MCP Servers (Neo4j, MATLAB, papers, wheeler-mcp)
+    ↓
+Graph Backend (Neo4j or Kuzu via GraphBackend ABC)
 ```
 
 For headless/independent work: `claude -p` with structured output.
@@ -150,15 +152,20 @@ For headless/independent work: `claude -p` with structured output.
 - `.claude/commands/wh/*.md` — Slash commands with YAML frontmatter (tool restrictions)
 - `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher, batched)
 - `wheeler/validation/ledger.py` — Provenance ledger, logs every interaction
+- `wheeler/graph/backend.py` — `GraphBackend` ABC + `get_backend(config)` factory
+- `wheeler/graph/kuzu_backend.py` — Kuzu implementation (sync Kuzu wrapped with asyncio.to_thread)
+- `wheeler/graph/neo4j_backend.py` — Neo4j adapter wrapping existing driver.py
 - `wheeler/graph/driver.py` — Centralized Neo4j driver management (single connection pool)
 - `wheeler/graph/context.py` — Size-limited graph context injection with tier separation
 - `wheeler/graph/schema.py` — Neo4j schema constraints, indexes, and `generate_node_id()`
 - `wheeler/graph/provenance.py` — File hashing, analysis provenance, staleness detection
 - `wheeler/workspace.py` — Workspace scanner: file discovery, context formatting
 - `wheeler/tools/graph_tools/` — Graph tools package (mutations.py + queries.py + registry dispatch)
+- `wheeler/search/embeddings.py` — `EmbeddingStore` (fastembed + numpy, file-based persistence)
+- `wheeler/search/backfill.py` — `backfill_embeddings()` for existing nodes, `TEXT_FIELDS` mapping
 - `wheeler/tools/cli.py` — wheeler-tools deterministic CLI
-- `wheeler/mcp_server.py` — FastMCP server exposing 23 tools to Claude Code
-- `wheeler/config.py` — YAML config loader + `configure_logging()`
+- `wheeler/mcp_server.py` — FastMCP server exposing 25 tools to Claude Code
+- `wheeler/config.py` — YAML config loader, `GraphConfig`, `SearchConfig`, `configure_logging()`
 - `.plans/STATE.md` — Global investigation state, read first by every workflow
 - `.plans/{name}-SUMMARY.md` — Execution summary with graph nodes created and deviations
 - `.plans/{name}-VERIFICATION.md` — Success criteria verification with citation audit
@@ -183,13 +190,16 @@ Config in `wheeler.yaml` under `workspace:`.
 
 ## MCP Server
 
-Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 23 tools
+Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 25 tools
 wrapping existing modules — same functions the CLI uses. Configured in `.mcp.json`.
 
 Tools: graph_status, graph_context, add_finding, add_hypothesis, add_question, link_nodes,
 add_dataset, add_paper, add_document, set_tier, query_findings, query_hypotheses,
 query_open_questions, query_datasets, query_papers, query_documents, graph_gaps,
-extract_citations, validate_citations, scan_workspace, detect_stale, hash_file, init_schema.
+extract_citations, validate_citations, scan_workspace, detect_stale, hash_file, init_schema,
+search_findings, index_node.
+
+Search tools (`search_findings`, `index_node`) degrade gracefully when fastembed is not installed.
 
 ## Logging
 
@@ -211,6 +221,7 @@ Loggers in: config, driver, schema, context, provenance, graph_tools, mutations,
 8. Task routing — tag by assignee and cognitive type. Never do the scientist's thinking.
 9. Anchor figures — display canonical visualizations when referencing datasets or analyses
 10. Structure scales with presence — loose when interactive, strict when independent
+11. Zero-config local graph — Kuzu backend works out of the box, no Docker needed
 
 ## Personality
 
@@ -227,7 +238,8 @@ they don't depend on each other.
 
 ## Stack
 
-Python 3.11+, Neo4j Community (Docker), Typer + Rich, Pydantic
+Python 3.11+, Neo4j Community (Docker) or Kuzu (embedded), Typer + Rich, Pydantic
+Optional: fastembed + numpy (semantic search), kuzu (local graph backend)
 MCP: mcp-neo4j-cypher, matlab-mcp-tools, paper-search-mcp, wheeler-mcp (FastMCP)
 
 ## Environment Setup
@@ -235,6 +247,8 @@ MCP: mcp-neo4j-cypher, matlab-mcp-tools, paper-search-mcp, wheeler-mcp (FastMCP)
 ```bash
 source .venv/bin/activate
 pip install -e ".[test]"
+pip install -e ".[search]"  # optional: fastembed + numpy for semantic search
+pip install -e ".[kuzu]"    # optional: Kuzu embedded graph backend
 ```
 
 The `.venv` was created with `/opt/homebrew/bin/python3.14`. The system default Python

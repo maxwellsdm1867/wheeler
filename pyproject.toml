@@ -24,11 +24,6 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 
-[project.urls]
-Homepage = "https://github.com/maxwellsdm1867/wheeler"
-Repository = "https://github.com/maxwellsdm1867/wheeler.git"
-Issues = "https://github.com/maxwellsdm1867/wheeler/issues"
-Documentation = "https://github.com/maxwellsdm1867/wheeler/blob/main/ARCHITECTURE.md"
 dependencies = [
     "typer>=0.9",
     "rich>=13.0",
@@ -39,10 +34,24 @@ dependencies = [
     "unicodeit>=0.7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/maxwellsdm1867/wheeler"
+Repository = "https://github.com/maxwellsdm1867/wheeler.git"
+Issues = "https://github.com/maxwellsdm1867/wheeler/issues"
+Documentation = "https://github.com/maxwellsdm1867/wheeler/blob/main/ARCHITECTURE.md"
+
 [project.optional-dependencies]
+kuzu = [
+    "kuzu>=0.8",
+]
+search = [
+    "fastembed>=0.4",
+    "numpy>=1.24",
+]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "numpy>=1.24",
 ]
 
 [project.scripts]
