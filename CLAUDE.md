@@ -129,7 +129,17 @@ Models assigned by cognitive demand, not by mode:
 
 Config in `wheeler.yaml` under `models:`.
 
-## Architecture
+## Architecture: Three Layers
+
+```
+ACTS         /wh:* slash commands              What you DO
+FILE SYSTEM  knowledge/*.json, .plans/, .logs/ What you KNOW
+GRAPH        metadata + relationships          How things CONNECT
+```
+
+Acts (slash commands) operate on files and graph. Files are the source of
+truth for all content. The graph is an index — metadata, relationships,
+embeddings, file pointers. The graph is a library catalog, not the books.
 
 ```
 Claude Code + /wh:* slash commands + MCP servers
@@ -140,18 +150,19 @@ Claude Code (opus/sonnet/haiku based on task)
     ↓
 MCP Servers (Neo4j, MATLAB, papers, wheeler-mcp)
     ↓
-Graph Backend (Neo4j or Kuzu via GraphBackend ABC)
+knowledge/*.json ←→ Graph Backend (Neo4j or Kuzu)
 ```
 
 For headless/independent work: `claude -p` with structured output.
 
 ## Key Files
 
-- `ARCHITECTURE.md` — Full technical spec
-- `bin/wh` — Bash launcher, headless task runner (queue/quick/status/dream/hooks)
-- `.claude/commands/wh/*.md` — Slash commands with YAML frontmatter (tool restrictions)
-- `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher, batched)
-- `wheeler/validation/ledger.py` — Provenance ledger, logs every interaction
+- `ARCHITECTURE.md` — Full technical spec (three-layer architecture)
+- `wheeler/models.py` — Pydantic v2 models for all node types, prefix mappings (source of truth)
+- `wheeler/knowledge/store.py` — Knowledge file I/O: read, write, list, delete (atomic writes)
+- `wheeler/knowledge/render.py` — Markdown rendering for `wh show`
+- `wheeler/knowledge/migrate.py` — Migrate existing graph nodes to JSON files
+- `wheeler/config.py` — YAML config loader, `GraphConfig`, `SearchConfig`, `configure_logging()`
 - `wheeler/graph/backend.py` — `GraphBackend` ABC + `get_backend(config)` factory
 - `wheeler/graph/kuzu_backend.py` — Kuzu implementation (sync Kuzu wrapped with asyncio.to_thread)
 - `wheeler/graph/neo4j_backend.py` — Neo4j adapter wrapping existing driver.py
@@ -163,9 +174,12 @@ For headless/independent work: `claude -p` with structured output.
 - `wheeler/tools/graph_tools/` — Graph tools package (mutations.py + queries.py + registry dispatch)
 - `wheeler/search/embeddings.py` — `EmbeddingStore` (fastembed + numpy, file-based persistence)
 - `wheeler/search/backfill.py` — `backfill_embeddings()` for existing nodes, `TEXT_FIELDS` mapping
-- `wheeler/tools/cli.py` — wheeler-tools deterministic CLI
-- `wheeler/mcp_server.py` — FastMCP server exposing 25 tools to Claude Code
-- `wheeler/config.py` — YAML config loader, `GraphConfig`, `SearchConfig`, `configure_logging()`
+- `wheeler/tools/cli.py` — Typer CLI: `show`, `migrate`, graph ops, citations
+- `wheeler/mcp_server.py` — FastMCP server exposing 26 tools to Claude Code
+- `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher, batched)
+- `bin/wh` — Bash launcher, headless task runner (queue/quick/status/dream/show/hooks)
+- `.claude/commands/wh/*.md` — Slash commands with YAML frontmatter (tool restrictions)
+- `knowledge/` — JSON knowledge files (one per graph node, source of truth)
 - `.plans/STATE.md` — Global investigation state, read first by every workflow
 - `.plans/{name}-SUMMARY.md` — Execution summary with graph nodes created and deviations
 - `.plans/{name}-VERIFICATION.md` — Success criteria verification with citation audit
@@ -190,11 +204,11 @@ Config in `wheeler.yaml` under `workspace:`.
 
 ## MCP Server
 
-Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 25 tools
+Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 26 tools
 wrapping existing modules — same functions the CLI uses. Configured in `.mcp.json`.
 
-Tools: graph_status, graph_context, add_finding, add_hypothesis, add_question, link_nodes,
-add_dataset, add_paper, add_document, set_tier, query_findings, query_hypotheses,
+Tools: graph_status, graph_context, show_node, add_finding, add_hypothesis, add_question,
+link_nodes, add_dataset, add_paper, add_document, set_tier, query_findings, query_hypotheses,
 query_open_questions, query_datasets, query_papers, query_documents, graph_gaps,
 extract_citations, validate_citations, scan_workspace, detect_stale, hash_file, init_schema,
 search_findings, index_node.
