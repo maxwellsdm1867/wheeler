@@ -17,7 +17,7 @@ You bring the scientific judgment. Wheeler handles the grinding.
 
 ---
 
-**Every claim cites a graph node.** Wheeler answers with `[NODE_ID]` citations. Every citation is deterministically validated — regex extraction, batched Cypher lookup, provenance chain verification. Not LLM self-judgment. The validation is tiered:
+**Every claim should cite a graph node.** Wheeler is instructed to answer with `[NODE_ID]` citations in every mode. Claims without citations are flagged as UNGROUNDED. In writing and execution modes, `validate_citations` is called automatically after output — deterministic validation via regex extraction and batched Cypher lookup, not LLM self-judgment. The validation is tiered:
 
 ```text
 you: "What do we know about ON parasol contrast responses?"
