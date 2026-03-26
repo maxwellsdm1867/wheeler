@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">WHEELER</h1>
-  <p align="center">A lightweight orchestration layer for scientists co-working with Claude Code.</p>
+  <p align="center">Context engineering for scientific research with Claude Code.</p>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/built%20on-Claude%20Code-orange" alt="Claude Code"></a>
 </p>
 
-Slash commands, a knowledge graph, citation validation, and a fluid workflow cycle — all running locally on your machine inside your terminal. No API keys. No cloud services. No per-token costs. Wheeler runs entirely on your Claude Max subscription.
+Wheeler gives Claude a structured memory for your research — a knowledge graph where findings trace back to data, analyses carry cryptographic receipts, and every conversation builds on the last. Different tools extract different kinds of context depending on what's needed: provenance chains for verification, tier-separated findings for writing, gap analysis for planning, citation validation for drafts.
 
 You bring the scientific judgment. Wheeler handles the grinding.
 
@@ -17,32 +17,65 @@ You bring the scientific judgment. Wheeler handles the grinding.
 
 ---
 
-**Every claim should cite a graph node.** Wheeler is instructed to answer with `[NODE_ID]` citations in every mode. Claims without citations are flagged as UNGROUNDED. In writing and execution modes, `validate_citations` is called automatically after output — deterministic validation via regex extraction and batched Cypher lookup, not LLM self-judgment. The validation is tiered:
+### The graph is the context
+
+Without Wheeler, Claude starts every session cold. With Wheeler, Claude sees:
 
 ```text
-you: "What do we know about ON parasol contrast responses?"
+## Research Context (from knowledge graph)
 
-wheeler: The parasol ON cells show a contrast response index of 0.73 +/- 0.04
-[F-3a2b], derived from Naka-Rushton fits [A-7e2d] on the March 2024
-recordings [D-9f1c]. This is consistent with the hypothesis that ON-pathway
-cells have higher contrast sensitivity than OFF [H-1b4c], though we only
-have data from one prep so far.
+### Established Knowledge (reference)
+- [F-3a2b] Parasol ON Rin = 142 +/- 23 MOhm (confidence: 0.92)
+- [F-7c1d] Midget ON Rin = 312 +/- 45 MOhm (confidence: 0.88)
+- [P-9e0f] Gerstner 1995 — Spike Response Model framework
 
-  citations  F-3a2b ✓ valid    A-7e2d ✓ valid    D-9f1c ✓ valid    H-1b4c ~ weak
+### Recent Work (generated)
+- [F-a1b2] Cross-prediction VP loss at q=200Hz: parasol 0.15, midget 0.22
+- [H-c3d4] Parasol and midget may share spike generation (status: open)
+
+### Open Questions
+- [Q-e5f6] Is the VP difference biologically meaningful or within noise? (priority: 9)
 ```
+
+This is context engineering — the graph provides **typed, tiered, provenance-tracked context** that Claude can't get from just reading files. Different tools extract different slices:
+
+| Tool | What context it provides | When you need it |
+|------|------------------------|-----------------|
+| `graph_context` | Recent findings (split by tier), open questions, hypotheses | Every session start |
+| `query_findings` | Search findings by keyword | Looking up specific results |
+| `graph_gaps` | Orphaned papers, unreported findings, stale analyses | Planning next investigation |
+| `validate_citations` | Provenance chain verification for each cited node | Writing drafts, verification |
+| `graph_status` | Node counts by type | Quick health check |
+| `detect_stale` | Analyses whose scripts changed since execution | Before relying on old results |
+| `query_papers` | Literature nodes in the graph | Connecting methods to sources |
+
+### Claims have different levels
+
+Not every statement needs a citation. Wheeler distinguishes:
+
+| Claim type | Example | Citation needed? |
+|-----------|---------|-----------------|
+| **Graph-grounded fact** | "Parasol Rin = 142 MOhm [F-3a2b]" | Yes — cite the Finding node |
+| **Interpretation** | "This suggests shared spike generation" | No node yet — marked with epistemic status |
+| **Method reference** | "We used the SRM from Gerstner [P-9e0f]" | Yes — cite the Paper node |
+| **Provenance claim** | "Derived from March recordings [D-9f1c]" | Yes — cite the Dataset node |
+| **Speculation** | "Maybe the frequency dependence is an artifact" | No — this is thinking out loud |
+| **Common knowledge** | "RGCs project to the LGN" | No — textbook facts don't need graph nodes |
+
+In **writing mode**, every factual claim about *your research* must cite a node — interpretations are marked explicitly. In **chat/discuss mode**, citation is encouraged but not enforced — the conversation is exploratory.
+
+When citations are present, they're validated deterministically (regex + Cypher, not LLM self-judgment):
 
 | Status | Meaning |
 | ------ | ------- |
-| **VALID** | Node exists, full provenance chain verified (e.g., Finding ← Analysis ← Dataset) |
-| **MISSING_PROVENANCE** | Node exists but lacks required upstream links (e.g., Finding without a source Analysis) |
-| **STALE** | Node exists but upstream script has been modified since execution — results may not be reproducible |
-| **NOT_FOUND** | Node ID not in graph — hallucinated or deleted |
+| **VALID** | Node exists, full provenance chain verified (Finding <- Analysis <- Dataset) |
+| **MISSING_PROVENANCE** | Node exists but lacks upstream links |
+| **STALE** | Node exists but upstream script modified — results may not reproduce |
+| **NOT_FOUND** | Node ID not in graph |
 
-**Runs 100% locally.** Wheeler uses Claude Code (your Max subscription) for reasoning, a local Neo4j instance (Docker) for the knowledge graph, and local MCP servers for tool execution. No API keys are needed or allowed — the codebase strips `ANTHROPIC_API_KEY` at startup and pre-commit hooks block any direct API imports. Your data never leaves your machine.
+### Runs 100% locally
 
-**Structure scales with presence.** Loose and creative when you're there. Structured and auditable when Wheeler works alone.
-
-**Wheeler never does your thinking.** Every task gets tagged — SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Wheeler flags decision points as checkpoints instead of guessing.
+Wheeler uses Claude Code (your Max subscription) for reasoning, a local Neo4j instance (Docker) for the knowledge graph, and local MCP servers for tool execution. No API keys are needed or allowed — the codebase strips `ANTHROPIC_API_KEY` at startup and pre-commit hooks block any direct API imports. Your data never leaves your machine.
 
 ---
 
@@ -89,6 +122,7 @@ cd ~/my-project && claude    # open Claude Code in your project
 /wh:execute     # run analyses, update graph
 /wh:ask         # query the graph, trace provenance
 /wh:dream       # graph consolidation (promote tiers, link orphans)
+/wh:ingest      # bootstrap graph from existing code, data, papers
 /wh:pause       # capture state for later
 /wh:resume      # restore context from previous session
 ```
@@ -129,7 +163,7 @@ wh status                                     # quick status check
  └─────────────────────────────────────────────────────┘
 ```
 
-**Together** — freeform conversation. Graph and tools are available but optional. Say something interesting and Wheeler will *suggest* recording it. Never automatically. Use `/wh:ask` to query the graph and trace provenance chains. Use `/wh:dream` to consolidate the graph (promote tiers, link orphans, flag duplicates).
+**Together** — freeform conversation. Graph and tools are available but optional. Say something interesting and Wheeler will *suggest* recording it. Never automatically.
 
 **Handoff** — when the remaining work is grinding. Wheeler proposes tasks in dependency waves with checkpoint conditions. You approve, modify, or keep talking.
 
@@ -137,23 +171,31 @@ wh status                                     # quick status check
 
 **Reconvene** — Wheeler reads the logs, presents: completed (with citations), flagged (needs your judgment), surprises, next steps. Cycle repeats.
 
+**Wheeler never does your thinking.** Every task gets tagged — SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Wheeler flags decision points as checkpoints instead of guessing.
+
 ## Context Tiers
 
-Every graph node is tagged as `reference` (established knowledge -- papers, verified data) or `generated` (Wheeler's own findings). When Wheeler injects graph context, it separates these into **Established Knowledge** and **Recent Work** sections. Papers are always reference-tier. Use `set_tier` to promote generated findings after verification.
+Every graph node is tagged as `reference` (established knowledge) or `generated` (new work from the current investigation).
+
+- **Reference** — papers, verified findings, validated analyses, existing datasets. The foundation you build on.
+- **Generated** — fresh findings, new hypotheses, draft documents. Work in progress.
+
+When Wheeler injects graph context, it separates these so the agent (and you) can distinguish what's established from what's new. Papers are always reference-tier. Use `set_tier` to promote generated findings after verification.
 
 ## Full Provenance Chain
 
-Wheeler tracks provenance from literature through analysis to written output:
+Wheeler tracks a complete chain from literature through analysis to written output:
 
 ```text
 Paper (reference)
-  -> Analysis (script_hash, params)
-       -> Dataset (path, hash)
-       -> Finding (generated)
-            -> Document (draft/revision/final)
+  ──INFORMED──> Analysis (script_hash, params)
+                  ──USED_DATA──> Dataset (path, hash)
+                  ──GENERATED──> Finding (generated → reference after verification)
+                                   ──SUPPORTS──> Hypothesis
+                                   ──APPEARS_IN──> Document (draft/revision/final)
 ```
 
-New node types: **Document** (prefix W) for written artifacts, **Paper** (prefix P) for literature. New relationships: INFORMED (paper informed an analysis), BASED_ON (finding based on paper), APPEARS_IN (node cited in a document).
+Every link is queryable. "What went into this draft?" "Where did this finding come from?" "Which papers informed our methods?" "Is anything stale?"
 
 ## Architecture
 
@@ -164,7 +206,7 @@ Claude Code (interactive)
     │       └── MCP Servers: Neo4j, MATLAB, papers, wheeler-mcp
     │
 bin/wh (headless)
-    └── wh queue/quick: claude -p with structured logging
+    └── wh queue/quick/dream: claude -p with structured logging
             └── .logs/*.json (structured task logs)
 ```
 
@@ -179,23 +221,24 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details and design rat
 
 ## Modes
 
-| Mode | Can do | Can't do |
-| ---- | ------ | -------- |
-| **chat** | Read, query graph | Write, execute |
-| **plan** | Read, write, graph, paper search | Execute code |
-| **write** | Read, write, edit, graph reads | Execute code |
-| **pair** | Full read/write/execute + MATLAB | Agents, auto graph writes |
-| **execute** | Everything | -- |
-| **ask** | Read, graph reads, provenance tracing | Write, execute |
-| **dream** | Graph reads/writes, tier promotion | Bash, agents |
-| **ingest** | Read, write, graph, web search, agents | MATLAB |
+| Mode | What it does | Tools available |
+| ---- | ------------ | --------------- |
+| **chat** | Quick discussion, no execution | Read, graph queries |
+| **discuss** | Sharpen the question before planning | Read, write, graph, web search |
+| **plan** | Structure an investigation | Read, write, graph, paper search |
+| **write** | Draft text with strict citation enforcement | Read, write, edit, graph reads, validation |
+| **pair** | Live analysis co-work | Full read/write/execute + MATLAB |
+| **execute** | Run analyses with full provenance | Everything |
+| **ask** | Query the graph, trace provenance | Read, graph reads |
+| **dream** | Graph consolidation — promote, link, flag | Graph reads/writes, tier promotion |
+| **ingest** | Bootstrap graph from code, data, papers | Read, write, graph, web search, agents |
 
 ## MCP Servers
 
 | Server | Purpose |
 | ------ | ------- |
 | `neo4j` | Knowledge graph (Cypher read/write) |
-| `wheeler` | 23 tools: graph CRUD, citations, workspace, provenance, papers, documents, tiers |
+| `wheeler` | 23 tools: context, graph CRUD, citations, provenance, papers, documents, tiers |
 | `matlab` | MATLAB execution (optional) |
 | `papers` | Literature search: PubMed, arXiv, Semantic Scholar (optional) |
 
