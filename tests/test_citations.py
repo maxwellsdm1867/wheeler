@@ -26,7 +26,7 @@ class TestCitationExtraction:
         assert extract_citations(text) == ["PL-abcd1234"]
 
     def test_extract_all_prefixes(self):
-        prefixes = ["PL", "F", "H", "Q", "E", "A", "D", "P", "C", "T"]
+        prefixes = ["PL", "F", "H", "Q", "E", "A", "D", "P", "C", "T", "W"]
         for prefix in prefixes:
             text = f"Node [{prefix}-abcd] found."
             result = extract_citations(text)

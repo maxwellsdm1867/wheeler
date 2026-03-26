@@ -33,19 +33,24 @@ class TestToolRegistration:
             "query_datasets",
             "graph_gaps",
             "add_dataset",
+            "add_paper",
+            "add_document",
+            "set_tier",
             "extract_citations",
             "validate_citations",
             "scan_workspace",
             "detect_stale",
             "hash_file",
             "init_schema",
+            "query_papers",
+            "query_documents",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 18
+        assert len(tools) == 23
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):

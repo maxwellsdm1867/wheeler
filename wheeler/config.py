@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 _DEFAULT_CONFIG_PATH = Path("wheeler.yaml")
@@ -79,7 +83,25 @@ def load_config(path: Path | None = None) -> WheelerConfig:
     """
     config_path = path or _DEFAULT_CONFIG_PATH
     if config_path.exists():
+        logger.info("Loading config from %s", config_path)
         with open(config_path) as f:
             data = yaml.safe_load(f) or {}
         return WheelerConfig(**data)
+    logger.info("No config file at %s — using defaults", config_path)
     return WheelerConfig()
+
+
+def configure_logging(level: str | None = None) -> None:
+    """Configure Wheeler logging. Call once at application entry points.
+
+    Level resolution: argument > WHEELER_LOG_LEVEL env var > INFO default.
+    """
+    resolved = (level or os.environ.get("WHEELER_LOG_LEVEL", "INFO")).upper()
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
+        datefmt="%H:%M:%S",
+    ))
+    root = logging.getLogger("wheeler")
+    root.setLevel(resolved)
+    root.addHandler(handler)

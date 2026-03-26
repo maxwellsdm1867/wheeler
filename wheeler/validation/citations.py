@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
 from wheeler.config import WheelerConfig
+
+logger = logging.getLogger(__name__)
 from wheeler.graph.schema import PREFIX_TO_LABEL
 
 # Matches [F-3a2b], [PL-0012abcd], etc.
 CITATION_PATTERN = re.compile(
-    r"\[((?:PL|F|H|Q|E|A|D|P|C|T)-[0-9a-f]{4,8})\]"
+    r"\[((?:PL|F|H|Q|E|A|D|P|C|T|W)-[0-9a-f]{4,8})\]"
 )
 
 
@@ -56,6 +59,7 @@ _PROVENANCE_RULES: dict[str, list[tuple[str, str]]] = {
     "Finding": [("GENERATED|PRODUCED", "Analysis|Experiment")],
     "Analysis": [("USED_DATA", "Dataset")],
     "Hypothesis": [("SUPPORTS|CONTRADICTS", "Finding")],
+    "Document": [("APPEARS_IN", "Finding|Paper|Analysis|Hypothesis")],
 }
 
 
@@ -64,36 +68,56 @@ async def validate_citations(
 ) -> list[CitationResult]:
     """Validate all citations in text against Neo4j.
 
-    For each citation:
-    1. Check the node exists
-    2. Check provenance relationships (label-specific rules)
+    Batched for performance: single query checks all node existence,
+    single query per label checks provenance rules.
+
+    Returns partial results if Neo4j fails mid-validation — never crashes
+    the caller. Citations that couldn't be checked get NOT_FOUND status.
     """
     node_ids = extract_citations(text)
     if not node_ids:
         return []
 
-    from wheeler.graph.context import _get_driver
-    driver = _get_driver(config)
+    from wheeler.graph.driver import get_async_driver
+    driver = get_async_driver(config)
     results: list[CitationResult] = []
+
+    # Separate valid IDs from unknown prefixes
+    valid_ids: list[tuple[str, str]] = []  # (node_id, label)
+    for node_id in node_ids:
+        label = _label_from_id(node_id)
+        if label is None:
+            results.append(CitationResult(
+                node_id=node_id,
+                status=CitationStatus.NOT_FOUND,
+                details=f"Unknown prefix: {_prefix_from_id(node_id)}",
+            ))
+        else:
+            valid_ids.append((node_id, label))
+
+    if not valid_ids:
+        return results
+
     try:
         async with driver.session(database=config.neo4j.database) as session:
-            for node_id in node_ids:
-                label = _label_from_id(node_id)
-                if label is None:
-                    results.append(CitationResult(
-                        node_id=node_id,
-                        status=CitationStatus.NOT_FOUND,
-                        details=f"Unknown prefix: {_prefix_from_id(node_id)}",
-                    ))
-                    continue
+            # Step 1: Batch existence check — one query for all nodes
+            by_label: dict[str, list[str]] = {}
+            for node_id, label in valid_ids:
+                by_label.setdefault(label, []).append(node_id)
 
-                # Check node exists
+            found_nodes: dict[str, dict] = {}
+            for label, ids in by_label.items():
                 result = await session.run(
-                    f"MATCH (n:{label} {{id: $id}}) RETURN n",
-                    id=node_id,
+                    f"MATCH (n:{label}) WHERE n.id IN $ids RETURN n.id AS id, n",
+                    ids=ids,
                 )
-                record = await result.single()
-                if record is None:
+                records = [r async for r in result]
+                for rec in records:
+                    found_nodes[rec["id"]] = dict(rec["n"])
+
+            # Step 2: Process each citation
+            for node_id, label in valid_ids:
+                if node_id not in found_nodes:
                     results.append(CitationResult(
                         node_id=node_id,
                         status=CitationStatus.NOT_FOUND,
@@ -102,40 +126,32 @@ async def validate_citations(
                     ))
                     continue
 
-                # Check provenance if rules exist for this label
+                # Step 3: Provenance check — single query per rule
                 prov_status = CitationStatus.VALID
                 prov_detail = ""
                 if label in _PROVENANCE_RULES:
                     for rel_pattern, target_pattern in _PROVENANCE_RULES[label]:
-                        rels = rel_pattern.split("|")
-                        targets = target_pattern.split("|")
-                        found = False
-                        for rel in rels:
-                            for target in targets:
-                                check = await session.run(
-                                    f"MATCH (n:{label} {{id: $id}})"
-                                    f"<-[:{rel}]-(t:{target}) "
-                                    f"RETURN count(t) AS cnt",
-                                    id=node_id,
-                                )
-                                rec = await check.single()
-                                if rec and rec["cnt"] > 0:
-                                    found = True
-                                    break
-                            if found:
-                                break
-                        if not found:
+                        check = await session.run(
+                            f"MATCH (n:{label} {{id: $id}})"
+                            f"<-[:{rel_pattern}]-(t) "
+                            f"WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
+                            f"RETURN count(t) AS cnt",
+                            id=node_id,
+                            targets=target_pattern.split("|"),
+                        )
+                        rec = await check.single()
+                        if not rec or rec["cnt"] == 0:
                             prov_status = CitationStatus.MISSING_PROVENANCE
                             prov_detail = (
                                 f"{label} lacks required provenance: "
                                 f"{rel_pattern} from {target_pattern}"
                             )
 
-                # Check staleness for Analysis nodes
+                # Step 4: Staleness check for Analysis nodes
                 if prov_status == CitationStatus.VALID and label == "Analysis":
                     try:
                         from wheeler.graph.provenance import hash_file
-                        node_data = record["n"]
+                        node_data = found_nodes[node_id]
                         sp = node_data.get("script_path")
                         sh = node_data.get("script_hash")
                         if sp and sh:
@@ -145,9 +161,9 @@ async def validate_citations(
                                 prov_detail = f"Script file not found: {sp}"
                             elif hash_file(p) != sh:
                                 prov_status = CitationStatus.STALE
-                                prov_detail = f"Script has been modified since analysis ran"
+                                prov_detail = "Script has been modified since analysis ran"
                     except Exception:
-                        pass  # staleness check failure shouldn't block validation
+                        pass
 
                 results.append(CitationResult(
                     node_id=node_id,
@@ -155,8 +171,18 @@ async def validate_citations(
                     label=label,
                     details=prov_detail,
                 ))
-    finally:
-        pass  # Driver is a singleton — don't close it
+    except Exception as exc:
+        logger.warning("Citation validation failed mid-batch: %s", exc)
+        # Graph failed mid-validation — mark unchecked citations as NOT_FOUND
+        checked = {r.node_id for r in results}
+        for node_id, label in valid_ids:
+            if node_id not in checked:
+                results.append(CitationResult(
+                    node_id=node_id,
+                    status=CitationStatus.NOT_FOUND,
+                    label=label,
+                    details="Graph unavailable during validation",
+                ))
     return results
 
 

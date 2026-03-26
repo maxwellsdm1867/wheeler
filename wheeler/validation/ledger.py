@@ -70,8 +70,8 @@ def create_entry(
 
 async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> None:
     """Store a ledger entry as a Ledger node in Neo4j."""
-    from wheeler.graph.context import _get_driver
-    driver = _get_driver(config)
+    from wheeler.graph.driver import get_async_driver
+    driver = get_async_driver(config)
     try:
         async with driver.session(database=config.neo4j.database) as session:
             await session.run(

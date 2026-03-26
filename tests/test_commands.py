@@ -8,19 +8,21 @@ import yaml
 
 COMMANDS_DIR = Path(__file__).parent.parent / ".claude" / "commands" / "wh"
 EXPECTED_COMMANDS = [
+    "ask",
     "chat",
-    "plan",
-    "write",
+    "discuss",
+    "dream",
     "execute",
     "handoff",
-    "reconvene",
     "ingest",
-    "status",
-    "queue",
-    "pause",
-    "resume",
-    "discuss",
     "pair",
+    "pause",
+    "plan",
+    "queue",
+    "reconvene",
+    "resume",
+    "status",
+    "write",
 ]
 STALE_ROOT = Path(__file__).parent.parent / ".claude" / "commands"
 
@@ -61,3 +63,17 @@ def test_queue_has_arguments():
     path = COMMANDS_DIR / "queue.md"
     content = path.read_text()
     assert "$ARGUMENTS" in content, "queue.md should reference $ARGUMENTS"
+
+
+# Commands that update .plans/STATE.md must have Write permission
+STATE_MD_WRITERS = ["plan", "execute", "reconvene", "pause", "handoff", "init", "discuss"]
+
+
+def test_state_md_writers_have_write_permission():
+    for cmd in STATE_MD_WRITERS:
+        path = COMMANDS_DIR / f"{cmd}.md"
+        content = path.read_text()
+        parts = content.split("---", 2)
+        frontmatter = yaml.safe_load(parts[1])
+        tools = frontmatter["allowed-tools"]
+        assert "Write" in tools, f"{cmd}.md updates STATE.md but lacks Write permission"

@@ -4,6 +4,8 @@ description: Review results from independent background tasks
 argument-hint: "[--archive]"
 allowed-tools:
   - Read
+  - Write
+  - Edit
   - Bash
   - Glob
   - Grep
@@ -17,6 +19,9 @@ allowed-tools:
   - mcp__wheeler__query_hypotheses
   - mcp__wheeler__query_open_questions
   - mcp__wheeler__detect_stale
+  - mcp__wheeler__validate_citations
+  - mcp__wheeler__extract_citations
+  - mcp__wheeler__graph_status
   - mcp__neo4j__read_neo4j_cypher
 ---
 
@@ -91,8 +96,15 @@ If an investigation plan exists with status `in-progress`:
    - [PARTIAL] Criterion 2 — data loaded but analysis not complete
    - [UNMET] Criterion 3 — no findings yet
    ```
-4. If all MET → suggest updating plan status to `completed`
+4. If all MET → update plan frontmatter `status` to `completed` and `updated` timestamp
 5. If gaps → include in NEXT section with specific tasks to close them
+
+### Step 5: Write Structured Artifacts
+After completing the synthesis and verification:
+
+1. If `.plans/<name>-SUMMARY.md` does not exist, create it using the same template as `/wh:execute` (see execute.md). Include all tasks completed, graph nodes created, deviations, checkpoints, and success criteria status gathered in Steps 0-4.
+2. If all success criteria are MET (or all WHEELER tasks complete), create `.plans/<name>-VERIFICATION.md` using the same template as `/wh:execute`. Run `validate_citations` on all investigation artifacts for the citation audit.
+3. Update `.plans/STATE.md`: set status (completed if all criteria MET, otherwise in-progress), update Graph Snapshot (call `graph_status`), update Recent Findings, update Session Continuity, set `paused: false`.
 
 ## Cleanup
 After review, offer cleanup options:

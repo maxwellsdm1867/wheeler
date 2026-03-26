@@ -14,14 +14,15 @@ import sys
 
 from fastmcp import FastMCP
 
-from wheeler.config import load_config, WheelerConfig
+from wheeler.config import configure_logging, load_config, WheelerConfig
 from wheeler.graph import context, schema
 from wheeler.graph import provenance
 from wheeler.tools import graph_tools
 from wheeler.validation import citations
 from wheeler import workspace
 
-# Load config once at startup
+# Configure logging and load config once at startup
+configure_logging()
 _config: WheelerConfig = load_config()
 
 mcp = FastMCP(
@@ -95,6 +96,37 @@ async def add_dataset(path: str, type: str, description: str) -> dict:
     return json.loads(result)
 
 
+@mcp.tool()
+async def set_tier(node_id: str, tier: str) -> dict:
+    """Set context tier of a node to 'reference' (established) or 'generated' (new work)."""
+    result = await graph_tools.execute_tool(
+        "set_tier", {"node_id": node_id, "tier": tier}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0) -> dict:
+    """Add a Paper to the knowledge graph for literature provenance. Returns the new node ID."""
+    result = await graph_tools.execute_tool(
+        "add_paper",
+        {"title": title, "authors": authors, "doi": doi, "year": year},
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+async def add_document(title: str, path: str, section: str = "", status: str = "draft") -> dict:
+    """Add a Document to the knowledge graph to track written output. Returns the new node ID."""
+    result = await graph_tools.execute_tool(
+        "add_document",
+        {"title": title, "path": path, "section": section, "status": status},
+        _config,
+    )
+    return json.loads(result)
+
+
 # --- Graph queries ---
 
 
@@ -130,6 +162,24 @@ async def query_datasets(keyword: str = "", limit: int = 10) -> dict:
     """Search Dataset nodes in the knowledge graph."""
     result = await graph_tools.execute_tool(
         "query_datasets", {"keyword": keyword, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+async def query_papers(keyword: str = "", limit: int = 10) -> dict:
+    """Search Paper nodes in the knowledge graph by title or authors."""
+    result = await graph_tools.execute_tool(
+        "query_papers", {"keyword": keyword, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+async def query_documents(keyword: str = "", status: str = "", limit: int = 10) -> dict:
+    """Search Document nodes in the knowledge graph."""
+    result = await graph_tools.execute_tool(
+        "query_documents", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
     return json.loads(result)
 

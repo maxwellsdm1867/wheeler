@@ -97,6 +97,9 @@ Active team: <team name or "none">
 `/wh:<command>` — <why this is the right next step>
 ```
 
+## Before Writing .continue-here.md
+Update `.plans/STATE.md` if it exists: set `paused: true`, update the `updated` timestamp, and update the "Session Continuity" section with the current position (investigation, mode, what was last completed, what's pending).
+
 ## Rules
 - Call `graph_context` to capture current graph state
 - Check `.plans/` for any active investigation plans and note their status

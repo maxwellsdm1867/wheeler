@@ -76,6 +76,8 @@ cd ~/my-project && claude    # open Claude Code in your project
 /wh:pair        # live analysis co-work
 /wh:write       # draft text with strict citations
 /wh:execute     # run analyses, update graph
+/wh:ask         # query the graph, trace provenance
+/wh:dream       # graph consolidation (promote tiers, link orphans)
 /wh:pause       # capture state for later
 /wh:resume      # restore context from previous session
 ```
@@ -107,7 +109,7 @@ cd ~/my-project && claude    # open Claude Code in your project
  └─────────────────────────────────────────────────────┘
 ```
 
-**Together** — freeform conversation. Graph and tools are available but optional. Say something interesting and Wheeler will *suggest* recording it. Never automatically.
+**Together** — freeform conversation. Graph and tools are available but optional. Say something interesting and Wheeler will *suggest* recording it. Never automatically. Use `/wh:ask` to query the graph and trace provenance chains. Use `/wh:dream` to consolidate the graph (promote tiers, link orphans, flag duplicates).
 
 **Handoff** — when the remaining work is grinding. Wheeler proposes tasks in dependency waves with checkpoint conditions. You approve, modify, or keep talking.
 
@@ -126,6 +128,24 @@ cd ~/my-project && claude    # open Claude Code in your project
 | UNGROUNDED | Non-trivial claim with zero citations |
 
 Enforced on all paths: interactive (MCP tool), headless (post-hoc validation appended to logs), and manual (`validate_citations`).
+
+## Context Tiers
+
+Every graph node is tagged as `reference` (established knowledge -- papers, verified data) or `generated` (Wheeler's own findings). When Wheeler injects graph context, it separates these into **Established Knowledge** and **Recent Work** sections. Papers are always reference-tier. Use `set_tier` to promote generated findings after verification.
+
+## Full Provenance Chain
+
+Wheeler tracks provenance from literature through analysis to written output:
+
+```text
+Paper (reference)
+  -> Analysis (script_hash, params)
+       -> Dataset (path, hash)
+       -> Finding (generated)
+            -> Document (draft/revision/final)
+```
+
+New node types: **Document** (prefix W) for written artifacts, **Paper** (prefix P) for literature. New relationships: INFORMED (paper informed an analysis), BASED_ON (finding based on paper), APPEARS_IN (node cited in a document).
 
 ## Architecture
 
@@ -158,13 +178,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details and design rat
 | **write** | Read, write, edit, graph reads | Execute code |
 | **pair** | Full read/write/execute + MATLAB | Agents, auto graph writes |
 | **execute** | Everything | -- |
+| **ask** | Read, graph reads, provenance tracing | Write, execute |
+| **dream** | Graph reads/writes, tier promotion | Bash, agents |
+| **ingest** | Read, write, graph, web search, agents | MATLAB |
 
 ## MCP Servers
 
 | Server | Purpose |
 | ------ | ------- |
 | `neo4j` | Knowledge graph (Cypher read/write) |
-| `wheeler` | 18 tools: graph CRUD, citations, workspace, provenance |
+| `wheeler` | 23 tools: graph CRUD, citations, workspace, provenance, papers, documents, tiers |
 | `matlab` | MATLAB execution (optional) |
 | `papers` | Literature search: PubMed, arXiv, Semantic Scholar (optional) |
 
@@ -192,6 +215,6 @@ No API keys. No per-token costs. Runs on Claude Max subscription.
   <img src="https://img.shields.io/badge/tests-185%20passing-brightgreen" alt="tests 185 passing">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license MIT">
   <img src="https://img.shields.io/badge/neo4j-knowledge%20graph-008CC1?logo=neo4j&logoColor=white" alt="Neo4j">
-  <img src="https://img.shields.io/badge/MCP-18%20tools-orange" alt="MCP 18 tools">
+  <img src="https://img.shields.io/badge/MCP-23%20tools-orange" alt="MCP 23 tools">
   <img src="https://img.shields.io/badge/Claude%20Code-native-cc785c?logo=anthropic&logoColor=white" alt="Claude Code native">
 </p>

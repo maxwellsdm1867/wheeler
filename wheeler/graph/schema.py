@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
+import logging
+import secrets
 
 from wheeler.config import WheelerConfig
+
+logger = logging.getLogger(__name__)
+
+
+def generate_node_id(prefix: str) -> str:
+    """Generate a unique node ID with the given prefix (e.g., 'F-abc12345')."""
+    return f"{prefix}-{secrets.token_hex(4)}"
 
 # Node ID prefix → label mapping
 PREFIX_TO_LABEL: dict[str, str] = {
@@ -18,6 +26,7 @@ PREFIX_TO_LABEL: dict[str, str] = {
     "P": "Paper",
     "C": "CellType",
     "T": "Task",
+    "W": "Document",
 }
 
 LABEL_TO_PREFIX: dict[str, str] = {v: k for k, v in PREFIX_TO_LABEL.items()}
@@ -44,6 +53,9 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.script_path)",
     "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.executed_at)",
     "CREATE INDEX IF NOT EXISTS FOR (pl:Plan) ON (pl.status)",
+    "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.date)",
+    "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.status)",
+    "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.title)",
 ]
 
 # Allowed relationship types (whitelist for link command)
@@ -61,43 +73,46 @@ ALLOWED_RELATIONSHIPS: list[str] = [
     "CONTAINS",
     "DEPENDS_ON",
     "AROSE_FROM",
+    "INFORMED",
+    "BASED_ON",
+    "APPEARS_IN",
 ]
-
-
-async def _get_driver(config: WheelerConfig):
-    return AsyncGraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-        notifications_min_severity=NotificationMinimumSeverity.OFF,
-    )
 
 
 async def init_schema(config: WheelerConfig) -> list[str]:
     """Apply all constraints and indexes to Neo4j. Returns list of applied statements."""
-    driver = await _get_driver(config)
+    from wheeler.graph.driver import get_async_driver
+    driver = get_async_driver(config)
     applied: list[str] = []
-    try:
-        async with driver.session(database=config.neo4j.database) as session:
-            for stmt in CONSTRAINTS + INDEXES:
-                await session.run(stmt)
-                applied.append(stmt)
-    finally:
-        await driver.close()
+    async with driver.session(database=config.neo4j.database) as session:
+        for stmt in CONSTRAINTS + INDEXES:
+            await session.run(stmt)
+            applied.append(stmt)
+    logger.info("Schema initialized: %d constraints/indexes applied", len(applied))
     return applied
 
 
 async def get_status(config: WheelerConfig) -> dict[str, int]:
-    """Return node counts per label."""
-    driver = await _get_driver(config)
-    counts: dict[str, int] = {}
+    """Return node counts per label in a single query.
+
+    Returns zeroed counts if Neo4j is unavailable — never crashes the caller.
+    """
+    counts: dict[str, int] = {label: 0 for label in NODE_LABELS}
     try:
+        from wheeler.graph.driver import get_async_driver
+        driver = get_async_driver(config)
+
+        parts = [
+            f"MATCH (n:{label}) RETURN '{label}' AS label, count(n) AS cnt"
+            for label in NODE_LABELS
+        ]
+        query = " UNION ALL ".join(parts)
+
         async with driver.session(database=config.neo4j.database) as session:
-            for label in NODE_LABELS:
-                result = await session.run(
-                    f"MATCH (n:{label}) RETURN count(n) AS cnt"
-                )
-                record = await result.single()
-                counts[label] = record["cnt"] if record else 0
-    finally:
-        await driver.close()
+            result = await session.run(query)
+            records = [r async for r in result]
+            for rec in records:
+                counts[rec["label"]] = rec["cnt"]
+    except Exception as exc:
+        logger.warning("graph_status failed (Neo4j offline?): %s", exc)
     return counts

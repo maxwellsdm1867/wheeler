@@ -73,9 +73,13 @@ When the scientist's answer reveals a fork — multiple valid approaches — use
 After the discussion, write `.plans/{investigation-name}-CONTEXT.md`:
 
 ```markdown
+---
+investigation: <slug>
+status: locked
+created: <date>
+---
+
 # Context: <investigation name>
-Created: <date>
-Status: locked
 
 ## Research Question
 <The sharpened question, precisely stated>
@@ -132,6 +136,7 @@ When writing equations or mathematical expressions, use Unicode symbols — NOT 
 If the scientist articulates a hypothesis or insight worth preserving, SUGGEST adding it to the graph. But NEVER add automatically.
 
 ## After Writing CONTEXT
-Tell the scientist: "Context captured. When you're ready to plan, run `/wh:plan <investigation-name>` — it will read this context file."
+1. If `.plans/STATE.md` exists, update its frontmatter: set `investigation` to the new investigation slug, `context` to the CONTEXT file path, `status: discussing`, and `updated` to current timestamp. Update the body's "Active Investigation" section with the investigation name and research question.
+2. Tell the scientist: "Context captured. When you're ready to plan, run `/wh:plan <investigation-name>` — it will read this context file."
 
 $ARGUMENTS

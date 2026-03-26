@@ -63,6 +63,7 @@ usage() {
     echo -e "    ${AMBER}wh queue${RESET} \"prompt\"    ${DIM}Queue a task (sonnet, 10 turns)${RESET}"
     echo -e "    ${AMBER}wh quick${RESET} \"prompt\"    ${DIM}Fast one-shot (haiku, 3 turns)${RESET}"
     echo -e "    ${AMBER}wh status${RESET}            ${DIM}Graph status (haiku, 2 turns)${RESET}"
+    echo -e "    ${AMBER}wh dream${RESET}             ${DIM}Consolidate graph: promote, link, prune (sonnet, 15 turns)${RESET}"
     echo ""
     echo -e "  ${BOLD}Development${RESET}"
     echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
@@ -143,6 +144,10 @@ case "$SUBCMD" in
 
     status|st)
         run_headless "status" "Run the status check described in your system prompt." "haiku" "$DIM" "status" "2" "text" "$@"
+        ;;
+
+    dream)
+        run_headless "dream" "Run the dream consolidation described in your system prompt." "sonnet" "$PURPLE" "dream" "15" "json" "true" "$@"
         ;;
 
     # ── Hooks ─────────────────────────────────────────────────────

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import secrets
 import subprocess
 from datetime import datetime, timezone
 
@@ -12,10 +11,12 @@ from rich.console import Console
 from rich.table import Table
 
 from wheeler.config import load_config
+from wheeler.graph.driver import get_sync_driver
 from wheeler.graph.schema import (
     ALLOWED_RELATIONSHIPS,
     LABEL_TO_PREFIX,
     PREFIX_TO_LABEL,
+    generate_node_id,
     get_status,
     init_schema,
 )
@@ -39,9 +40,9 @@ dev_app = typer.Typer(help="Developer commands.")
 app.add_typer(dev_app, name="dev")
 
 
-def _generate_id(prefix: str) -> str:
-    """Generate a short hex ID with the given prefix."""
-    return f"{prefix}-{secrets.token_hex(4)}"
+
+# Re-export for backward compatibility and convenience
+_generate_id = generate_node_id
 
 
 # ---------------------------------------------------------------------------
@@ -100,16 +101,13 @@ def graph_add_finding(
     ),
 ) -> None:
     """Add a Finding node to the knowledge graph."""
-    from neo4j import GraphDatabase
+
 
     config = load_config()
     node_id = _generate_id("F")
     now = datetime.now(timezone.utc).isoformat()
 
-    driver = GraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-    )
+    driver = get_sync_driver(config)
     try:
         with driver.session(database=config.neo4j.database) as session:
             session.run(
@@ -141,16 +139,13 @@ def graph_add_question(
     ),
 ) -> None:
     """Add an OpenQuestion node to the knowledge graph."""
-    from neo4j import GraphDatabase
+
 
     config = load_config()
     node_id = _generate_id("Q")
     now = datetime.now(timezone.utc).isoformat()
 
-    driver = GraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-    )
+    driver = get_sync_driver(config)
     try:
         with driver.session(database=config.neo4j.database) as session:
             session.run(
@@ -193,7 +188,7 @@ def graph_link(
         )
         raise typer.Exit(1)
 
-    from neo4j import GraphDatabase
+
 
     config = load_config()
 
@@ -207,10 +202,7 @@ def graph_link(
         console.print("[red]Could not determine node labels from IDs.[/red]")
         raise typer.Exit(1)
 
-    driver = GraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.username, config.neo4j.password),
-    )
+    driver = get_sync_driver(config)
     try:
         with driver.session(database=config.neo4j.database) as session:
             # Use parameterized query — rel_type is whitelisted above

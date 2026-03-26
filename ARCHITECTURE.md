@@ -55,7 +55,7 @@ Claude Code (interactive, Max subscription)
     │
     ├── MCP Servers (.mcp.json)
     │       ├── neo4j (mcp-neo4j-cypher) — raw Cypher read/write
-    │       ├── wheeler (FastMCP) — 18 domain tools
+    │       ├── wheeler (FastMCP) — 23 domain tools
     │       ├── matlab (matlab-mcp-tools) — MATLAB execution
     │       └── papers (paper-search-mcp) — literature search
     │
@@ -80,7 +80,7 @@ Wheeler uses both raw and domain-specific graph access:
 
 1. **`mcp-neo4j-cypher`** — raw Cypher for ad-hoc graph queries. Available as `mcp__neo4j__read_neo4j_cypher` and `mcp__neo4j__write_neo4j_cypher`.
 
-2. **Wheeler MCP server** (`wheeler/mcp_server.py`) — 18 domain-specific tools like `add_finding`, `query_open_questions`, `link_nodes`, `validate_citations` that internally call Neo4j but expose a science-friendly interface. Claude doesn't need to write Cypher for common operations.
+2. **Wheeler MCP server** (`wheeler/mcp_server.py`) — 23 domain-specific tools like `add_finding`, `add_paper`, `add_document`, `set_tier`, `query_open_questions`, `link_nodes`, `validate_citations` that internally call Neo4j but expose a science-friendly interface. Claude doesn't need to write Cypher for common operations.
 
 ### Headless / Independent Work
 
@@ -128,6 +128,7 @@ Node Types:
               anchor_figure: string (path to PNG), anchor_figure_hash: sha256})
   (:Dataset {id, path, type, description, date_collected,
              anchor_figure: string (path to PNG), anchor_figure_hash: sha256})
+  (:Document {id, title, path, section, status: draft|revision|final, date, updated})
   (:Plan {id, objective, status, created_date})
   (:Task {id, description, status, execution_type, depends_on,
           assignee: "scientist"|"wheeler"|"pair",
@@ -152,6 +153,9 @@ Relationship Types:
   (Plan)-[:CONTAINS]->(Task)
   (Task)-[:DEPENDS_ON]->(Task)
   (OpenQuestion)-[:AROSE_FROM]->(Finding)
+  (Paper)-[:INFORMED]->(Analysis)
+  (Finding)-[:BASED_ON]->(Paper)
+  (Finding|Paper|Analysis|Hypothesis)-[:APPEARS_IN]->(Document)
 ```
 
 ### Provenance Design
@@ -177,6 +181,82 @@ graph_context MCP tool
 ```
 
 No programmatic prompt injection — Claude calls the tool when the slash command tells it to, and incorporates the result into its reasoning naturally.
+
+### Context Tiers
+
+Every node gets a `tier` property — either `reference` (established knowledge from papers, verified data, published results) or `generated` (Wheeler's own findings, analyses, drafts). Papers are always `tier="reference"`.
+
+`graph_context` splits findings by tier when injecting context, producing two sections:
+- **Established Knowledge** — reference-tier findings (from literature, verified experiments)
+- **Recent Work** — generated-tier findings (from current investigation)
+
+The `set_tier` MCP tool allows promoting generated findings to reference (after verification) or demoting reference material.
+
+### Full Provenance Chain
+
+Wheeler tracks a complete chain from literature through analysis to written output:
+
+```
+Paper (reference)
+  ──INFORMED──> Analysis (script_hash, params)
+                  ──USED_DATA──> Dataset (path, hash)
+                  ──GENERATED──> Finding (tier: generated)
+                                   ──BASED_ON──> Paper
+                                   ──APPEARS_IN──> Document (draft/revision/final)
+```
+
+Node types and their prefixes: Experiment (E), Finding (F), Hypothesis (H), OpenQuestion (Q), Paper (P), Analysis (A), Dataset (D), Document (W), Plan (PL), Task (T), CellType (no prefix).
+
+### Driver Management
+
+All Neo4j connections are centralized in `wheeler/graph/driver.py`. This replaced 5 different driver creation patterns across 7 files. The module provides:
+- `get_driver()` — returns a singleton async driver with connection pooling
+- `get_session()` — async context manager for database sessions
+- Consistent configuration from `wheeler.yaml`
+
+### Graph Tools Package
+
+`wheeler/tools/graph_tools.py` was split into a package (`wheeler/tools/graph_tools/`):
+- `mutations.py` — write operations (add_finding, add_paper, add_document, link_nodes, set_tier, etc.)
+- `queries.py` — read operations (query_findings, query_papers, query_documents, graph_status, graph_gaps, etc.)
+- `_common.py` — shared utilities
+- `__init__.py` — registry dispatch (tool name → function mapping)
+
+`generate_node_id()` is centralized in `wheeler/graph/schema.py` (was duplicated in 3 places).
+
+### Fault Isolation
+
+All MCP tool entry points catch exceptions and return error JSON instead of crashing:
+- `execute_tool` — catches exceptions, returns `{"error": "..."}`
+- `fetch_context` — returns empty string on failure
+- `get_status` — returns zeroed counts on failure
+- `validate_citations` — returns partial results on failure
+- All former silent `except: pass` blocks now log at WARNING/ERROR level
+
+### Logging
+
+Stdlib logging with NullHandler library pattern. Each module creates its own named logger. Configuration:
+- `configure_logging()` in `config.py`, called by MCP server at startup
+- `WHEELER_LOG_LEVEL` env var (default INFO)
+- Loggers in: config, driver, schema, context, provenance, graph_tools, mutations, citations
+
+### Performance
+
+Several hot paths were optimized:
+- **`graph_status`**: 11 sequential Cypher queries consolidated into 1 UNION ALL query
+- **`validate_citations`**: N x M sequential existence queries replaced with batched existence check + single provenance query per validation rule
+- **`context.py` and `queries.py`**: removed `asyncio.gather` inside Neo4j sessions (was causing "read() called while another coroutine" errors — Neo4j sessions don't support concurrent queries)
+- **`graph_gaps`**: fixed from buggy `asyncio.gather` to sequential queries (same Neo4j session constraint)
+
+### E2E Testing
+
+`tests/e2e/` contains end-to-end tests that run against a live Neo4j instance:
+- `conftest.py` — test fixtures, Neo4j connection setup/teardown
+- `test_workflow.py` — 18 tests covering the full provenance workflow
+- `setup_sandbox.py` — populates graph with representative scientific data
+- `tests/e2e/sandbox/` — gitignored workspace for sandbox data
+
+Run with `python -m pytest tests/e2e/ -v` (requires running Neo4j).
 
 ---
 
@@ -230,6 +310,33 @@ Track findings per execute session, graph nodes per week, hypotheses validated o
 
 ---
 
+## Structured File Artifacts
+
+Investigation artifacts in `.plans/` use YAML frontmatter for machine-readable metadata, enabling fast scanning by `/wh:status` and `/wh:resume` without parsing full documents.
+
+### CONTEXT.md (`{name}-CONTEXT.md`)
+Created by `/wh:discuss`. Frontmatter: `investigation`, `status` (locked), `created`. Body: research question, locked decisions, scope boundaries, success criteria.
+
+### Plan Files (`{name}.md`)
+Created by `/wh:plan`. Frontmatter: `investigation`, `status`, `created`, `updated`, `waves`, `tasks_total`, `tasks_wheeler`, `tasks_scientist`, `tasks_pair`, `graph_nodes`, `success_criteria_met`. Body: objective, tasks with wave/assignee/checkpoint metadata, success criteria.
+
+### STATE.md
+Created by `/wh:init`, updated by every workflow transition. Single file (<100 lines) read first by every command. Frontmatter: `investigation`, `status`, `plan`, `context`, `updated`, `paused`. Body: active investigation, graph snapshot, recent findings, session continuity, active teams.
+
+### SUMMARY.md (`{name}-SUMMARY.md`)
+Created by `/wh:execute` or `/wh:reconvene` after execution. Frontmatter: `investigation`, `plan`, `created`, `tasks_completed`, `tasks_skipped`, `checkpoints_hit`. Body: tasks completed with [NODE_ID] citations, graph nodes created, deviations, checkpoints, success criteria status, next steps.
+
+### VERIFICATION.md (`{name}-VERIFICATION.md`)
+Created when investigation completes. Frontmatter: `investigation`, `plan`, `created`, `criteria_met`, `criteria_partial`, `criteria_unmet`, `verdict`. Body: success criteria verification with evidence, citation audit via `validate_citations`, open questions, gaps, recommended next investigations.
+
+### Design Principles
+- **Don't duplicate the graph.** Files reference graph nodes via [NODE_ID], never copy graph data.
+- **Frontmatter enables scanning.** Machine-readable metadata in first ~20 lines.
+- **STATE.md < 100 lines.** Digest, not archive. Only tracks the current investigation.
+- **Everything is a reference.** New files use [NODE_ID] citations for factual claims.
+
+---
+
 ## Future: Data Layer (DuckDB)
 
 Not needed yet but important for the full vision. DuckDB for structured queries over large datasets:
@@ -259,4 +366,7 @@ An MCP server wrapping DuckDB would expose tools like `query_data`, `list_datase
 | Data models | Pydantic | Type-safe config, provenance, citations |
 | Config | YAML (`wheeler.yaml`) | Human-readable, `ProjectPaths` for flexible project layout |
 | Installation | `wheeler install` + manifest | Copies slash commands to `~/.claude/`, tracks hashes for updates |
+| Driver mgmt | Centralized `driver.py` | Single connection pool, consistent config, was 5 patterns across 7 files |
+| Logging | stdlib + NullHandler | Library pattern, `WHEELER_LOG_LEVEL` env var, no third-party deps |
+| Context tiers | `reference` vs `generated` | Separates established knowledge from investigation output in graph context |
 | Data layer (future) | DuckDB | Zero-config, columnar, great for scientific data |

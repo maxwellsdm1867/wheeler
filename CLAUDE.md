@@ -17,7 +17,7 @@ The scientist and Wheeler thinking through a problem in conversation.
 Freeform. No forced structure. Follow the scientist's lead.
 
 - Start with `/wh:discuss` to sharpen the question, then `/wh:plan` to structure the investigation
-- Also: `/wh:chat` (quick discussion), `/wh:pair` (live co-work), `/wh:write` (drafting), `/wh:execute` (running analyses)
+- Also: `/wh:chat` (quick discussion), `/wh:pair` (live co-work), `/wh:write` (drafting), `/wh:execute` (running analyses), `/wh:ask` (query graph, trace provenance), `/wh:dream` (graph consolidation)
 - Tools and graph available but OPTIONAL — don't force them
 - If the scientist says something interesting, Wheeler can SUGGEST
   recording it but never does it automatically
@@ -121,18 +121,23 @@ For headless/independent work: `claude -p` with structured output.
 ## Key Files
 
 - `ARCHITECTURE.md` — Full technical spec
-- `bin/wh` — Bash launcher, headless task runner (queue/quick/status/hooks)
+- `bin/wh` — Bash launcher, headless task runner (queue/quick/status/dream/hooks)
 - `.claude/commands/wh/*.md` — Slash commands with YAML frontmatter (tool restrictions)
-- `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher)
+- `wheeler/validation/citations.py` — Citation extraction (regex) + validation (Cypher, batched)
 - `wheeler/validation/ledger.py` — Provenance ledger, logs every interaction
-- `wheeler/graph/context.py` — Size-limited graph context injection (< 500 tokens)
-- `wheeler/graph/schema.py` — Neo4j schema constraints and indexes
+- `wheeler/graph/driver.py` — Centralized Neo4j driver management (single connection pool)
+- `wheeler/graph/context.py` — Size-limited graph context injection with tier separation
+- `wheeler/graph/schema.py` — Neo4j schema constraints, indexes, and `generate_node_id()`
 - `wheeler/graph/provenance.py` — File hashing, analysis provenance, staleness detection
 - `wheeler/workspace.py` — Workspace scanner: file discovery, context formatting
-- `wheeler/tools/graph_tools.py` — In-process graph tools (add/query/link nodes)
+- `wheeler/tools/graph_tools/` — Graph tools package (mutations.py + queries.py + registry dispatch)
 - `wheeler/tools/cli.py` — wheeler-tools deterministic CLI
-- `wheeler/mcp_server.py` — FastMCP server exposing 18 tools to Claude Code
-- `wheeler/config.py` — YAML config loader
+- `wheeler/mcp_server.py` — FastMCP server exposing 23 tools to Claude Code
+- `wheeler/config.py` — YAML config loader + `configure_logging()`
+- `.plans/STATE.md` — Global investigation state, read first by every workflow
+- `.plans/{name}-SUMMARY.md` — Execution summary with graph nodes created and deviations
+- `.plans/{name}-VERIFICATION.md` — Success criteria verification with citation audit
+- `tests/e2e/` — End-to-end tests against live Neo4j (conftest.py, test_workflow.py, setup_sandbox.py)
 
 ## Modes (Tool Enforcement)
 
@@ -153,13 +158,20 @@ Config in `wheeler.yaml` under `workspace:`.
 
 ## MCP Server
 
-Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 18 tools
+Wheeler ships as an MCP server (`wheeler/mcp_server.py`) using FastMCP. 23 tools
 wrapping existing modules — same functions the CLI uses. Configured in `.mcp.json`.
 
 Tools: graph_status, graph_context, add_finding, add_hypothesis, add_question, link_nodes,
-add_dataset, query_findings, query_hypotheses, query_open_questions, query_datasets,
-graph_gaps, extract_citations, validate_citations, scan_workspace, detect_stale, hash_file,
-init_schema.
+add_dataset, add_paper, add_document, set_tier, query_findings, query_hypotheses,
+query_open_questions, query_datasets, query_papers, query_documents, graph_gaps,
+extract_citations, validate_citations, scan_workspace, detect_stale, hash_file, init_schema.
+
+## Logging
+
+Stdlib logging with NullHandler library pattern. Each module creates its own logger.
+`configure_logging()` in `config.py` is called by the MCP server at startup.
+Set `WHEELER_LOG_LEVEL` env var to control verbosity (default INFO).
+Loggers in: config, driver, schema, context, provenance, graph_tools, mutations, citations.
 
 ## Design Principles
 

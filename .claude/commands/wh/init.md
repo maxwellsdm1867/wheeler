@@ -45,6 +45,36 @@ For each of the 5 path categories (code, data, results, figures, docs):
 
 - Create any directories the scientist chose that don't exist yet
 - Always create `.plans/`, `.logs/`, `.wheeler/` (Wheeler-managed directories)
+- Create `.plans/STATE.md` with the initial template:
+
+```markdown
+---
+investigation: none
+status: idle
+plan: none
+context: none
+updated: <current timestamp>
+paused: false
+---
+
+# Wheeler State
+
+## Active Investigation
+None — run /wh:discuss to start.
+
+## Graph Snapshot
+(populated after graph connection)
+
+## Recent Findings
+None yet.
+
+## Session Continuity
+First session.
+
+## Active Teams
+None
+```
+
 - Report what was created
 
 ## Step 5: Write config

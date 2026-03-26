@@ -13,6 +13,11 @@ allowed-tools:
   - mcp__wheeler__query_hypotheses
   - mcp__wheeler__validate_citations
   - mcp__wheeler__extract_citations
+  - mcp__wheeler__add_document
+  - mcp__wheeler__add_paper
+  - mcp__wheeler__query_documents
+  - mcp__wheeler__query_papers
+  - mcp__wheeler__link_nodes
   - mcp__neo4j__read_neo4j_cypher
 ---
 
@@ -36,6 +41,8 @@ This distinction MUST be visible in all drafts. The scientist needs to see exact
 5. Flag gaps: if a claim needs a finding that doesn't exist, note it
 6. When referencing a Dataset or Analysis, display its anchor figure
 7. After drafting, call `validate_citations` wheeler MCP tool to check all [NODE_ID] references
+8. After validation passes, create a Document node with `add_document` (title = section name, path = file written, section = section type, status = "draft")
+9. For each [NODE_ID] cited in the text, link it to the Document: `link_nodes(source_id=NODE_ID, target_id=DOC_ID, relationship="APPEARS_IN")`. This creates the full provenance chain from literature through analysis to written output.
 
 ## Style
 - Formal scientific writing

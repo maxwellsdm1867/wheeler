@@ -19,6 +19,9 @@ allowed-tools:
 
 Show the current state of everything and suggest what to do next.
 
+## Step 0: Read STATE.md
+Read `.plans/STATE.md` if it exists. Parse the YAML frontmatter for the current investigation name, status, plan path, and paused state. This gives you the overview before checking individual files — use it to jump directly to the active investigation's plan and context files instead of scanning all of `.plans/`. If STATE.md does not exist, fall back to the scan-all approach in Step 1.
+
 ## Step 1: Investigation Status
 Check `.plans/` for:
 - `.continue-here.md` — paused work from a previous session
@@ -70,6 +73,7 @@ Use wheeler MCP tools:
 
 | Situation | Suggest |
 |-----------|---------|
+| STATE.md says `paused: true` | `/wh:resume` — pick up paused work |
 | `.continue-here.md` exists | `/wh:resume` — pick up paused work |
 | Active team with completed tasks | `/wh:reconvene` — review team results |
 | Unreviewed headless task logs | `/wh:reconvene` — review results |

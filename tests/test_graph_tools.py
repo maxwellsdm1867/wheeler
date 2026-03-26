@@ -4,10 +4,8 @@ import json
 
 import pytest
 
-from wheeler.tools.graph_tools import (
-    TOOL_DEFINITIONS,
-    _generate_id,
-)
+from wheeler.tools.graph_tools import TOOL_DEFINITIONS
+from wheeler.graph.schema import generate_node_id as _generate_id
 
 
 class TestToolDefinitions:
@@ -31,6 +29,11 @@ class TestToolDefinitions:
             "graph_gaps",
             "add_dataset",
             "query_datasets",
+            "add_paper",
+            "query_papers",
+            "add_document",
+            "query_documents",
+            "set_tier",
         }
         assert expected == names
 
@@ -60,6 +63,23 @@ class TestToolDefinitions:
         tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "graph_gaps")
         assert tool["required"] == []
 
+    def test_add_paper_parameters(self):
+        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "add_paper")
+        assert "title" in tool["parameters"]
+        assert tool["required"] == ["title"]
+
+    def test_add_document_parameters(self):
+        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "add_document")
+        assert "title" in tool["parameters"]
+        assert "path" in tool["parameters"]
+        assert tool["required"] == ["title", "path"]
+
+    def test_set_tier_parameters(self):
+        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "set_tier")
+        assert "node_id" in tool["parameters"]
+        assert "tier" in tool["parameters"]
+        assert tool["required"] == ["node_id", "tier"]
+
     def test_descriptions_are_nonempty(self):
         for tool in TOOL_DEFINITIONS:
             assert len(tool["description"]) > 10, (
@@ -77,6 +97,15 @@ class TestGenerateId:
         hid = _generate_id("H")
         assert hid.startswith("H-")
 
+    def test_document_prefix(self):
+        wid = _generate_id("W")
+        assert wid.startswith("W-")
+        assert len(wid) == 10
+
+    def test_paper_prefix(self):
+        pid = _generate_id("P")
+        assert pid.startswith("P-")
+
     def test_ids_are_unique(self):
         ids = {_generate_id("F") for _ in range(100)}
         assert len(ids) == 100
@@ -89,4 +118,4 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 10
+        assert len(TOOL_DEFINITIONS) == 15

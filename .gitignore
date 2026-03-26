@@ -13,3 +13,4 @@ wheeler.yaml
 .wheeler/
 .mypy_cache/
 .ruff_cache/
+tests/e2e/sandbox/
