@@ -4,9 +4,23 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/v0.2.0-blue" alt="v0.2.0">
+  <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/built%20on-Claude%20Code-orange" alt="Claude Code"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/graph-Kuzu-green" alt="Kuzu">
+  <img src="https://img.shields.io/badge/search-fastembed-green" alt="fastembed">
+  <img src="https://img.shields.io/badge/Pydantic-v2-teal" alt="Pydantic v2">
+  <img src="https://img.shields.io/badge/linting-ruff-purple" alt="ruff">
+  <img src="https://img.shields.io/badge/types-mypy-blue" alt="mypy">
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
+  <img src="https://img.shields.io/badge/local%20only-no%20data%20leaves%20your%20machine-brightgreen" alt="Local Only">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
 Wheeler is two things:
