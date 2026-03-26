@@ -239,6 +239,15 @@ python tests/e2e/setup_sandbox.py          # populate test data
 
 Set `WHEELER_LOG_LEVEL=DEBUG` for verbose output.
 
+## Coming Soon: Agentic Layer
+
+The workflow and memory are in place. The next layer is agents that watch the graph and act on it automatically:
+
+- **Auto work logs** (`/wh:report`) — scan the graph for everything created today/this week, generate a structured report. No manual input — timestamps are already on every node. *(Available now)*
+- **Reactive triggers** — finding promoted? Hypothesis supported? Analysis stale? The graph fires events and Wheeler responds without being asked.
+- **Smart context selection** — instead of always injecting the last 5 findings, adapt to the mode. Planning gets gaps and questions. Writing gets reference-tier findings. Discussion gets contradictions.
+- **Investigation continuity** — after one investigation closes, suggest the next based on open questions and graph gaps. Build a research tree across investigations.
+
 ## License
 
 [MIT](LICENSE)

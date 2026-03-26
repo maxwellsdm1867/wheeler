@@ -64,6 +64,7 @@ usage() {
     echo -e "    ${AMBER}wh quick${RESET} \"prompt\"    ${DIM}Fast one-shot (haiku, 3 turns)${RESET}"
     echo -e "    ${AMBER}wh status${RESET}            ${DIM}Graph status (haiku, 2 turns)${RESET}"
     echo -e "    ${AMBER}wh dream${RESET}             ${DIM}Consolidate graph: promote, link, prune (sonnet, 15 turns)${RESET}"
+    echo -e "    ${AMBER}wh report${RESET} [period]    ${DIM}Work log from graph (today/week/since date)${RESET}"
     echo ""
     echo -e "  ${BOLD}Development${RESET}"
     echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
@@ -148,6 +149,12 @@ case "$SUBCMD" in
 
     dream)
         run_headless "dream" "Run the dream consolidation described in your system prompt." "sonnet" "$PURPLE" "dream" "15" "json" "true" "$@"
+        ;;
+
+    report)
+        PERIOD="${1:-today}"
+        shift 2>/dev/null || true
+        run_headless "report" "Generate the work log for: $PERIOD" "sonnet" "$GREEN" "report" "10" "json" "true" "$@"
         ;;
 
     # ── Hooks ─────────────────────────────────────────────────────
