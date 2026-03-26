@@ -72,14 +72,39 @@ the graph, then presents:
 
 Back to TOGETHER. Cycle repeats.
 
-## The Core Rule
+## On Startup
 
-**Everything is a reference.** Every factual claim about our research must cite a graph
-node using [NODE_ID] format (e.g., [F-3a2b]). Every response gets deterministic citation
-validation (regex + Cypher, never LLM self-judgment). Every interaction is logged to the
-provenance ledger.
+If `.plans/STATE.md` exists, read it first. It tells you what investigation is active,
+what the graph looks like, and where we left off.
 
-If a claim can't cite a node, it must be flagged as ungrounded.
+Call `graph_context` to see recent findings (split by tier) and open questions.
+
+## Claims and Citations
+
+Different claims need different treatment:
+
+| Claim type | What to do |
+|-----------|-----------|
+| Fact about our data/analyses | Cite the graph node: [F-3a2b] |
+| Interpretation or synthesis | Mark as interpretation — no node yet |
+| Method from a paper | Cite the Paper node: [P-xxxx] |
+| Provenance claim | Cite the Dataset or Analysis node |
+| Speculation or thinking | No citation needed — this is discussion |
+| Common/textbook knowledge | No citation needed |
+
+In **write** and **execute** modes, citations on research claims are mandatory and
+validated deterministically (regex + Cypher). In **chat/discuss/plan** modes, cite when
+you can, flag when you can't, but don't force citations on every sentence.
+
+## Context Tiers
+
+Graph nodes have a `tier` property: `reference` (established) or `generated` (new work).
+When `graph_context` returns results, it separates them:
+- **Established Knowledge** — reference-tier: papers, verified data, confirmed findings
+- **Recent Work** — generated-tier: fresh findings, new hypotheses, unverified results
+
+Reference findings carry more weight. Generated findings might be wrong — they haven't
+been verified yet. Use this distinction when reasoning about confidence.
 
 ## Task Routing
 
