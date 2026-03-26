@@ -9,7 +9,7 @@
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/built%20on-Claude%20Code-orange" alt="Claude Code"></a>
 </p>
 
-Slash commands, a knowledge graph, citation validation, and a fluid workflow cycle — all running inside your terminal. Wheeler adds structure where you need it (provenance, citations, task handoff) and stays out of the way where you don't (thinking, discussing, exploring).
+Slash commands, a knowledge graph, citation validation, and a fluid workflow cycle — all running locally on your machine inside your terminal. No API keys. No cloud services. No per-token costs. Wheeler runs entirely on your Claude Max subscription.
 
 You bring the scientific judgment. Wheeler handles the grinding.
 
@@ -17,7 +17,7 @@ You bring the scientific judgment. Wheeler handles the grinding.
 
 ---
 
-**Every claim cites a graph node.** You ask a question, Wheeler answers with citations. Every citation is deterministically validated — regex extraction, Cypher lookup, full provenance chain. Not LLM self-judgment.
+**Every claim cites a graph node.** Wheeler answers with `[NODE_ID]` citations. Every citation is deterministically validated — regex extraction, batched Cypher lookup, provenance chain verification. Not LLM self-judgment. The validation is tiered:
 
 ```text
 you: "What do we know about ON parasol contrast responses?"
@@ -28,8 +28,17 @@ recordings [D-9f1c]. This is consistent with the hypothesis that ON-pathway
 cells have higher contrast sensitivity than OFF [H-1b4c], though we only
 have data from one prep so far.
 
-  citations  F-3a2b ✓  A-7e2d ✓  D-9f1c ✓  H-1b4c ✓
+  citations  F-3a2b ✓ valid    A-7e2d ✓ valid    D-9f1c ✓ valid    H-1b4c ~ weak
 ```
+
+| Status | Meaning |
+| ------ | ------- |
+| **VALID** | Node exists, full provenance chain verified (e.g., Finding ← Analysis ← Dataset) |
+| **MISSING_PROVENANCE** | Node exists but lacks required upstream links (e.g., Finding without a source Analysis) |
+| **STALE** | Node exists but upstream script has been modified since execution — results may not be reproducible |
+| **NOT_FOUND** | Node ID not in graph — hallucinated or deleted |
+
+**Runs 100% locally.** Wheeler uses Claude Code (your Max subscription) for reasoning, a local Neo4j instance (Docker) for the knowledge graph, and local MCP servers for tool execution. No API keys are needed or allowed — the codebase strips `ANTHROPIC_API_KEY` at startup and pre-commit hooks block any direct API imports. Your data never leaves your machine.
 
 **Structure scales with presence.** Loose and creative when you're there. Structured and auditable when Wheeler works alone.
 
@@ -39,7 +48,9 @@ have data from one prep so far.
 
 ## Setup
 
-**Prerequisites:** Python 3.11+, [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Docker (for Neo4j)
+**Prerequisites:** Python 3.11+, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), Docker (for Neo4j)
+
+Everything runs locally. No cloud accounts, no API keys, no data leaves your machine.
 
 > **Flat-file backend coming soon.** Right now Wheeler requires Neo4j for the knowledge graph. A markdown-based backend that needs zero infrastructure is on the roadmap — follow the repo for updates.
 
@@ -125,18 +136,6 @@ wh status                                     # quick status check
 **Independent** — Wheeler works via `claude -p` (headless). Every action logged to `.logs/`. Stops and flags instead of making judgment calls: fork decisions, anomalies, interpretation needed, unexpected results.
 
 **Reconvene** — Wheeler reads the logs, presents: completed (with citations), flagged (needs your judgment), surprises, next steps. Cycle repeats.
-
-## Citation Validation
-
-| Flag | Meaning |
-| ---- | ------- |
-| VALID | Node exists with full provenance chain |
-| WEAK | Node exists but missing provenance links |
-| STALE | Node exists but upstream script changed since execution |
-| INVALID | Node ID not found (hallucinated) |
-| UNGROUNDED | Non-trivial claim with zero citations |
-
-Enforced on all paths: interactive (MCP tool), headless (post-hoc validation appended to logs), and manual (`validate_citations`).
 
 ## Context Tiers
 
@@ -254,7 +253,7 @@ Pre-commit hooks enforce: no API key leaks, tests pass, type checking, linting.
 
 **Logging:** Set `WHEELER_LOG_LEVEL=DEBUG` for verbose output. Default is INFO.
 
-No API keys. No per-token costs. Runs on Claude Max subscription.
+No API keys. No per-token costs. No data leaves your machine. Runs entirely on Claude Max subscription.
 
 ## License
 
