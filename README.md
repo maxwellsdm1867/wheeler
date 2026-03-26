@@ -82,6 +82,15 @@ cd ~/my-project && claude    # open Claude Code in your project
 /wh:resume      # restore context from previous session
 ```
 
+For headless/independent work (no Claude Code needed):
+
+```bash
+wh queue "search for papers on SRM models"   # sonnet, 10 turns, logged
+wh quick "check graph status"                 # haiku, 3 turns, fast
+wh dream                                      # graph consolidation, sonnet, 15 turns
+wh status                                     # quick status check
+```
+
 ## The Workflow
 
 ```text
@@ -191,6 +200,42 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details and design rat
 | `matlab` | MATLAB execution (optional) |
 | `papers` | Literature search: PubMed, arXiv, Semantic Scholar (optional) |
 
+## Code Structure
+
+```text
+wheeler/
+├── __init__.py              # Version, NullHandler logging setup
+├── config.py                # Pydantic models, YAML loader, configure_logging()
+├── mcp_server.py            # FastMCP server — 23 tools exposed to Claude Code
+├── graph/
+│   ├── driver.py            # Centralized Neo4j driver (async singleton + sync factory)
+│   ├── schema.py            # Node labels, constraints, indexes, generate_node_id()
+│   ├── context.py           # Size-limited context injection (tier-separated)
+│   ├── provenance.py        # File hashing, Analysis nodes, staleness detection
+│   └── trace.py             # Provenance chain walking (backwards traversal)
+├── tools/
+│   ├── graph_tools/         # Graph operations package
+│   │   ├── __init__.py      # Registry dispatch (tool name → function)
+│   │   ├── mutations.py     # Write ops: add_finding, add_paper, link_nodes, set_tier...
+│   │   ├── queries.py       # Read ops: query_findings, graph_gaps, query_documents...
+│   │   └── _common.py       # Shared utilities
+│   └── cli.py               # wheeler-tools CLI (Typer + Rich)
+├── validation/
+│   ├── citations.py         # Regex extraction + batched Cypher validation
+│   └── ledger.py            # Provenance audit trail
+├── workspace.py             # Project file scanner with caching
+├── scaffold.py              # Project directory detection + creation
+├── task_log.py              # Structured logging for headless tasks
+├── log_summary.py           # Log summarization for /wh:reconvene
+├── validate_output.py       # Post-hoc citation validation for logs
+└── installer.py             # Package install/update with manifest
+
+.claude/commands/wh/          # 16 slash commands (YAML frontmatter + system prompts)
+bin/wh                        # Headless launcher (queue/quick/status/dream)
+tests/                        # 191 unit tests
+tests/e2e/                    # 18 end-to-end tests against live Neo4j
+```
+
 ## Stack
 
 Python 3.11+ / Neo4j Community (Docker) / Typer + Rich / Pydantic / FastMCP
@@ -199,10 +244,15 @@ Python 3.11+ / Neo4j Community (Docker) / Typer + Rich / Pydantic / FastMCP
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v
+python -m pytest tests/ -v                 # 191 unit tests
+python -m pytest tests/e2e/ -v             # 18 e2e tests (requires Neo4j)
+python tests/e2e/setup_sandbox.py          # populate graph with test data
+python tests/e2e/setup_sandbox.py --reset  # wipe test data
 ```
 
-Pre-commit hooks enforce: no API key leaks, tests pass, type checking, linting. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Pre-commit hooks enforce: no API key leaks, tests pass, type checking, linting.
+
+**Logging:** Set `WHEELER_LOG_LEVEL=DEBUG` for verbose output. Default is INFO.
 
 No API keys. No per-token costs. Runs on Claude Max subscription.
 
@@ -212,7 +262,7 @@ No API keys. No per-token costs. Runs on Claude Max subscription.
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/tests-185%20passing-brightgreen" alt="tests 185 passing">
+  <img src="https://img.shields.io/badge/tests-209%20passing-brightgreen" alt="tests 209 passing">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license MIT">
   <img src="https://img.shields.io/badge/neo4j-knowledge%20graph-008CC1?logo=neo4j&logoColor=white" alt="Neo4j">
   <img src="https://img.shields.io/badge/MCP-23%20tools-orange" alt="MCP 23 tools">
