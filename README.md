@@ -11,13 +11,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/graph-Kuzu-green" alt="Kuzu">
-  <img src="https://img.shields.io/badge/search-fastembed-green" alt="fastembed">
-  <img src="https://img.shields.io/badge/Pydantic-v2-teal" alt="Pydantic v2">
-  <img src="https://img.shields.io/badge/linting-ruff-purple" alt="ruff">
-  <img src="https://img.shields.io/badge/types-mypy-blue" alt="mypy">
-</p>
-<p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
   <img src="https://img.shields.io/badge/local%20only-no%20data%20leaves%20your%20machine-brightgreen" alt="Local Only">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
