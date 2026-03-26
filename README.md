@@ -245,7 +245,7 @@ wheeler/
 
 .claude/commands/wh/          # 16 slash commands
 bin/wh                        # Headless launcher
-tests/                        # 191 unit + 18 e2e tests
+tests/                        # 317 unit + 18 e2e tests
 ```
 
 ## Development
@@ -273,9 +273,10 @@ The workflow and memory are in place. The next layer is agents that watch the gr
 [MIT](LICENSE)
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="v0.2.0">
   <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/tests-209%20passing-brightgreen" alt="tests 209 passing">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license MIT">
+  <img src="https://img.shields.io/badge/local%20only-no%20cloud-2ea44f" alt="local only">
   <img src="https://img.shields.io/badge/graph-Neo4j%20%7C%20Kuzu-008CC1" alt="Neo4j | Kuzu">
   <img src="https://img.shields.io/badge/MCP-25%20tools-orange" alt="MCP 25 tools">
   <img src="https://img.shields.io/badge/Claude%20Code-native-cc785c?logo=anthropic&logoColor=white" alt="Claude Code native">
