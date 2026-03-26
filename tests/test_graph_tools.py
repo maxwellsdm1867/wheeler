@@ -22,10 +22,12 @@ class TestToolDefinitions:
             "add_finding",
             "add_hypothesis",
             "add_question",
+            "add_note",
             "link_nodes",
             "query_findings",
             "query_open_questions",
             "query_hypotheses",
+            "query_notes",
             "graph_gaps",
             "add_dataset",
             "query_datasets",
@@ -120,4 +122,4 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 17
+        assert len(TOOL_DEFINITIONS) == 19

@@ -163,6 +163,15 @@ async def add_document(title: str, path: str, section: str = "", status: str = "
     return json.loads(result)
 
 
+@mcp.tool()
+async def add_note(content: str, title: str = "", context: str = "") -> dict:
+    """Add a ResearchNote to capture an insight, observation, or idea. Returns the new node ID."""
+    result = await graph_tools.execute_tool(
+        "add_note", {"content": content, "title": title, "context": context}, _config
+    )
+    return json.loads(result)
+
+
 # --- Graph queries ---
 
 
@@ -207,6 +216,15 @@ async def query_papers(keyword: str = "", limit: int = 10) -> dict:
     """Search Paper nodes in the knowledge graph by title or authors."""
     result = await graph_tools.execute_tool(
         "query_papers", {"keyword": keyword, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+async def query_notes(keyword: str = "", limit: int = 10) -> dict:
+    """Search research notes in the knowledge graph."""
+    result = await graph_tools.execute_tool(
+        "query_notes", {"keyword": keyword, "limit": limit}, _config
     )
     return json.loads(result)
 

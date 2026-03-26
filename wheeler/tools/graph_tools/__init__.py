@@ -27,6 +27,7 @@ _MUTATION_TOOLS = frozenset({
     "add_dataset",
     "add_paper",
     "add_document",
+    "add_note",
 })
 
 # --- Tool registry: maps tool names to handler functions ---
@@ -39,6 +40,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "add_dataset": mutations.add_dataset,
     "add_paper": mutations.add_paper,
     "add_document": mutations.add_document,
+    "add_note": mutations.add_note,
     "link_nodes": mutations.link_nodes,
     "set_tier": mutations.set_tier,
     # Queries
@@ -48,6 +50,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "query_datasets": queries.query_datasets,
     "query_papers": queries.query_papers,
     "query_documents": queries.query_documents,
+    "query_notes": queries.query_notes,
     "graph_gaps": queries.graph_gaps,
 }
 
@@ -186,6 +189,19 @@ TOOL_DEFINITIONS = [
         "required": [],
     },
     {
+        "name": "add_note",
+        "description": (
+            "Add a ResearchNote to the knowledge graph. Use when the scientist "
+            "shares an insight, observation, or idea worth preserving. Returns the new node ID."
+        ),
+        "parameters": {
+            "title": {"type": "string", "description": "Short title for the note", "default": ""},
+            "content": {"type": "string", "description": "The note content"},
+            "context": {"type": "string", "description": "What prompted this note (optional)", "default": ""},
+        },
+        "required": ["content"],
+    },
+    {
         "name": "add_document",
         "description": (
             "Add a Document to the knowledge graph. Use when /wh:write produces "
@@ -212,6 +228,15 @@ TOOL_DEFINITIONS = [
             "tier": {"type": "string", "description": "reference or generated"},
         },
         "required": ["node_id", "tier"],
+    },
+    {
+        "name": "query_notes",
+        "description": "Search ResearchNote nodes in the knowledge graph by keyword.",
+        "parameters": {
+            "keyword": {"type": "string", "description": "Optional keyword to filter by", "default": ""},
+            "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+        },
+        "required": [],
     },
     {
         "name": "query_documents",
@@ -278,6 +303,7 @@ def _write_knowledge_file(
             DatasetModel,
             PaperModel,
             DocumentModel,
+            ResearchNoteModel,
         )
         from wheeler.knowledge.store import write_node
 
@@ -339,6 +365,16 @@ def _write_knowledge_file(
                 path=args["path"],
                 section=args.get("section", ""),
                 status=args.get("status", "draft"),
+                tier=args.get("tier", "generated"),
+                created=now,
+                updated=now,
+            )
+        elif tool_name == "add_note":
+            model = ResearchNoteModel(
+                id=node_id,
+                title=args.get("title", ""),
+                content=args["content"],
+                context=args.get("context", ""),
                 tier=args.get("tier", "generated"),
                 created=now,
                 updated=now,

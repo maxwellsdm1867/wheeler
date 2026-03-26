@@ -351,6 +351,52 @@ async def query_documents(session, args: dict) -> str:
     return json.dumps({"documents": documents, "count": len(documents)})
 
 
+async def query_notes(session, args: dict) -> str:
+    config = args.pop("_config", None)
+    knowledge_path = _knowledge_path_from_args({"_config": config}) if config else None
+
+    keyword = args.get("keyword", "")
+    limit = int(args.get("limit", 10))
+
+    if keyword:
+        result = await session.run(
+            "MATCH (n:ResearchNote) "
+            "WHERE toLower(n.title) CONTAINS toLower($kw) "
+            "OR toLower(n.content) CONTAINS toLower($kw) "
+            "RETURN n.id AS id, n.title AS title, n.content AS content, "
+            "n.context AS context, n.date AS date, n.tier AS tier "
+            "ORDER BY n.date DESC LIMIT $limit",
+            kw=keyword, limit=limit,
+        )
+    else:
+        result = await session.run(
+            "MATCH (n:ResearchNote) "
+            "RETURN n.id AS id, n.title AS title, n.content AS content, "
+            "n.context AS context, n.date AS date, n.tier AS tier "
+            "ORDER BY n.date DESC LIMIT $limit",
+            limit=limit,
+        )
+
+    records = [r async for r in result]
+    notes = []
+    for r in records:
+        node_id = r["id"]
+        node = _read_knowledge_node(knowledge_path, node_id)
+        if node:
+            notes.append({
+                "id": node.id, "title": node.title, "content": node.content,
+                "context": node.context, "date": node.created, "tier": node.tier,
+            })
+        else:
+            notes.append({
+                "id": node_id, "title": r.get("title", ""), "content": r.get("content", ""),
+                "context": r.get("context", ""), "date": r.get("date", ""),
+                "tier": r.get("tier", "generated"),
+            })
+
+    return json.dumps({"notes": notes, "count": len(notes)})
+
+
 async def graph_gaps(session, args: dict | None = None) -> str:
     """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses.
 

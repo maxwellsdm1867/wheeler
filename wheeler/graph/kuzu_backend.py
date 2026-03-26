@@ -141,6 +141,15 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
         ("file_path", "STRING"),
         ("tier", "STRING"),
     ],
+    "ResearchNote": [
+        ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
+        ("content", "STRING"),
+        ("context", "STRING"),
+        ("date", "STRING"),
+        ("tier", "STRING"),
+    ],
 }
 
 # Verify every NODE_LABEL has a schema entry

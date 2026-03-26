@@ -25,6 +25,7 @@ class TestSchema:
         assert PREFIX_TO_LABEL["T"] == "Task"
         assert PREFIX_TO_LABEL["PL"] == "Plan"
         assert PREFIX_TO_LABEL["W"] == "Document"
+        assert PREFIX_TO_LABEL["N"] == "ResearchNote"
 
     def test_label_to_prefix_is_inverse(self):
         for prefix, label in PREFIX_TO_LABEL.items():
@@ -34,7 +35,7 @@ class TestSchema:
         expected = {
             "Plan", "Finding", "Hypothesis", "OpenQuestion",
             "Experiment", "Analysis", "Dataset", "Paper",
-            "CellType", "Task", "Document",
+            "CellType", "Task", "Document", "ResearchNote",
         }
         assert set(NODE_LABELS) == expected
 

@@ -122,5 +122,5 @@ class TestBackfill:
 
     def test_text_fields_mapping(self) -> None:
         """Verify TEXT_FIELDS covers all expected node types."""
-        expected = {"Finding", "Hypothesis", "OpenQuestion", "Paper", "Dataset", "Document"}
+        expected = {"Finding", "Hypothesis", "OpenQuestion", "Paper", "Dataset", "Document", "ResearchNote"}
         assert set(TEXT_FIELDS.keys()) == expected

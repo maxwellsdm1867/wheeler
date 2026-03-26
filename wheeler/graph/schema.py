@@ -39,6 +39,7 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.date)",
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.status)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.title)",
+    "CREATE INDEX IF NOT EXISTS FOR (n:ResearchNote) ON (n.date)",
     # Knowledge file pointers
     "CREATE INDEX IF NOT EXISTS FOR (f:Finding) ON (f.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (h:Hypothesis) ON (h.file_path)",
@@ -46,6 +47,7 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (d:Dataset) ON (d.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (n:ResearchNote) ON (n.file_path)",
 ]
 
 # Allowed relationship types (whitelist for link command)

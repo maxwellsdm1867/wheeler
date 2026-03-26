@@ -99,6 +99,13 @@ class TaskModel(NodeBase):
     type: Literal["Task"] = "Task"
 
 
+class ResearchNoteModel(NodeBase):
+    type: Literal["ResearchNote"] = "ResearchNote"
+    title: str = ""
+    content: str = ""
+    context: str = ""  # what prompted this note
+
+
 # ---------------------------------------------------------------------------
 # Prefix ↔ label mappings (canonical source of truth for the node type system)
 # ---------------------------------------------------------------------------
@@ -115,6 +122,7 @@ PREFIX_TO_LABEL: dict[str, str] = {
     "C": "CellType",
     "T": "Task",
     "W": "Document",
+    "N": "ResearchNote",
 }
 
 LABEL_TO_PREFIX: dict[str, str] = {v: k for k, v in PREFIX_TO_LABEL.items()}
@@ -139,6 +147,7 @@ KnowledgeNode = Annotated[
         PlanModel,
         CellTypeModel,
         TaskModel,
+        ResearchNoteModel,
     ],
     Discriminator("type"),
 ]
@@ -161,6 +170,7 @@ _LABEL_TO_MODEL: dict[str, type[NodeBase]] = {
     "Plan": PlanModel,
     "CellType": CellTypeModel,
     "Task": TaskModel,
+    "ResearchNote": ResearchNoteModel,
 }
 
 
@@ -193,4 +203,6 @@ def title_for_node(node: NodeBase) -> str:
         return node.description[:100]
     if isinstance(node, AnalysisModel):
         return f"Analysis: {node.script_path}"[:100]
+    if isinstance(node, ResearchNoteModel):
+        return (node.title[:100] if node.title else node.content[:100])
     return node.id

@@ -15,6 +15,7 @@ from wheeler.models import (
     NodeBase,
     OpenQuestionModel,
     PaperModel,
+    ResearchNoteModel,
 )
 
 
@@ -233,6 +234,39 @@ def _render_analysis(m: AnalysisModel) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
+def _render_note(m: ResearchNoteModel) -> str:
+    parts: list[str] = [f"# Research Note [{m.id}]", ""]
+
+    meta: list[str] = []
+    if m.tier:
+        meta.append(f"**Tier**: {m.tier}")
+    date = _fmt_date(m.created)
+    if date:
+        meta.append(f"**Created**: {date}")
+    if meta:
+        parts.append(" | ".join(meta))
+        parts.append("")
+
+    if m.title:
+        parts.append(f"**{m.title}**")
+        parts.append("")
+
+    if m.content:
+        parts.append(m.content)
+        parts.append("")
+
+    if m.context:
+        parts.append(f"*Context*: {m.context}")
+        parts.append("")
+
+    tags = _tags_line(m.tags)
+    if tags:
+        parts.append(tags.strip())
+        parts.append("")
+
+    return "\n".join(parts).rstrip() + "\n"
+
+
 def _render_generic(m: NodeBase) -> str:
     """Fallback renderer for Experiment, Plan, CellType, Task, etc."""
     type_name = m.type
@@ -280,6 +314,7 @@ _RENDERERS: dict[str, object] = {
     "Dataset": _render_dataset,
     "Document": _render_document,
     "Analysis": _render_analysis,
+    "ResearchNote": _render_note,
 }
 
 

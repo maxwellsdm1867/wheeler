@@ -24,6 +24,7 @@ TEXT_FIELDS: dict[str, str] = {
     "Paper": "title",
     "Dataset": "description",
     "Document": "title",
+    "ResearchNote": "content",
 }
 
 

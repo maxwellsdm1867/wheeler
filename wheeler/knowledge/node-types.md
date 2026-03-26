@@ -152,6 +152,28 @@ Common relationships: `Analysis -USED_DATA-> Dataset`, `Analysis -GENERATED-> Fi
 
 ---
 
+## ResearchNote (N-)
+
+A scientist's raw thinking — observations, insights, ideas. Like a lab notebook entry.
+Created via `/wh:note`.
+
+```json
+{"id": "N-4e5f6a7b", "type": "ResearchNote", "tier": "generated",
+ "title": "Temperature dependence of calcium oscillations",
+ "content": "The oscillation frequency seems to drop when we cool the bath below 30C. Could this be a channel gating effect?",
+ "context": "Noticed while reviewing cell_042 recordings"}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| title | str | Short label (~10 words) |
+| content | str | The note itself (freeform) |
+| context | str | What prompted this (optional) |
+
+Common relationships: `ResearchNote -RELEVANT_TO-> Finding`, `ResearchNote -AROSE_FROM-> Dataset`
+
+---
+
 ## Experiment (E-), Plan (PL-), CellType (C-), Task (T-)
 
 Lightweight structural nodes with no content fields beyond base.

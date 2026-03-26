@@ -43,13 +43,15 @@ class TestToolRegistration:
             "search_findings",
             "index_node",
             "show_node",
+            "add_note",
+            "query_notes",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 26
+        assert len(tools) == 28
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):

@@ -109,6 +109,22 @@ async def add_document(session, args: dict) -> str:
     return json.dumps({"node_id": node_id, "label": "Document", "status": "created"})
 
 
+async def add_note(session, args: dict) -> str:
+    node_id = generate_node_id("N")
+    await session.run(
+        "CREATE (n:ResearchNote {id: $id, title: $title, content: $content, "
+        "context: $context, date: $date, tier: $tier})",
+        id=node_id,
+        title=args.get("title", ""),
+        content=args["content"],
+        context=args.get("context", ""),
+        date=_now(),
+        tier=args.get("tier", "generated"),
+    )
+    logger.info("Created ResearchNote %s: %s", node_id, args.get("title", "")[:60])
+    return json.dumps({"node_id": node_id, "label": "ResearchNote", "status": "created"})
+
+
 async def link_nodes(session, args: dict) -> str:
     rel = args["relationship"]
     if rel not in ALLOWED_RELATIONSHIPS:

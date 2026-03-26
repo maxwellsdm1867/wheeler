@@ -19,7 +19,7 @@ See `ARCHITECTURE.md` for full technical spec.
 Structure scales with presence — loose when interactive, strict when independent.
 
 **Together**: `/wh:discuss` → `/wh:plan` → `/wh:execute`. Also `/wh:chat`,
-`/wh:pair`, `/wh:write`, `/wh:ask`, `/wh:dream`.
+`/wh:pair`, `/wh:write`, `/wh:ask`, `/wh:dream`, `/wh:note`.
 
 **Handoff**: Wheeler proposes tasks when remaining work is all grinding.
 `/wh:handoff` to enter explicitly.
