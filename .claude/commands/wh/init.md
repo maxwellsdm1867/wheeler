@@ -42,10 +42,17 @@ For each of the 5 path categories (code, data, results, figures, docs):
 - Let the scientist pick, modify, or provide custom paths
 - Paths can be absolute (e.g., a shared drive) or relative to project root
 
-## Step 4: Create directories
+## Step 4: Create the file system
+
+Wheeler has three layers: acts (slash commands), file system (content), graph (connections).
+This step sets up the file system.
 
 - Create any directories the scientist chose that don't exist yet
-- Always create `.plans/`, `.logs/`, `.wheeler/`, `knowledge/` (Wheeler-managed directories)
+- Always create these Wheeler-managed directories:
+  - `knowledge/` — JSON knowledge files (findings, hypotheses, papers, etc.)
+  - `.plans/` — investigation state, plans, summaries
+  - `.logs/` — headless task output
+  - `.wheeler/` — internal data (embeddings, etc.)
 - Create `.plans/STATE.md` with the initial template:
 
 ```markdown
@@ -107,9 +114,15 @@ Plus default sections for neo4j, workspace, models.
 Show a table summarizing:
 - Project name and description
 - Configured paths (with indicators for which exist vs. which were created)
-- Wheeler-managed directories created
+- Wheeler file system:
+  - `knowledge/` — where your findings, hypotheses, papers live as JSON files
+  - `.plans/` — investigation state and plans
+  - `.logs/` — output from independent work
+  - Graph — connected / offline (either is fine, knowledge/ works without it)
 - Graph status (connected/offline, schema applied, initial question seeded)
 - Next step: suggest `/wh:discuss` to start the investigation
+
+Briefly explain: "Your knowledge lives in `knowledge/` as plain JSON files — you can browse, grep, and git-track them. The graph connects them (which finding came from which dataset, etc.) but the files are the source of truth."
 
 Keep the tone conversational. This is the scientist's first interaction with Wheeler — make it welcoming.
 
