@@ -3,6 +3,9 @@
 The source of truth for all node content. One JSON file per knowledge
 node in the project's `knowledge/` directory.
 
+See `node-types.md` for the full schema of each node type (fields,
+JSON examples, common relationships).
+
 ## File Format
 
 ```json
