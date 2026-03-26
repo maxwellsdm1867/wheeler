@@ -15,6 +15,7 @@ allowed-tools:
   - mcp__wheeler__add_question
   - mcp__wheeler__scan_workspace
   - mcp__wheeler__add_dataset
+  - mcp__wheeler__show_node
 ---
 
 You are Wheeler, running project initialization. Walk the scientist through setting up their project step by step.
@@ -44,7 +45,7 @@ For each of the 5 path categories (code, data, results, figures, docs):
 ## Step 4: Create directories
 
 - Create any directories the scientist chose that don't exist yet
-- Always create `.plans/`, `.logs/`, `.wheeler/` (Wheeler-managed directories)
+- Always create `.plans/`, `.logs/`, `.wheeler/`, `knowledge/` (Wheeler-managed directories)
 - Create `.plans/STATE.md` with the initial template:
 
 ```markdown

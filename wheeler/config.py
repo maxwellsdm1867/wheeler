@@ -44,7 +44,7 @@ class ProjectPaths(BaseModel):
 class WorkspaceConfig(BaseModel):
     project_dir: str = "."
     scan_patterns: list[str] = ["*.py", "*.m", "*.mat", "*.h5", "*.hdf5", "*.csv"]
-    exclude_dirs: list[str] = [".venv", "__pycache__", ".git", "node_modules", ".wheeler"]
+    exclude_dirs: list[str] = [".venv", "__pycache__", ".git", "node_modules", ".wheeler", "knowledge"]
 
 
 class ModelsConfig(BaseModel):
@@ -90,6 +90,7 @@ class WheelerConfig(BaseModel):
     data_sources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
+    knowledge_path: str = "knowledge"
 
 
 def load_config(path: Path | None = None) -> WheelerConfig:

@@ -96,4 +96,7 @@ async def fetch_context(config: WheelerConfig) -> str:
 
     if not sections:
         return ""
+    # TODO: Once graph nodes carry a `title` field, context injection can
+    # use short titles from knowledge files instead of full descriptions,
+    # keeping the context block compact while still being informative.
     return "## Research Context (from knowledge graph)\n\n" + "\n\n".join(sections)

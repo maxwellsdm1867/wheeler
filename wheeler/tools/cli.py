@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import typer
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.table import Table
 
 from wheeler.config import load_config
@@ -504,6 +505,81 @@ def cmd_dev_sync() -> None:
     except Exception as exc:
         console.print(f"[red]Sync failed:[/red] {exc}")
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# show
+# ---------------------------------------------------------------------------
+
+
+@app.command("migrate")
+def cmd_migrate(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without writing files"),
+) -> None:
+    """Migrate existing graph nodes to knowledge/ JSON files."""
+    from pathlib import Path
+
+    from wheeler.graph.backend import get_backend
+    from wheeler.knowledge.migrate import migrate
+
+    config = load_config()
+    backend = get_backend(config)
+
+    async def _run() -> None:
+        await backend.initialize()
+        try:
+            report = await migrate(backend, Path(config.knowledge_path), dry_run=dry_run)
+        finally:
+            await backend.close()
+
+        # Print report
+        if dry_run:
+            console.print("[yellow]DRY RUN — no files written[/yellow]")
+
+        table = Table(title="Migration Report")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Count", justify="right")
+        table.add_row("Migrated", f"[green]{report.migrated}[/green]")
+        table.add_row("Skipped (already exist)", str(report.skipped))
+        table.add_row("Errors", f"[red]{report.errors}[/red]" if report.errors else "0")
+        console.print(table)
+
+        if report.details:
+            console.print("\n[bold]Details:[/bold]")
+            for detail in report.details:
+                console.print(f"  {detail}")
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        console.print(f"[red]Migration failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+
+@app.command("show")
+def cmd_show(
+    node_id: str = typer.Argument(help="Node ID (e.g., F-3a2b)"),
+    raw: bool = typer.Option(False, "--raw", help="Show raw JSON instead of markdown"),
+) -> None:
+    """Display a knowledge node as formatted markdown."""
+    from pathlib import Path
+
+    from wheeler.knowledge import render, store
+
+    config = load_config()
+    knowledge_path = Path(config.knowledge_path)
+
+    try:
+        model = store.read_node(knowledge_path, node_id)
+    except FileNotFoundError:
+        console.print(f"[red]Node not found:[/red] {node_id}")
+        raise typer.Exit(1)
+
+    if raw:
+        console.print_json(model.model_dump_json(indent=2))
+    else:
+        md = render.render_node(model)
+        console.print(Markdown(md))
 
 
 if __name__ == "__main__":

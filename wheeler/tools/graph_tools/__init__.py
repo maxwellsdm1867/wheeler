@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS
@@ -16,6 +18,16 @@ from wheeler.graph.schema import ALLOWED_RELATIONSHIPS
 from . import mutations, queries
 
 logger = logging.getLogger(__name__)
+
+# Tools that create graph nodes and should be dual-written to knowledge/ files
+_MUTATION_TOOLS = frozenset({
+    "add_finding",
+    "add_hypothesis",
+    "add_question",
+    "add_dataset",
+    "add_paper",
+    "add_document",
+})
 
 # --- Tool registry: maps tool names to handler functions ---
 
@@ -240,6 +252,147 @@ TOOL_DEFINITIONS = [
 ]
 
 
+# --- Dual-write helpers ---
+
+
+def _write_knowledge_file(
+    tool_name: str, args: dict, result_str: str, config: WheelerConfig
+) -> None:
+    """Best-effort dual-write: persist a new graph node as a JSON file.
+
+    Imports are lazy to avoid circular dependency issues.  Any errors are
+    logged but never propagated — the graph write has already succeeded and
+    the file write is supplementary during Phase 1.
+    """
+    try:
+        parsed = json.loads(result_str)
+        node_id: str | None = parsed.get("node_id")
+        if not node_id:
+            logger.warning("_write_knowledge_file: no node_id in result for %s", tool_name)
+            return
+
+        from wheeler.models import (
+            FindingModel,
+            HypothesisModel,
+            OpenQuestionModel,
+            DatasetModel,
+            PaperModel,
+            DocumentModel,
+        )
+        from wheeler.knowledge.store import write_node
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Map tool name -> (ModelClass, kwargs)
+        if tool_name == "add_finding":
+            model = FindingModel(
+                id=node_id,
+                description=args["description"],
+                confidence=float(args["confidence"]),
+                tier=args.get("tier", "generated"),
+                created=now,
+                updated=now,
+            )
+        elif tool_name == "add_hypothesis":
+            model = HypothesisModel(
+                id=node_id,
+                statement=args["statement"],
+                status=args.get("status", "open"),
+                tier=args.get("tier", "generated"),
+                created=now,
+                updated=now,
+            )
+        elif tool_name == "add_question":
+            model = OpenQuestionModel(
+                id=node_id,
+                question=args["question"],
+                priority=int(args.get("priority", 5)),
+                tier=args.get("tier", "generated"),
+                created=now,
+                updated=now,
+            )
+        elif tool_name == "add_dataset":
+            model = DatasetModel(
+                id=node_id,
+                path=args["path"],
+                data_type=args["type"],
+                description=args["description"],
+                tier=args.get("tier", "generated"),
+                created=now,
+                updated=now,
+            )
+        elif tool_name == "add_paper":
+            model = PaperModel(
+                id=node_id,
+                title=args["title"],
+                authors=args.get("authors", ""),
+                doi=args.get("doi", ""),
+                year=int(args.get("year", 0)),
+                tier="reference",
+                created=now,
+                updated=now,
+            )
+        elif tool_name == "add_document":
+            model = DocumentModel(
+                id=node_id,
+                title=args["title"],
+                path=args["path"],
+                section=args.get("section", ""),
+                status=args.get("status", "draft"),
+                tier=args.get("tier", "generated"),
+                created=now,
+                updated=now,
+            )
+        else:
+            return
+
+        knowledge_dir = Path(config.knowledge_path)
+        write_node(knowledge_dir, model)
+        logger.info("Dual-write: %s -> %s/%s.json", tool_name, knowledge_dir, node_id)
+
+    except Exception:
+        logger.error(
+            "Dual-write failed for %s (best-effort, continuing)",
+            tool_name,
+            exc_info=True,
+        )
+
+
+def _update_knowledge_tier(
+    args: dict, result_str: str, config: WheelerConfig
+) -> None:
+    """Best-effort tier update: if a JSON file exists for the node, update its tier."""
+    try:
+        parsed = json.loads(result_str)
+        if "error" in parsed:
+            return
+
+        node_id: str = args["node_id"]
+        new_tier: str = args["tier"]
+
+        from wheeler.knowledge.store import read_node, write_node
+
+        knowledge_dir = Path(config.knowledge_path)
+
+        try:
+            node = read_node(knowledge_dir, node_id)
+        except FileNotFoundError:
+            logger.debug("set_tier: no knowledge file for %s, skipping", node_id)
+            return
+
+        node.tier = new_tier
+        node.updated = datetime.now(timezone.utc).isoformat()
+        write_node(knowledge_dir, node)
+        logger.info("Dual-write tier update: %s -> %s", node_id, new_tier)
+
+    except Exception:
+        logger.error(
+            "Dual-write tier update failed for %s (best-effort, continuing)",
+            args.get("node_id", "?"),
+            exc_info=True,
+        )
+
+
 # --- Dispatch ---
 
 
@@ -251,6 +404,10 @@ async def execute_tool(
     Each call gets its own session — failures in one tool call don't
     affect subsequent calls. The driver is a singleton with a connection
     pool, so session creation is cheap.
+
+    For mutation tools (add_*), a best-effort dual-write persists the new
+    node as a JSON file under ``config.knowledge_path``.  For ``set_tier``,
+    the existing JSON file (if any) is updated.
     """
     handler = _TOOL_REGISTRY.get(tool_name)
     if handler is None:
@@ -260,11 +417,19 @@ async def execute_tool(
         logger.debug("execute_tool: %s", tool_name)
         from wheeler.graph.driver import get_async_driver
         driver = get_async_driver(config)
+        # Inject config for query tools so they can read knowledge files
+        if tool_name.startswith("query_") or tool_name == "graph_gaps":
+            args["_config"] = config
+
         async with driver.session(database=config.neo4j.database) as session:
-            if tool_name == "graph_gaps":
-                result = await handler(session)
-            else:
-                result = await handler(session, args)
+            result = await handler(session, args)
+
+        # Phase 1 dual-write: persist node as JSON file
+        if tool_name in _MUTATION_TOOLS:
+            _write_knowledge_file(tool_name, args, result, config)
+        elif tool_name == "set_tier":
+            _update_knowledge_tier(args, result, config)
+
         logger.debug("execute_tool: %s completed", tool_name)
         return result
     except Exception as exc:

@@ -66,6 +66,9 @@ usage() {
     echo -e "    ${AMBER}wh dream${RESET}             ${DIM}Consolidate graph: promote, link, prune (sonnet, 15 turns)${RESET}"
     echo -e "    ${AMBER}wh report${RESET} [period]    ${DIM}Work log from graph (today/week/since date)${RESET}"
     echo ""
+    echo -e "  ${BOLD}Knowledge${RESET}"
+    echo -e "    ${AMBER}wh show${RESET} <node-id>   ${DIM}Display a knowledge node (markdown or --raw JSON)${RESET}"
+    echo ""
     echo -e "  ${BOLD}Development${RESET}"
     echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
     echo -e "    ${AMBER}wh hooks test${RESET}        ${DIM}Run all checks without committing${RESET}"
@@ -155,6 +158,11 @@ case "$SUBCMD" in
         PERIOD="${1:-today}"
         shift 2>/dev/null || true
         run_headless "report" "Generate the work log for: $PERIOD" "sonnet" "$GREEN" "report" "10" "json" "true" "$@"
+        ;;
+
+    # ── Knowledge node display ──────────────────────────────────────
+    show)
+        exec "$WHEELER_DIR/.venv/bin/python" -m wheeler.tools.cli show "$@"
         ;;
 
     # ── Hooks ─────────────────────────────────────────────────────

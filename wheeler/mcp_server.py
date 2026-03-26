@@ -60,6 +60,28 @@ async def graph_context() -> str:
     return await context.fetch_context(_config)
 
 
+# --- Node read (filesystem) ---
+
+
+@mcp.tool()
+async def show_node(node_id: str) -> dict:
+    """Read the full content of a knowledge node from its JSON file.
+
+    Returns the complete node data including all fields. Use this to
+    read findings, hypotheses, questions, papers, etc. without needing
+    a graph query.
+    """
+    from pathlib import Path
+    from wheeler.knowledge import store
+
+    knowledge_path = Path(_config.knowledge_path)
+    try:
+        model = store.read_node(knowledge_path, node_id)
+        return model.model_dump()
+    except FileNotFoundError:
+        return {"error": f"Node {node_id} not found"}
+
+
 # --- Graph mutations ---
 
 

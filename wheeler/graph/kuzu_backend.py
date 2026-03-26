@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "Finding": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("description", "STRING"),
         ("confidence", "DOUBLE"),
         ("date", "STRING"),
@@ -50,6 +52,8 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     ],
     "Hypothesis": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("statement", "STRING"),
         ("status", "STRING"),
         ("date", "STRING"),
@@ -57,6 +61,8 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     ],
     "OpenQuestion": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("question", "STRING"),
         ("priority", "INT64"),
         ("date_added", "STRING"),
@@ -64,6 +70,8 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     ],
     "Dataset": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("path", "STRING"),
         ("type", "STRING"),
         ("description", "STRING"),
@@ -73,6 +81,7 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "Paper": [
         ("id", "STRING"),
         ("title", "STRING"),
+        ("file_path", "STRING"),
         ("authors", "STRING"),
         ("doi", "STRING"),
         ("year", "INT64"),
@@ -82,6 +91,7 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "Document": [
         ("id", "STRING"),
         ("title", "STRING"),
+        ("file_path", "STRING"),
         ("path", "STRING"),
         ("section", "STRING"),
         ("status", "STRING"),
@@ -91,6 +101,8 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     ],
     "Analysis": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("script_path", "STRING"),
         ("script_hash", "STRING"),
         ("language", "STRING"),
@@ -104,21 +116,29 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     ],
     "Experiment": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("date", "STRING"),
         ("tier", "STRING"),
     ],
     "Plan": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("status", "STRING"),
         ("date", "STRING"),
         ("tier", "STRING"),
     ],
     "CellType": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("tier", "STRING"),
     ],
     "Task": [
         ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
         ("tier", "STRING"),
     ],
 }
@@ -174,6 +194,20 @@ class KuzuBackend(GraphBackend):
             self._db = kuzu.Database(str(self._db_path))
             self._conn = kuzu.Connection(self._db)
 
+    def _ensure_column(self, table: str, col: str, col_type: str) -> None:
+        """Add a column to an existing table if it doesn't exist."""
+        conn = self._get_conn()
+        try:
+            # Try to query the column to see if it exists
+            conn.execute(f"MATCH (n:{table}) RETURN n.{col} LIMIT 1")
+        except Exception:
+            # Column doesn't exist, add it
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD {col} {col_type} DEFAULT ''")
+                logger.info("Added column %s to %s", col, table)
+            except Exception as exc:
+                logger.warning("Could not add column %s to %s: %s", col, table, exc)
+
     def _table_exists(self, table_name: str) -> bool:
         """Check if a node or rel table already exists."""
         conn = self._get_conn()
@@ -225,6 +259,14 @@ class KuzuBackend(GraphBackend):
             stmt = f"CREATE REL TABLE GROUP {rel_type} ({pairs})"
             logger.info("Creating rel table group: %s", rel_type)
             conn.execute(stmt)
+
+        # Add new columns to existing tables that lack them (migration)
+        for label in NODE_TABLE_SCHEMAS:
+            if not self._table_exists(label):
+                continue
+            # Check if title/file_path columns exist, add if missing
+            self._ensure_column(label, "title", "STRING")
+            self._ensure_column(label, "file_path", "STRING")
 
         logger.info("Kuzu schema initialized at %s", self._db_path)
 

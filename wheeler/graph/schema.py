@@ -10,29 +10,12 @@ from wheeler.config import WheelerConfig
 logger = logging.getLogger(__name__)
 
 
+from wheeler.models import LABEL_TO_PREFIX, NODE_LABELS, PREFIX_TO_LABEL  # noqa: E402
+
+
 def generate_node_id(prefix: str) -> str:
     """Generate a unique node ID with the given prefix (e.g., 'F-abc12345')."""
     return f"{prefix}-{secrets.token_hex(4)}"
-
-# Node ID prefix → label mapping
-PREFIX_TO_LABEL: dict[str, str] = {
-    "PL": "Plan",
-    "F": "Finding",
-    "H": "Hypothesis",
-    "Q": "OpenQuestion",
-    "E": "Experiment",
-    "A": "Analysis",
-    "D": "Dataset",
-    "P": "Paper",
-    "C": "CellType",
-    "T": "Task",
-    "W": "Document",
-}
-
-LABEL_TO_PREFIX: dict[str, str] = {v: k for k, v in PREFIX_TO_LABEL.items()}
-
-# All node labels in the schema
-NODE_LABELS = list(PREFIX_TO_LABEL.values())
 
 # Uniqueness constraints — every node type has a unique `id`
 CONSTRAINTS: list[str] = [
@@ -56,6 +39,13 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.date)",
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.status)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.title)",
+    # Knowledge file pointers
+    "CREATE INDEX IF NOT EXISTS FOR (f:Finding) ON (f.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (h:Hypothesis) ON (h.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (q:OpenQuestion) ON (q.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (d:Dataset) ON (d.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.file_path)",
 ]
 
 # Allowed relationship types (whitelist for link command)
