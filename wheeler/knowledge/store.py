@@ -53,10 +53,10 @@ def read_node(knowledge_path: Path, node_id: str) -> KnowledgeNode:
     Raises ``FileNotFoundError`` if the file doesn't exist.
     """
     path = knowledge_path / f"{node_id}.json"
-    if not path.exists():
-        raise FileNotFoundError(f"No knowledge file for node {node_id}: {path}")
-
-    data = path.read_bytes()
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"No knowledge file for node {node_id}: {path}") from None
     node: KnowledgeNode = KNOWLEDGE_NODE_ADAPTER.validate_json(data)
     logger.debug("Read node %s from %s", node_id, path)
     return node

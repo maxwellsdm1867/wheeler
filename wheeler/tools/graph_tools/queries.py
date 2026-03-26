@@ -352,8 +352,7 @@ async def query_documents(session, args: dict) -> str:
 
 
 async def query_notes(session, args: dict) -> str:
-    config = args.pop("_config", None)
-    knowledge_path = _knowledge_path_from_args({"_config": config}) if config else None
+    knowledge_path = _knowledge_path_from_args(args)
 
     keyword = args.get("keyword", "")
     limit = int(args.get("limit", 10))

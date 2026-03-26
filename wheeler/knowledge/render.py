@@ -206,8 +206,7 @@ def _render_analysis(m: AnalysisModel) -> str:
     parts: list[str] = [f"# Analysis [{m.id}]", ""]
 
     if m.script_path:
-        lang_parts = [f"**Script**: {m.script_path}"]
-        parts.append(" | ".join(lang_parts))
+        parts.append(f"**Script**: {m.script_path}")
     lang_str = ""
     if m.language:
         lang_str = m.language

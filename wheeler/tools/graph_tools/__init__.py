@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS
 
 from . import mutations, queries
+from ._common import _now
 
 logger = logging.getLogger(__name__)
 
@@ -285,106 +285,44 @@ def _write_knowledge_file(
 ) -> None:
     """Best-effort dual-write: persist a new graph node as a JSON file.
 
-    Imports are lazy to avoid circular dependency issues.  Any errors are
-    logged but never propagated — the graph write has already succeeded and
-    the file write is supplementary during Phase 1.
+    Uses the label from the result to look up the Pydantic model class,
+    then builds it from the tool args. Any errors are logged but never
+    propagated — the graph write has already succeeded.
     """
     try:
         parsed = json.loads(result_str)
         node_id: str | None = parsed.get("node_id")
-        if not node_id:
-            logger.warning("_write_knowledge_file: no node_id in result for %s", tool_name)
+        label: str | None = parsed.get("label")
+        if not node_id or not label:
+            logger.warning("_write_knowledge_file: missing node_id/label for %s", tool_name)
             return
 
-        from wheeler.models import (
-            FindingModel,
-            HypothesisModel,
-            OpenQuestionModel,
-            DatasetModel,
-            PaperModel,
-            DocumentModel,
-            ResearchNoteModel,
-        )
+        from wheeler.models import model_for_label
         from wheeler.knowledge.store import write_node
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = _now()
 
-        # Map tool name -> (ModelClass, kwargs)
-        if tool_name == "add_finding":
-            model = FindingModel(
-                id=node_id,
-                description=args["description"],
-                confidence=float(args["confidence"]),
-                tier=args.get("tier", "generated"),
-                created=now,
-                updated=now,
-            )
-        elif tool_name == "add_hypothesis":
-            model = HypothesisModel(
-                id=node_id,
-                statement=args["statement"],
-                status=args.get("status", "open"),
-                tier=args.get("tier", "generated"),
-                created=now,
-                updated=now,
-            )
-        elif tool_name == "add_question":
-            model = OpenQuestionModel(
-                id=node_id,
-                question=args["question"],
-                priority=int(args.get("priority", 5)),
-                tier=args.get("tier", "generated"),
-                created=now,
-                updated=now,
-            )
-        elif tool_name == "add_dataset":
-            model = DatasetModel(
-                id=node_id,
-                path=args["path"],
-                data_type=args["type"],
-                description=args["description"],
-                tier=args.get("tier", "generated"),
-                created=now,
-                updated=now,
-            )
-        elif tool_name == "add_paper":
-            model = PaperModel(
-                id=node_id,
-                title=args["title"],
-                authors=args.get("authors", ""),
-                doi=args.get("doi", ""),
-                year=int(args.get("year", 0)),
-                tier="reference",
-                created=now,
-                updated=now,
-            )
-        elif tool_name == "add_document":
-            model = DocumentModel(
-                id=node_id,
-                title=args["title"],
-                path=args["path"],
-                section=args.get("section", ""),
-                status=args.get("status", "draft"),
-                tier=args.get("tier", "generated"),
-                created=now,
-                updated=now,
-            )
-        elif tool_name == "add_note":
-            model = ResearchNoteModel(
-                id=node_id,
-                title=args.get("title", ""),
-                content=args["content"],
-                context=args.get("context", ""),
-                tier=args.get("tier", "generated"),
-                created=now,
-                updated=now,
-            )
-        else:
-            return
+        # Build kwargs from args, renaming graph field names to model field names
+        kwargs: dict = {"id": node_id, "type": label, "created": now, "updated": now}
 
-        knowledge_dir = Path(config.knowledge_path)
-        write_node(knowledge_dir, model)
-        logger.info("Dual-write: %s -> %s/%s.json", tool_name, knowledge_dir, node_id)
+        # Tier: papers are always reference, everything else from args
+        kwargs["tier"] = "reference" if label == "Paper" else args.get("tier", "generated")
+
+        # Dataset has "type" in args but "data_type" in model
+        if label == "Dataset" and "type" in args:
+            kwargs["data_type"] = args["type"]
+
+        # Copy remaining args (skip internal keys)
+        for key, val in args.items():
+            if key.startswith("_") or key == "type" or key in kwargs:
+                continue
+            kwargs[key] = val
+
+        model_cls = model_for_label(label)
+        model = model_cls.model_validate(kwargs)
+
+        write_node(Path(config.knowledge_path), model)
+        logger.info("Dual-write: %s -> %s/%s.json", tool_name, config.knowledge_path, node_id)
 
     except Exception:
         logger.error(
@@ -417,7 +355,7 @@ def _update_knowledge_tier(
             return
 
         node.tier = new_tier
-        node.updated = datetime.now(timezone.utc).isoformat()
+        node.updated = _now()
         write_node(knowledge_dir, node)
         logger.info("Dual-write tier update: %s -> %s", node_id, new_tier)
 

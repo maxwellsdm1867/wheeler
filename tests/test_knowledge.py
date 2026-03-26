@@ -530,7 +530,7 @@ class TestDualWrite:
 
         config = self._make_config(tmp_path)
         args = {"description": "Calcium signals correlate with firing", "confidence": 0.9}
-        result = json.dumps({"node_id": "F-dual0001"})
+        result = json.dumps({"node_id": "F-dual0001", "label": "Finding", "status": "created"})
 
         _write_knowledge_file("add_finding", args, result, config)
 
@@ -545,7 +545,7 @@ class TestDualWrite:
 
         config = self._make_config(tmp_path)
         args = {"statement": "Na+ channels drive the effect", "status": "open"}
-        result = json.dumps({"node_id": "H-dual0002"})
+        result = json.dumps({"node_id": "H-dual0002", "label": "Hypothesis", "status": "created"})
 
         _write_knowledge_file("add_hypothesis", args, result, config)
 
@@ -559,7 +559,7 @@ class TestDualWrite:
 
         config = self._make_config(tmp_path)
         args = {"question": "What about K+ channels?", "priority": 8}
-        result = json.dumps({"node_id": "Q-dual0003"})
+        result = json.dumps({"node_id": "Q-dual0003", "label": "OpenQuestion", "status": "created"})
 
         _write_knowledge_file("add_question", args, result, config)
 
@@ -577,7 +577,7 @@ class TestDualWrite:
             "type": "h5",
             "description": "Voltage clamp recordings",
         }
-        result = json.dumps({"node_id": "D-dual0004"})
+        result = json.dumps({"node_id": "D-dual0004", "label": "Dataset", "status": "created"})
 
         _write_knowledge_file("add_dataset", args, result, config)
 
@@ -596,7 +596,7 @@ class TestDualWrite:
             "doi": "10.1234/hh.1952",
             "year": 1952,
         }
-        result = json.dumps({"node_id": "P-dual0005"})
+        result = json.dumps({"node_id": "P-dual0005", "label": "Paper", "status": "created"})
 
         _write_knowledge_file("add_paper", args, result, config)
 
@@ -615,7 +615,7 @@ class TestDualWrite:
             "section": "methods",
             "status": "draft",
         }
-        result = json.dumps({"node_id": "W-dual0006"})
+        result = json.dumps({"node_id": "W-dual0006", "label": "Document", "status": "created"})
 
         _write_knowledge_file("add_document", args, result, config)
 
@@ -640,7 +640,7 @@ class TestDualWrite:
         from wheeler.tools.graph_tools import _write_knowledge_file
 
         config = self._make_config(tmp_path)
-        result = json.dumps({"node_id": "X-unknown"})
+        result = json.dumps({"node_id": "X-unknown", "label": "Unknown"})
 
         _write_knowledge_file("unknown_tool", {}, result, config)
 
