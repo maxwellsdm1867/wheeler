@@ -4,9 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wheeler"
-version = "0.1.0"
-description = "A thinking partner for scientists, powered by Claude"
-requires-python = ">=3.10"
+version = "0.2.0"
+description = "Lightweight orchestration for scientists co-working with Claude Code"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Arthur Hebert"},
+]
+keywords = ["science", "research", "knowledge-graph", "claude", "ai", "neo4j"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/maxwellsdm1867/wheeler"
+Repository = "https://github.com/maxwellsdm1867/wheeler.git"
+Issues = "https://github.com/maxwellsdm1867/wheeler/issues"
+Documentation = "https://github.com/maxwellsdm1867/wheeler/blob/main/ARCHITECTURE.md"
 dependencies = [
     "typer>=0.9",
     "rich>=13.0",
@@ -14,6 +36,7 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "fastmcp>=2.0",
+    "unicodeit>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -23,11 +46,15 @@ test = [
 ]
 
 [project.scripts]
+wheeler = "wheeler.tools.cli:app"
 wheeler-tools = "wheeler.tools.cli:app"
 wheeler-mcp = "wheeler.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["wheeler*"]
+
+[tool.setuptools.package-data]
+wheeler = ["_data/**/*.md", "_data/**/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

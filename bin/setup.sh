@@ -22,10 +22,10 @@ echo -e "  ${AMBER}${BOLD}Wheeler${RESET} ${DIM}setup${RESET}"
 echo ""
 
 # ── Python venv ────────────────────────────────────────────────────
-PYTHON="${WHEELER_PYTHON:-/opt/homebrew/bin/python3.14}"
-if ! command -v "$PYTHON" >/dev/null 2>&1; then
-    PYTHON="$(command -v python3.11 || command -v python3.12 || command -v python3.13 || command -v python3.14 || true)"
-    [[ -n "$PYTHON" ]] || fail "Python 3.11+ not found. Install via Homebrew: brew install python@3.14"
+PYTHON="${WHEELER_PYTHON:-}"
+if [[ -z "$PYTHON" ]] || ! command -v "$PYTHON" >/dev/null 2>&1; then
+    PYTHON="$(command -v python3.14 || command -v python3.13 || command -v python3.12 || command -v python3.11 || true)"
+    [[ -n "$PYTHON" ]] || fail "Python 3.11+ not found. Install via your package manager (e.g. brew install python@3.13)"
 fi
 step "Using Python: $PYTHON ($($PYTHON --version 2>&1))"
 

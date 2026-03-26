@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import subprocess
 from datetime import datetime, timezone
 
 import typer
@@ -33,6 +34,9 @@ app = typer.Typer(
 )
 graph_app = typer.Typer(help="Knowledge graph management commands.")
 app.add_typer(graph_app, name="graph")
+
+dev_app = typer.Typer(help="Developer commands.")
+app.add_typer(dev_app, name="dev")
 
 
 def _generate_id(prefix: str) -> str:
@@ -408,6 +412,106 @@ def validate(
             r.details,
         )
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# install / uninstall / update / version
+# ---------------------------------------------------------------------------
+
+
+@app.command("install")
+def cmd_install(
+    link: bool = typer.Option(False, "--link", "-l", help="Symlink instead of copy"),
+) -> None:
+    """Install Wheeler slash commands and agents to ~/.claude/."""
+    from wheeler.installer import install
+
+    try:
+        files = install(link=link)
+        mode = "Linked" if link else "Installed"
+        console.print(f"[green]{mode} {len(files)} file(s):[/green]")
+        for rel in sorted(files):
+            console.print(f"  {rel}")
+    except Exception as exc:
+        console.print(f"[red]Install failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+
+@app.command("uninstall")
+def cmd_uninstall() -> None:
+    """Remove Wheeler slash commands and agents from ~/.claude/."""
+    from wheeler.installer import uninstall
+
+    try:
+        removed = uninstall()
+        if removed:
+            console.print(f"[green]Removed {len(removed)} file(s):[/green]")
+            for rel in removed:
+                console.print(f"  {rel}")
+        else:
+            console.print("[yellow]Nothing to remove (no manifest found).[/yellow]")
+    except Exception as exc:
+        console.print(f"[red]Uninstall failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+
+@app.command("update")
+def cmd_update() -> None:
+    """Upgrade Wheeler via pip and reinstall files."""
+    from wheeler.installer import update
+
+    try:
+        console.print("Upgrading wheeler...")
+        update()
+        console.print("[green]Update complete.[/green]")
+    except subprocess.CalledProcessError as exc:
+        console.print(f"[red]pip upgrade failed:[/red] {exc}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Update failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+
+@app.command("version")
+def cmd_version() -> None:
+    """Show installed version and check for updates."""
+    from wheeler.installer import check_version
+
+    installed, latest, update_available = check_version()
+    console.print(f"Wheeler [bold]{installed}[/bold]")
+    if latest:
+        if update_available:
+            console.print(
+                f"[yellow]Update available:[/yellow] {latest} "
+                "(run [bold]wheeler update[/bold])"
+            )
+        else:
+            console.print("[green]Up to date.[/green]")
+    else:
+        console.print("[dim]Could not check PyPI for updates.[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# dev sync
+# ---------------------------------------------------------------------------
+
+
+@dev_app.command("sync")
+def cmd_dev_sync() -> None:
+    """Sync project slash commands/agents into wheeler/_data/ for packaging."""
+    from wheeler.installer import sync_data
+
+    try:
+        changed = sync_data()
+        if changed:
+            console.print(f"[yellow]Synced {len(changed)} out-of-sync file(s):[/yellow]")
+            for f in changed:
+                console.print(f"  {f}")
+        else:
+            console.print("[green]All files already in sync.[/green]")
+    except Exception as exc:
+        console.print(f"[red]Sync failed:[/red] {exc}")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

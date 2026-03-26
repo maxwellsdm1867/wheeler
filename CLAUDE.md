@@ -17,7 +17,7 @@ The scientist and Wheeler thinking through a problem in conversation.
 Freeform. No forced structure. Follow the scientist's lead.
 
 - Start with `/wh:discuss` to sharpen the question, then `/wh:plan` to structure the investigation
-- Also: `/wh:chat` (quick discussion), `/wh:write` (drafting), `/wh:execute` (running analyses)
+- Also: `/wh:chat` (quick discussion), `/wh:pair` (live co-work), `/wh:write` (drafting), `/wh:execute` (running analyses)
 - Tools and graph available but OPTIONAL — don't force them
 - If the scientist says something interesting, Wheeler can SUGGEST
   recording it but never does it automatically
@@ -139,6 +139,7 @@ For headless/independent work: `claude -p` with structured output.
 CHAT: Read + graph reads only. Discuss, query, no execution.
 PLANNING: Read + Write + graph + paper search. No bash/MATLAB.
 WRITING: Read + Write + Edit + graph reads. No execution. Strict citation enforcement.
+PAIR: Full read/write/execute + MATLAB. No agents. Session log, graph on request only.
 EXECUTE: Everything. Must log all findings to graph with provenance.
 
 Enforce via `allowed-tools` in YAML frontmatter of each slash command file.

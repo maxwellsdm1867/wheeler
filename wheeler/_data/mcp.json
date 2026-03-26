@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "wheeler": {
+      "type": "stdio",
+      "command": "wheeler-mcp",
+      "args": []
+    },
     "neo4j": {
       "type": "stdio",
       "command": "uvx",
@@ -10,11 +15,6 @@
         "NEO4J_PASSWORD": "research-graph",
         "NEO4J_DATABASE": "neo4j"
       }
-    },
-    "wheeler": {
-      "type": "stdio",
-      "command": ".venv/bin/python",
-      "args": ["-m", "wheeler.mcp_server"]
     }
   }
 }

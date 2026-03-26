@@ -1,31 +1,31 @@
 % Wheeler MATLAB integration test script
 % Run with: matlab -batch "run('/path/to/test_integration.m')"
 
-addpath('/Users/maxwellsdm/Documents/GitHub/wheeler/matlab');
+addpath('fullfile(fileparts(mfilename('fullpath')))');
 
 fprintf('=== TEST 1: wheeler_setup ===\n');
-result = wheeler_setup('/Users/maxwellsdm/Documents/GitHub/epicTreeGUI');
+result = wheeler_setup('/path/to/epicTreeGUI');
 disp(result);
 r = jsondecode(result);
 assert(strcmp(r.status, 'ok'), 'Setup failed');
 fprintf('PASS: setup returned ok with %d paths\n\n', r.paths_added);
 
 fprintf('=== TEST 2: wheeler_list_data ===\n');
-result = wheeler_list_data('/Users/maxwellsdm/Documents/GitHub/epicTreeGUI/examples/data');
+result = wheeler_list_data('/path/to/epicTreeGUI/examples/data');
 disp(result);
 r = jsondecode(result);
 assert(r.count > 0, 'No .mat files found');
 fprintf('PASS: found %d .mat files\n\n', r.count);
 
 fprintf('=== TEST 3: wheeler_load_data (no splitters) ===\n');
-result = wheeler_load_data('/Users/maxwellsdm/Documents/GitHub/epicTreeGUI/examples/data/sample_epochs.mat', {});
+result = wheeler_load_data('/path/to/epicTreeGUI/examples/data/sample_epochs.mat', {});
 disp(result);
 r = jsondecode(result);
 assert(strcmp(r.status, 'ok'), sprintf('Load failed: %s', result));
 fprintf('PASS: loaded %s with %d epochs (is_leaf=%d)\n\n', r.var_name, r.epoch_count, r.is_leaf);
 
 fprintf('=== TEST 4: wheeler_load_data (with splitter) ===\n');
-result = wheeler_load_data('/Users/maxwellsdm/Documents/GitHub/epicTreeGUI/examples/data/sample_epochs.mat', {'cellInfo.type'});
+result = wheeler_load_data('/path/to/epicTreeGUI/examples/data/sample_epochs.mat', {'cellInfo.type'});
 disp(result);
 r = jsondecode(result);
 assert(strcmp(r.status, 'ok'), sprintf('Load with splitter failed: %s', result));

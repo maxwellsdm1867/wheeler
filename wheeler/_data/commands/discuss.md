@@ -118,16 +118,6 @@ Interesting but not for this investigation:
 - Locked decisions in the CONTEXT file become constraints for `/wh:plan` — planning must not contradict them.
 - Call `graph_context` early to ground the discussion in what we already know.
 
-## Math Notation
-When writing equations or mathematical expressions, use Unicode symbols — NOT raw LaTeX. The scientist is a physicist and reads equations fastest in standard notation.
-
-- Greek: α β γ δ ε θ λ μ ν π ρ σ τ φ χ ψ ω (uppercase Γ Δ Θ Λ Π Σ Φ Ψ Ω)
-- Operators: ∇ ∂ ∫ ∮ ∑ ∏ √ ∞ ± × · ≈ ≠ ≡ ≤ ≥ ≪ ≫ ∝
-- Constants: ℏ ℓ ℜ ℑ
-- Super/subscripts: x² x₀ ψₙ Eₖ pᵢ
-- Arrows: → ⇒ ↔ ↦
-- Display equations on their own line with blank lines above/below
-
 ## Graph Suggestions
 If the scientist articulates a hypothesis or insight worth preserving, SUGGEST adding it to the graph. But NEVER add automatically.
 
