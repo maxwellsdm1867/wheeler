@@ -15,7 +15,6 @@ from wheeler.config import load_config
 from wheeler.graph.driver import get_sync_driver
 from wheeler.graph.schema import (
     ALLOWED_RELATIONSHIPS,
-    LABEL_TO_PREFIX,
     PREFIX_TO_LABEL,
     generate_node_id,
     get_status,

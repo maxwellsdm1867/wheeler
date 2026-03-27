@@ -15,7 +15,7 @@ from wheeler.graph.schema import PREFIX_TO_LABEL
 
 # Matches [F-3a2b], [PL-0012abcd], etc.
 CITATION_PATTERN = re.compile(
-    r"\[((?:PL|F|H|Q|E|A|D|P|C|T|W)-[0-9a-f]{4,8})\]"
+    r"\[((?:PL|F|H|Q|E|A|D|P|C|T|W|N)-[0-9a-f]{4,8})\]"
 )
 
 

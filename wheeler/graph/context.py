@@ -12,21 +12,7 @@ import logging
 from wheeler.config import WheelerConfig
 
 logger = logging.getLogger(__name__)
-from wheeler.graph.driver import get_async_driver, close_async_driver
-
-
-# Backward-compatible aliases
-_get_driver = get_async_driver
-
-
-async def prewarm_driver(config: WheelerConfig) -> None:
-    """Pre-warm the singleton driver so first query pays no creation cost."""
-    get_async_driver(config)
-
-
-async def close_driver():
-    """Close the singleton driver. Call on shutdown."""
-    await close_async_driver()
+from wheeler.graph.driver import get_async_driver
 
 
 async def fetch_context(config: WheelerConfig) -> str:
