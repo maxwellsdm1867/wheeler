@@ -473,22 +473,30 @@ def cmd_update(
     )
 
     old_version = wheeler.__version__
+    detected = source or _detect_install_source()
 
     # Check what's available
     console.print(f"Current version: [bold]{old_version}[/bold]")
     console.print("Checking for updates...")
     _, latest, update_available = check_version()
 
-    if latest:
+    if detected == "editable":
+        # Editable installs always pull — commits may have new
+        # commands/tools without a version bump.
+        console.print(f"Install source: [cyan]editable[/cyan]")
+        if latest and update_available:
+            console.print(f"New version available: [bold]{latest}[/bold]")
+        else:
+            console.print("[dim]Pulling latest commits...[/dim]")
+    elif latest:
         if not update_available:
             console.print(f"[green]Already up to date ({old_version}).[/green]")
             return
         console.print(f"New version available: [bold]{latest}[/bold]")
+        console.print(f"Install source: [cyan]{detected}[/cyan]")
     else:
         console.print("[dim]Could not determine latest version — upgrading anyway.[/dim]")
-
-    detected = source or _detect_install_source()
-    console.print(f"Install source: [cyan]{detected}[/cyan]")
+        console.print(f"Install source: [cyan]{detected}[/cyan]")
 
     if not yes:
         confirm = typer.confirm("Proceed with update?")

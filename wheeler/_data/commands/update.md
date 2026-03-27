@@ -36,6 +36,26 @@ print(f'update_available={update_available}')
 
 ## Step 3: Report and confirm
 
+First detect the install source:
+```bash
+python -c "
+from wheeler.installer import _detect_install_source
+print(_detect_install_source())
+"
+```
+
+**If source is "editable"**: always offer to update — editable installs pull the latest commits even without a version bump. Show:
+```
+Wheeler X.Y.Z (editable install)
+Pulling latest commits...
+```
+Use AskUserQuestion to confirm:
+> Pull latest Wheeler changes and reinstall?
+
+Options: "Yes, update now" / "No, cancel"
+
+**If source is "pypi" or "github"**: check by version number.
+
 If no update is available:
 ```
 Wheeler X.Y.Z — already up to date.
@@ -46,15 +66,7 @@ If an update IS available, show:
 ```
 Wheeler X.Y.Z -> A.B.C available
 
-Install source: <editable|pypi|github>
-```
-
-Then detect the install source:
-```bash
-source .venv/bin/activate && python -c "
-from wheeler.installer import _detect_install_source
-print(_detect_install_source())
-"
+Install source: <pypi|github>
 ```
 
 Use AskUserQuestion to confirm:

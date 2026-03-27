@@ -211,10 +211,12 @@ def update(source: str | None = None) -> str:
     backup_local_mods()
 
     if source == "editable":
-        # For editable installs, pull latest and reinstall
+        # For editable installs, pull latest and reinstall.
+        # Always pull — commits may contain new commands/tools even
+        # without a version bump.
         repo_root = _find_repo_root()
         subprocess.run(
-            ["git", "pull"],
+            ["git", "pull", "--ff-only"],
             cwd=str(repo_root),
             check=True,
         )
