@@ -498,7 +498,9 @@ def merge_mcp_config(project_dir: Path | None = None) -> None:
     """Merge wheeler MCP entries into project .mcp.json.
 
     Adds wheeler and neo4j server entries without overwriting
-    existing entries the user may have customized.
+    existing entries the user may have customized.  The wheeler
+    command is resolved to an absolute path so Claude Code can
+    find it without the venv being active.
 
     Args:
         project_dir: Project directory. Uses cwd if None.
@@ -514,6 +516,12 @@ def merge_mcp_config(project_dir: Path | None = None) -> None:
 
     template = json.loads(template_path.read_text())
     template_servers = template.get("mcpServers", {})
+
+    # Resolve wheeler-mcp to absolute path so it works without venv activation
+    if "wheeler" in template_servers:
+        wheeler_abs = shutil.which("wheeler-mcp")
+        if wheeler_abs:
+            template_servers["wheeler"]["command"] = wheeler_abs
 
     # Read existing project config
     project_mcp = project_dir / ".mcp.json"
