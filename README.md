@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">WHEELER</h1>
-  <p align="center">A thinking partner for scientists. Built on Claude Code.</p>
+  <p align="center">Your scientific operating system in Claude Code.</p>
 </p>
 
 <p align="center">
