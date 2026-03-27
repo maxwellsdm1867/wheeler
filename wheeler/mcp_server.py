@@ -45,6 +45,22 @@ mcp = FastMCP(
 )
 
 
+def _check_similar_nodes(text: str, label: str, exclude_id: str | None = None) -> list[dict]:
+    """Check for similar existing nodes. Returns matches or empty list.
+
+    Fails silently if embeddings aren't available — this is purely advisory.
+    """
+    try:
+        store = _get_embedding_store()
+        matches = store.check_similar(text, threshold=0.85, label_filter=label, exclude_id=exclude_id)
+        return [
+            {"node_id": m.node_id, "text": m.text, "similarity": round(m.score, 4)}
+            for m in matches[:3]
+        ]
+    except (ImportError, Exception):
+        return []
+
+
 # --- Graph status & context ---
 
 
@@ -91,7 +107,11 @@ async def add_finding(description: str, confidence: float) -> dict:
     result = await graph_tools.execute_tool(
         "add_finding", {"description": description, "confidence": confidence}, _config
     )
-    return json.loads(result)
+    parsed = json.loads(result)
+    similar = _check_similar_nodes(description, "Finding", exclude_id=parsed.get("node_id"))
+    if similar:
+        parsed["similar_existing"] = similar
+    return parsed
 
 
 @mcp.tool()
@@ -100,7 +120,11 @@ async def add_hypothesis(statement: str, status: str = "open") -> dict:
     result = await graph_tools.execute_tool(
         "add_hypothesis", {"statement": statement, "status": status}, _config
     )
-    return json.loads(result)
+    parsed = json.loads(result)
+    similar = _check_similar_nodes(statement, "Hypothesis", exclude_id=parsed.get("node_id"))
+    if similar:
+        parsed["similar_existing"] = similar
+    return parsed
 
 
 @mcp.tool()
@@ -109,7 +133,11 @@ async def add_question(question: str, priority: int = 5) -> dict:
     result = await graph_tools.execute_tool(
         "add_question", {"question": question, "priority": priority}, _config
     )
-    return json.loads(result)
+    parsed = json.loads(result)
+    similar = _check_similar_nodes(question, "OpenQuestion", exclude_id=parsed.get("node_id"))
+    if similar:
+        parsed["similar_existing"] = similar
+    return parsed
 
 
 @mcp.tool()
@@ -240,9 +268,28 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
 
 @mcp.tool()
 async def graph_gaps() -> dict:
-    """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses."""
+    """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates."""
     result = await graph_tools.execute_tool("graph_gaps", {}, _config)
-    return json.loads(result)
+    gaps = json.loads(result)
+
+    # Enrich with near-duplicate detection from embeddings (if available)
+    try:
+        store = _get_embedding_store()
+        pairs = store.find_similar_pairs(threshold=0.85)
+        gaps["potential_duplicates"] = [
+            {
+                "node_a": {"id": a.node_id, "label": a.label, "text": a.text},
+                "node_b": {"id": b.node_id, "label": b.label, "text": b.text},
+                "similarity": round(score, 4),
+            }
+            for a, b, score in pairs[:10]  # cap at 10 pairs
+        ]
+        gaps["total_gaps"] = gaps.get("total_gaps", 0) + len(gaps["potential_duplicates"])
+    except (ImportError, Exception):
+        # Embeddings not available — skip duplicate detection silently
+        pass
+
+    return gaps
 
 
 # --- Semantic search ---

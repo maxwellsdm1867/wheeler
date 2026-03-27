@@ -172,6 +172,114 @@ class TestEmbeddingStoreMocked:
         assert r.text == "Deep Learning for Neuroscience"
         assert isinstance(r.score, float)
 
+    def test_has(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Some finding")
+        assert store.has("F-001")
+        assert not store.has("F-999")
+
+    # --- find_similar_pairs ---
+
+    def test_find_similar_pairs_empty(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        assert store.find_similar_pairs() == []
+
+    def test_find_similar_pairs_single_node(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Just one node")
+        assert store.find_similar_pairs() == []
+
+    def test_find_similar_pairs_identical_text(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        # Identical text → identical embedding → similarity 1.0
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        store.add("F-002", "Finding", "Neurons fire in bursts")
+        pairs = store.find_similar_pairs(threshold=0.99)
+        assert len(pairs) == 1
+        a, b, score = pairs[0]
+        assert {a.node_id, b.node_id} == {"F-001", "F-002"}
+        assert score > 0.99
+
+    def test_find_similar_pairs_dissimilar_below_threshold(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Mitochondria in neurons")
+        store.add("F-002", "Finding", "Banana dessert recipe")
+        # Very different texts — with deterministic hash-based embeddings
+        # they should not be near-identical
+        pairs = store.find_similar_pairs(threshold=0.99)
+        assert len(pairs) == 0
+
+    def test_find_similar_pairs_label_filter(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        store.add("F-002", "Finding", "Neurons fire in bursts")
+        store.add("H-001", "Hypothesis", "Neurons fire in bursts")
+        # Only compare within Finding label
+        pairs = store.find_similar_pairs(threshold=0.99, label_filter="Finding")
+        assert len(pairs) == 1
+        a, b, _ = pairs[0]
+        assert a.label == "Finding"
+        assert b.label == "Finding"
+
+    def test_find_similar_pairs_sorted_by_score(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        store.add("F-002", "Finding", "Neurons fire in bursts")
+        store.add("F-003", "Finding", "Something slightly different about neurons")
+        pairs = store.find_similar_pairs(threshold=0.0)
+        # Should be sorted descending by score
+        scores = [s for _, _, s in pairs]
+        assert scores == sorted(scores, reverse=True)
+
+    # --- check_similar ---
+
+    def test_check_similar_empty_store(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        results = store.check_similar("anything")
+        assert results == []
+
+    def test_check_similar_empty_text(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Something")
+        assert store.check_similar("") == []
+        assert store.check_similar("   ") == []
+
+    def test_check_similar_finds_duplicate(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        results = store.check_similar("Neurons fire in bursts", threshold=0.99)
+        assert len(results) == 1
+        assert results[0].node_id == "F-001"
+        assert results[0].score > 0.99
+
+    def test_check_similar_exclude_id(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        # Exclude the matching node
+        results = store.check_similar(
+            "Neurons fire in bursts", threshold=0.99, exclude_id="F-001"
+        )
+        assert len(results) == 0
+
+    def test_check_similar_label_filter(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        store.add("H-001", "Hypothesis", "Neurons fire in bursts")
+        results = store.check_similar(
+            "Neurons fire in bursts", threshold=0.99, label_filter="Finding"
+        )
+        assert len(results) == 1
+        assert results[0].node_id == "F-001"
+
+    def test_check_similar_sorted_by_score(self, tmp_path: Path) -> None:
+        store = _patched_store(tmp_path)
+        store.add("F-001", "Finding", "Neurons fire in bursts")
+        store.add("F-002", "Finding", "Neurons sometimes fire")
+        store.add("F-003", "Finding", "Banana recipe")
+        results = store.check_similar("Neurons fire in bursts", threshold=0.0)
+        scores = [r.score for r in results]
+        assert scores == sorted(scores, reverse=True)
+
 
 # ---------------------------------------------------------------------------
 # Tests with real fastembed (skipped if not installed)

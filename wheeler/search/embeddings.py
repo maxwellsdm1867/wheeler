@@ -215,6 +215,111 @@ class EmbeddingStore:
             "Loaded %d embeddings from %s", len(self._embeddings), self._store_path
         )
 
+    def find_similar_pairs(
+        self,
+        threshold: float = 0.85,
+        label_filter: str | None = None,
+    ) -> list[tuple[SearchResult, SearchResult, float]]:
+        """Find pairs of nodes whose embeddings are above a similarity threshold.
+
+        Useful for detecting near-duplicate nodes in the knowledge graph.
+
+        Args:
+            threshold: Minimum cosine similarity to report (default 0.85).
+            label_filter: Optional label to restrict comparison (e.g., "Finding").
+
+        Returns:
+            List of (node_a, node_b, score) tuples, sorted by score descending.
+        """
+        if not self._embeddings:
+            return []
+
+        # Filter to relevant nodes
+        ids = [
+            nid
+            for nid in self._embeddings
+            if not label_filter or self._metadata[nid]["label"] == label_filter
+        ]
+        if len(ids) < 2:
+            return []
+
+        # Build matrix and compute pairwise cosine similarity
+        matrix = np.stack([self._embeddings[nid] for nid in ids])
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1, norms)  # avoid division by zero
+        normed = matrix / norms
+        sim_matrix = normed @ normed.T
+
+        # Extract above-threshold pairs (upper triangle only)
+        pairs: list[tuple[SearchResult, SearchResult, float]] = []
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                score = float(sim_matrix[i, j])
+                if score >= threshold:
+                    a = SearchResult(
+                        node_id=ids[i],
+                        label=self._metadata[ids[i]]["label"],
+                        text=self._metadata[ids[i]]["text"],
+                        score=score,
+                    )
+                    b = SearchResult(
+                        node_id=ids[j],
+                        label=self._metadata[ids[j]]["label"],
+                        text=self._metadata[ids[j]]["text"],
+                        score=score,
+                    )
+                    pairs.append((a, b, score))
+
+        pairs.sort(key=lambda x: x[2], reverse=True)
+        return pairs
+
+    def check_similar(
+        self,
+        text: str,
+        threshold: float = 0.85,
+        label_filter: str | None = None,
+        exclude_id: str | None = None,
+    ) -> list[SearchResult]:
+        """Check if text is similar to any existing node above threshold.
+
+        Like search(), but only returns results above the threshold — designed
+        for pre-creation duplicate checks.
+
+        Args:
+            text: Text to check against existing nodes.
+            threshold: Minimum similarity to report.
+            label_filter: Optional label filter.
+            exclude_id: Node ID to skip (useful when updating an existing node).
+
+        Returns:
+            Matching nodes above threshold, sorted by score descending.
+        """
+        if not self._embeddings or not text or not text.strip():
+            return []
+
+        query_embedding = self.embed_text(text)
+        results: list[SearchResult] = []
+
+        for node_id, embedding in self._embeddings.items():
+            if node_id == exclude_id:
+                continue
+            if label_filter and self._metadata[node_id]["label"] != label_filter:
+                continue
+            norm_product = np.linalg.norm(query_embedding) * np.linalg.norm(embedding)
+            if norm_product == 0:
+                continue
+            score = float(np.dot(query_embedding, embedding) / norm_product)
+            if score >= threshold:
+                results.append(SearchResult(
+                    node_id=node_id,
+                    label=self._metadata[node_id]["label"],
+                    text=self._metadata[node_id]["text"],
+                    score=score,
+                ))
+
+        results.sort(key=lambda x: x.score, reverse=True)
+        return results
+
     @property
     def count(self) -> int:
         """Number of embeddings in the store."""
