@@ -47,19 +47,6 @@ For each of the 5 path categories (code, data, results, figures, docs):
   - `~/datasets/project-x/` (home directory)
 - Wheeler never copies or moves files — it just tracks where they are. The graph stores the path as-is and validates with hashes.
 
-## Step 3.5: Set up MCP configuration
-
-Create `.mcp.json` in the project root so Claude Code can connect to Wheeler's MCP tools.
-Run this command to merge the template config:
-
-```bash
-python -c "from wheeler.installer import merge_mcp_config; merge_mcp_config()"
-```
-
-This creates `.mcp.json` with the `wheeler` and `neo4j` MCP server entries. If `.mcp.json` already exists, it adds missing entries without overwriting existing ones.
-
-Tell the scientist: "Created `.mcp.json` — this tells Claude Code how to connect to Wheeler's graph tools. You'll need to restart Claude Code for it to take effect."
-
 ## Step 4: Create the file system
 
 Wheeler has three layers: acts (slash commands), file system (content), graph (connections).

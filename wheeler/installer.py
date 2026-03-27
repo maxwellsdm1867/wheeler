@@ -76,8 +76,9 @@ def install(link: bool = False) -> dict[str, str]:
             rel_key = str(rel_base / src_file.name)
             installed[rel_key] = _hash_file(src_file)
 
-    # Register hooks in settings.json
+    # Register hooks and MCP servers in settings.json
     _register_hooks()
+    _register_mcp_servers()
 
     write_manifest(installed)
     return installed
@@ -136,6 +137,7 @@ def uninstall() -> list[str]:
             removed.append(rel_path)
 
     _deregister_hooks()
+    _deregister_mcp_servers()
 
     if MANIFEST_PATH.exists():
         MANIFEST_PATH.unlink()
@@ -168,6 +170,73 @@ def _deregister_hooks() -> None:
 
     if len(filtered) != len(session_start):
         hooks["SessionStart"] = filtered
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+
+
+def _register_mcp_servers() -> None:
+    """Register Wheeler MCP servers in ~/.claude/settings.json.
+
+    Adds wheeler and neo4j entries to the global mcpServers config
+    so they're available in every Claude Code session regardless of
+    working directory.  Existing entries are not overwritten.
+    """
+    settings_path = INSTALL_BASE / "settings.json"
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            settings = {}
+    else:
+        settings = {}
+
+    servers = settings.setdefault("mcpServers", {})
+
+    # Read template for neo4j config
+    data = _get_data_path()
+    template_path = data / "mcp.json"
+    if template_path.exists():
+        template = json.loads(template_path.read_text())
+        template_servers = template.get("mcpServers", {})
+    else:
+        template_servers = {}
+
+    # Wheeler MCP — always use absolute path to current wheeler-mcp
+    wheeler_abs = shutil.which("wheeler-mcp")
+    if wheeler_abs and "wheeler" not in servers:
+        servers["wheeler"] = {
+            "type": "stdio",
+            "command": wheeler_abs,
+            "args": [],
+        }
+    elif wheeler_abs and "wheeler" in servers:
+        # Update the path in case it changed (e.g. after update)
+        servers["wheeler"]["command"] = wheeler_abs
+
+    # Neo4j — add from template if not already configured
+    if "neo4j" not in servers and "neo4j" in template_servers:
+        servers["neo4j"] = template_servers["neo4j"]
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+
+
+def _deregister_mcp_servers() -> None:
+    """Remove Wheeler MCP servers from ~/.claude/settings.json."""
+    settings_path = INSTALL_BASE / "settings.json"
+    if not settings_path.exists():
+        return
+    try:
+        settings = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    servers = settings.get("mcpServers", {})
+    changed = False
+    for name in ("wheeler", "neo4j"):
+        if name in servers:
+            del servers[name]
+            changed = True
+
+    if changed:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
 

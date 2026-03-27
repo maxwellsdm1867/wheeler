@@ -47,6 +47,14 @@ def fake_data(tmp_path):
     (hooks / "wheeler-check-update.js").write_text("// update hook")
     (hooks / "wheeler-statusline.js").write_text("// statusline hook")
 
+    # MCP template
+    (data / "mcp.json").write_text(json.dumps({
+        "mcpServers": {
+            "wheeler": {"type": "stdio", "command": "wheeler-mcp", "args": []},
+            "neo4j": {"type": "stdio", "command": "uvx", "args": ["mcp-neo4j-cypher@latest"]},
+        }
+    }))
+
     return data
 
 
@@ -110,6 +118,59 @@ def test_uninstall_removes_files(fake_home, fake_data, monkeypatch):
 def test_uninstall_no_manifest(fake_home):
     removed = installer.uninstall()
     assert removed == []
+
+
+# ---------------------------------------------------------------------------
+# MCP server registration
+# ---------------------------------------------------------------------------
+
+
+def test_install_registers_mcp_servers(fake_home, fake_data, monkeypatch):
+    """Install should add wheeler + neo4j to ~/.claude/settings.json mcpServers."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+    # Provide a wheeler-mcp on PATH
+    monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
+
+    installer.install()
+
+    settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+    assert "wheeler" in settings["mcpServers"]
+    assert settings["mcpServers"]["wheeler"]["command"] == "/usr/local/bin/wheeler-mcp"
+    assert "neo4j" in settings["mcpServers"]
+
+
+def test_install_preserves_existing_mcp_servers(fake_home, fake_data, monkeypatch):
+    """Install should not overwrite user-customized neo4j config."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+    monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
+
+    settings_path = fake_home / ".claude" / "settings.json"
+    settings_path.write_text(json.dumps({
+        "mcpServers": {
+            "neo4j": {"type": "stdio", "command": "custom-neo4j", "env": {"DB": "custom"}}
+        }
+    }))
+
+    installer.install()
+
+    settings = json.loads(settings_path.read_text())
+    # Neo4j should keep custom config
+    assert settings["mcpServers"]["neo4j"]["command"] == "custom-neo4j"
+    # Wheeler should be added
+    assert "wheeler" in settings["mcpServers"]
+
+
+def test_uninstall_removes_mcp_servers(fake_home, fake_data, monkeypatch):
+    """Uninstall should remove wheeler and neo4j from mcpServers."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+    monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
+
+    installer.install()
+    installer.uninstall()
+
+    settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+    assert "wheeler" not in settings.get("mcpServers", {})
+    assert "neo4j" not in settings.get("mcpServers", {})
 
 
 # ---------------------------------------------------------------------------
