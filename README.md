@@ -20,7 +20,7 @@ Wheeler is three layers:
 
 **Acts** — slash commands that guide you through the scientific process. Discuss the question, plan the investigation, execute analyses, capture notes, write up results. Each mode gives Claude the right tools and constraints for that stage. Hand off grinding tasks to run independently. Come back and reconvene.
 
-**File system** — your research artifacts live as natural files. Notes are markdown in `.notes/`. Drafts live wherever you put them. Scripts stay in your project. No query language needed to read your own work — just `cat` a file.
+**File system** — your data, scripts, analysis outputs, notes, and drafts. Wheeler works with your existing project layout — point it at your directories (local, NAS, wherever) and it knows where to find things. Agents know where data lives, where scripts are, and where results go.
 
 **Knowledge graph** — the index that connects everything. `knowledge/` holds JSON metadata for each node. The graph database stores relationships, embeddings, and file pointers. Which finding came from which analysis, which paper informed which method, what questions are still open. The graph is the library catalog. The files are the books.
 
