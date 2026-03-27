@@ -1,10 +1,12 @@
 """Graph query tools: search nodes, find gaps.
 
-Query functions use Cypher for filtering, ordering, and limiting, then
-try to enrich each result with full content from the knowledge file
-(``knowledge/{node_id}.json``).  Falls back to graph-only data when a
-file doesn't exist (pre-migration nodes or when knowledge_path is not
-configured).
+All handlers take a ``GraphBackend`` instance (not a raw session) and
+use ``backend.run_cypher()`` for queries that need filtering/ordering
+beyond what ``query_nodes`` supports.
+
+Query functions try to enrich each result with full content from the
+knowledge file (``knowledge/{node_id}.json``).  Falls back to graph-only
+data when a file doesn't exist (pre-migration nodes).
 """
 
 from __future__ import annotations
@@ -57,27 +59,25 @@ def _read_knowledge_node(knowledge_path: Path | None, node_id: str):  # noqa: AN
 # ---------------------------------------------------------------------------
 
 
-async def query_findings(session, args: dict) -> str:
+async def query_findings(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
     keyword = args.get("keyword", "")
     limit = int(args.get("limit", 10))
 
     if keyword:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (f:Finding) WHERE toLower(f.description) CONTAINS toLower($kw) "
             "RETURN f.id AS id, f.description AS desc, f.confidence AS conf, f.date AS date "
             "ORDER BY f.date DESC LIMIT $limit",
-            kw=keyword,
-            limit=limit,
+            {"kw": keyword, "limit": limit},
         )
     else:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (f:Finding) "
             "RETURN f.id AS id, f.description AS desc, f.confidence AS conf, f.date AS date "
             "ORDER BY f.date DESC LIMIT $limit",
-            limit=limit,
+            {"limit": limit},
         )
-    records = [r async for r in result]
 
     findings = []
     for r in records:
@@ -102,17 +102,16 @@ async def query_findings(session, args: dict) -> str:
     return json.dumps({"findings": findings, "count": len(findings)})
 
 
-async def query_open_questions(session, args: dict) -> str:
+async def query_open_questions(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
     limit = int(args.get("limit", 10))
 
-    result = await session.run(
+    records = await backend.run_cypher(
         "MATCH (q:OpenQuestion) "
         "RETURN q.id AS id, q.question AS question, q.priority AS priority "
         "ORDER BY q.priority DESC LIMIT $limit",
-        limit=limit,
+        {"limit": limit},
     )
-    records = [r async for r in result]
 
     questions = []
     for r in records:
@@ -135,27 +134,25 @@ async def query_open_questions(session, args: dict) -> str:
     return json.dumps({"questions": questions, "count": len(questions)})
 
 
-async def query_hypotheses(session, args: dict) -> str:
+async def query_hypotheses(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
     status = args.get("status", "all")
     limit = int(args.get("limit", 10))
 
     if status and status != "all":
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (h:Hypothesis {status: $status}) "
             "RETURN h.id AS id, h.statement AS stmt, h.status AS status "
             "LIMIT $limit",
-            status=status,
-            limit=limit,
+            {"status": status, "limit": limit},
         )
     else:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (h:Hypothesis) "
             "RETURN h.id AS id, h.statement AS stmt, h.status AS status "
             "LIMIT $limit",
-            limit=limit,
+            {"limit": limit},
         )
-    records = [r async for r in result]
 
     hypotheses = []
     for r in records:
@@ -178,30 +175,28 @@ async def query_hypotheses(session, args: dict) -> str:
     return json.dumps({"hypotheses": hypotheses, "count": len(hypotheses)})
 
 
-async def query_datasets(session, args: dict) -> str:
+async def query_datasets(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
     keyword = args.get("keyword", "")
     limit = int(args.get("limit", 10))
 
     if keyword:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (d:Dataset) WHERE toLower(d.description) CONTAINS toLower($kw) "
             "OR toLower(d.path) CONTAINS toLower($kw) "
             "RETURN d.id AS id, d.path AS path, d.type AS type, "
             "d.description AS desc, d.date_added AS date "
             "ORDER BY d.date_added DESC LIMIT $limit",
-            kw=keyword,
-            limit=limit,
+            {"kw": keyword, "limit": limit},
         )
     else:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (d:Dataset) "
             "RETURN d.id AS id, d.path AS path, d.type AS type, "
             "d.description AS desc, d.date_added AS date "
             "ORDER BY d.date_added DESC LIMIT $limit",
-            limit=limit,
+            {"limit": limit},
         )
-    records = [r async for r in result]
 
     datasets = []
     for r in records:
@@ -228,30 +223,28 @@ async def query_datasets(session, args: dict) -> str:
     return json.dumps({"datasets": datasets, "count": len(datasets)})
 
 
-async def query_papers(session, args: dict) -> str:
+async def query_papers(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
     keyword = args.get("keyword", "")
     limit = int(args.get("limit", 10))
 
     if keyword:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (p:Paper) WHERE toLower(p.title) CONTAINS toLower($kw) "
             "OR toLower(p.authors) CONTAINS toLower($kw) "
             "RETURN p.id AS id, p.title AS title, p.authors AS authors, "
             "p.doi AS doi, p.year AS year "
             "ORDER BY p.year DESC LIMIT $limit",
-            kw=keyword,
-            limit=limit,
+            {"kw": keyword, "limit": limit},
         )
     else:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (p:Paper) "
             "RETURN p.id AS id, p.title AS title, p.authors AS authors, "
             "p.doi AS doi, p.year AS year "
             "ORDER BY p.year DESC LIMIT $limit",
-            limit=limit,
+            {"limit": limit},
         )
-    records = [r async for r in result]
 
     papers = []
     for r in records:
@@ -278,51 +271,46 @@ async def query_papers(session, args: dict) -> str:
     return json.dumps({"papers": papers, "count": len(papers)})
 
 
-async def query_documents(session, args: dict) -> str:
+async def query_documents(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
     keyword = args.get("keyword", "")
     status = args.get("status", "")
     limit = int(args.get("limit", 10))
 
     if keyword and status:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (w:Document {status: $status}) "
             "WHERE toLower(w.title) CONTAINS toLower($kw) "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
             "w.section AS section, w.status AS status, w.date AS date "
             "ORDER BY w.date DESC LIMIT $limit",
-            kw=keyword,
-            status=status,
-            limit=limit,
+            {"kw": keyword, "status": status, "limit": limit},
         )
     elif keyword:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (w:Document) "
             "WHERE toLower(w.title) CONTAINS toLower($kw) "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
             "w.section AS section, w.status AS status, w.date AS date "
             "ORDER BY w.date DESC LIMIT $limit",
-            kw=keyword,
-            limit=limit,
+            {"kw": keyword, "limit": limit},
         )
     elif status:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (w:Document {status: $status}) "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
             "w.section AS section, w.status AS status, w.date AS date "
             "ORDER BY w.date DESC LIMIT $limit",
-            status=status,
-            limit=limit,
+            {"status": status, "limit": limit},
         )
     else:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (w:Document) "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
             "w.section AS section, w.status AS status, w.date AS date "
             "ORDER BY w.date DESC LIMIT $limit",
-            limit=limit,
+            {"limit": limit},
         )
-    records = [r async for r in result]
 
     documents = []
     for r in records:
@@ -351,32 +339,31 @@ async def query_documents(session, args: dict) -> str:
     return json.dumps({"documents": documents, "count": len(documents)})
 
 
-async def query_notes(session, args: dict) -> str:
+async def query_notes(backend, args: dict) -> str:
     knowledge_path = _knowledge_path_from_args(args)
 
     keyword = args.get("keyword", "")
     limit = int(args.get("limit", 10))
 
     if keyword:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (n:ResearchNote) "
             "WHERE toLower(n.title) CONTAINS toLower($kw) "
             "OR toLower(n.content) CONTAINS toLower($kw) "
             "RETURN n.id AS id, n.title AS title, n.content AS content, "
             "n.context AS context, n.date AS date, n.tier AS tier "
             "ORDER BY n.date DESC LIMIT $limit",
-            kw=keyword, limit=limit,
+            {"kw": keyword, "limit": limit},
         )
     else:
-        result = await session.run(
+        records = await backend.run_cypher(
             "MATCH (n:ResearchNote) "
             "RETURN n.id AS id, n.title AS title, n.content AS content, "
             "n.context AS context, n.date AS date, n.tier AS tier "
             "ORDER BY n.date DESC LIMIT $limit",
-            limit=limit,
+            {"limit": limit},
         )
 
-    records = [r async for r in result]
     notes = []
     for r in records:
         node_id = r["id"]
@@ -396,57 +383,48 @@ async def query_notes(session, args: dict) -> str:
     return json.dumps({"notes": notes, "count": len(notes)})
 
 
-async def graph_gaps(session, args: dict | None = None) -> str:
-    """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses.
-
-    Queries run sequentially within one session — Neo4j sessions are not
-    safe for concurrent queries via asyncio.gather.
-    """
+async def graph_gaps(backend, args: dict | None = None) -> str:
+    """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses."""
     if args is None:
         args = {}
     knowledge_path = _knowledge_path_from_args(args)
 
-    result = await session.run(
+    q_records = await backend.run_cypher(
         "MATCH (q:OpenQuestion) "
         "WHERE NOT (q)<-[:AROSE_FROM]-() AND NOT ()-[:RELEVANT_TO]->(q) "
         "RETURN q.id AS id, coalesce(q.question, '') AS question, "
         "coalesce(q.priority, 0) AS priority "
         "ORDER BY q.priority DESC LIMIT 10"
     )
-    q_records = [r async for r in result]
 
-    result = await session.run(
+    h_records = await backend.run_cypher(
         "MATCH (h:Hypothesis {status: 'open'}) "
         "WHERE NOT ()-[:SUPPORTS|CONTRADICTS]->(h) "
         "RETURN h.id AS id, h.statement AS stmt "
         "LIMIT 10"
     )
-    h_records = [r async for r in result]
 
-    result = await session.run(
+    a_records = await backend.run_cypher(
         "MATCH (a:Analysis) "
         "WHERE NOT (a)-[:GENERATED]->(:Finding) "
         "RETURN a.id AS id, coalesce(a.script_path, '') AS path "
         "LIMIT 10"
     )
-    a_records = [r async for r in result]
 
-    result = await session.run(
+    f_records = await backend.run_cypher(
         "MATCH (f:Finding) "
         "WHERE NOT (f)-[:APPEARS_IN]->(:Document) "
         "RETURN f.id AS id, coalesce(f.description, '') AS desc "
         "ORDER BY f.date DESC LIMIT 10"
     )
-    f_records = [r async for r in result]
 
-    result = await session.run(
+    p_records = await backend.run_cypher(
         "MATCH (p:Paper) "
         "WHERE NOT (p)-[:INFORMED|RELEVANT_TO|CITES|APPEARS_IN]->() "
         "AND NOT ()-[:BASED_ON|REFERENCED_IN]->(p) "
         "RETURN p.id AS id, coalesce(p.title, '') AS title "
         "LIMIT 10"
     )
-    p_records = [r async for r in result]
 
     # Enrich gap results with knowledge file data where available
     unlinked_questions = []

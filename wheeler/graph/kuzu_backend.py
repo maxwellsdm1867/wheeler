@@ -587,3 +587,27 @@ class KuzuBackend(GraphBackend):
                 props[key] = value
             rows.append(props)
         return rows
+
+    # -- raw cypher --
+
+    async def run_cypher(
+        self, query: str, params: dict | None = None
+    ) -> list[dict]:
+        return await asyncio.to_thread(self._run_cypher_sync, query, params)
+
+    def _run_cypher_sync(
+        self, query: str, params: dict | None = None
+    ) -> list[dict]:
+        conn = self._get_conn()
+        result = conn.execute(query, parameters=params or {})
+        col_names = result.get_column_names()
+        rows: list[dict] = []
+        while result.has_next():
+            row = result.get_next()
+            d: dict = {}
+            for col_name, value in zip(col_names, row):
+                # Strip "n." prefix from column names if present
+                key = col_name.split(".", 1)[-1] if "." in col_name else col_name
+                d[key] = value
+            rows.append(d)
+        return rows

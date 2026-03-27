@@ -248,3 +248,13 @@ class Neo4jBackend(GraphBackend):
             records = [r async for r in result]
 
         return [dict(r["m"]) for r in records]
+
+    # -- raw cypher --
+
+    async def run_cypher(
+        self, query: str, params: dict | None = None
+    ) -> list[dict]:
+        driver = self._driver()
+        async with driver.session(database=self._database) as session:
+            result = await session.run(query, **(params or {}))
+            return [dict(r) async for r in result]

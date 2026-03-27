@@ -370,14 +370,27 @@ def _update_knowledge_tier(
 # --- Dispatch ---
 
 
+_backend_instance = None
+
+
+async def _get_backend(config: WheelerConfig):
+    """Return a cached, initialized backend instance."""
+    global _backend_instance
+    if _backend_instance is None:
+        from wheeler.graph.backend import get_backend
+
+        _backend_instance = get_backend(config)
+        await _backend_instance.initialize()
+    return _backend_instance
+
+
 async def execute_tool(
     tool_name: str, args: dict, config: WheelerConfig
 ) -> str:
     """Execute a graph tool by name and return a JSON string result.
 
-    Each call gets its own session — failures in one tool call don't
-    affect subsequent calls. The driver is a singleton with a connection
-    pool, so session creation is cheap.
+    Uses the configured backend (Neo4j, Kuzu, etc.) — selected by
+    ``config.graph.backend``.
 
     For mutation tools (add_*), a best-effort dual-write persists the new
     node as a JSON file under ``config.knowledge_path``.  For ``set_tier``,
@@ -389,16 +402,15 @@ async def execute_tool(
 
     try:
         logger.debug("execute_tool: %s", tool_name)
-        from wheeler.graph.driver import get_async_driver
-        driver = get_async_driver(config)
+        backend = await _get_backend(config)
+
         # Inject config for query tools so they can read knowledge files
         if tool_name.startswith("query_") or tool_name == "graph_gaps":
             args["_config"] = config
 
-        async with driver.session(database=config.neo4j.database) as session:
-            result = await handler(session, args)
+        result = await handler(backend, args)
 
-        # Phase 1 dual-write: persist node as JSON file
+        # Dual-write: persist node as JSON file
         if tool_name in _MUTATION_TOOLS:
             _write_knowledge_file(tool_name, args, result, config)
         elif tool_name == "set_tier":

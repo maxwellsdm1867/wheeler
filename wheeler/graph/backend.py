@@ -156,6 +156,18 @@ class GraphBackend(ABC):
             ``"incoming"`` or ``"outgoing"``.
         """
 
+    # --- Raw Cypher ---
+
+    @abstractmethod
+    async def run_cypher(
+        self, query: str, params: dict | None = None
+    ) -> list[dict]:
+        """Execute a Cypher query and return results as a list of dicts.
+
+        Used by query tools that need filtering/ordering beyond what
+        ``query_nodes`` supports (e.g. keyword CONTAINS, complex JOINs).
+        """
+
 
 # ---------------------------------------------------------------------------
 # Factory
