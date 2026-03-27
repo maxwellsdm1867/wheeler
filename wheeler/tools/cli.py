@@ -416,7 +416,7 @@ def cmd_install(
     link: bool = typer.Option(False, "--link", "-l", help="Symlink instead of copy"),
 ) -> None:
     """Install Wheeler slash commands and agents to ~/.claude/."""
-    from wheeler.installer import install
+    from wheeler.installer import install, merge_mcp_config
 
     try:
         files = install(link=link)
@@ -427,6 +427,13 @@ def cmd_install(
     except Exception as exc:
         console.print(f"[red]Install failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    # Set up .mcp.json in current directory so MCP tools work here
+    try:
+        merge_mcp_config()
+        console.print("[green]Created .mcp.json in current directory.[/green]")
+    except Exception as exc:
+        console.print(f"[yellow]Could not create .mcp.json:[/yellow] {exc}")
 
 
 @app.command("uninstall")
