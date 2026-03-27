@@ -375,7 +375,7 @@ def test_detect_pypi_install(monkeypatch):
         return Result()
 
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
-    assert installer._detect_install_source() == "pypi"
+    assert installer._detect_install_source() == "github"
 
 
 def test_detect_install_source_pip_fails(monkeypatch):
@@ -387,7 +387,7 @@ def test_detect_install_source_pip_fails(monkeypatch):
         return Result()
 
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
-    assert installer._detect_install_source() == "pypi"
+    assert installer._detect_install_source() == "github"
 
 
 def test_detect_install_source_timeout(monkeypatch):
@@ -398,7 +398,7 @@ def test_detect_install_source_timeout(monkeypatch):
         raise sp.TimeoutExpired(cmd="pip show", timeout=10)
 
     monkeypatch.setattr(installer.subprocess, "run", fake_run)
-    assert installer._detect_install_source() == "pypi"
+    assert installer._detect_install_source() == "github"
 
 
 # ---------------------------------------------------------------------------

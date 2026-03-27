@@ -261,7 +261,7 @@ def _detect_install_source() -> str:
                     return "editable"
     except Exception:
         pass
-    return "pypi"
+    return "github"
 
 
 def update(source: str | None = None) -> str:
