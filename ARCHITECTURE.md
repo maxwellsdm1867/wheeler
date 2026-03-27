@@ -67,20 +67,37 @@ For background tasks: `wh queue "task"` and `wh quick "task"` run `claude -p` (h
 
 ## File System
 
-Two kinds of files: **graph metadata** (JSON, the index) and **research artifacts** (markdown/scripts, the actual work).
+The file system has two halves: the **scientist's workspace** (their data, code, writing) and **Wheeler-managed directories** (graph index, investigation state, notes).
+
+### Scientist's Workspace
+
+Wheeler doesn't own or copy files. It tracks where they are. Paths can point anywhere — local directories, external drives, network mounts, shared NAS:
+
+```yaml
+# wheeler.yaml
+paths:
+  code: ["scripts/", "/shared/lab/analysis-tools/"]
+  data: ["data/", "/Volumes/LabNAS/recordings/"]
+  results: ["results/"]
+  figures: ["figures/"]
+  docs: ["docs/"]
+```
+
+`/wh:ingest` scans these paths, creates Dataset and Analysis nodes that point to the actual files. `/wh:execute` knows where to find scripts and data without the scientist spelling it out. The graph stores paths as-is and validates with hashes.
+
+### Wheeler-Managed
+
+```
+knowledge/      # Graph index — JSON metadata, one per node
+.notes/         # Research notes — markdown from /wh:note
+.plans/         # Investigation state, plans, summaries
+.logs/          # Headless task output
+.wheeler/       # Internal (embeddings, etc.)
+```
 
 ### Graph Metadata (`knowledge/`)
 
 JSON files — one per knowledge node. Structured data the graph indexes:
-
-```
-knowledge/
-  F-3a2b1c4d.json   # Finding metadata
-  P-a4f20e91.json   # Paper metadata
-  N-4e5f6a7b.json   # Note metadata (points to .notes/N-4e5f6a7b.md)
-  A-2f4a7b8c.json   # Analysis metadata (points to scripts/analysis.py)
-  ...
-```
 
 ```json
 {
@@ -93,16 +110,11 @@ knowledge/
 }
 ```
 
-Pydantic v2 models (`wheeler/models.py`) define the schema for all 12 node types. Files are written atomically (tmp + rename). `wh show F-3a2b` renders any node as readable markdown.
+Pydantic v2 models (`wheeler/models.py`) define the schema for all 12 node types. `wh show F-3a2b` renders any node as readable markdown.
 
-### Research Artifacts
+### Research Notes (`.notes/`)
 
-Real files the scientist produces — the graph *points to* these, not the other way around:
-
-- `.notes/*.md` — research notes from `/wh:note` (markdown + YAML frontmatter)
-- `docs/` — drafts from `/wh:write`
-- `scripts/` — analysis code tracked by Analysis nodes
-- `.plans/*.md` — investigation state, plans, summaries
+Markdown files created by `/wh:note` — the scientist's actual writing. The graph node in `knowledge/` points here via `file_path`.
 
 ```markdown
 ---
@@ -110,12 +122,10 @@ id: N-4e5f6a7b
 title: "Temperature dependence of calcium oscillations"
 created: 2026-03-26
 context: "Reviewing cell_042 recordings"
-tags: [calcium, temperature]
 ---
 
 The oscillation frequency seems to drop when we cool the bath below 30C.
-Could this be a channel gating effect? Need to check the Q10 values
-for CaV channels in the literature.
+Could this be a channel gating effect?
 ```
 
 ### Investigation Files (`.plans/`)

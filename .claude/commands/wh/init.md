@@ -40,7 +40,12 @@ For each of the 5 path categories (code, data, results, figures, docs):
 - If matching directories were found, suggest them as options using AskUserQuestion
 - Always include "Create ./<category>/" and "Skip" as options
 - Let the scientist pick, modify, or provide custom paths
-- Paths can be absolute (e.g., a shared drive) or relative to project root
+- Paths can be **anywhere** — local, external drive, network mount, shared NAS. Wheeler doesn't care where files physically live. Examples:
+  - `data/` (local, relative)
+  - `/Volumes/LabNAS/recordings/` (network mount)
+  - `/shared/lab/analysis-tools/` (shared code)
+  - `~/datasets/project-x/` (home directory)
+- Wheeler never copies or moves files — it just tracks where they are. The graph stores the path as-is and validates with hashes.
 
 ## Step 4: Create the file system
 
