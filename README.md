@@ -18,11 +18,11 @@
 
 Wheeler is three layers:
 
-**Acts** — slash commands that guide you through the scientific process. Discuss the question, plan the investigation, execute analyses, write up results. Each mode gives Claude the right tools and constraints for that stage. Hand off grinding tasks to run independently. Come back and reconvene.
+**Acts** — slash commands that guide you through the scientific process. Discuss the question, plan the investigation, execute analyses, capture notes, write up results. Each mode gives Claude the right tools and constraints for that stage. Hand off grinding tasks to run independently. Come back and reconvene.
 
-**File system** — your knowledge lives as plain JSON files in `knowledge/`. Findings, hypotheses, papers, notes — one file per node. Browse them, grep them, git-track them. No query language needed to read your own work.
+**File system** — your research artifacts live as natural files. Notes are markdown in `.notes/`. Drafts live wherever you put them. Scripts stay in your project. No query language needed to read your own work — just `cat` a file.
 
-**Knowledge graph** — an index that connects the files. Which finding came from which analysis, which paper informed which method, what questions are still open. The graph is the library catalog. The files are the books.
+**Knowledge graph** — the index that connects everything. `knowledge/` holds JSON metadata for each node. The graph database stores relationships, embeddings, and file pointers. Which finding came from which analysis, which paper informed which method, what questions are still open. The graph is the library catalog. The files are the books.
 
 > Named after John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
@@ -83,33 +83,40 @@ Each stage has its own slash command with specific tools and constraints:
 
 ## The Knowledge
 
-Your knowledge lives as JSON files in `knowledge/`. Each node is a file you can read directly:
+Two kinds of files: **graph metadata** (JSON, the index) and **research artifacts** (markdown, the actual writing).
+
+**Graph metadata** — `knowledge/*.json`. Structured data the system indexes:
 
 ```
 knowledge/
-  F-3a2b1c4d.json   # Finding
-  H-7c1d2e3f.json   # Hypothesis
-  Q-1b8f4a2c.json   # Open Question
-  P-a4f20e91.json   # Paper
-  N-4e5f6a7b.json   # Research Note
-  D-9e3b4c5d.json   # Dataset
-  A-2f4a7b8c.json   # Analysis
-  W-5d2a1b3c.json   # Document
+  F-3a2b1c4d.json   # Finding: {description, confidence, tier, ...}
+  N-4e5f6a7b.json   # Note: {title, file_path: ".notes/N-4e5f6a7b.md", ...}
+  P-a4f20e91.json   # Paper: {title, authors, doi, year, ...}
+  A-2f4a7b8c.json   # Analysis: {script_path, script_hash, ...}
 ```
 
-```json
-{
-  "id": "F-3a2b1c4d",
-  "type": "Finding",
-  "tier": "generated",
-  "description": "Calcium oscillation frequency scales with cell density...",
-  "confidence": 0.85,
-  "created": "2026-03-26T14:30:00+00:00",
-  "tags": ["calcium", "oscillations"]
-}
+**Research artifacts** — your actual writing, as natural files:
+
+```
+.notes/
+  N-4e5f6a7b.md     # the actual research note (markdown + YAML frontmatter)
+docs/
+  spike-generation.md  # a draft from /wh:write
 ```
 
-The graph indexes these files — it stores metadata, relationships, and embeddings, not the content itself. When you need connections ("what findings came from this dataset?"), ask the graph. When you need content, read the file.
+```markdown
+---
+id: N-4e5f6a7b
+title: "Temperature dependence of calcium oscillations"
+created: 2026-03-26
+context: "Reviewing cell_042 recordings"
+---
+
+The oscillation frequency drops when we cool the bath below 30C.
+Could this be a channel gating effect?
+```
+
+The graph node is the index card. The markdown file is the real work. When you need connections ("what findings came from this dataset?"), ask the graph. When you need content, read the file.
 
 `wh show F-3a2b` renders any node as readable markdown. `search_findings "calcium dynamics"` finds related nodes by meaning, not just keywords.
 
@@ -192,11 +199,11 @@ wh status                                     # quick status check
 │  ACTS          /wh:* slash commands                 │  What you DO
 │                bin/wh headless runner                │
 ├─────────────────────────────────────────────────────┤
-│  FILE SYSTEM   knowledge/*.json                     │  What you KNOW
-│                .plans/*.md, .logs/*.json             │
+│  FILE SYSTEM   .notes/*.md (prose)                  │  What you KNOW
+│                .plans/*.md, docs/, scripts/          │  (real artifacts)
 ├─────────────────────────────────────────────────────┤
-│  GRAPH         metadata + relationships             │  How things CONNECT
-│                embeddings + file pointers            │
+│  GRAPH         knowledge/*.json (index)             │  How things CONNECT
+│                metadata + relationships              │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -251,7 +258,8 @@ wheeler/
 │   └── citations.py         # Regex extraction + Cypher validation
 └── workspace.py             # Project file scanner
 
-knowledge/                    # JSON knowledge files (source of truth)
+knowledge/                    # Graph metadata (JSON index)
+.notes/                       # Research notes (markdown artifacts)
 .plans/                       # Investigation state, plans, summaries
 .logs/                        # Headless task output
 .claude/commands/wh/          # Slash commands (acts)

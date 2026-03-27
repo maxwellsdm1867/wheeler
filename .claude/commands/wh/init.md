@@ -49,7 +49,8 @@ This step sets up the file system.
 
 - Create any directories the scientist chose that don't exist yet
 - Always create these Wheeler-managed directories:
-  - `knowledge/` — JSON knowledge files (findings, hypotheses, papers, etc.)
+  - `knowledge/` — graph node metadata (JSON, the index)
+  - `.notes/` — research notes written by the scientist (markdown)
   - `.plans/` — investigation state, plans, summaries
   - `.logs/` — headless task output
   - `.wheeler/` — internal data (embeddings, etc.)
@@ -115,14 +116,15 @@ Show a table summarizing:
 - Project name and description
 - Configured paths (with indicators for which exist vs. which were created)
 - Wheeler file system:
-  - `knowledge/` — where your findings, hypotheses, papers live as JSON files
+  - `knowledge/` — graph metadata (JSON). The index that connects everything.
+  - `.notes/` — your research notes (markdown). Real writing, not data structures.
   - `.plans/` — investigation state and plans
   - `.logs/` — output from independent work
   - Graph — connected / offline (either is fine, knowledge/ works without it)
 - Graph status (connected/offline, schema applied, initial question seeded)
 - Next step: suggest `/wh:discuss` to start the investigation
 
-Briefly explain: "Your knowledge lives in `knowledge/` as plain JSON files — you can browse, grep, and git-track them. The graph connects them (which finding came from which dataset, etc.) but the files are the source of truth."
+Briefly explain: "Graph metadata lives in `knowledge/` as JSON — that's the index. Your actual writing (notes, drafts) lives as markdown files in `.notes/` and your docs directory. The graph connects things; the files are the real artifacts."
 
 Keep the tone conversational. This is the scientist's first interaction with Wheeler — make it welcoming.
 

@@ -7,11 +7,12 @@ dialogue, not delivered as a report.
 
 ```
 ACTS         /wh:* slash commands              What you DO
-FILE SYSTEM  knowledge/*.json, .plans/, .logs/ What you KNOW
-GRAPH        metadata + relationships          How things CONNECT
+FILE SYSTEM  .notes/*.md, .plans/, docs/       What you KNOW (prose artifacts)
+GRAPH        knowledge/*.json + relationships  How things CONNECT (index)
 ```
 
-Files are the source of truth. The graph is a library catalog, not the books.
+Research artifacts (notes, drafts, scripts) are real files. The graph
+(`knowledge/*.json`) is the index — metadata that connects them.
 See `ARCHITECTURE.md` for full technical spec.
 
 ## Workflow: Discuss → Plan → Handoff → Independent → Reconvene

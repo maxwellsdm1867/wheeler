@@ -15,11 +15,6 @@ from wheeler.models import KNOWLEDGE_NODE_ADAPTER, LABEL_TO_PREFIX, KnowledgeNod
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Write
-# ---------------------------------------------------------------------------
-
-
 def write_node(knowledge_path: Path, model: NodeBase) -> Path:
     """Write a node model to a JSON file.  Atomic write (tmp + rename).
 
@@ -37,11 +32,6 @@ def write_node(knowledge_path: Path, model: NodeBase) -> Path:
 
     logger.info("Wrote node %s -> %s", model.id, target)
     return target
-
-
-# ---------------------------------------------------------------------------
-# Read
-# ---------------------------------------------------------------------------
 
 
 def read_node(knowledge_path: Path, node_id: str) -> KnowledgeNode:
@@ -62,11 +52,6 @@ def read_node(knowledge_path: Path, node_id: str) -> KnowledgeNode:
     return node
 
 
-# ---------------------------------------------------------------------------
-# List
-# ---------------------------------------------------------------------------
-
-
 def list_nodes(
     knowledge_path: Path, type_filter: str | None = None
 ) -> list[KnowledgeNode]:
@@ -81,7 +66,6 @@ def list_nodes(
     if not knowledge_path.is_dir():
         return []
 
-    # Determine which JSON files to read
     json_files = sorted(knowledge_path.glob("*.json"))
 
     if type_filter is not None:
@@ -107,11 +91,6 @@ def list_nodes(
     return nodes
 
 
-# ---------------------------------------------------------------------------
-# Delete
-# ---------------------------------------------------------------------------
-
-
 def delete_node(knowledge_path: Path, node_id: str) -> bool:
     """Delete a node's JSON file.  Returns ``True`` if the file existed."""
     path = knowledge_path / f"{node_id}.json"
@@ -120,11 +99,6 @@ def delete_node(knowledge_path: Path, node_id: str) -> bool:
         logger.info("Deleted node %s (%s)", node_id, path)
         return True
     return False
-
-
-# ---------------------------------------------------------------------------
-# Exists
-# ---------------------------------------------------------------------------
 
 
 def node_exists(knowledge_path: Path, node_id: str) -> bool:

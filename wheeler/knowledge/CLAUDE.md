@@ -1,28 +1,23 @@
-# knowledge/ — File-backed knowledge store
+# knowledge/ — Graph metadata store
 
-The source of truth for all node content. One JSON file per knowledge
-node in the project's `knowledge/` directory.
+JSON files that serve as the graph index. One file per knowledge node.
+These are structured metadata — the graph catalog, not the books.
 
-See `node-types.md` for the full schema of each node type (fields,
-JSON examples, common relationships).
+See `node-types.md` for the full schema of each node type.
 
-## File Format
+## Two kinds of content
 
-```json
-{
-  "id": "F-3a2b1c4d",
-  "type": "Finding",
-  "tier": "generated",
-  "description": "...",
-  "confidence": 0.85,
-  "created": "2026-03-26T14:30:00+00:00",
-  "updated": "2026-03-26T14:30:00+00:00",
-  "tags": []
-}
-```
+**Graph nodes** (`knowledge/*.json`) — structured metadata for the system:
+- Finding, Hypothesis, Question, Paper, Dataset, Analysis, etc.
+- JSON is correct here — it's machine data the graph indexes
 
-The `type` field is a Pydantic discriminator — determines which model
-class to use. IDs are `{PREFIX}-{8 hex chars}` (e.g., F-3a2b1c4d).
+**Research artifacts** — the scientist's actual writing:
+- Notes → `.notes/*.md` (created by `/wh:note`)
+- Drafts → wherever the scientist puts them (e.g., `docs/`)
+- Scripts → wherever they live (e.g., `scripts/`)
+- Graph nodes *point to* these via `file_path`
+
+The graph node is the index card. The markdown/script file is the real work.
 
 ## Modules
 
@@ -30,9 +25,7 @@ class to use. IDs are `{PREFIX}-{8 hex chars}` (e.g., F-3a2b1c4d).
   - Atomic writes (tmp + rename)
   - Depends only on `wheeler.models` (no graph imports)
 - `render.py` — `render_node` renders any model as markdown for `wh show`
-  - Depends only on `wheeler.models`
 - `migrate.py` — `migrate()` exports existing graph nodes to JSON files
-  - Depends on `wheeler.models` + `wheeler.graph.backend`
 
 ## Store API
 

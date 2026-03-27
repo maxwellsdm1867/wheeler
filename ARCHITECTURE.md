@@ -9,20 +9,21 @@ Wheeler is three things stacked:
 │  ACTS          /wh:* slash commands         │  What you DO
 │                bin/wh headless runner        │
 ├─────────────────────────────────────────────┤
-│  FILE SYSTEM   knowledge/*.json             │  What you KNOW
-│                .plans/*.md                   │
-│                .logs/*.json                  │
+│  FILE SYSTEM   .notes/*.md (prose)          │  What you KNOW
+│                .plans/*.md (state)           │
+│                docs/, scripts/ (artifacts)   │
 ├─────────────────────────────────────────────┤
-│  GRAPH         metadata + relationships     │  How things CONNECT
-│                embeddings + file pointers    │
+│  GRAPH         knowledge/*.json (index)     │  How things CONNECT
+│                metadata + relationships      │
+│                embeddings + file pointers     │
 └─────────────────────────────────────────────┘
 ```
 
-**Acts** are slash commands — the verbs. `/wh:discuss`, `/wh:plan`, `/wh:execute`, `/wh:write`. Each one gives Claude the right tools and constraints for that stage of work. YAML frontmatter restricts which tools are available per mode. The markdown body is the system prompt. No custom orchestration code — Claude Code is the orchestrator.
+**Acts** are slash commands — the verbs. `/wh:discuss`, `/wh:plan`, `/wh:execute`, `/wh:write`, `/wh:note`. Each one gives Claude the right tools and constraints for that stage of work. YAML frontmatter restricts which tools are available per mode. The markdown body is the system prompt. No custom orchestration code — Claude Code is the orchestrator.
 
-**File system** is the source of truth for all content. Knowledge nodes live as JSON files in `knowledge/` — one file per node (`F-3a2b.json`, `H-7c1d.json`, etc.). Investigation state lives in `.plans/`. Logs live in `.logs/`. You can browse, grep, git-diff, and directly read any of it. No query language needed to access your own knowledge.
+**File system** is where real artifacts live. Research notes are markdown in `.notes/`. Drafts and docs live wherever the scientist puts them. Scripts live in the project. Investigation state lives in `.plans/`. These are the actual work products — natural files you can browse, grep, git-diff, and read directly.
 
-**Graph** is the index layer. It stores metadata (id, type, tier, title, timestamps), relationships (which finding came from which analysis, which paper informed which method), embeddings (for semantic search), and file pointers (path to the JSON file). The graph tells you how things connect. The files tell you what they say.
+**Graph** is the index layer. `knowledge/*.json` files store node metadata (id, type, tier, timestamps). The graph database stores relationships (which finding came from which analysis, which paper informed which method), embeddings (for semantic search), and file pointers (path to the actual artifact). Graph nodes point to files. They don't contain prose.
 
 The graph is a library catalog. You don't read the catalog — you read the books. The catalog tells you which books are related.
 
@@ -66,24 +67,20 @@ For background tasks: `wh queue "task"` and `wh quick "task"` run `claude -p` (h
 
 ## File System
 
-### Knowledge Files (`knowledge/`)
+Two kinds of files: **graph metadata** (JSON, the index) and **research artifacts** (markdown/scripts, the actual work).
 
-Every knowledge node is a JSON file. The ID prefix tells you the type:
+### Graph Metadata (`knowledge/`)
+
+JSON files — one per knowledge node. Structured data the graph indexes:
 
 ```
 knowledge/
-  F-3a2b1c4d.json   # Finding
-  H-7c1d2e3f.json   # Hypothesis
-  Q-1b8f4a2c.json   # Open Question
-  P-a4f20e91.json   # Paper
-  D-9e3b4c5d.json   # Dataset
-  W-5d2a1b3c.json   # Document
-  A-2f4a7b8c.json   # Analysis
-  PL-abcd1234.json  # Plan
+  F-3a2b1c4d.json   # Finding metadata
+  P-a4f20e91.json   # Paper metadata
+  N-4e5f6a7b.json   # Note metadata (points to .notes/N-4e5f6a7b.md)
+  A-2f4a7b8c.json   # Analysis metadata (points to scripts/analysis.py)
   ...
 ```
-
-Each file is self-contained JSON with all fields:
 
 ```json
 {
@@ -92,13 +89,34 @@ Each file is self-contained JSON with all fields:
   "tier": "generated",
   "description": "Calcium oscillation frequency scales with cell density...",
   "confidence": 0.85,
-  "created": "2026-03-26T14:30:00+00:00",
-  "updated": "2026-03-26T14:30:00+00:00",
-  "tags": ["calcium", "oscillations"]
+  "created": "2026-03-26T14:30:00+00:00"
 }
 ```
 
-Pydantic v2 models (`wheeler/models.py`) define the schema for all 11 node types. Files are written atomically (tmp + rename). `wh show F-3a2b` renders any node as readable markdown.
+Pydantic v2 models (`wheeler/models.py`) define the schema for all 12 node types. Files are written atomically (tmp + rename). `wh show F-3a2b` renders any node as readable markdown.
+
+### Research Artifacts
+
+Real files the scientist produces — the graph *points to* these, not the other way around:
+
+- `.notes/*.md` — research notes from `/wh:note` (markdown + YAML frontmatter)
+- `docs/` — drafts from `/wh:write`
+- `scripts/` — analysis code tracked by Analysis nodes
+- `.plans/*.md` — investigation state, plans, summaries
+
+```markdown
+---
+id: N-4e5f6a7b
+title: "Temperature dependence of calcium oscillations"
+created: 2026-03-26
+context: "Reviewing cell_042 recordings"
+tags: [calcium, temperature]
+---
+
+The oscillation frequency seems to drop when we cool the bath below 30C.
+Could this be a channel gating effect? Need to check the Q10 values
+for CaV channels in the literature.
+```
 
 ### Investigation Files (`.plans/`)
 
