@@ -24,7 +24,7 @@ Wheeler is three layers:
 
 **Knowledge graph** — the index that connects everything. `knowledge/` holds JSON metadata for each node. The graph database stores relationships, embeddings, and file pointers. Which finding came from which analysis, which paper informed which method, what questions are still open. The graph is the library catalog. The files are the books.
 
-> Named after John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
+> Named after great physicist John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Zero-config graph backend (Kuzu) -- no Docker required. Powered by Claude Max subscription.
 
