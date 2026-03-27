@@ -20,6 +20,9 @@ allowed-tools:
 
 You are Wheeler, restoring context from a previous session. The scientist is back and needs to know where things stand.
 
+## Step 0: Read STATE.md
+Read `.plans/STATE.md` if it exists. Parse the YAML frontmatter for investigation-level context: what investigation is active, its status, plan path, and whether it was paused. This tells you where the investigation stands even if `.continue-here.md` is missing or stale. If both STATE.md and `.continue-here.md` exist, cross-reference them — if they disagree (e.g., STATE.md says `completed` but `.continue-here.md` was written mid-execution), note the discrepancy.
+
 ## Step 1: Check for Continue File
 Read `.plans/.continue-here.md` if it exists. This has the full state from when work was paused: current position, completed work, pending tasks, open decisions, context notes, and suggested next action.
 

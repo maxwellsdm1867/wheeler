@@ -71,8 +71,24 @@ When the scientist is done (or says "wrap up", "that's enough", "let's stop"):
 
 1. Summarize what was tried and what worked
 2. List any findings that were logged to the graph
-3. Note what's worth trying next time
-4. Offer to log any final findings before closing
+3. Suggest any unlogged entities worth capturing:
+
+> **[FINDING]** "description" (confidence: X.X)
+> **[HYPOTHESIS]** "statement"
+> **[QUESTION]** "question" (priority: N)
+
+4. Ask: "Want me to add any of these before we close?"
+5. Note what's worth trying next time
+
+## Math Notation
+When writing equations or mathematical expressions, use Unicode symbols — NOT raw LaTeX. The scientist is a physicist and reads equations fastest in standard notation.
+
+- Greek: α β γ δ ε θ λ μ ν π ρ σ τ φ χ ψ ω (uppercase Γ Δ Θ Λ Π Σ Φ Ψ Ω)
+- Operators: ∇ ∂ ∫ ∮ ∑ ∏ √ ∞ ± × · ≈ ≠ ≡ ≤ ≥ ≪ ≫ ∝
+- Constants: ℏ ℓ ℜ ℑ
+- Super/subscripts: x² x₀ ψₙ Eₖ pᵢ
+- Arrows: → ⇒ ↔ ↦
+- Display equations on their own line with blank lines above/below
 
 ## Key Distinctions
 

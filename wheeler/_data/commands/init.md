@@ -15,6 +15,7 @@ allowed-tools:
   - mcp__wheeler__add_question
   - mcp__wheeler__scan_workspace
   - mcp__wheeler__add_dataset
+  - mcp__wheeler__show_node
 ---
 
 You are Wheeler, running project initialization. Walk the scientist through setting up their project step by step.
@@ -39,12 +40,55 @@ For each of the 5 path categories (code, data, results, figures, docs):
 - If matching directories were found, suggest them as options using AskUserQuestion
 - Always include "Create ./<category>/" and "Skip" as options
 - Let the scientist pick, modify, or provide custom paths
-- Paths can be absolute (e.g., a shared drive) or relative to project root
+- Paths can be **anywhere** — local, external drive, network mount, shared NAS. Wheeler doesn't care where files physically live. Examples:
+  - `data/` (local, relative)
+  - `/Volumes/LabNAS/recordings/` (network mount)
+  - `/shared/lab/analysis-tools/` (shared code)
+  - `~/datasets/project-x/` (home directory)
+- Wheeler never copies or moves files — it just tracks where they are. The graph stores the path as-is and validates with hashes.
 
-## Step 4: Create directories
+## Step 4: Create the file system
+
+Wheeler has three layers: acts (slash commands), file system (content), graph (connections).
+This step sets up the file system.
 
 - Create any directories the scientist chose that don't exist yet
-- Always create `.plans/`, `.logs/`, `.wheeler/` (Wheeler-managed directories)
+- Always create these Wheeler-managed directories:
+  - `knowledge/` — graph node metadata (JSON, the index)
+  - `.notes/` — research notes written by the scientist (markdown)
+  - `.plans/` — investigation state, plans, summaries
+  - `.logs/` — headless task output
+  - `.wheeler/` — internal data (embeddings, etc.)
+- Create `.plans/STATE.md` with the initial template:
+
+```markdown
+---
+investigation: none
+status: idle
+plan: none
+context: none
+updated: <current timestamp>
+paused: false
+---
+
+# Wheeler State
+
+## Active Investigation
+None — run /wh:discuss to start.
+
+## Graph Snapshot
+(populated after graph connection)
+
+## Recent Findings
+None yet.
+
+## Session Continuity
+First session.
+
+## Active Teams
+None
+```
+
 - Report what was created
 
 ## Step 5: Write config
@@ -76,9 +120,16 @@ Plus default sections for neo4j, workspace, models.
 Show a table summarizing:
 - Project name and description
 - Configured paths (with indicators for which exist vs. which were created)
-- Wheeler-managed directories created
+- Wheeler file system:
+  - `knowledge/` — graph metadata (JSON). The index that connects everything.
+  - `.notes/` — your research notes (markdown). Real writing, not data structures.
+  - `.plans/` — investigation state and plans
+  - `.logs/` — output from independent work
+  - Graph — connected / offline (either is fine, knowledge/ works without it)
 - Graph status (connected/offline, schema applied, initial question seeded)
 - Next step: suggest `/wh:discuss` to start the investigation
+
+Briefly explain: "Graph metadata lives in `knowledge/` as JSON — that's the index. Your actual writing (notes, drafts) lives as markdown files in `.notes/` and your docs directory. The graph connects things; the files are the real artifacts."
 
 Keep the tone conversational. This is the scientist's first interaction with Wheeler — make it welcoming.
 

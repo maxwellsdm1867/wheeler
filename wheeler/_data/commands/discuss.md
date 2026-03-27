@@ -73,9 +73,13 @@ When the scientist's answer reveals a fork — multiple valid approaches — use
 After the discussion, write `.plans/{investigation-name}-CONTEXT.md`:
 
 ```markdown
+---
+investigation: <slug>
+status: locked
+created: <date>
+---
+
 # Context: <investigation name>
-Created: <date>
-Status: locked
 
 ## Research Question
 <The sharpened question, precisely stated>
@@ -118,10 +122,39 @@ Interesting but not for this investigation:
 - Locked decisions in the CONTEXT file become constraints for `/wh:plan` — planning must not contradict them.
 - Call `graph_context` early to ground the discussion in what we already know.
 
+## Math Notation
+When writing equations or mathematical expressions, use Unicode symbols — NOT raw LaTeX. The scientist is a physicist and reads equations fastest in standard notation.
+
+- Greek: α β γ δ ε θ λ μ ν π ρ σ τ φ χ ψ ω (uppercase Γ Δ Θ Λ Π Σ Φ Ψ Ω)
+- Operators: ∇ ∂ ∫ ∮ ∑ ∏ √ ∞ ± × · ≈ ≠ ≡ ≤ ≥ ≪ ≫ ∝
+- Constants: ℏ ℓ ℜ ℑ
+- Super/subscripts: x² x₀ ψₙ Eₖ pᵢ
+- Arrows: → ⇒ ↔ ↦
+- Display equations on their own line with blank lines above/below
+
 ## Graph Suggestions
-If the scientist articulates a hypothesis or insight worth preserving, SUGGEST adding it to the graph. But NEVER add automatically.
+
+When you notice extractable knowledge during the discussion, suggest capturing it.
+Batch suggestions at natural pause points — don't interrupt the sharpening process.
+
+Format each suggestion as:
+
+> **[HYPOTHESIS]** "statement"
+> **[QUESTION]** "question" (priority: N)
+> **[FINDING]** "description" (confidence: X.X)
+
+Then ask: "Want me to add any of these to the graph?"
+
+If yes, call the corresponding MCP tools. Cite the new node IDs in your next response.
+
+Rules:
+- At most 3 suggestions per turn
+- In discuss mode, hypotheses and questions are most common — findings are rare
+- Check `graph_context` first to avoid duplicating existing nodes
+- NEVER add to the graph without explicit approval
 
 ## After Writing CONTEXT
-Tell the scientist: "Context captured. When you're ready to plan, run `/wh:plan <investigation-name>` — it will read this context file."
+1. If `.plans/STATE.md` exists, update its frontmatter: set `investigation` to the new investigation slug, `context` to the CONTEXT file path, `status: discussing`, and `updated` to current timestamp. Update the body's "Active Investigation" section with the investigation name and research question.
+2. Tell the scientist: "Context captured. When you're ready to plan, run `/wh:plan <investigation-name>` — it will read this context file."
 
 $ARGUMENTS

@@ -124,6 +124,10 @@ Write tasks to `.logs/handoff-queue.sh` as a runnable bash script:
 ### After Approval
 Once the scientist approves (possibly with modifications), execute with the chosen strategy. For agent teams, the work starts immediately. For headless queue, the script is the single artifact.
 
+After spawning agents or writing the queue script:
+1. Update the investigation plan frontmatter: set `status: in-progress` and `updated` timestamp.
+2. Update `.plans/STATE.md`: set `status: in-progress`, `updated` timestamp, and add the team name to the "Active Teams" section.
+
 ## If NOT Ready for Handoff
 If the question isn't sharp yet, or remaining work needs the scientist:
 - Say so explicitly: "Not ready for handoff yet — we still need to [reason]"

@@ -41,9 +41,21 @@ When the question is sharp enough, write a structured plan to `.plans/<name>.md`
 ### Plan format:
 
 ```markdown
+---
+investigation: <slug>
+status: draft
+created: <date>
+updated: <date>
+waves: <N>
+tasks_total: <N>
+tasks_wheeler: <N>
+tasks_scientist: <N>
+tasks_pair: <N>
+graph_nodes: []
+success_criteria_met: "0/<N>"
+---
+
 # Investigation: <name>
-Created: <date>
-Status: draft | approved | in-progress | completed
 
 ## Objective
 What we're trying to learn. One clear question.
@@ -97,16 +109,22 @@ After writing a plan, self-check before presenting to the scientist:
 4. **Success criteria**: Are they observable and testable against the graph? (Not "understand X" but "Finding exists showing X with confidence > 0.7")
 5. **Dependencies**: Is the wave assignment consistent? No circular dependencies?
 6. **Scope**: Are WHEELER tasks actually WHEELER-suitable? Are SCIENTIST tasks properly routed?
+7. **Frontmatter accuracy**: Do task counts in frontmatter match the actual task list? Is wave count correct? Does `success_criteria_met` denominator match the number of success criteria?
 
 If any check fails, fix the plan before presenting it.
 
 ### Plan lifecycle:
 1. **Draft** — Wheeler proposes, self-verifies, scientist discusses and refines
-2. **Approved** — Scientist says go. Update status to `approved`.
+2. **Approved** — Scientist says go. Update frontmatter `status` to `approved` and `updated` timestamp.
 3. **In-progress** — `/wh:execute` or `/wh:handoff` picks up the plan and runs WHEELER tasks
 4. **Completed** — Success criteria verified against graph. Results confirmed.
 
+When updating plan status, always update BOTH the frontmatter `status` field AND the `updated` timestamp.
+
 Plans live in `.plans/` so they persist across sessions and are readable by any mode.
+
+### After writing or updating a plan:
+Update `.plans/STATE.md` if it exists: set `investigation` to the plan slug, `plan` to the plan file path, `status` to the plan status, and `updated` to current timestamp. Update the body's "Active Investigation" section with the investigation name and objective.
 
 ## Legacy task format
 For quick plans that don't need a file, output inline:
@@ -122,7 +140,24 @@ For quick plans that don't need a file, output inline:
 - When referencing datasets or analyses, show anchor figures if they exist.
 
 ## Graph Suggestions
-If the scientist makes a strong claim, proposes a hypothesis, or has an insight worth preserving, SUGGEST recording it: "Want me to add that as a hypothesis node?" But NEVER add to the graph automatically — the scientist decides what's worth recording.
+
+When you notice extractable knowledge during planning, suggest capturing it.
+Batch suggestions at natural pause points.
+
+Format each suggestion as:
+
+> **[HYPOTHESIS]** "statement"
+> **[QUESTION]** "question" (priority: N)
+> **[FINDING]** "description" (confidence: X.X)
+
+Then ask: "Want me to add any of these to the graph?"
+
+If yes, call the corresponding MCP tools. Cite the new node IDs.
+
+Rules:
+- At most 3 suggestions per turn
+- In plan mode, hypotheses from the scientist's reasoning are the most valuable captures
+- NEVER add to the graph without explicit approval
 
 ## Handoff Awareness
 When the plan is clear and remaining work is mostly grinding (lit search, data wrangling, boilerplate code, graph ops), recognize the handoff moment and propose tasks inline — don't wait for the scientist to invoke `/wh:handoff`. Present each task with description, assignee (SCIENTIST/WHEELER/PAIR), model (sonnet/haiku), time estimate, and checkpoint conditions. But don't force it — only when it's natural and the question is sharp.
