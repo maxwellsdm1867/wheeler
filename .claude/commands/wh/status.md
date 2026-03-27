@@ -19,7 +19,15 @@ allowed-tools:
 
 Show the current state of everything and suggest what to do next.
 
-## Step 0: Read STATE.md
+## Step 0a: Check for updates
+
+Read `~/.cache/wheeler/version-check.json` if it exists. If `update_available` is true, show a banner at the top of the output:
+
+```
+⬆ Wheeler X.Y.Z available (you have A.B.C) — run /wh:update
+```
+
+## Step 0b: Read STATE.md
 Read `.plans/STATE.md` if it exists. Parse the YAML frontmatter for the current investigation name, status, plan path, and paused state. This gives you the overview before checking individual files — use it to jump directly to the active investigation's plan and context files instead of scanning all of `.plans/`. If STATE.md does not exist, fall back to the scan-all approach in Step 1.
 
 ## Step 1: Investigation Status

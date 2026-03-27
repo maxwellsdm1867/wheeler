@@ -62,7 +62,7 @@ wheeler-mcp = "wheeler.mcp_server:main"
 include = ["wheeler*"]
 
 [tool.setuptools.package-data]
-wheeler = ["_data/**/*.md", "_data/**/*.json"]
+wheeler = ["_data/**/*.md", "_data/**/*.json", "_data/**/*.js"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

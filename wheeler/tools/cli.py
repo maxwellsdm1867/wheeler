@@ -448,14 +448,53 @@ def cmd_uninstall() -> None:
 
 
 @app.command("update")
-def cmd_update() -> None:
+def cmd_update(
+    source: str = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Install source: pypi, github, or editable (auto-detected if omitted)",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+) -> None:
     """Upgrade Wheeler via pip and reinstall files."""
-    from wheeler.installer import update
+    import wheeler
+    from wheeler.installer import (
+        _detect_install_source,
+        check_version,
+        update,
+    )
+
+    old_version = wheeler.__version__
+
+    # Check what's available
+    console.print(f"Current version: [bold]{old_version}[/bold]")
+    console.print("Checking for updates...")
+    _, latest, update_available = check_version()
+
+    if latest:
+        if not update_available:
+            console.print(f"[green]Already up to date ({old_version}).[/green]")
+            return
+        console.print(f"New version available: [bold]{latest}[/bold]")
+    else:
+        console.print("[dim]Could not determine latest version — upgrading anyway.[/dim]")
+
+    detected = source or _detect_install_source()
+    console.print(f"Install source: [cyan]{detected}[/cyan]")
+
+    if not yes:
+        confirm = typer.confirm("Proceed with update?")
+        if not confirm:
+            console.print("[dim]Cancelled.[/dim]")
+            raise typer.Exit(0)
 
     try:
-        console.print("Upgrading wheeler...")
-        update()
-        console.print("[green]Update complete.[/green]")
+        console.print("Upgrading...")
+        new_version = update(source=source)
+        console.print(
+            f"[green]Updated: {old_version} → {new_version}[/green]"
+        )
     except subprocess.CalledProcessError as exc:
         console.print(f"[red]pip upgrade failed:[/red] {exc}")
         raise typer.Exit(1)
