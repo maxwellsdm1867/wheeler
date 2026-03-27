@@ -5,6 +5,7 @@ Uses tmp_path to avoid touching real ~/.claude/.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -849,6 +850,59 @@ def test_mcp_merge_preserves_existing(tmp_path, monkeypatch):
     assert "wheeler" in result["mcpServers"]
     # Other tools should be preserved
     assert "other-tool" in result["mcpServers"]
+
+
+# ---------------------------------------------------------------------------
+# package data sync guard
+# ---------------------------------------------------------------------------
+
+
+def test_package_data_in_sync():
+    """Fail if .claude/commands/wh/ and wheeler/_data/commands/ diverge.
+
+    This prevents shipping a package where the dev commands were updated
+    but sync_data() was never run (or its output never committed).
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    dev_dir = repo_root / ".claude" / "commands" / "wh"
+    pkg_dir = repo_root / "wheeler" / "_data" / "commands"
+
+    if not dev_dir.is_dir() or not pkg_dir.is_dir():
+        pytest.skip("Not running from a dev checkout")
+
+    dev_files = {f.name for f in dev_dir.glob("*.md")}
+    pkg_files = {f.name for f in pkg_dir.glob("*.md")}
+
+    # Every dev command must exist in package data
+    missing = dev_files - pkg_files
+    assert not missing, (
+        f"Commands in .claude/commands/wh/ but not in wheeler/_data/commands/: {missing}\n"
+        f"Run: python -c \"from wheeler.installer import sync_data; sync_data()\""
+    )
+
+    # Content must match (no stale copies)
+    stale = []
+    for name in dev_files & pkg_files:
+        dev_hash = hashlib.sha256((dev_dir / name).read_bytes()).hexdigest()
+        pkg_hash = hashlib.sha256((pkg_dir / name).read_bytes()).hexdigest()
+        if dev_hash != pkg_hash:
+            stale.append(name)
+    assert not stale, (
+        f"Commands out of sync between dev and package data: {stale}\n"
+        f"Run: python -c \"from wheeler.installer import sync_data; sync_data()\""
+    )
+
+    # Also check agents
+    dev_agents = repo_root / ".claude" / "agents"
+    pkg_agents = repo_root / "wheeler" / "_data" / "agents"
+    if dev_agents.is_dir() and pkg_agents.is_dir():
+        dev_a = {f.name for f in dev_agents.glob("wheeler-*.md")}
+        pkg_a = {f.name for f in pkg_agents.glob("wheeler-*.md")}
+        missing_a = dev_a - pkg_a
+        assert not missing_a, (
+            f"Agents in .claude/agents/ but not in wheeler/_data/agents/: {missing_a}\n"
+            f"Run: python -c \"from wheeler.installer import sync_data; sync_data()\""
+        )
 
 
 def test_mcp_merge_no_template(tmp_path, monkeypatch):
