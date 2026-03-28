@@ -50,7 +50,7 @@ async def fetch_context(config: WheelerConfig) -> str:
 
             # Open questions
             result = await session.run(
-                "MATCH (q:OpenQuestion) RETURN q.id AS id, q.question AS q "
+                "MATCH (q:OpenQuestion) RETURN q.id AS id, q.question AS question "
                 "ORDER BY q.priority DESC LIMIT $limit",
                 limit=config.context_max_questions,
             )
@@ -71,7 +71,7 @@ async def fetch_context(config: WheelerConfig) -> str:
                 lines = [f"- [{r['id']}] {r['desc']}" for r in gen_findings]
                 sections.append("### Recent Work (generated)\n" + "\n".join(lines))
             if questions:
-                lines = [f"- [{r['id']}] {r['q']}" for r in questions]
+                lines = [f"- [{r['id']}] {r['question']}" for r in questions]
                 sections.append("### Open Questions\n" + "\n".join(lines))
             if hypotheses:
                 lines = [f"- [{r['id']}] {r['stmt']}" for r in hypotheses]
