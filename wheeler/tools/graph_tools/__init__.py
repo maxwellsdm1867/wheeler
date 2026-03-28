@@ -28,6 +28,7 @@ _MUTATION_TOOLS = frozenset({
     "add_paper",
     "add_document",
     "add_note",
+    "add_analysis",
     "add_ledger",
 })
 
@@ -42,6 +43,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "add_paper": mutations.add_paper,
     "add_document": mutations.add_document,
     "add_note": mutations.add_note,
+    "add_analysis": mutations.add_analysis,
     "add_ledger": mutations.add_ledger,
     "link_nodes": mutations.link_nodes,
     "set_tier": mutations.set_tier,

@@ -200,6 +200,53 @@ async def add_dataset(path: str, type: str, description: str) -> dict:
 
 
 @mcp.tool()
+async def add_analysis(
+    script_path: str,
+    language: str,
+    script_hash: str = "",
+    language_version: str = "",
+    parameters: str = "",
+    output_path: str = "",
+    output_hash: str = "",
+) -> dict:
+    """Add an Analysis node to track a script execution with provenance.
+
+    If script_hash is empty, Wheeler will compute it from the file.
+    Use this when registering scripts, recording analyses, or during /wh:ingest.
+
+    Args:
+        script_path: Path to the script file
+        language: Programming language (matlab, python, r, julia, etc.)
+        script_hash: SHA-256 hash (auto-computed if empty and file exists)
+        language_version: Language version (e.g., "3.14", "R2022a")
+        parameters: JSON string of parameters used
+        output_path: Path to output file(s)
+        output_hash: SHA-256 hash of output
+    """
+    # Auto-compute hash if not provided
+    if not script_hash:
+        from pathlib import Path as P
+        p = P(script_path)
+        if p.exists():
+            script_hash = provenance.hash_file(p)
+
+    result = await graph_tools.execute_tool(
+        "add_analysis",
+        {
+            "script_path": script_path,
+            "script_hash": script_hash,
+            "language": language,
+            "language_version": language_version,
+            "parameters": parameters,
+            "output_path": output_path,
+            "output_hash": output_hash,
+        },
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
 async def set_tier(node_id: str, tier: str) -> dict:
     """Set context tier of a node to 'reference' (established) or 'generated' (new work)."""
     result = await graph_tools.execute_tool(

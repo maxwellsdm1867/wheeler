@@ -20,6 +20,7 @@ class TestToolRegistration:
             "graph_health",
             "graph_status",
             "run_cypher",
+            "add_analysis",
             "graph_context",
             "add_finding",
             "add_hypothesis",
@@ -53,7 +54,7 @@ class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 30
+        assert len(tools) == 31
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
