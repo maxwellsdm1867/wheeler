@@ -123,16 +123,13 @@ async def add_analysis(backend, args: dict) -> str:
         "script_hash": args.get("script_hash", ""),
         "language": args.get("language", ""),
         "language_version": args.get("language_version", ""),
+        "parameters": args.get("parameters", ""),
         "output_path": args.get("output_path", ""),
         "output_hash": args.get("output_hash", ""),
         "executed_at": args.get("executed_at", _now()),
         "date": _now(),
         "tier": args.get("tier", "generated"),
     }
-    # 'parameters' conflicts with Neo4j driver kwarg — only include if non-empty
-    params_val = args.get("parameters", "")
-    if params_val:
-        props["parameters"] = params_val
     await backend.create_node("Analysis", props)
     logger.info("Created Analysis %s: %s", node_id, args.get("script_path", "")[:60])
     return json.dumps({"node_id": node_id, "label": "Analysis", "status": "created"})

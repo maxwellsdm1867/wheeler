@@ -20,6 +20,11 @@ class Neo4jConfig(BaseModel):
     username: str = "neo4j"
     password: str = "research-graph"
     database: str = "neo4j"
+    # Project namespace for Community Edition isolation.
+    # When set, all nodes get a _wheeler_project property and queries filter
+    # by it.  Empty string means no namespacing (Enterprise/Aura uses a
+    # dedicated database instead).  Populated automatically by ensure_database().
+    project_tag: str = ""
 
 
 class DataSourcesConfig(BaseModel):

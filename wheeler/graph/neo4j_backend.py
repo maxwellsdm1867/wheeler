@@ -3,6 +3,12 @@
 Thin adapter that maps the :class:`GraphBackend` ABC methods to Cypher
 queries executed via the existing singleton async driver in
 :mod:`wheeler.graph.driver`.
+
+Supports per-project isolation on Community Edition via a
+``_wheeler_project`` property on every node.  When
+``config.neo4j.project_tag`` is non-empty all MATCH/CREATE queries
+are scoped to that tag.  Enterprise/Aura users get real database
+isolation and the tag is left empty.
 """
 
 from __future__ import annotations
@@ -34,6 +40,11 @@ class Neo4jBackend(GraphBackend):
     def _database(self) -> str:
         return self._config.neo4j.database
 
+    @property
+    def _project_tag(self) -> str:
+        """Non-empty when Community Edition namespace isolation is active."""
+        return self._config.neo4j.project_tag
+
     # -- lifecycle --
 
     async def initialize(self) -> None:
@@ -60,22 +71,36 @@ class Neo4jBackend(GraphBackend):
 
         node_id = props["id"]
 
-        # Build SET clause from properties
-        prop_assignments = ", ".join(f"{k}: ${k}" for k in props)
+        # Inject project namespace tag when isolation is active
+        if self._project_tag:
+            props["_wheeler_project"] = self._project_tag
+
+        # Build SET clause from properties — reference via $props.key
+        # to avoid kwarg collision with the Neo4j driver's own parameters.
+        prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
         stmt = f"CREATE (n:{label} {{{prop_assignments}}})"
 
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            await session.run(stmt, **props)
+            await session.run(stmt, parameters={"props": props})
 
         logger.debug("Created %s node %s", label, node_id)
         return node_id
 
     async def get_node(self, label: str, node_id: str) -> dict | None:
-        stmt = f"MATCH (n:{label} {{id: $id}}) RETURN n"
+        params: dict = {"id": node_id}
+        if self._project_tag:
+            stmt = (
+                f"MATCH (n:{label} {{id: $id}}) "
+                f"WHERE n._wheeler_project = $ptag RETURN n"
+            )
+            params["ptag"] = self._project_tag
+        else:
+            stmt = f"MATCH (n:{label} {{id: $id}}) RETURN n"
+
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, id=node_id)
+            result = await session.run(stmt, parameters=params)
             record = await result.single()
 
         if record is None:
@@ -91,30 +116,51 @@ class Neo4jBackend(GraphBackend):
         if not props:
             return False
 
-        set_clauses = ", ".join(f"n.{k} = ${k}" for k in props)
-        stmt = f"MATCH (n:{label} {{id: $id}}) SET {set_clauses} RETURN n.id"
-        params = {"id": node_id, **props}
+        set_clauses = ", ".join(f"n.{k} = $props.{k}" for k in props)
+        params: dict = {"id": node_id, "props": props}
+
+        if self._project_tag:
+            stmt = (
+                f"MATCH (n:{label} {{id: $id}}) "
+                f"WHERE n._wheeler_project = $ptag "
+                f"SET {set_clauses} RETURN n.id"
+            )
+            params["ptag"] = self._project_tag
+        else:
+            stmt = f"MATCH (n:{label} {{id: $id}}) SET {set_clauses} RETURN n.id"
 
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, **params)
+            result = await session.run(stmt, parameters=params)
             record = await result.single()
 
         return record is not None
 
     async def delete_node(self, label: str, node_id: str) -> bool:
+        params: dict = {"id": node_id}
+        if self._project_tag:
+            match_clause = (
+                f"MATCH (n:{label} {{id: $id}}) "
+                f"WHERE n._wheeler_project = $ptag"
+            )
+            params["ptag"] = self._project_tag
+        else:
+            match_clause = f"MATCH (n:{label} {{id: $id}})"
+
         driver = self._driver()
         async with driver.session(database=self._database) as session:
             # Check existence
             result = await session.run(
-                f"MATCH (n:{label} {{id: $id}}) RETURN n.id", id=node_id,
+                f"{match_clause} RETURN n.id",
+                parameters=params,
             )
             record = await result.single()
             if record is None:
                 return False
 
             await session.run(
-                f"MATCH (n:{label} {{id: $id}}) DETACH DELETE n", id=node_id,
+                f"{match_clause} DETACH DELETE n",
+                parameters=params,
             )
 
         logger.debug("Deleted %s node %s", label, node_id)
@@ -130,13 +176,23 @@ class Neo4jBackend(GraphBackend):
         tgt_label: str,
         tgt_id: str,
     ) -> bool:
-        stmt = (
-            f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
-            f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
-        )
+        params: dict = {"src": src_id, "tgt": tgt_id}
+        if self._project_tag:
+            stmt = (
+                f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
+                f"WHERE a._wheeler_project = $ptag AND b._wheeler_project = $ptag "
+                f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
+            )
+            params["ptag"] = self._project_tag
+        else:
+            stmt = (
+                f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
+                f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
+            )
+
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, src=src_id, tgt=tgt_id)
+            result = await session.run(stmt, parameters=params)
             record = await result.single()
 
         if record:
@@ -157,8 +213,13 @@ class Neo4jBackend(GraphBackend):
         params: dict = {"limit": limit}
         if filters:
             for key, value in filters.items():
-                where_parts.append(f"n.{key} = ${key}")
-                params[key] = value
+                where_parts.append(f"n.{key} = $filters.{key}")
+                params.setdefault("filters", {})[key] = value
+
+        # Project namespace filter
+        if self._project_tag:
+            where_parts.append("n._wheeler_project = $ptag")
+            params["ptag"] = self._project_tag
 
         where_clause = ""
         if where_parts:
@@ -175,16 +236,25 @@ class Neo4jBackend(GraphBackend):
 
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, **params)
+            result = await session.run(stmt, parameters=params)
             records = [r async for r in result]
 
         return [dict(r["n"]) for r in records]
 
     async def count_nodes(self, label: str) -> int:
-        stmt = f"MATCH (n:{label}) RETURN count(n) AS cnt"
+        params: dict = {}
+        if self._project_tag:
+            stmt = (
+                f"MATCH (n:{label}) WHERE n._wheeler_project = $ptag "
+                f"RETURN count(n) AS cnt"
+            )
+            params["ptag"] = self._project_tag
+        else:
+            stmt = f"MATCH (n:{label}) RETURN count(n) AS cnt"
+
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt)
+            result = await session.run(stmt, parameters=params)
             record = await result.single()
         return record["cnt"] if record else 0
 
@@ -204,16 +274,23 @@ class Neo4jBackend(GraphBackend):
     ) -> list[dict]:
         rel_pattern = "|".join(rel_types)
         if direction == "incoming":
-            where = f"NOT (n)<-[:{rel_pattern}]-()"
+            rel_where = f"NOT (n)<-[:{rel_pattern}]-()"
         elif direction == "outgoing":
-            where = f"NOT (n)-[:{rel_pattern}]->()"
+            rel_where = f"NOT (n)-[:{rel_pattern}]->()"
         else:
-            where = f"NOT (n)-[:{rel_pattern}]-()"
+            rel_where = f"NOT (n)-[:{rel_pattern}]-()"
+
+        params: dict = {}
+        if self._project_tag:
+            where = f"n._wheeler_project = $ptag AND {rel_where}"
+            params["ptag"] = self._project_tag
+        else:
+            where = rel_where
 
         stmt = f"MATCH (n:{label}) WHERE {where} RETURN n"
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt)
+            result = await session.run(stmt, parameters=params)
             records = [r async for r in result]
         return [dict(r["n"]) for r in records]
 
@@ -231,20 +308,25 @@ class Neo4jBackend(GraphBackend):
             logger.warning("find_connected: unknown prefix %s", prefix)
             return []
 
+        params: dict = {"id": node_id}
         if direction == "incoming":
-            stmt = (
+            pattern = (
                 f"MATCH (n:{src_label} {{id: $id}})<-[:{rel_type}]-(m) "
-                f"RETURN m"
             )
         else:
-            stmt = (
+            pattern = (
                 f"MATCH (n:{src_label} {{id: $id}})-[:{rel_type}]->(m) "
-                f"RETURN m"
             )
+
+        if self._project_tag:
+            stmt = f"{pattern}WHERE n._wheeler_project = $ptag RETURN m"
+            params["ptag"] = self._project_tag
+        else:
+            stmt = f"{pattern}RETURN m"
 
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, id=node_id)
+            result = await session.run(stmt, parameters=params)
             records = [r async for r in result]
 
         return [dict(r["m"]) for r in records]
@@ -256,5 +338,5 @@ class Neo4jBackend(GraphBackend):
     ) -> list[dict]:
         driver = self._driver()
         async with driver.session(database=self._database) as session:
-            result = await session.run(query, **(params or {}))
+            result = await session.run(query, parameters=params or {})
             return [dict(r) async for r in result]

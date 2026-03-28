@@ -110,13 +110,18 @@ def graph_add_finding(
     driver = get_sync_driver(config)
     try:
         with driver.session(database=config.neo4j.database) as session:
+            props: dict = {
+                "id": node_id,
+                "description": desc,
+                "confidence": confidence,
+                "date": now,
+            }
+            if config.neo4j.project_tag:
+                props["_wheeler_project"] = config.neo4j.project_tag
+            prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
             session.run(
-                "CREATE (f:Finding {id: $id, description: $desc, "
-                "confidence: $confidence, date: $date})",
-                id=node_id,
-                desc=desc,
-                confidence=confidence,
-                date=now,
+                f"CREATE (f:Finding {{{prop_assignments}}})",
+                props=props,
             )
         console.print(f"[green]Created Finding:[/green] [{node_id}] {desc}")
     except Exception as exc:
@@ -148,13 +153,18 @@ def graph_add_question(
     driver = get_sync_driver(config)
     try:
         with driver.session(database=config.neo4j.database) as session:
+            props: dict = {
+                "id": node_id,
+                "question": question,
+                "priority": priority,
+                "date_added": now,
+            }
+            if config.neo4j.project_tag:
+                props["_wheeler_project"] = config.neo4j.project_tag
+            prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
             session.run(
-                "CREATE (q:OpenQuestion {id: $id, question: $question, "
-                "priority: $priority, date_added: $date})",
-                id=node_id,
-                question=question,
-                priority=priority,
-                date=now,
+                f"CREATE (q:OpenQuestion {{{prop_assignments}}})",
+                props=props,
             )
         console.print(f"[green]Created OpenQuestion:[/green] [{node_id}] {question}")
     except Exception as exc:
@@ -206,12 +216,20 @@ def graph_link(
     try:
         with driver.session(database=config.neo4j.database) as session:
             # Use parameterized query — rel_type is whitelisted above
-            result = session.run(
-                f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
-                f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel",
-                src=source,
-                tgt=target,
-            )
+            params: dict = {"src": source, "tgt": target}
+            if config.neo4j.project_tag:
+                stmt = (
+                    f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
+                    f"WHERE a._wheeler_project = $ptag AND b._wheeler_project = $ptag "
+                    f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
+                )
+                params["ptag"] = config.neo4j.project_tag
+            else:
+                stmt = (
+                    f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
+                    f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
+                )
+            result = session.run(stmt, **params)
             record = result.single()
             if record:
                 console.print(

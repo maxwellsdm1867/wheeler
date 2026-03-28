@@ -98,6 +98,8 @@ async def validate_citations(
     if not valid_ids:
         return results
 
+    project_tag = config.neo4j.project_tag
+
     try:
         async with driver.session(database=config.neo4j.database) as session:
             # Step 1: Batch existence check — one query for all nodes
@@ -107,10 +109,19 @@ async def validate_citations(
 
             found_nodes: dict[str, dict] = {}
             for label, ids in by_label.items():
-                result = await session.run(
-                    f"MATCH (n:{label}) WHERE n.id IN $ids RETURN n.id AS id, n",
-                    ids=ids,
-                )
+                if project_tag:
+                    result = await session.run(
+                        f"MATCH (n:{label}) WHERE n.id IN $ids "
+                        f"AND n._wheeler_project = $ptag "
+                        f"RETURN n.id AS id, n",
+                        ids=ids,
+                        ptag=project_tag,
+                    )
+                else:
+                    result = await session.run(
+                        f"MATCH (n:{label}) WHERE n.id IN $ids RETURN n.id AS id, n",
+                        ids=ids,
+                    )
                 records = [r async for r in result]
                 for rec in records:
                     found_nodes[rec["id"]] = dict(rec["n"])
@@ -131,14 +142,26 @@ async def validate_citations(
                 prov_detail = ""
                 if label in _PROVENANCE_RULES:
                     for rel_pattern, target_pattern in _PROVENANCE_RULES[label]:
-                        check = await session.run(
-                            f"MATCH (n:{label} {{id: $id}})"
-                            f"<-[:{rel_pattern}]-(t) "
-                            f"WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
-                            f"RETURN count(t) AS cnt",
-                            id=node_id,
-                            targets=target_pattern.split("|"),
-                        )
+                        if project_tag:
+                            check = await session.run(
+                                f"MATCH (n:{label} {{id: $id}})"
+                                f"<-[:{rel_pattern}]-(t) "
+                                f"WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
+                                f"AND n._wheeler_project = $ptag "
+                                f"RETURN count(t) AS cnt",
+                                id=node_id,
+                                targets=target_pattern.split("|"),
+                                ptag=project_tag,
+                            )
+                        else:
+                            check = await session.run(
+                                f"MATCH (n:{label} {{id: $id}})"
+                                f"<-[:{rel_pattern}]-(t) "
+                                f"WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
+                                f"RETURN count(t) AS cnt",
+                                id=node_id,
+                                targets=target_pattern.split("|"),
+                            )
                         rec = await check.single()
                         if not rec or rec["cnt"] == 0:
                             prov_status = CitationStatus.MISSING_PROVENANCE

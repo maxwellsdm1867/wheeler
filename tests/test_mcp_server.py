@@ -38,6 +38,7 @@ class TestToolRegistration:
             "extract_citations",
             "validate_citations",
             "scan_workspace",
+            "scan_dependencies",
             "detect_stale",
             "hash_file",
             "init_schema",
@@ -54,7 +55,7 @@ class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 31
+        assert len(tools) == 32
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
@@ -270,4 +271,37 @@ class TestIndexNode:
             from wheeler.mcp_server import index_node
 
             result = await index_node("F-test1234", "Finding", "test text")
+        assert "error" in result
+
+
+class TestScanDependencies:
+    """scan_dependencies delegates to depscanner — test MCP wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_scan_returns_structure(self, tmp_path):
+        script = tmp_path / "test_script.py"
+        script.write_text("import numpy as np\ndf = np.load('data.npy')\n")
+
+        from wheeler.mcp_server import scan_dependencies
+        result = await scan_dependencies(str(script))
+
+        assert "imports" in result
+        assert "data_files" in result
+        assert "function_calls" in result
+        assert "numpy" in result["imports"]
+        assert any(d["path"] == "data.npy" for d in result["data_files"])
+
+    @pytest.mark.asyncio
+    async def test_scan_file_not_found(self):
+        from wheeler.mcp_server import scan_dependencies
+        result = await scan_dependencies("/nonexistent/path.py")
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_scan_syntax_error(self, tmp_path):
+        script = tmp_path / "bad.py"
+        script.write_text("def broken(\n")
+
+        from wheeler.mcp_server import scan_dependencies
+        result = await scan_dependencies(str(script))
         assert "error" in result

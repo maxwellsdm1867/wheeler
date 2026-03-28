@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 from wheeler.graph.driver import get_async_driver
 
 
+def _project_filter(alias: str, project_tag: str) -> str:
+    """Return a Cypher WHERE fragment for project namespace isolation.
+
+    When *project_tag* is non-empty, returns something like
+    ``" AND f._wheeler_project = $ptag"``.  Otherwise returns ``""``.
+    """
+    if not project_tag:
+        return ""
+    return f" AND {alias}._wheeler_project = $ptag"
+
+
 async def fetch_context(config: WheelerConfig) -> str:
     """Pull size-limited graph context for prompt injection.
 
@@ -28,39 +39,58 @@ async def fetch_context(config: WheelerConfig) -> str:
     """
     driver = get_async_driver(config)
     sections: list[str] = []
+    project_tag = config.neo4j.project_tag
+    # Extra params dict: includes ptag only when namespacing is active
+    extra: dict = {}
+    if project_tag:
+        extra["ptag"] = project_tag
+
+    pf = _project_filter("f", project_tag)
+    pq = _project_filter("q", project_tag)
+    ph = _project_filter("h", project_tag)
+
     try:
         async with driver.session(database=config.neo4j.database) as session:
             # Reference findings
             result = await session.run(
-                "MATCH (f:Finding) WHERE f.tier = 'reference' "
+                "MATCH (f:Finding) WHERE f.tier = 'reference'"
+                f"{pf} "
                 "RETURN f.id AS id, f.description AS desc "
                 "ORDER BY f.date DESC LIMIT $limit",
                 limit=config.context_max_findings,
+                **extra,
             )
             ref_findings = [r async for r in result]
 
             # Generated findings (includes null tier for backward compat)
             result = await session.run(
-                "MATCH (f:Finding) WHERE f.tier IS NULL OR f.tier = 'generated' "
+                "MATCH (f:Finding) WHERE (f.tier IS NULL OR f.tier = 'generated')"
+                f"{pf} "
                 "RETURN f.id AS id, f.description AS desc "
                 "ORDER BY f.date DESC LIMIT $limit",
                 limit=config.context_max_findings,
+                **extra,
             )
             gen_findings = [r async for r in result]
 
             # Open questions
             result = await session.run(
-                "MATCH (q:OpenQuestion) RETURN q.id AS id, q.question AS question "
+                "MATCH (q:OpenQuestion) WHERE true"
+                f"{pq} "
+                "RETURN q.id AS id, q.question AS question "
                 "ORDER BY q.priority DESC LIMIT $limit",
                 limit=config.context_max_questions,
+                **extra,
             )
             questions = [r async for r in result]
 
             # Active hypotheses
             result = await session.run(
-                "MATCH (h:Hypothesis {status: 'open'}) "
+                "MATCH (h:Hypothesis) WHERE h.status = 'open'"
+                f"{ph} "
                 "RETURN h.id AS id, h.statement AS stmt LIMIT $limit",
                 limit=config.context_max_hypotheses,
+                **extra,
             )
             hypotheses = [r async for r in result]
 

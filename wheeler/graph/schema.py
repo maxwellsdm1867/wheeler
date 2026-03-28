@@ -50,6 +50,13 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (n:ResearchNote) ON (n.file_path)",
 ]
 
+# Project namespace indexes — used for Community Edition isolation.
+# Only applied when project_tag is set.
+PROJECT_INDEXES: list[str] = [
+    f"CREATE INDEX IF NOT EXISTS FOR (n:{label}) ON (n._wheeler_project)"
+    for label in NODE_LABELS
+]
+
 # Allowed relationship types (whitelist for link command)
 ALLOWED_RELATIONSHIPS: list[str] = [
     "PRODUCED",
@@ -74,16 +81,27 @@ ALLOWED_RELATIONSHIPS: list[str] = [
 async def ensure_database(config: WheelerConfig) -> str:
     """Create the project's Neo4j database if it doesn't exist.
 
-    Neo4j Community Edition only supports the default 'neo4j' database,
-    so this is a no-op in that case. Enterprise/Aura supports multiple.
+    Neo4j Community Edition only supports the default 'neo4j' database.
+    When the requested database differs from 'neo4j' and creation fails
+    (Community Edition), we fall back to the default database and enable
+    property-based namespace isolation via ``config.neo4j.project_tag``.
 
-    Returns the database name.
+    Returns the database name actually in use.
     """
     from wheeler.graph.driver import get_async_driver
 
     db_name = config.neo4j.database
     if db_name == "neo4j":
-        return db_name  # default database always exists
+        # Default database — check if a project name was configured.
+        # If so, enable namespace isolation even on the default database
+        # (the user wants isolation but didn't set a custom DB name).
+        if config.project.name and not config.neo4j.project_tag:
+            config.neo4j.project_tag = config.project.name
+            logger.info(
+                "Project namespace isolation enabled: _wheeler_project='%s'",
+                config.neo4j.project_tag,
+            )
+        return db_name
 
     driver = get_async_driver(config)
     try:
@@ -92,15 +110,19 @@ async def ensure_database(config: WheelerConfig) -> str:
             await session.run(
                 f"CREATE DATABASE `{db_name}` IF NOT EXISTS"
             )
-        logger.info("Ensured database '%s' exists", db_name)
+        logger.info("Ensured database '%s' exists (Enterprise/Aura)", db_name)
     except Exception as exc:
-        # Community Edition — fall back to default database
+        # Community Edition — fall back to default database with namespacing
+        project_tag = config.project.name or db_name
+        config.neo4j.project_tag = project_tag
+        config.neo4j.database = "neo4j"
         logger.info(
             "Could not create database '%s' (Community Edition?): %s. "
-            "Using default 'neo4j' database.",
-            db_name, exc,
+            "Falling back to 'neo4j' database with namespace isolation: "
+            "_wheeler_project='%s'.",
+            db_name, exc, project_tag,
         )
-    return db_name
+    return config.neo4j.database
 
 
 async def init_schema(config: WheelerConfig) -> list[str]:
@@ -108,8 +130,13 @@ async def init_schema(config: WheelerConfig) -> list[str]:
     from wheeler.graph.driver import get_async_driver
     driver = get_async_driver(config)
     applied: list[str] = []
+
+    stmts = CONSTRAINTS + INDEXES
+    if config.neo4j.project_tag:
+        stmts = stmts + PROJECT_INDEXES
+
     async with driver.session(database=config.neo4j.database) as session:
-        for stmt in CONSTRAINTS + INDEXES:
+        for stmt in stmts:
             await session.run(stmt)
             applied.append(stmt)
     logger.info("Schema initialized: %d constraints/indexes applied", len(applied))
@@ -126,14 +153,25 @@ async def get_status(config: WheelerConfig) -> dict[str, int]:
         from wheeler.graph.driver import get_async_driver
         driver = get_async_driver(config)
 
-        parts = [
-            f"MATCH (n:{label}) RETURN '{label}' AS label, count(n) AS cnt"
-            for label in NODE_LABELS
-        ]
+        project_tag = config.neo4j.project_tag
+        if project_tag:
+            parts = [
+                f"MATCH (n:{label}) WHERE n._wheeler_project = $ptag "
+                f"RETURN '{label}' AS label, count(n) AS cnt"
+                for label in NODE_LABELS
+            ]
+        else:
+            parts = [
+                f"MATCH (n:{label}) RETURN '{label}' AS label, count(n) AS cnt"
+                for label in NODE_LABELS
+            ]
         query = " UNION ALL ".join(parts)
 
         async with driver.session(database=config.neo4j.database) as session:
-            result = await session.run(query)
+            if project_tag:
+                result = await session.run(query, ptag=project_tag)
+            else:
+                result = await session.run(query)
             records = [r async for r in result]
             for rec in records:
                 counts[rec["label"]] = rec["cnt"]

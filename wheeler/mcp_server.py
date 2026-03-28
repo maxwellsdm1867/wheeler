@@ -523,6 +523,84 @@ async def hash_file(path: str) -> dict:
     return {"path": path, "sha256": sha}
 
 
+@mcp.tool()
+async def scan_dependencies(script_path: str, link_to_graph: bool = False) -> dict:
+    """Scan a Python script for imports, data file references, and function calls.
+
+    Uses AST parsing (no execution) to extract:
+    - imports: all imported modules
+    - data_files: file paths found in string literals and data-loading calls
+      (pd.read_csv, np.load, scipy.io.loadmat, etc.)
+    - function_calls: unique function/method calls
+
+    When link_to_graph is True and the script has a matching Analysis node,
+    creates DEPENDS_ON edges to any Dataset nodes whose paths match
+    detected data files.
+
+    Args:
+        script_path: Path to a .py file
+        link_to_graph: If True, create graph edges for discovered dependencies
+    """
+    from wheeler.depscanner import scan_script
+
+    try:
+        dep_map = scan_script(script_path)
+    except FileNotFoundError:
+        return {"error": f"Script not found: {script_path}"}
+    except SyntaxError as exc:
+        return {"error": f"Parse error: {exc}"}
+
+    result = dep_map.to_dict()
+
+    if link_to_graph and dep_map.data_files:
+        edges = await _link_dependencies(script_path, dep_map.data_files)
+        result["edges_created"] = edges
+
+    return result
+
+
+async def _link_dependencies(
+    script_path: str, data_files: list[dict[str, str]]
+) -> list[dict]:
+    """Best-effort: find Analysis node for this script and link to matching Datasets."""
+    edges: list[dict] = []
+    try:
+        backend = await graph_tools._get_backend(_config)
+
+        # Find Analysis node by script_path
+        analyses = await backend.run_cypher(
+            "MATCH (a:Analysis) WHERE a.script_path CONTAINS $path "
+            "RETURN a.id AS id ORDER BY a.date DESC LIMIT 1",
+            parameters={"path": script_path},
+        )
+        if not analyses:
+            return [{"note": f"No Analysis node found for {script_path}"}]
+
+        analysis_id = analyses[0]["id"]
+
+        # Find Dataset nodes matching any of the detected data file paths
+        for df in data_files:
+            datasets = await backend.run_cypher(
+                "MATCH (d:Dataset) WHERE d.path CONTAINS $path "
+                "RETURN d.id AS id",
+                parameters={"path": df["path"]},
+            )
+            for ds in datasets:
+                link_result = await graph_tools.execute_tool(
+                    "link_nodes",
+                    {
+                        "source_id": analysis_id,
+                        "target_id": ds["id"],
+                        "relationship": "USED_DATA",
+                    },
+                    _config,
+                )
+                edges.append(json.loads(link_result))
+    except Exception as exc:
+        edges.append({"error": f"Graph linking failed: {exc}"})
+    return edges
+
+
 # --- Raw Cypher ---
 
 

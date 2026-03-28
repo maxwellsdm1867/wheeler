@@ -30,7 +30,7 @@ class TraceResult:
 async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
     """Walk the graph backwards from a node, following provenance relationships.
 
-    Returns the full chain: e.g. Finding ← Analysis ← Dataset ← Experiment.
+    Returns the full chain: e.g. Finding <- Analysis <- Dataset <- Experiment.
     Returns None if the node doesn't exist.
     """
     prefix = node_id.split("-", 1)[0]
@@ -38,13 +38,23 @@ async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
     if label is None:
         return None
 
+    project_tag = config.neo4j.project_tag
+
     driver = get_async_driver(config)
     async with driver.session(database=config.neo4j.database) as session:
-        # Check root node exists
-        result = await session.run(
-            f"MATCH (n:{label} {{id: $id}}) RETURN n",
-            id=node_id,
-        )
+        # Check root node exists (with project filter if active)
+        if project_tag:
+            result = await session.run(
+                f"MATCH (n:{label} {{id: $id}}) "
+                f"WHERE n._wheeler_project = $ptag RETURN n",
+                id=node_id,
+                ptag=project_tag,
+            )
+        else:
+            result = await session.run(
+                f"MATCH (n:{label} {{id: $id}}) RETURN n",
+                id=node_id,
+            )
         record = await result.single()
         if record is None:
             return None
@@ -60,19 +70,37 @@ async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
         )
 
         # Walk backwards: find all incoming relationships up to 5 hops
-        result = await session.run(
-            "MATCH path = (n {id: $id})<-[*1..5]-(upstream) "
-            "UNWIND relationships(path) AS r "
-            "WITH startNode(r) AS src, endNode(r) AS tgt, type(r) AS rel "
-            "RETURN src.id AS src_id, labels(src)[0] AS src_label, "
-            "  src.description AS src_desc, src.statement AS src_stmt, "
-            "  src.question AS src_q, src.title AS src_title, "
-            "  src.name AS src_name, "
-            "  src {.script_path, .script_hash, .language, .confidence, "
-            "       .priority, .status, .doi, .date, .executed_at} AS src_props, "
-            "  tgt.id AS tgt_id, rel",
-            id=node_id,
-        )
+        if project_tag:
+            result = await session.run(
+                "MATCH path = (n {id: $id})<-[*1..5]-(upstream) "
+                "WHERE n._wheeler_project = $ptag "
+                "UNWIND relationships(path) AS r "
+                "WITH startNode(r) AS src, endNode(r) AS tgt, type(r) AS rel "
+                "WHERE src._wheeler_project = $ptag "
+                "RETURN src.id AS src_id, labels(src)[0] AS src_label, "
+                "  src.description AS src_desc, src.statement AS src_stmt, "
+                "  src.question AS src_q, src.title AS src_title, "
+                "  src.name AS src_name, "
+                "  src {.script_path, .script_hash, .language, .confidence, "
+                "       .priority, .status, .doi, .date, .executed_at} AS src_props, "
+                "  tgt.id AS tgt_id, rel",
+                id=node_id,
+                ptag=project_tag,
+            )
+        else:
+            result = await session.run(
+                "MATCH path = (n {id: $id})<-[*1..5]-(upstream) "
+                "UNWIND relationships(path) AS r "
+                "WITH startNode(r) AS src, endNode(r) AS tgt, type(r) AS rel "
+                "RETURN src.id AS src_id, labels(src)[0] AS src_label, "
+                "  src.description AS src_desc, src.statement AS src_stmt, "
+                "  src.question AS src_q, src.title AS src_title, "
+                "  src.name AS src_name, "
+                "  src {.script_path, .script_hash, .language, .confidence, "
+                "       .priority, .status, .doi, .date, .executed_at} AS src_props, "
+                "  tgt.id AS tgt_id, rel",
+                id=node_id,
+            )
         records = [r async for r in result]
 
         # Build chain from records, deduplicating
