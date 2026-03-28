@@ -200,7 +200,7 @@ def _register_mcp_servers() -> None:
     else:
         template_servers = {}
 
-    # Wheeler MCP — always use absolute path to current wheeler-mcp
+    # Wheeler MCP — only set on first install, don't overwrite existing
     wheeler_abs = shutil.which("wheeler-mcp")
     if wheeler_abs and "wheeler" not in servers:
         servers["wheeler"] = {
@@ -208,9 +208,9 @@ def _register_mcp_servers() -> None:
             "command": wheeler_abs,
             "args": [],
         }
-    elif wheeler_abs and "wheeler" in servers:
-        # Update the path in case it changed (e.g. after update)
-        servers["wheeler"]["command"] = wheeler_abs
+    # Don't update existing wheeler path — the user may have pointed
+    # it at a specific venv (e.g. user-test vs dev) and `which` could
+    # resolve to the wrong one if multiple venvs are on PATH.
 
     # Neo4j — add from template if not already configured
     if "neo4j" not in servers and "neo4j" in template_servers:
