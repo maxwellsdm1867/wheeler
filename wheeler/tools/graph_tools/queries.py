@@ -447,6 +447,58 @@ async def query_notes(backend, args: dict) -> str:
     return json.dumps({"notes": notes, "count": len(notes)})
 
 
+async def query_analyses(backend, args: dict) -> str:
+    ctx = _extract_context(args)
+    keyword = args.get("keyword", "")
+    limit = int(args.get("limit", 20))
+
+    if keyword:
+        pw = _project_where("a", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (a:Analysis) WHERE (toLower(a.script_path) CONTAINS toLower($kw) "
+            "OR toLower(a.description) CONTAINS toLower($kw) "
+            "OR toLower(a.language) CONTAINS toLower($kw))"
+            f"{pw} "
+            "RETURN a.id AS id, a.script_path AS script_path, a.language AS language, "
+            "a.executed_at AS executed_at, a.date AS date "
+            "ORDER BY a.date DESC LIMIT $limit",
+            _inject_ptag({"kw": keyword, "limit": limit}, ctx.project_tag),
+        )
+    else:
+        records = await backend.run_cypher(
+            "MATCH (a:Analysis)"
+            f"{_project_where('a', ctx.project_tag, has_existing_where=False)} "
+            "RETURN a.id AS id, a.script_path AS script_path, a.language AS language, "
+            "a.executed_at AS executed_at, a.date AS date "
+            "ORDER BY a.date DESC LIMIT $limit",
+            _inject_ptag({"limit": limit}, ctx.project_tag),
+        )
+
+    analyses = []
+    for r in records:
+        node_id = r["id"]
+        model = _read_knowledge_node(ctx.knowledge_path, node_id)
+        if model is not None:
+            analyses.append({
+                "id": model.id,
+                "script_path": model.script_path,
+                "language": model.language,
+                "executed_at": model.executed_at,
+                "date": model.created,
+                "tier": model.tier,
+            })
+        else:
+            analyses.append({
+                "id": node_id,
+                "script_path": r["script_path"],
+                "language": r["language"],
+                "executed_at": r["executed_at"],
+                "date": r["date"],
+            })
+
+    return json.dumps({"analyses": analyses, "count": len(analyses)})
+
+
 async def graph_gaps(backend, args: dict | None = None) -> str:
     """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses."""
     if args is None:

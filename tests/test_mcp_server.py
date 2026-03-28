@@ -49,13 +49,14 @@ class TestToolRegistration:
             "show_node",
             "add_note",
             "query_notes",
+            "query_analyses",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 32
+        assert len(tools) == 33
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
@@ -147,6 +148,14 @@ class TestGraphToolWrappers:
         with patch("wheeler.mcp_server.graph_tools.execute_tool", new_callable=AsyncMock, return_value=mock_result):
             from wheeler.mcp_server import query_findings
             result = await query_findings(keyword="test", limit=5)
+        assert result["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_query_analyses_delegates(self):
+        mock_result = json.dumps({"analyses": [], "count": 0})
+        with patch("wheeler.mcp_server.graph_tools.execute_tool", new_callable=AsyncMock, return_value=mock_result):
+            from wheeler.mcp_server import query_analyses
+            result = await query_analyses(keyword="matlab", limit=5)
         assert result["count"] == 0
 
     @pytest.mark.asyncio

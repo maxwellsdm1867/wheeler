@@ -55,6 +55,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "query_papers": queries.query_papers,
     "query_documents": queries.query_documents,
     "query_notes": queries.query_notes,
+    "query_analyses": queries.query_analyses,
     "graph_gaps": queries.graph_gaps,
 }
 
@@ -249,6 +250,15 @@ TOOL_DEFINITIONS = [
             "keyword": {"type": "string", "description": "Optional keyword to filter by", "default": ""},
             "status": {"type": "string", "description": "Filter by status (draft, revision, final), or empty for all", "default": ""},
             "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+        },
+        "required": [],
+    },
+    {
+        "name": "query_analyses",
+        "description": "Search Analysis nodes in the knowledge graph by script path, description, or language.",
+        "parameters": {
+            "keyword": {"type": "string", "description": "Optional keyword to filter by", "default": ""},
+            "limit": {"type": "integer", "description": "Max results (default 20)", "default": 20},
         },
         "required": [],
     },

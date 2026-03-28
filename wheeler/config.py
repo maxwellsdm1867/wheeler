@@ -16,10 +16,10 @@ _DEFAULT_CONFIG_PATH = Path("wheeler.yaml")
 
 
 class Neo4jConfig(BaseModel):
-    uri: str = "bolt://localhost:7687"
-    username: str = "neo4j"
-    password: str = "research-graph"
-    database: str = "neo4j"
+    uri: str = Field(default_factory=lambda: os.getenv("NEO4J_URI", "bolt://localhost:7687"))
+    username: str = Field(default_factory=lambda: os.getenv("NEO4J_USERNAME", "neo4j"))
+    password: str = Field(default_factory=lambda: os.getenv("NEO4J_PASSWORD", "research-graph"))
+    database: str = Field(default_factory=lambda: os.getenv("NEO4J_DATABASE", "neo4j"))
     # Project namespace for Community Edition isolation.
     # When set, all nodes get a _wheeler_project property and queries filter
     # by it.  Empty string means no namespacing (Enterprise/Aura uses a

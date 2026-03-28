@@ -15,10 +15,8 @@ import pytest
 
 from wheeler.models import (
     AnalysisModel,
-    CellTypeModel,
     DatasetModel,
     DocumentModel,
-    ExperimentModel,
     FindingModel,
     HypothesisModel,
     KNOWLEDGE_NODE_ADAPTER,
@@ -26,7 +24,6 @@ from wheeler.models import (
     OpenQuestionModel,
     PaperModel,
     PlanModel,
-    TaskModel,
     model_for_label,
     title_for_node,
 )
@@ -152,17 +149,6 @@ def _make_analysis(**overrides) -> AnalysisModel:
     return AnalysisModel(**defaults)
 
 
-def _make_celltype(**overrides) -> CellTypeModel:
-    defaults = dict(
-        id="C-99aabb00",
-        tier="reference",
-        created=NOW,
-        updated=NOW,
-    )
-    defaults.update(overrides)
-    return CellTypeModel(**defaults)
-
-
 # ===================================================================
 # 1. Model round-trip via KNOWLEDGE_NODE_ADAPTER
 # ===================================================================
@@ -181,10 +167,7 @@ class TestModelRoundTrip:
             _make_dataset(),
             _make_document(),
             _make_analysis(),
-            _make_celltype(),
-            ExperimentModel(id="E-abcd1234", tier="generated", created=NOW, updated=NOW),
             PlanModel(id="PL-plan0001", status="active", tier="generated", created=NOW, updated=NOW),
-            TaskModel(id="T-task0001", tier="generated", created=NOW, updated=NOW),
         ],
         ids=lambda m: m.type,
     )
@@ -395,13 +378,6 @@ class TestRender:
         assert f"[{a.id}]" in md
         assert a.script_path in md
 
-    def test_render_generic_fallback_for_celltype(self):
-        ct = _make_celltype()
-        md = render_node(ct)
-
-        assert f"[{ct.id}]" in md
-        assert "CellType" in md
-
     def test_render_finding_with_tags(self):
         finding = _make_finding(tags=["calcium", "imaging"])
         md = render_node(finding)
@@ -419,7 +395,6 @@ class TestRender:
             _make_dataset(),
             _make_document(),
             _make_analysis(),
-            _make_celltype(),
         ]
         for m in models:
             md = render_node(m)
@@ -468,14 +443,6 @@ class TestTitleExtraction:
         assert len(title) == 100
         assert title == "x" * 100
 
-    def test_celltype_falls_back_to_id(self):
-        ct = _make_celltype()
-        assert title_for_node(ct) == ct.id
-
-    def test_experiment_falls_back_to_id(self):
-        e = ExperimentModel(id="E-fallback1")
-        assert title_for_node(e) == "E-fallback1"
-
 
 # ===================================================================
 # 5. Model-label mapping
@@ -494,10 +461,7 @@ class TestModelForLabel:
             ("Paper", PaperModel),
             ("Document", DocumentModel),
             ("Analysis", AnalysisModel),
-            ("Experiment", ExperimentModel),
             ("Plan", PlanModel),
-            ("CellType", CellTypeModel),
-            ("Task", TaskModel),
         ],
     )
     def test_returns_correct_class(self, label: str, expected_cls: type):
@@ -757,12 +721,6 @@ class TestGraphDataToModel:
         assert isinstance(model, AnalysisModel)
         assert model.script_path == "/scripts/run.m"
         assert model.language == "matlab"
-
-    def test_celltype_conversion(self):
-        data = {"id": "C-migr0006", "created": NOW}
-        model = _graph_data_to_model("CellType", data)
-        assert isinstance(model, CellTypeModel)
-        assert model.id == "C-migr0006"
 
     def test_updated_defaults_to_created(self):
         """When 'updated' is missing, it should fall back to 'created'."""

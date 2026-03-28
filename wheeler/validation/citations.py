@@ -11,7 +11,7 @@ from pathlib import Path
 from wheeler.config import WheelerConfig
 
 logger = logging.getLogger(__name__)
-from wheeler.graph.schema import PREFIX_TO_LABEL
+from wheeler.graph.schema import NODE_LABELS, PREFIX_TO_LABEL
 
 # Matches [F-3a2b], [PL-0012abcd], etc.
 CITATION_PATTERN = re.compile(
@@ -56,7 +56,7 @@ def _label_from_id(node_id: str) -> str | None:
 # Provenance rules: what relationships a node label must have to be considered
 # properly grounded. Label → list of (relationship, target_label) that should exist.
 _PROVENANCE_RULES: dict[str, list[tuple[str, str]]] = {
-    "Finding": [("GENERATED|PRODUCED", "Analysis|Experiment")],
+    "Finding": [("GENERATED|PRODUCED", "Analysis")],
     "Analysis": [("USED_DATA", "Dataset")],
     "Hypothesis": [("SUPPORTS|CONTRADICTS", "Finding")],
     "Document": [("APPEARS_IN", "Finding|Paper|Analysis|Hypothesis")],
@@ -109,6 +109,10 @@ async def validate_citations(
 
             found_nodes: dict[str, dict] = {}
             for label, ids in by_label.items():
+                # Safety: labels come from PREFIX_TO_LABEL but validate
+                # at the query boundary to prevent Cypher injection.
+                if label not in NODE_LABELS:
+                    continue
                 if project_tag:
                     result = await session.run(
                         f"MATCH (n:{label}) WHERE n.id IN $ids "
@@ -178,7 +182,7 @@ async def validate_citations(
                         sp = node_data.get("script_path")
                         sh = node_data.get("script_hash")
                         if sp and sh:
-                            p = Path(sp)
+                            p = Path(sp).resolve()
                             if not p.exists():
                                 prov_status = CitationStatus.STALE
                                 prov_detail = f"Script file not found: {sp}"
@@ -186,7 +190,10 @@ async def validate_citations(
                                 prov_status = CitationStatus.STALE
                                 prov_detail = "Script has been modified since analysis ran"
                     except Exception:
-                        pass
+                        logger.debug(
+                            "Staleness check failed for %s", node_id,
+                            exc_info=True,
+                        )
 
                 results.append(CitationResult(
                     node_id=node_id,

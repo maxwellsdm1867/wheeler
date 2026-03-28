@@ -117,44 +117,8 @@ class GraphBackend(ABC):
         """
 
     @abstractmethod
-    async def count_nodes(self, label: str) -> int:
-        """Return the total number of nodes with the given label."""
-
-    @abstractmethod
     async def count_all(self) -> dict[str, int]:
         """Return node counts for every label. ``{label: count}``."""
-
-    # --- Graph-specific queries ---
-
-    @abstractmethod
-    async def find_unlinked(
-        self,
-        label: str,
-        rel_types: list[str],
-        direction: str = "any",
-    ) -> list[dict]:
-        """Find nodes of *label* that have no relationships of the given types.
-
-        Parameters
-        ----------
-        direction:
-            ``"incoming"``, ``"outgoing"``, or ``"any"``.
-        """
-
-    @abstractmethod
-    async def find_connected(
-        self,
-        node_id: str,
-        rel_type: str,
-        direction: str = "outgoing",
-    ) -> list[dict]:
-        """Find nodes connected to *node_id* via *rel_type*.
-
-        Parameters
-        ----------
-        direction:
-            ``"incoming"`` or ``"outgoing"``.
-        """
 
     # --- Raw Cypher ---
 

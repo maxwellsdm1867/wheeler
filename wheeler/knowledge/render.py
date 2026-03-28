@@ -267,7 +267,7 @@ def _render_note(m: ResearchNoteModel) -> str:
 
 
 def _render_generic(m: NodeBase) -> str:
-    """Fallback renderer for Experiment, Plan, CellType, Task, etc."""
+    """Fallback renderer for Plan, etc."""
     type_name = m.type
     parts: list[str] = [f"# {type_name} [{m.id}]", ""]
 

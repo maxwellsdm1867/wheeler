@@ -137,10 +137,6 @@ class TestKuzuNodeLifecycle:
         )
         assert linked is True
 
-        connected = await backend.find_connected(h_id, "SUPPORTS", direction="incoming")
-        assert len(connected) == 1
-        assert connected[0]["id"] == f_id
-
     async def test_count_nodes_across_labels(self, backend: KuzuBackend) -> None:
         await backend.create_node("Finding", {
             "description": "F1", "confidence": 0.5,

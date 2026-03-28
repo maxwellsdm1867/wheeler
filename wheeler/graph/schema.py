@@ -29,7 +29,6 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (f:Finding) ON (f.confidence)",
     "CREATE INDEX IF NOT EXISTS FOR (q:OpenQuestion) ON (q.priority)",
     "CREATE INDEX IF NOT EXISTS FOR (h:Hypothesis) ON (h.status)",
-    "CREATE INDEX IF NOT EXISTS FOR (e:Experiment) ON (e.date)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.doi)",
     "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.date)",
     "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.script_hash)",

@@ -17,12 +17,9 @@ class TestSchema:
         assert PREFIX_TO_LABEL["F"] == "Finding"
         assert PREFIX_TO_LABEL["H"] == "Hypothesis"
         assert PREFIX_TO_LABEL["Q"] == "OpenQuestion"
-        assert PREFIX_TO_LABEL["E"] == "Experiment"
         assert PREFIX_TO_LABEL["A"] == "Analysis"
         assert PREFIX_TO_LABEL["D"] == "Dataset"
         assert PREFIX_TO_LABEL["P"] == "Paper"
-        assert PREFIX_TO_LABEL["C"] == "CellType"
-        assert PREFIX_TO_LABEL["T"] == "Task"
         assert PREFIX_TO_LABEL["PL"] == "Plan"
         assert PREFIX_TO_LABEL["W"] == "Document"
         assert PREFIX_TO_LABEL["N"] == "ResearchNote"
@@ -34,8 +31,8 @@ class TestSchema:
     def test_node_labels_complete(self):
         expected = {
             "Plan", "Finding", "Hypothesis", "OpenQuestion",
-            "Experiment", "Analysis", "Dataset", "Paper",
-            "CellType", "Task", "Document", "ResearchNote",
+            "Analysis", "Dataset", "Paper",
+            "Document", "ResearchNote",
             "Ledger",
         }
         assert set(NODE_LABELS) == expected

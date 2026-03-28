@@ -852,68 +852,6 @@ def test_check_version_cached_stale_cache(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# merge_mcp_config
-# ---------------------------------------------------------------------------
-
-
-def test_mcp_merge_fresh(tmp_path, monkeypatch):
-    """Merge into a project with no existing .mcp.json."""
-    data = tmp_path / "_data"
-    data.mkdir()
-    template = {
-        "mcpServers": {
-            "wheeler": {"type": "stdio", "command": "wheeler-mcp"},
-            "neo4j": {"type": "stdio", "command": "neo4j-mcp"},
-        }
-    }
-    (data / "mcp.json").write_text(json.dumps(template))
-    monkeypatch.setattr(installer, "_get_data_path", lambda: data)
-
-    project = tmp_path / "project"
-    project.mkdir()
-
-    installer.merge_mcp_config(project_dir=project)
-
-    result = json.loads((project / ".mcp.json").read_text())
-    assert "wheeler" in result["mcpServers"]
-    assert "neo4j" in result["mcpServers"]
-
-
-def test_mcp_merge_preserves_existing(tmp_path, monkeypatch):
-    """Merge should not overwrite user-customized entries."""
-    data = tmp_path / "_data"
-    data.mkdir()
-    template = {
-        "mcpServers": {
-            "wheeler": {"type": "stdio", "command": "wheeler-mcp"},
-            "neo4j": {"type": "stdio", "command": "default-neo4j"},
-        }
-    }
-    (data / "mcp.json").write_text(json.dumps(template))
-    monkeypatch.setattr(installer, "_get_data_path", lambda: data)
-
-    project = tmp_path / "project"
-    project.mkdir()
-    existing = {
-        "mcpServers": {
-            "neo4j": {"type": "stdio", "command": "custom-neo4j", "env": {"DB": "custom"}},
-            "other-tool": {"type": "stdio", "command": "other"},
-        }
-    }
-    (project / ".mcp.json").write_text(json.dumps(existing))
-
-    installer.merge_mcp_config(project_dir=project)
-
-    result = json.loads((project / ".mcp.json").read_text())
-    # Existing neo4j config should be preserved (not overwritten)
-    assert result["mcpServers"]["neo4j"]["command"] == "custom-neo4j"
-    # Wheeler should be added
-    assert "wheeler" in result["mcpServers"]
-    # Other tools should be preserved
-    assert "other-tool" in result["mcpServers"]
-
-
-# ---------------------------------------------------------------------------
 # package data sync guard
 # ---------------------------------------------------------------------------
 
@@ -964,17 +902,3 @@ def test_package_data_in_sync():
             f"Agents in .claude/agents/ but not in wheeler/_data/agents/: {missing_a}\n"
             f"Run: python -c \"from wheeler.installer import sync_data; sync_data()\""
         )
-
-
-def test_mcp_merge_no_template(tmp_path, monkeypatch):
-    """If no template exists, merge should be a no-op."""
-    data = tmp_path / "_data"
-    data.mkdir()
-    monkeypatch.setattr(installer, "_get_data_path", lambda: data)
-
-    project = tmp_path / "project"
-    project.mkdir()
-
-    installer.merge_mcp_config(project_dir=project)
-
-    assert not (project / ".mcp.json").exists()

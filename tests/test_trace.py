@@ -70,11 +70,10 @@ class TestTraceResult:
         assert result.chain == []
 
     def test_full_provenance_chain(self):
-        """Verify a complete Finding → Analysis → Dataset → Experiment chain."""
+        """Verify a complete Finding → Analysis → Dataset chain."""
         chain = [
             TraceStep("A-1111", "Analysis", "fit script", "GENERATED", {"language": "matlab"}),
             TraceStep("D-2222", "Dataset", "raw data", "USED_DATA", {}),
-            TraceStep("E-3333", "Experiment", "March prep", "PRODUCED", {}),
         ]
         result = TraceResult(
             root_id="F-aaaa",
@@ -84,6 +83,6 @@ class TestTraceResult:
             root_properties={},
         )
         labels = [s.label for s in result.chain]
-        assert labels == ["Analysis", "Dataset", "Experiment"]
+        assert labels == ["Analysis", "Dataset"]
         rels = [s.relationship for s in result.chain]
-        assert rels == ["GENERATED", "USED_DATA", "PRODUCED"]
+        assert rels == ["GENERATED", "USED_DATA"]

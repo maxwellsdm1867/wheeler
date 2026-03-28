@@ -30,7 +30,7 @@ class TraceResult:
 async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
     """Walk the graph backwards from a node, following provenance relationships.
 
-    Returns the full chain: e.g. Finding <- Analysis <- Dataset <- Experiment.
+    Returns the full chain: e.g. Finding <- Analysis <- Dataset.
     Returns None if the node doesn't exist.
     """
     prefix = node_id.split("-", 1)[0]

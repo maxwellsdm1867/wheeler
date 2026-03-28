@@ -252,23 +252,3 @@ class TestQueryNodes:
         assert len(results) == 2
 
 
-class TestCountNodes:
-    async def test_count(self, config):
-        driver, session = _make_mock_driver()
-
-        mock_result = AsyncMock()
-        mock_result.single = AsyncMock(return_value={"cnt": 42})
-        session.run.return_value = mock_result
-
-        b = Neo4jBackend(config)
-        with patch.object(b, "_driver", return_value=driver):
-            count = await b.count_nodes("Finding")
-
-        assert count == 42
-
-
-class TestFindConnected:
-    async def test_unknown_prefix_returns_empty(self, config):
-        b = Neo4jBackend(config)
-        result = await b.find_connected("X-unknown", "SUPPORTS")
-        assert result == []

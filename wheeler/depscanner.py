@@ -69,9 +69,12 @@ def _resolve_alias(aliases: dict[str, str], name: str) -> str:
     return aliases.get(name, name)
 
 
+_MAX_PATH_LENGTH = 512  # Guard against false positives from long strings
+
+
 def _looks_like_file_path(s: str) -> bool:
     """Heuristic: does this string look like a data file path?"""
-    if not s or len(s) > 512:
+    if not s or len(s) > _MAX_PATH_LENGTH:
         return False
     # Must have a recognisable data extension
     suffix = Path(s).suffix.lower()

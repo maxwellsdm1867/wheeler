@@ -82,21 +82,9 @@ class AnalysisModel(NodeBase):
     executed_at: str = ""
 
 
-class ExperimentModel(NodeBase):
-    type: Literal["Experiment"] = "Experiment"
-
-
 class PlanModel(NodeBase):
     type: Literal["Plan"] = "Plan"
     status: str = ""
-
-
-class CellTypeModel(NodeBase):
-    type: Literal["CellType"] = "CellType"
-
-
-class TaskModel(NodeBase):
-    type: Literal["Task"] = "Task"
 
 
 class ResearchNoteModel(NodeBase):
@@ -128,12 +116,9 @@ PREFIX_TO_LABEL: dict[str, str] = {
     "F": "Finding",
     "H": "Hypothesis",
     "Q": "OpenQuestion",
-    "E": "Experiment",
     "A": "Analysis",
     "D": "Dataset",
     "P": "Paper",
-    "C": "CellType",
-    "T": "Task",
     "W": "Document",
     "N": "ResearchNote",
     "L": "Ledger",
@@ -157,10 +142,7 @@ KnowledgeNode = Annotated[
         PaperModel,
         DocumentModel,
         AnalysisModel,
-        ExperimentModel,
         PlanModel,
-        CellTypeModel,
-        TaskModel,
         ResearchNoteModel,
         LedgerModel,
     ],
@@ -181,10 +163,7 @@ _LABEL_TO_MODEL: dict[str, type[NodeBase]] = {
     "Paper": PaperModel,
     "Document": DocumentModel,
     "Analysis": AnalysisModel,
-    "Experiment": ExperimentModel,
     "Plan": PlanModel,
-    "CellType": CellTypeModel,
-    "Task": TaskModel,
     "ResearchNote": ResearchNoteModel,
     "Ledger": LedgerModel,
 }

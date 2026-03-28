@@ -35,6 +35,7 @@ class TestToolDefinitions:
             "query_papers",
             "add_document",
             "query_documents",
+            "query_analyses",
             "set_tier",
             "search_findings",
             "index_node",
@@ -122,4 +123,4 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 19
+        assert len(TOOL_DEFINITIONS) == 20

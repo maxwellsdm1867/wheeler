@@ -353,6 +353,15 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
 
 
 @mcp.tool()
+async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
+    """Search Analysis nodes in the knowledge graph by script path, description, or language."""
+    result = await graph_tools.execute_tool(
+        "query_analyses", {"keyword": keyword, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
 async def graph_gaps() -> dict:
     """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates."""
     result = await graph_tools.execute_tool("graph_gaps", {}, _config)

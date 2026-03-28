@@ -114,31 +114,12 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
         ("date", "STRING"),
         ("tier", "STRING"),
     ],
-    "Experiment": [
-        ("id", "STRING"),
-        ("title", "STRING"),
-        ("file_path", "STRING"),
-        ("date", "STRING"),
-        ("tier", "STRING"),
-    ],
     "Plan": [
         ("id", "STRING"),
         ("title", "STRING"),
         ("file_path", "STRING"),
         ("status", "STRING"),
         ("date", "STRING"),
-        ("tier", "STRING"),
-    ],
-    "CellType": [
-        ("id", "STRING"),
-        ("title", "STRING"),
-        ("file_path", "STRING"),
-        ("tier", "STRING"),
-    ],
-    "Task": [
-        ("id", "STRING"),
-        ("title", "STRING"),
-        ("file_path", "STRING"),
         ("tier", "STRING"),
     ],
     "ResearchNote": [
@@ -482,16 +463,6 @@ class KuzuBackend(GraphBackend):
             rows.append(props)
         return rows
 
-    async def count_nodes(self, label: str) -> int:
-        return await asyncio.to_thread(self._count_nodes_sync, label)
-
-    def _count_nodes_sync(self, label: str) -> int:
-        conn = self._get_conn()
-        result = conn.execute(f"MATCH (n:{label}) RETURN count(n)")
-        if result.has_next():
-            return result.get_next()[0]
-        return 0
-
     async def count_all(self) -> dict[str, int]:
         return await asyncio.to_thread(self._count_all_sync)
 
@@ -505,99 +476,6 @@ class KuzuBackend(GraphBackend):
             else:
                 counts[label] = 0
         return counts
-
-    # -- graph-specific queries --
-
-    async def find_unlinked(
-        self,
-        label: str,
-        rel_types: list[str],
-        direction: str = "any",
-    ) -> list[dict]:
-        return await asyncio.to_thread(
-            self._find_unlinked_sync, label, rel_types, direction,
-        )
-
-    def _find_unlinked_sync(
-        self,
-        label: str,
-        rel_types: list[str],
-        direction: str = "any",
-    ) -> list[dict]:
-        conn = self._get_conn()
-
-        # Build the NOT EXISTS pattern for each rel type
-        rel_pattern = "|".join(rel_types)
-        if direction == "incoming":
-            where = f"NOT (n)<-[:{rel_pattern}]-()"
-        elif direction == "outgoing":
-            where = f"NOT (n)-[:{rel_pattern}]->()"
-        else:
-            where = f"NOT (n)-[:{rel_pattern}]-()"
-
-        stmt = f"MATCH (n:{label}) WHERE {where} RETURN n.*"
-        result = conn.execute(stmt)
-        col_names = result.get_column_names()
-
-        rows: list[dict] = []
-        while result.has_next():
-            row = result.get_next()
-            props: dict = {}
-            for col_name, value in zip(col_names, row):
-                key = col_name.split(".", 1)[-1] if "." in col_name else col_name
-                props[key] = value
-            rows.append(props)
-        return rows
-
-    async def find_connected(
-        self,
-        node_id: str,
-        rel_type: str,
-        direction: str = "outgoing",
-    ) -> list[dict]:
-        return await asyncio.to_thread(
-            self._find_connected_sync, node_id, rel_type, direction,
-        )
-
-    def _find_connected_sync(
-        self,
-        node_id: str,
-        rel_type: str,
-        direction: str = "outgoing",
-    ) -> list[dict]:
-        conn = self._get_conn()
-
-        # Determine the source node's label from its ID prefix
-        from wheeler.graph.schema import PREFIX_TO_LABEL
-        prefix = node_id.split("-", 1)[0]
-        src_label = PREFIX_TO_LABEL.get(prefix)
-        if not src_label:
-            logger.warning("find_connected: unknown prefix %s", prefix)
-            return []
-
-        if direction == "incoming":
-            stmt = (
-                f"MATCH (n:{src_label} {{id: $id}})<-[:{rel_type}]-(m) "
-                f"RETURN m.*"
-            )
-        else:
-            stmt = (
-                f"MATCH (n:{src_label} {{id: $id}})-[:{rel_type}]->(m) "
-                f"RETURN m.*"
-            )
-
-        result = conn.execute(stmt, parameters={"id": node_id})
-        col_names = result.get_column_names()
-
-        rows: list[dict] = []
-        while result.has_next():
-            row = result.get_next()
-            props: dict = {}
-            for col_name, value in zip(col_names, row):
-                key = col_name.split(".", 1)[-1] if "." in col_name else col_name
-                props[key] = value
-            rows.append(props)
-        return rows
 
     # -- raw cypher --
 

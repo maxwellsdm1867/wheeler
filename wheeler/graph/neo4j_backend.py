@@ -241,95 +241,11 @@ class Neo4jBackend(GraphBackend):
 
         return [dict(r["n"]) for r in records]
 
-    async def count_nodes(self, label: str) -> int:
-        params: dict = {}
-        if self._project_tag:
-            stmt = (
-                f"MATCH (n:{label}) WHERE n._wheeler_project = $ptag "
-                f"RETURN count(n) AS cnt"
-            )
-            params["ptag"] = self._project_tag
-        else:
-            stmt = f"MATCH (n:{label}) RETURN count(n) AS cnt"
-
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            record = await result.single()
-        return record["cnt"] if record else 0
-
     async def count_all(self) -> dict[str, int]:
         """Use the existing schema.get_status implementation."""
         from wheeler.graph.schema import get_status
 
         return await get_status(self._config)
-
-    # -- graph-specific queries --
-
-    async def find_unlinked(
-        self,
-        label: str,
-        rel_types: list[str],
-        direction: str = "any",
-    ) -> list[dict]:
-        rel_pattern = "|".join(rel_types)
-        if direction == "incoming":
-            rel_where = f"NOT (n)<-[:{rel_pattern}]-()"
-        elif direction == "outgoing":
-            rel_where = f"NOT (n)-[:{rel_pattern}]->()"
-        else:
-            rel_where = f"NOT (n)-[:{rel_pattern}]-()"
-
-        params: dict = {}
-        if self._project_tag:
-            where = f"n._wheeler_project = $ptag AND {rel_where}"
-            params["ptag"] = self._project_tag
-        else:
-            where = rel_where
-
-        stmt = f"MATCH (n:{label}) WHERE {where} RETURN n"
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            records = [r async for r in result]
-        return [dict(r["n"]) for r in records]
-
-    async def find_connected(
-        self,
-        node_id: str,
-        rel_type: str,
-        direction: str = "outgoing",
-    ) -> list[dict]:
-        from wheeler.graph.schema import PREFIX_TO_LABEL
-
-        prefix = node_id.split("-", 1)[0]
-        src_label = PREFIX_TO_LABEL.get(prefix)
-        if not src_label:
-            logger.warning("find_connected: unknown prefix %s", prefix)
-            return []
-
-        params: dict = {"id": node_id}
-        if direction == "incoming":
-            pattern = (
-                f"MATCH (n:{src_label} {{id: $id}})<-[:{rel_type}]-(m) "
-            )
-        else:
-            pattern = (
-                f"MATCH (n:{src_label} {{id: $id}})-[:{rel_type}]->(m) "
-            )
-
-        if self._project_tag:
-            stmt = f"{pattern}WHERE n._wheeler_project = $ptag RETURN m"
-            params["ptag"] = self._project_tag
-        else:
-            stmt = f"{pattern}RETURN m"
-
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            records = [r async for r in result]
-
-        return [dict(r["m"]) for r in records]
 
     # -- raw cypher --
 
