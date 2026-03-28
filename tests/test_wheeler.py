@@ -12,7 +12,11 @@ from wheeler.config import WheelerConfig, ModelsConfig
 # ---------------------------------------------------------------------------
 
 def test_version_string():
-    assert __version__ == "0.3.9"
+    # Version comes from importlib.metadata (pyproject.toml), not hardcoded
+    assert __version__
+    parts = __version__.split(".")
+    assert len(parts) >= 2
+    assert all(p.isdigit() for p in parts)
 
 
 # ---------------------------------------------------------------------------
