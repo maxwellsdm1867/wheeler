@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.3.0-blue" alt="v0.3.0">
+  <img src="https://img.shields.io/badge/v0.3.4-blue" alt="v0.3.4">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -26,7 +26,7 @@ Wheeler is three layers:
 
 > Named after great physicist John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
-Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Zero-config graph backend (Kuzu) -- no Docker required. Powered by Claude Max subscription.
+Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
 
 ---
 
@@ -159,12 +159,16 @@ pip install -e ".[test]"
 wheeler-tools graph init
 ```
 
-**Graph backend** — two options, configured in `wheeler.yaml`:
+**Graph backend** — Neo4j via Docker:
 
-| Backend | Setup | Best for |
-|---------|-------|----------|
-| **Kuzu** (recommended) | Zero-config. ~4MB pip package, data in `.kuzu/` | Solo research, laptops, getting started |
-| **Neo4j** | `docker compose up -d` | Multi-user, existing Neo4j workflows |
+```bash
+docker run -d --name neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/research-graph \
+  neo4j:5
+```
+
+Browse your graph at http://localhost:7474.
 
 **Semantic search** (optional):
 
@@ -244,8 +248,8 @@ wheeler/
 │   └── migrate.py           # Migrate existing graph nodes to files
 ├── graph/
 │   ├── backend.py           # GraphBackend ABC + get_backend() factory
-│   ├── kuzu_backend.py      # Kuzu embedded (default, zero-config)
-│   ├── neo4j_backend.py     # Neo4j backend
+│   ├── neo4j_backend.py     # Neo4j backend (default)
+│   ├── kuzu_backend.py      # Kuzu embedded (experimental)
 │   ├── schema.py            # Constraints, indexes, generate_node_id()
 │   ├── context.py           # Tier-separated context injection
 │   └── provenance.py        # Script hashing, staleness detection
