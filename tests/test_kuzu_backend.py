@@ -475,6 +475,165 @@ class TestFindConnected:
         assert connected == []
 
 
+class TestRunCypherGraphGaps:
+    """Test that graph_gaps queries work through Kuzu's Cypher dialect."""
+
+    async def test_graph_gaps_queries(self, backend: KuzuBackend):
+        """Run the same Cypher queries that graph_gaps uses."""
+        # Create an orphan question (no relationships)
+        await backend.create_node("OpenQuestion", {
+            "id": "Q-gaptest1",
+            "question": "Orphan question?",
+            "priority": 5,
+            "date_added": "2024-01-01",
+            "tier": "generated",
+        })
+        # Create an orphan finding (no APPEARS_IN)
+        await backend.create_node("Finding", {
+            "id": "F-gaptest1",
+            "description": "Unreported finding",
+            "confidence": 0.8,
+            "date": "2024-01-01",
+            "tier": "generated",
+        })
+        # Create an orphan paper (no relationships)
+        await backend.create_node("Paper", {
+            "id": "P-gaptest1",
+            "title": "Orphan paper",
+            "authors": "Test",
+            "doi": "",
+            "year": 2024,
+            "date_added": "2024-01-01",
+            "tier": "reference",
+        })
+
+        # These are the actual queries from queries.py graph_gaps()
+        q_records = await backend.run_cypher(
+            "MATCH (q:OpenQuestion) "
+            "WHERE NOT (q)<-[:AROSE_FROM]-() AND NOT ()-[:RELEVANT_TO]->(q) "
+            "RETURN q.id AS id, coalesce(q.question, '') AS question, "
+            "coalesce(q.priority, 0) AS priority "
+            "ORDER BY q.priority DESC LIMIT 10"
+        )
+        assert len(q_records) >= 1
+
+        f_records = await backend.run_cypher(
+            "MATCH (f:Finding) "
+            "WHERE NOT (f)-[:APPEARS_IN]->(:Document) "
+            "RETURN f.id AS id, coalesce(f.description, '') AS description "
+            "ORDER BY f.date DESC LIMIT 10"
+        )
+        assert len(f_records) >= 1
+        # Verify the alias works (was 'desc' which is reserved in Kuzu)
+        assert "description" in f_records[0]
+
+        p_records = await backend.run_cypher(
+            "MATCH (p:Paper) "
+            "WHERE NOT (p)-[:INFORMED|RELEVANT_TO|CITES|APPEARS_IN]->() "
+            "AND NOT ()-[:BASED_ON|REFERENCED_IN]->(p) "
+            "RETURN p.id AS id, coalesce(p.title, '') AS title "
+            "LIMIT 10"
+        )
+        assert len(p_records) >= 1
+
+    async def test_query_findings_cypher(self, backend: KuzuBackend):
+        """Test the query_findings Cypher with the fixed alias."""
+        await backend.create_node("Finding", {
+            "id": "F-qftest1",
+            "description": "Queryable finding",
+            "confidence": 0.85,
+            "date": "2024-01-01",
+            "tier": "generated",
+        })
+        records = await backend.run_cypher(
+            "MATCH (f:Finding) WHERE toLower(f.description) CONTAINS toLower($kw) "
+            "RETURN f.id AS id, f.description AS description, f.confidence AS conf, f.date AS date "
+            "ORDER BY f.date DESC LIMIT 10",
+            {"kw": "queryable"},
+        )
+        assert len(records) == 1
+        assert records[0]["description"] == "Queryable finding"
+
+
+class TestExecuteToolIntegration:
+    """Test graph_tools.execute_tool() with the Kuzu backend end-to-end."""
+
+    @pytest.fixture(autouse=True)
+    async def _setup_config(self, tmp_path):
+        """Create a config for execute_tool and reset the backend singleton."""
+        from wheeler.config import WheelerConfig, GraphConfig
+        from wheeler.tools import graph_tools
+
+        knowledge_dir = tmp_path / "knowledge"
+        knowledge_dir.mkdir()
+        self.config = WheelerConfig(
+            graph=GraphConfig(backend="kuzu", kuzu_path=str(tmp_path / "tool_kuzu_db")),
+            knowledge_path=str(knowledge_dir),
+        )
+        graph_tools._backend_instance = None
+        yield
+        graph_tools._backend_instance = None
+
+    async def test_add_and_query_finding(self):
+        import json
+        from wheeler.tools import graph_tools
+
+        result = json.loads(await graph_tools.execute_tool(
+            "add_finding",
+            {"description": "E2E Kuzu finding", "confidence": 0.7},
+            self.config,
+        ))
+        assert result["status"] == "created"
+        assert result["node_id"].startswith("F-")
+
+        query = json.loads(await graph_tools.execute_tool(
+            "query_findings", {"keyword": "E2E Kuzu"}, self.config,
+        ))
+        assert query["count"] >= 1
+
+    async def test_graph_gaps_full_stack(self):
+        import json
+        from wheeler.tools import graph_tools
+
+        # Create an orphan question
+        json.loads(await graph_tools.execute_tool(
+            "add_question",
+            {"question": "Gaps test orphan", "priority": 8},
+            self.config,
+        ))
+        gaps = json.loads(await graph_tools.execute_tool(
+            "graph_gaps", {}, self.config,
+        ))
+        assert "unlinked_questions" in gaps
+        assert gaps["total_gaps"] >= 1
+
+    async def test_link_and_set_tier(self):
+        import json
+        from wheeler.tools import graph_tools
+
+        f = json.loads(await graph_tools.execute_tool(
+            "add_finding",
+            {"description": "Linkable finding", "confidence": 0.9},
+            self.config,
+        ))
+        h = json.loads(await graph_tools.execute_tool(
+            "add_hypothesis", {"statement": "Linkable hyp"}, self.config,
+        ))
+        link = json.loads(await graph_tools.execute_tool(
+            "link_nodes",
+            {"source_id": f["node_id"], "target_id": h["node_id"],
+             "relationship": "SUPPORTS"},
+            self.config,
+        ))
+        assert link["status"] == "linked"
+
+        tier = json.loads(await graph_tools.execute_tool(
+            "set_tier", {"node_id": f["node_id"], "tier": "reference"},
+            self.config,
+        ))
+        assert tier["tier"] == "reference"
+
+
 class TestDeleteWithRelationships:
     async def test_delete_node_with_relationships(self, backend: KuzuBackend):
         """DETACH DELETE should remove node and its relationships."""
