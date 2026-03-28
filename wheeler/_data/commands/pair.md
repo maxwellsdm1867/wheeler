@@ -11,7 +11,7 @@ allowed-tools:
   - Grep
   - AskUserQuestion
   - mcp__wheeler__*
-  - mcp__neo4j__*
+  - mcp__wheeler__run_cypher
   - mcp__matlab__*
 ---
 

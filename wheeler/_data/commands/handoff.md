@@ -17,7 +17,7 @@ allowed-tools:
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
   - mcp__wheeler__query_open_questions
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist at the HANDOFF transition point. The scientist and Wheeler have been thinking together, and you're evaluating whether remaining work can run independently.

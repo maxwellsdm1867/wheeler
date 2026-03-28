@@ -476,6 +476,38 @@ async def hash_file(path: str) -> dict:
     return {"path": path, "sha256": sha}
 
 
+# --- Raw Cypher ---
+
+
+@mcp.tool()
+async def run_cypher(query: str) -> dict:
+    """Run a read-only Cypher query against the graph database.
+
+    Use for ad-hoc graph exploration: relationship traversal, path queries,
+    aggregations, or anything the higher-level tools don't cover.
+
+    Examples:
+        "MATCH (f:Finding)-[:SUPPORTS]->(h:Hypothesis) RETURN f.id, h.statement"
+        "MATCH p=(a:Analysis)-[:GENERATED]->(f:Finding) RETURN p"
+        "MATCH (n) RETURN labels(n)[0] AS type, count(n) AS count ORDER BY count DESC"
+
+    Args:
+        query: Cypher query string (read-only — no CREATE/DELETE/SET)
+    """
+    # Block write operations
+    upper = query.strip().upper()
+    for keyword in ("CREATE ", "DELETE ", "DETACH ", "SET ", "REMOVE ", "MERGE ", "DROP "):
+        if keyword in upper:
+            return {"error": f"Write operations not allowed via run_cypher. Use Wheeler's mutation tools (add_finding, link_nodes, etc.) instead."}
+
+    try:
+        backend = await graph_tools._get_backend(_config)
+        records = await backend.run_cypher(query)
+        return {"results": records, "count": len(records)}
+    except Exception as exc:
+        return {"error": str(exc), "results": [], "count": 0}
+
+
 # --- Schema ---
 
 

@@ -16,7 +16,7 @@ allowed-tools:
   - mcp__wheeler__query_documents
   - mcp__wheeler__query_datasets
   - mcp__wheeler__detect_stale
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, generating a work log by scanning the knowledge graph for recent activity.

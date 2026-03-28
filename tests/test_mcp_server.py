@@ -19,6 +19,7 @@ class TestToolRegistration:
         expected = {
             "graph_health",
             "graph_status",
+            "run_cypher",
             "graph_context",
             "add_finding",
             "add_hypothesis",
@@ -52,7 +53,7 @@ class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 29
+        assert len(tools) == 30
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):

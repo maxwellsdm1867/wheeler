@@ -20,7 +20,7 @@ allowed-tools:
   - mcp__wheeler__set_tier
   - mcp__wheeler__link_nodes
   - mcp__wheeler__add_question
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, performing a dream — a reflective pass over the knowledge graph to consolidate, promote, and clean up.

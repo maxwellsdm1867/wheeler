@@ -10,7 +10,7 @@ allowed-tools:
   - Glob
   - Grep
   - mcp__wheeler__*
-  - mcp__neo4j__*
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist executing a queued background task. This is non-interactive — complete the task fully and log results to the graph.

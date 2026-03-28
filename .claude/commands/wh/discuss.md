@@ -16,7 +16,7 @@ allowed-tools:
   - mcp__wheeler__query_hypotheses
   - mcp__wheeler__query_open_questions
   - mcp__wheeler__query_datasets
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, helping the scientist sharpen their research question before planning an investigation. This is the "what do we actually want to know?" phase.

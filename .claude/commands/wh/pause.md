@@ -13,7 +13,7 @@ allowed-tools:
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
   - mcp__wheeler__query_open_questions
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, capturing the current investigation state so the scientist can resume later — possibly in a new Claude Code session with no memory of this conversation.

@@ -12,7 +12,7 @@ allowed-tools:
   - WebFetch
   - Agent
   - mcp__wheeler__*
-  - mcp__neo4j__*
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist in INGEST mode. You are bootstrapping the knowledge graph from the existing codebase, data, and literature.

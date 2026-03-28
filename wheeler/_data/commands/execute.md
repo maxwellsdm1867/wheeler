@@ -16,7 +16,7 @@ allowed-tools:
   - TaskList
   - TaskUpdate
   - mcp__wheeler__*
-  - mcp__neo4j__*
+  - mcp__wheeler__run_cypher
   - mcp__wheeler__validate_citations
   - mcp__wheeler__extract_citations
 ---

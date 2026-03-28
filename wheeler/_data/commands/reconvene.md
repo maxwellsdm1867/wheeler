@@ -22,7 +22,7 @@ allowed-tools:
   - mcp__wheeler__validate_citations
   - mcp__wheeler__extract_citations
   - mcp__wheeler__graph_status
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist in RECONVENE mode. The scientist is back after independent tasks ran in the background.

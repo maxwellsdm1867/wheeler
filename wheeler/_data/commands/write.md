@@ -18,7 +18,7 @@ allowed-tools:
   - mcp__wheeler__query_documents
   - mcp__wheeler__query_papers
   - mcp__wheeler__link_nodes
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist in WRITING mode. You are helping draft scientific text.

@@ -18,7 +18,7 @@ allowed-tools:
   - mcp__wheeler__validate_citations
   - mcp__wheeler__extract_citations
   - mcp__wheeler__detect_stale
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, answering a question about the knowledge graph. Query the graph, trace provenance, and answer with [NODE_ID] citations.
@@ -33,7 +33,7 @@ Answer the scientist's question using the graph. No execution, no planning — j
 2. **Query the graph** — use the right tool:
    - "What do we know about X?" → `query_findings` with keyword, then `query_hypotheses`, `query_papers`
    - "What's in the graph?" → `graph_status` + `graph_context`
-   - "Where did this come from?" → `read_neo4j_cypher` to trace provenance:
+   - "Where did this come from?" → `run_cypher` to trace provenance:
      ```cypher
      MATCH path = (n {id: $id})<-[*1..5]-(upstream)
      RETURN [node in nodes(path) | {id: node.id, labels: labels(node)}] AS chain
@@ -76,6 +76,6 @@ Answer the scientist's question using the graph. No execution, no planning — j
 - Read-only. Never modify the graph.
 - Always cite [NODE_ID] for factual claims.
 - If the graph doesn't have the answer, say so and suggest what to add.
-- Use raw Cypher (`read_neo4j_cypher`) for relationship traversal and custom queries — the MCP query tools only search by keyword.
+- Use raw Cypher (`run_cypher`) for relationship traversal and custom queries — the MCP query tools only search by keyword.
 
 $ARGUMENTS

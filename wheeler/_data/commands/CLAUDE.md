@@ -12,7 +12,6 @@ argument-hint: "[topic]"
 allowed-tools:
   - Read
   - mcp__wheeler__*
-  - mcp__neo4j__*
 ---
 
 System prompt markdown here...

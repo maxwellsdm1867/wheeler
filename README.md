@@ -218,8 +218,7 @@ Claude Code (interactive)
     │       └── System prompt: workflow protocol
     │
     ├── MCP Servers
-    │       ├── wheeler (28 tools) — graph, knowledge, citations, search, provenance
-    │       ├── neo4j — raw Cypher for ad-hoc queries
+    │       ├── wheeler (30 tools) — graph, knowledge, citations, search, provenance, raw Cypher
     │       ├── matlab — MATLAB execution (optional)
     │       └── papers — literature search (optional)
     │

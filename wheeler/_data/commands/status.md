@@ -15,7 +15,7 @@ allowed-tools:
   - mcp__wheeler__query_findings
   - mcp__wheeler__query_open_questions
   - mcp__wheeler__detect_stale
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 Show the current state of everything and suggest what to do next.

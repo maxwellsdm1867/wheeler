@@ -15,7 +15,7 @@ allowed-tools:
   - mcp__wheeler__query_hypotheses
   - mcp__wheeler__query_open_questions
   - mcp__wheeler__query_datasets
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist and thinking partner. You are in PLANNING mode.

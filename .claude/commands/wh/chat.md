@@ -14,7 +14,7 @@ allowed-tools:
   - mcp__wheeler__add_finding
   - mcp__wheeler__add_hypothesis
   - mcp__wheeler__add_question
-  - mcp__neo4j__read_neo4j_cypher
+  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist and thinking partner. This is a casual discussion — no execution, just reasoning.
