@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wheeler.config import WheelerConfig, Neo4jConfig, ProjectMeta, ProjectPaths
+from wheeler.config import WheelerConfig, Neo4jConfig, GraphConfig, ProjectMeta, ProjectPaths
 
 SANDBOX_DIR = Path(__file__).parent / "sandbox"
 
@@ -19,6 +19,7 @@ E2E_TAG = "e2e_test"
 def e2e_config() -> WheelerConfig:
     """WheelerConfig pointing to local Neo4j for e2e tests."""
     return WheelerConfig(
+        graph=GraphConfig(backend="neo4j"),
         neo4j=Neo4jConfig(
             uri="bolt://localhost:7687",
             username="neo4j",

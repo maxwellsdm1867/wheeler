@@ -447,10 +447,46 @@ async def init_schema() -> dict:
     return {"applied": len(applied)}
 
 
+# --- Startup health check ---
+
+
+async def _verify_backend() -> None:
+    """Verify the graph backend initializes and can run a basic query.
+
+    Logs a clear error if the database is unreachable so the user knows
+    writes will fail silently.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger("wheeler.health")
+    try:
+        backend = await graph_tools._get_backend(_config)
+        counts = await backend.count_all()
+        total = sum(counts.values())
+        _log.info(
+            "Graph backend OK (%s, %d nodes)",
+            _config.graph.backend,
+            total,
+        )
+    except Exception as exc:
+        _log.error(
+            "GRAPH BACKEND FAILED (%s): %s — "
+            "graph operations will not work until this is fixed. "
+            "If using neo4j, ensure Docker is running. "
+            "Switch to kuzu (no server needed) by setting "
+            "graph.backend: kuzu in wheeler.yaml",
+            _config.graph.backend,
+            exc,
+        )
+
+
 # --- Entry point ---
 
 
 def main():
+    import asyncio
+
+    asyncio.run(_verify_backend())
     mcp.run(transport="stdio")
 
 

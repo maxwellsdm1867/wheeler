@@ -126,7 +126,7 @@ def test_uninstall_no_manifest(fake_home):
 
 
 def test_install_registers_mcp_servers(fake_home, fake_data, monkeypatch):
-    """Install should add wheeler + neo4j to ~/.claude/settings.json mcpServers."""
+    """Install should add wheeler to ~/.claude/settings.json mcpServers (neo4j no longer default)."""
     monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
     # Provide a wheeler-mcp on PATH
     monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
@@ -136,7 +136,7 @@ def test_install_registers_mcp_servers(fake_home, fake_data, monkeypatch):
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
     assert "wheeler" in settings["mcpServers"]
     assert settings["mcpServers"]["wheeler"]["command"] == "/usr/local/bin/wheeler-mcp"
-    assert "neo4j" in settings["mcpServers"]
+    assert "neo4j" not in settings["mcpServers"]
 
 
 def test_install_preserves_existing_mcp_servers(fake_home, fake_data, monkeypatch):

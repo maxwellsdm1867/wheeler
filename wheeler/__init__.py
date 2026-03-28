@@ -2,7 +2,7 @@
 
 import logging
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 # Library pattern: NullHandler prevents "No handlers found" warnings
 # when Wheeler is imported without configuring logging.

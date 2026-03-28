@@ -67,14 +67,14 @@ async def query_findings(backend, args: dict) -> str:
     if keyword:
         records = await backend.run_cypher(
             "MATCH (f:Finding) WHERE toLower(f.description) CONTAINS toLower($kw) "
-            "RETURN f.id AS id, f.description AS desc, f.confidence AS conf, f.date AS date "
+            "RETURN f.id AS id, f.description AS description, f.confidence AS conf, f.date AS date "
             "ORDER BY f.date DESC LIMIT $limit",
             {"kw": keyword, "limit": limit},
         )
     else:
         records = await backend.run_cypher(
             "MATCH (f:Finding) "
-            "RETURN f.id AS id, f.description AS desc, f.confidence AS conf, f.date AS date "
+            "RETURN f.id AS id, f.description AS description, f.confidence AS conf, f.date AS date "
             "ORDER BY f.date DESC LIMIT $limit",
             {"limit": limit},
         )
@@ -94,7 +94,7 @@ async def query_findings(backend, args: dict) -> str:
         else:
             findings.append({
                 "id": node_id,
-                "description": r["desc"],
+                "description": r["description"],
                 "confidence": r["conf"],
                 "date": r["date"],
             })
@@ -185,7 +185,7 @@ async def query_datasets(backend, args: dict) -> str:
             "MATCH (d:Dataset) WHERE toLower(d.description) CONTAINS toLower($kw) "
             "OR toLower(d.path) CONTAINS toLower($kw) "
             "RETURN d.id AS id, d.path AS path, d.type AS type, "
-            "d.description AS desc, d.date_added AS date "
+            "d.description AS description, d.date_added AS date "
             "ORDER BY d.date_added DESC LIMIT $limit",
             {"kw": keyword, "limit": limit},
         )
@@ -193,7 +193,7 @@ async def query_datasets(backend, args: dict) -> str:
         records = await backend.run_cypher(
             "MATCH (d:Dataset) "
             "RETURN d.id AS id, d.path AS path, d.type AS type, "
-            "d.description AS desc, d.date_added AS date "
+            "d.description AS description, d.date_added AS date "
             "ORDER BY d.date_added DESC LIMIT $limit",
             {"limit": limit},
         )
@@ -216,7 +216,7 @@ async def query_datasets(backend, args: dict) -> str:
                 "id": node_id,
                 "path": r["path"],
                 "type": r["type"],
-                "description": r["desc"],
+                "description": r["description"],
                 "date_added": r["date"],
             })
 
@@ -414,7 +414,7 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
     f_records = await backend.run_cypher(
         "MATCH (f:Finding) "
         "WHERE NOT (f)-[:APPEARS_IN]->(:Document) "
-        "RETURN f.id AS id, coalesce(f.description, '') AS desc "
+        "RETURN f.id AS id, coalesce(f.description, '') AS description "
         "ORDER BY f.date DESC LIMIT 10"
     )
 
@@ -460,7 +460,7 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
             })
         else:
             unreported_findings.append({
-                "id": r["id"], "description": r["desc"],
+                "id": r["id"], "description": r["description"],
             })
 
     orphaned_papers = []

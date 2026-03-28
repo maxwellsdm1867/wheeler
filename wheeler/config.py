@@ -72,7 +72,7 @@ class SearchConfig(BaseModel):
 
 class GraphConfig(BaseModel):
     """Graph backend selection."""
-    backend: str = "neo4j"  # "neo4j" or "kuzu"
+    backend: str = "kuzu"  # "kuzu" or "neo4j"
     kuzu_path: str = ".kuzu"
 
 
