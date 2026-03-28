@@ -1,0 +1,71 @@
+name: Auto-release on version bump
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get.outputs.version }}
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Get current version
+        id: get
+        run: |
+          version=$(python3 -c "
+          import re
+          text = open('pyproject.toml').read()
+          m = re.search(r'^version\s*=\s*\"([\d.]+)\"', text, re.M)
+          print(m.group(1) if m else '')
+          ")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check if version changed
+        id: check
+        run: |
+          prev=$(git show HEAD~1:pyproject.toml 2>/dev/null | python3 -c "
+          import sys, re
+          text = sys.stdin.read()
+          m = re.search(r'^version\s*=\s*\"([\d.]+)\"', text, re.M)
+          print(m.group(1) if m else '')
+          " 2>/dev/null || echo "")
+          curr="${{ steps.get.outputs.version }}"
+          if [ "$prev" != "$curr" ] && [ -n "$curr" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Version changed: $prev -> $curr"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged: $curr"
+          fi
+
+  release:
+    needs: check-version
+    if: needs.check-version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="v${{ needs.check-version.outputs.version }}"
+          # Build release notes from commits since last tag
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$last_tag" ]; then
+            notes=$(git log "${last_tag}..HEAD" --pretty=format:"- %s" --no-merges)
+          else
+            notes=$(git log --pretty=format:"- %s" --no-merges -20)
+          fi
+          gh release create "$version" \
+            --title "Wheeler $version" \
+            --notes "$notes" \
+            --target main
