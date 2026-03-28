@@ -415,7 +415,7 @@ class TestConfigIntegration:
 
     def test_graph_config_defaults(self) -> None:
         config = WheelerConfig()
-        assert config.graph.backend == "kuzu"
+        assert config.graph.backend == "neo4j"
         assert config.graph.kuzu_path == ".kuzu"
 
     def test_search_config_defaults(self) -> None:

@@ -109,5 +109,4 @@ class TestFactory:
     def test_get_backend_default(self):
         config = WheelerConfig()
         b = get_backend(config)
-        from wheeler.graph.kuzu_backend import KuzuBackend
-        assert isinstance(b, KuzuBackend)
+        assert isinstance(b, Neo4jBackend)

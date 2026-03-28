@@ -212,10 +212,9 @@ def _register_mcp_servers() -> None:
         # Update the path in case it changed (e.g. after update)
         servers["wheeler"]["command"] = wheeler_abs
 
-    # Neo4j MCP is no longer registered by default — Kuzu is the
-    # default backend and needs no external server. Users who want
-    # Neo4j can add it manually or set graph.backend: neo4j in
-    # wheeler.yaml and add the neo4j MCP server to their config.
+    # Neo4j — add from template if not already configured
+    if "neo4j" not in servers and "neo4j" in template_servers:
+        servers["neo4j"] = template_servers["neo4j"]
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 

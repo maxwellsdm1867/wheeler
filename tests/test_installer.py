@@ -136,7 +136,7 @@ def test_install_registers_mcp_servers(fake_home, fake_data, monkeypatch):
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
     assert "wheeler" in settings["mcpServers"]
     assert settings["mcpServers"]["wheeler"]["command"] == "/usr/local/bin/wheeler-mcp"
-    assert "neo4j" not in settings["mcpServers"]
+    assert "neo4j" in settings["mcpServers"]
 
 
 def test_install_preserves_existing_mcp_servers(fake_home, fake_data, monkeypatch):
