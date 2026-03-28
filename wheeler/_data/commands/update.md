@@ -10,22 +10,44 @@ allowed-tools:
 
 Check for a new Wheeler version and offer to upgrade.
 
+## Step 0: Resolve the Wheeler venv
+
+The Wheeler MCP server path in `~/.claude/settings.json` → `mcpServers.wheeler.command` stores
+the absolute path to `wheeler-mcp`. Derive the venv from it:
+
+```bash
+python3 -c "
+import json, pathlib, os
+settings = json.loads(pathlib.Path(os.path.expanduser('~/.claude/settings.json')).read_text())
+mcp_cmd = settings.get('mcpServers', {}).get('wheeler', {}).get('command', '')
+if mcp_cmd:
+    # e.g. /Users/me/wheeler-user-test/.venv/bin/wheeler-mcp → /Users/me/wheeler-user-test/.venv/bin
+    print(str(pathlib.Path(mcp_cmd).parent))
+else:
+    print('NOT_FOUND')
+"
+```
+
+Save this as `WHEELER_BIN`. All subsequent commands MUST use `$WHEELER_BIN/python` and
+`$WHEELER_BIN/wheeler` instead of bare `python` or `wheeler`. Never use `source .venv/bin/activate`
+— that activates whatever venv is in the CWD, which may not be Wheeler's.
+
+If `NOT_FOUND`, fall back to `which wheeler` or tell the user Wheeler isn't registered.
+
 ## Step 1: Read cache and get current version
 
 Read the update cache at `~/.cache/wheeler/version-check.json` if it exists. Also run:
 
 ```bash
-wheeler version
+$WHEELER_BIN/wheeler version
 ```
-
-to get the current installed version.
 
 ## Step 2: Fresh check
 
 Regardless of cache state, run a fresh version check:
 
 ```bash
-source .venv/bin/activate && python -c "
+$WHEELER_BIN/python -c "
 from wheeler.installer import check_version
 installed, latest, update_available = check_version()
 print(f'installed={installed}')
@@ -36,9 +58,9 @@ print(f'update_available={update_available}')
 
 ## Step 3: Report and confirm
 
-First detect the install source:
+Detect the install source:
 ```bash
-python -c "
+$WHEELER_BIN/python -c "
 from wheeler.installer import _detect_install_source
 print(_detect_install_source())
 "
@@ -79,7 +101,7 @@ Options: "Yes, update now" / "No, cancel"
 If confirmed, run:
 
 ```bash
-source .venv/bin/activate && wheeler update --yes
+$WHEELER_BIN/wheeler update --yes
 ```
 
 Show the result. If the source is "editable", note that `git pull` will run first.
@@ -89,7 +111,7 @@ Show the result. If the source is "editable", note that `git pull` will run firs
 After a successful update, the cache is automatically invalidated. Confirm the new version:
 
 ```bash
-wheeler version
+$WHEELER_BIN/wheeler version
 ```
 
 Report the version transition and suggest restarting the session if slash commands changed.
