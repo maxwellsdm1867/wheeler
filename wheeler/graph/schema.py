@@ -71,6 +71,38 @@ ALLOWED_RELATIONSHIPS: list[str] = [
 ]
 
 
+async def ensure_database(config: WheelerConfig) -> str:
+    """Create the project's Neo4j database if it doesn't exist.
+
+    Neo4j Community Edition only supports the default 'neo4j' database,
+    so this is a no-op in that case. Enterprise/Aura supports multiple.
+
+    Returns the database name.
+    """
+    from wheeler.graph.driver import get_async_driver
+
+    db_name = config.neo4j.database
+    if db_name == "neo4j":
+        return db_name  # default database always exists
+
+    driver = get_async_driver(config)
+    try:
+        # CREATE DATABASE is only available in Enterprise/Aura
+        async with driver.session(database="system") as session:
+            await session.run(
+                f"CREATE DATABASE `{db_name}` IF NOT EXISTS"
+            )
+        logger.info("Ensured database '%s' exists", db_name)
+    except Exception as exc:
+        # Community Edition — fall back to default database
+        logger.info(
+            "Could not create database '%s' (Community Edition?): %s. "
+            "Using default 'neo4j' database.",
+            db_name, exc,
+        )
+    return db_name
+
+
 async def init_schema(config: WheelerConfig) -> list[str]:
     """Apply all constraints and indexes to Neo4j. Returns list of applied statements."""
     from wheeler.graph.driver import get_async_driver

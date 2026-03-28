@@ -61,7 +61,46 @@ def _check_similar_nodes(text: str, label: str, exclude_id: str | None = None) -
         return []
 
 
-# --- Graph status & context ---
+# --- Graph health & status ---
+
+
+@mcp.tool()
+async def graph_health() -> dict:
+    """Check graph database connectivity and report diagnostics.
+
+    Returns backend type, connection status, database name, node counts,
+    and any errors. Use this to verify the graph is working before
+    starting work that depends on it.
+    """
+    result: dict = {
+        "backend": _config.graph.backend,
+        "database": _config.neo4j.database,
+        "status": "unknown",
+        "node_count": 0,
+        "error": None,
+    }
+    try:
+        counts = await schema.get_status(_config)
+        total = sum(counts.values())
+        result["status"] = "connected"
+        result["node_count"] = total
+        result["node_counts"] = counts
+    except Exception as exc:
+        result["status"] = "offline"
+        result["error"] = str(exc)
+
+    # Check knowledge/ directory
+    from pathlib import Path
+    knowledge_path = Path(_config.knowledge_path)
+    if knowledge_path.exists():
+        json_files = list(knowledge_path.glob("*.json"))
+        result["knowledge_files"] = len(json_files)
+    else:
+        result["knowledge_files"] = 0
+        if result["status"] == "connected":
+            result["warnings"] = ["knowledge/ directory does not exist — run /wh:init"]
+
+    return result
 
 
 @mcp.tool()

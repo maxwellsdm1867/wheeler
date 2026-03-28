@@ -10,6 +10,7 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
+  - mcp__wheeler__graph_health
   - mcp__wheeler__graph_status
   - mcp__wheeler__init_schema
   - mcp__wheeler__add_question
@@ -93,6 +94,8 @@ None
 
 ## Step 5: Write config
 
+Derive a database name from the project name — lowercase, hyphens replaced with underscores, prefixed with `wh_` (e.g., project "RGC-SRM" becomes database `wh_rgc_srm`). This gives each project its own isolated graph.
+
 Write `wheeler.yaml` with:
 ```yaml
 project:
@@ -104,14 +107,21 @@ paths:
   results: [...]
   figures: [...]
   docs: [...]
+neo4j:
+  database: "wh_<project_slug>"
 ```
 
-Plus default sections for neo4j, workspace, models.
+Plus default sections for workspace and models. The neo4j URI, username, and password use defaults (bolt://localhost:7687, neo4j, research-graph) unless the scientist specifies otherwise.
 
 ## Step 6: Graph setup
 
-- Check if Neo4j is reachable by calling `graph_status`. If it fails, note that the graph is offline and skip graph steps (this is OK — config is still valid).
-- If reachable, run `init_schema` to apply constraints.
+- Run `graph_health` to check Neo4j connectivity. This reports backend type, database name, connection status, and node counts.
+- If **offline**: tell the scientist clearly. Explain they need Neo4j running:
+  ```
+  docker run -d --name neo4j -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/research-graph neo4j:5
+  ```
+  Then re-run `/wh:init` or `/wh:status` once it's up. Do NOT silently proceed — the graph is essential for Wheeler to work properly.
+- If **connected**: run `init_schema` to apply constraints and indexes.
 - Ask: "What question are you investigating?" and seed the first OpenQuestion using `add_question` with priority 8.
 - Optionally: call `scan_workspace` and offer to register key datasets with `add_dataset`.
 

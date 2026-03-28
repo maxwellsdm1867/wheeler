@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - TaskList
   - TaskGet
+  - mcp__wheeler__graph_health
   - mcp__wheeler__graph_status
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
