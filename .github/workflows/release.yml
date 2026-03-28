@@ -5,18 +5,19 @@ on:
     branches: [main]
 
 jobs:
-  check-version:
+  release:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get.outputs.version }}
-      changed: ${{ steps.check.outputs.changed }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Get current version
-        id: get
+      - name: Check if release needed
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(python3 -c "
           import re
@@ -26,38 +27,21 @@ jobs:
           ")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Check if version changed
-        id: check
-        run: |
-          prev=$(git show HEAD~1:pyproject.toml 2>/dev/null | python3 -c "
-          import sys, re
-          text = sys.stdin.read()
-          m = re.search(r'^version\s*=\s*\"([\d.]+)\"', text, re.M)
-          print(m.group(1) if m else '')
-          " 2>/dev/null || echo "")
-          curr="${{ steps.get.outputs.version }}"
-          if [ "$prev" != "$curr" ] && [ -n "$curr" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Version changed: $prev -> $curr"
+          # Check if this version already has a release
+          if gh release view "v${version}" > /dev/null 2>&1; then
+            echo "Release v${version} already exists"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged: $curr"
+            echo "No release for v${version} — creating"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
 
-  release:
-    needs: check-version
-    if: needs.check-version.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
       - name: Create release
+        if: steps.check.outputs.needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="v${{ needs.check-version.outputs.version }}"
+          version="v${{ steps.check.outputs.version }}"
           # Build release notes from commits since last tag
           last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -n "$last_tag" ]; then
