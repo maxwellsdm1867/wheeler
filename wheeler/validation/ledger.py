@@ -1,12 +1,20 @@
-"""Provenance ledger: logs every interaction with citation audit results."""
+"""Provenance ledger: logs every interaction with citation audit results.
+
+Ledger entries are proper graph nodes (L-prefix) with dual-write to
+knowledge/ JSON files, just like every other Wheeler node type.
+"""
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from wheeler.config import WheelerConfig
 from wheeler.validation.citations import CitationResult, CitationStatus
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -68,35 +76,33 @@ def create_entry(
     )
 
 
-async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> None:
-    """Store a ledger entry as a Ledger node in Neo4j."""
-    from wheeler.graph.driver import get_async_driver
-    driver = get_async_driver(config)
-    try:
-        async with driver.session(database=config.neo4j.database) as session:
-            await session.run(
-                "CREATE (l:Ledger {"
-                "  timestamp: $timestamp,"
-                "  mode: $mode,"
-                "  prompt_summary: $prompt_summary,"
-                "  citations_found: $citations_found,"
-                "  citations_valid: $citations_valid,"
-                "  citations_invalid: $citations_invalid,"
-                "  citations_missing_provenance: $citations_missing_provenance,"
-                "  citations_stale: $citations_stale,"
-                "  ungrounded: $ungrounded,"
-                "  pass_rate: $pass_rate"
-                "})",
-                timestamp=entry.timestamp,
-                mode=entry.mode,
-                prompt_summary=entry.prompt_summary,
-                citations_found=entry.citations_found,
-                citations_valid=entry.citations_valid,
-                citations_invalid=entry.citations_invalid,
-                citations_missing_provenance=entry.citations_missing_provenance,
-                citations_stale=entry.citations_stale,
-                ungrounded=entry.ungrounded,
-                pass_rate=entry.pass_rate,
-            )
-    finally:
-        pass  # Driver is a singleton — don't close it
+async def store_entry(entry: LedgerEntry, config: WheelerConfig) -> str:
+    """Store a ledger entry as a proper Ledger node via the graph backend.
+
+    Uses the same execute_tool dispatch as all other node types, which
+    handles dual-write to both graph and knowledge/ JSON files.
+
+    Returns the new node ID.
+    """
+    from wheeler.tools.graph_tools import execute_tool
+
+    result_str = await execute_tool(
+        "add_ledger",
+        {
+            "mode": entry.mode,
+            "prompt_summary": entry.prompt_summary,
+            "citations_found": json.dumps(entry.citations_found),
+            "citations_valid": json.dumps(entry.citations_valid),
+            "citations_invalid": json.dumps(entry.citations_invalid),
+            "citations_missing_provenance": json.dumps(entry.citations_missing_provenance),
+            "citations_stale": json.dumps(entry.citations_stale),
+            "ungrounded": entry.ungrounded,
+            "pass_rate": entry.pass_rate,
+        },
+        config,
+    )
+    result = json.loads(result_str)
+    node_id = result.get("node_id", "")
+    logger.info("Stored ledger entry %s (mode=%s, pass_rate=%.0f%%)",
+                node_id, entry.mode, entry.pass_rate * 100)
+    return node_id

@@ -150,6 +150,17 @@ NODE_TABLE_SCHEMAS: dict[str, list[tuple[str, str]]] = {
         ("date", "STRING"),
         ("tier", "STRING"),
     ],
+    "Ledger": [
+        ("id", "STRING"),
+        ("title", "STRING"),
+        ("file_path", "STRING"),
+        ("mode", "STRING"),
+        ("prompt_summary", "STRING"),
+        ("ungrounded", "BOOL"),
+        ("pass_rate", "DOUBLE"),
+        ("date", "STRING"),
+        ("tier", "STRING"),
+    ],
 }
 
 # Verify every NODE_LABEL has a schema entry

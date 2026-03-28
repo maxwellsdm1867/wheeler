@@ -36,6 +36,7 @@ class TestSchema:
             "Plan", "Finding", "Hypothesis", "OpenQuestion",
             "Experiment", "Analysis", "Dataset", "Paper",
             "CellType", "Task", "Document", "ResearchNote",
+            "Ledger",
         }
         assert set(NODE_LABELS) == expected
 

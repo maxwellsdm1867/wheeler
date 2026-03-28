@@ -12,7 +12,7 @@ from wheeler.config import WheelerConfig, ModelsConfig
 # ---------------------------------------------------------------------------
 
 def test_version_string():
-    assert __version__ == "0.3.7"
+    assert __version__ == "0.3.8"
 
 
 # ---------------------------------------------------------------------------

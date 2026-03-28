@@ -28,6 +28,7 @@ _MUTATION_TOOLS = frozenset({
     "add_paper",
     "add_document",
     "add_note",
+    "add_ledger",
 })
 
 # --- Tool registry: maps tool names to handler functions ---
@@ -41,6 +42,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "add_paper": mutations.add_paper,
     "add_document": mutations.add_document,
     "add_note": mutations.add_note,
+    "add_ledger": mutations.add_ledger,
     "link_nodes": mutations.link_nodes,
     "set_tier": mutations.set_tier,
     # Queries
@@ -311,6 +313,14 @@ def _write_knowledge_file(
         # Dataset has "type" in args but "data_type" in model
         if label == "Dataset" and "type" in args:
             kwargs["data_type"] = args["type"]
+
+        # Ledger list fields are passed as JSON strings from ledger.py
+        if label == "Ledger":
+            for list_field in ("citations_found", "citations_valid", "citations_invalid",
+                               "citations_missing_provenance", "citations_stale"):
+                val = args.get(list_field)
+                if isinstance(val, str):
+                    kwargs[list_field] = json.loads(val)
 
         # Copy remaining args (skip internal keys)
         for key, val in args.items():

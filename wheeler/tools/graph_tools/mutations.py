@@ -115,6 +115,21 @@ async def add_note(backend, args: dict) -> str:
     return json.dumps({"node_id": node_id, "label": "ResearchNote", "status": "created"})
 
 
+async def add_ledger(backend, args: dict) -> str:
+    node_id = generate_node_id("L")
+    await backend.create_node("Ledger", {
+        "id": node_id,
+        "mode": args.get("mode", ""),
+        "prompt_summary": args.get("prompt_summary", ""),
+        "ungrounded": bool(args.get("ungrounded", False)),
+        "pass_rate": float(args.get("pass_rate", 0.0)),
+        "date": _now(),
+        "tier": "generated",
+    })
+    logger.info("Created Ledger %s (mode=%s)", node_id, args.get("mode", ""))
+    return json.dumps({"node_id": node_id, "label": "Ledger", "status": "created"})
+
+
 async def link_nodes(backend, args: dict) -> str:
     rel = args["relationship"]
     if rel not in ALLOWED_RELATIONSHIPS:

@@ -106,6 +106,19 @@ class ResearchNoteModel(NodeBase):
     context: str = ""  # what prompted this note
 
 
+class LedgerModel(NodeBase):
+    type: Literal["Ledger"] = "Ledger"
+    mode: str = ""  # which Wheeler act produced this (execute, write, etc.)
+    prompt_summary: str = ""
+    citations_found: list[str] = []
+    citations_valid: list[str] = []
+    citations_invalid: list[str] = []
+    citations_missing_provenance: list[str] = []
+    citations_stale: list[str] = []
+    ungrounded: bool = False
+    pass_rate: float = 0.0
+
+
 # ---------------------------------------------------------------------------
 # Prefix ↔ label mappings (canonical source of truth for the node type system)
 # ---------------------------------------------------------------------------
@@ -123,6 +136,7 @@ PREFIX_TO_LABEL: dict[str, str] = {
     "T": "Task",
     "W": "Document",
     "N": "ResearchNote",
+    "L": "Ledger",
 }
 
 LABEL_TO_PREFIX: dict[str, str] = {v: k for k, v in PREFIX_TO_LABEL.items()}
@@ -148,6 +162,7 @@ KnowledgeNode = Annotated[
         CellTypeModel,
         TaskModel,
         ResearchNoteModel,
+        LedgerModel,
     ],
     Discriminator("type"),
 ]
@@ -171,6 +186,7 @@ _LABEL_TO_MODEL: dict[str, type[NodeBase]] = {
     "CellType": CellTypeModel,
     "Task": TaskModel,
     "ResearchNote": ResearchNoteModel,
+    "Ledger": LedgerModel,
 }
 
 
@@ -205,4 +221,6 @@ def title_for_node(node: NodeBase) -> str:
         return f"Analysis: {node.script_path}"[:100]
     if isinstance(node, ResearchNoteModel):
         return (node.title[:100] if node.title else node.content[:100])
+    if isinstance(node, LedgerModel):
+        return f"Ledger: {node.mode} ({node.pass_rate:.0%} pass)"[:100]
     return node.id
