@@ -30,10 +30,11 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (q:OpenQuestion) ON (q.priority)",
     "CREATE INDEX IF NOT EXISTS FOR (h:Hypothesis) ON (h.status)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.doi)",
-    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.date)",
-    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.script_hash)",
-    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.script_path)",
-    "CREATE INDEX IF NOT EXISTS FOR (a:Analysis) ON (a.executed_at)",
+    "CREATE INDEX IF NOT EXISTS FOR (s:Script) ON (s.path)",
+    "CREATE INDEX IF NOT EXISTS FOR (s:Script) ON (s.hash)",
+    "CREATE INDEX IF NOT EXISTS FOR (x:Execution) ON (x.kind)",
+    "CREATE INDEX IF NOT EXISTS FOR (x:Execution) ON (x.started_at)",
+    "CREATE INDEX IF NOT EXISTS FOR (x:Execution) ON (x.session_id)",
     "CREATE INDEX IF NOT EXISTS FOR (pl:Plan) ON (pl.status)",
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.date)",
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.status)",
@@ -47,6 +48,8 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (n:ResearchNote) ON (n.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (s:Script) ON (s.file_path)",
+    "CREATE INDEX IF NOT EXISTS FOR (x:Execution) ON (x.file_path)",
 ]
 
 # Project namespace indexes — used for Community Edition isolation.
@@ -58,22 +61,22 @@ PROJECT_INDEXES: list[str] = [
 
 # Allowed relationship types (whitelist for link command)
 ALLOWED_RELATIONSHIPS: list[str] = [
-    "PRODUCED",
+    # W3C PROV standard
+    "USED",
+    "WAS_GENERATED_BY",
+    "WAS_DERIVED_FROM",
+    "WAS_INFORMED_BY",
+    "WAS_ATTRIBUTED_TO",
+    "WAS_ASSOCIATED_WITH",
+    # Semantic (Wheeler-specific)
     "SUPPORTS",
     "CONTRADICTS",
-    "USED_DATA",
-    "GENERATED",
-    "RAN_SCRIPT",
     "CITES",
-    "RELEVANT_TO",
-    "REFERENCED_IN",
-    "STUDIED_IN",
-    "CONTAINS",
-    "DEPENDS_ON",
-    "AROSE_FROM",
-    "INFORMED",
-    "BASED_ON",
     "APPEARS_IN",
+    "RELEVANT_TO",
+    "AROSE_FROM",
+    "DEPENDS_ON",
+    "CONTAINS",
 ]
 
 

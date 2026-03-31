@@ -17,7 +17,8 @@ class TestSchema:
         assert PREFIX_TO_LABEL["F"] == "Finding"
         assert PREFIX_TO_LABEL["H"] == "Hypothesis"
         assert PREFIX_TO_LABEL["Q"] == "OpenQuestion"
-        assert PREFIX_TO_LABEL["A"] == "Analysis"
+        assert PREFIX_TO_LABEL["S"] == "Script"
+        assert PREFIX_TO_LABEL["X"] == "Execution"
         assert PREFIX_TO_LABEL["D"] == "Dataset"
         assert PREFIX_TO_LABEL["P"] == "Paper"
         assert PREFIX_TO_LABEL["PL"] == "Plan"
@@ -31,7 +32,7 @@ class TestSchema:
     def test_node_labels_complete(self):
         expected = {
             "Plan", "Finding", "Hypothesis", "OpenQuestion",
-            "Analysis", "Dataset", "Paper",
+            "Script", "Execution", "Dataset", "Paper",
             "Document", "ResearchNote",
             "Ledger",
         }
@@ -50,17 +51,23 @@ class TestSchema:
         assert len(INDEXES) > 0
 
     def test_provenance_indexes(self):
-        """Verify provenance-related indexes exist."""
+        """Verify provenance-related indexes exist for Script and Execution."""
         index_strs = " ".join(INDEXES)
-        assert "script_hash" in index_strs
-        assert "script_path" in index_strs
-        assert "executed_at" in index_strs
+        # Script indexes
+        assert "Script" in index_strs
+        assert "(s.path)" in index_strs
+        assert "(s.hash)" in index_strs
+        # Execution indexes
+        assert "Execution" in index_strs
+        assert "(x.started_at)" in index_strs
+        assert "(x.kind)" in index_strs
+        assert "(x.session_id)" in index_strs
 
     def test_allowed_relationships(self):
         expected = {
-            "PRODUCED", "SUPPORTS", "CONTRADICTS", "USED_DATA",
-            "GENERATED", "RAN_SCRIPT", "CITES", "RELEVANT_TO",
-            "REFERENCED_IN", "STUDIED_IN", "CONTAINS", "DEPENDS_ON",
-            "AROSE_FROM", "INFORMED", "BASED_ON", "APPEARS_IN",
+            "USED", "WAS_GENERATED_BY", "WAS_DERIVED_FROM",
+            "WAS_INFORMED_BY", "WAS_ATTRIBUTED_TO", "WAS_ASSOCIATED_WITH",
+            "SUPPORTS", "CONTRADICTS", "CITES", "APPEARS_IN",
+            "RELEVANT_TO", "AROSE_FROM", "DEPENDS_ON", "CONTAINS",
         }
         assert set(ALLOWED_RELATIONSHIPS) == expected

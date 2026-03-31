@@ -81,8 +81,9 @@ async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
                 "  src.description AS src_desc, src.statement AS src_stmt, "
                 "  src.question AS src_q, src.title AS src_title, "
                 "  src.name AS src_name, "
-                "  src {.script_path, .script_hash, .language, .confidence, "
-                "       .priority, .status, .doi, .date, .executed_at} AS src_props, "
+                "  src {.path, .hash, .version, .language, .confidence, "
+                "       .priority, .status, .doi, .date, "
+                "       .kind, .agent_id, .started_at, .ended_at} AS src_props, "
                 "  tgt.id AS tgt_id, rel",
                 id=node_id,
                 ptag=project_tag,
@@ -96,8 +97,9 @@ async def trace_node(node_id: str, config: WheelerConfig) -> TraceResult | None:
                 "  src.description AS src_desc, src.statement AS src_stmt, "
                 "  src.question AS src_q, src.title AS src_title, "
                 "  src.name AS src_name, "
-                "  src {.script_path, .script_hash, .language, .confidence, "
-                "       .priority, .status, .doi, .date, .executed_at} AS src_props, "
+                "  src {.path, .hash, .version, .language, .confidence, "
+                "       .priority, .status, .doi, .date, "
+                "       .kind, .agent_id, .started_at, .ended_at} AS src_props, "
                 "  tgt.id AS tgt_id, rel",
                 id=node_id,
             )

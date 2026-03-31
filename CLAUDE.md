@@ -79,5 +79,4 @@ every push (full test suite). Install: `wh hooks install`
 source .venv/bin/activate  # Python 3.14, not system anaconda
 pip install -e ".[test]"
 pip install -e ".[search]"  # optional: semantic search
-pip install -e ".[kuzu]"    # optional: local graph backend
 ```

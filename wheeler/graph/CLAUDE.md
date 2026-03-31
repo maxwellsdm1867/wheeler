@@ -22,20 +22,24 @@ plus type-specific filterable fields (confidence, priority, status, doi).
 Defined in `wheeler/models.py` (canonical), re-exported by `schema.py`:
 
 F=Finding, H=Hypothesis, Q=OpenQuestion, D=Dataset, P=Paper,
-W=Document, A=Analysis, E=Experiment, PL=Plan, C=CellType, T=Task
+W=Document, S=Script, X=Execution, PL=Plan, N=ResearchNote, L=Ledger
 
-## Relationships (16 types)
+## Relationships (14 types)
 
-PRODUCED, SUPPORTS, CONTRADICTS, USED_DATA, GENERATED, RAN_SCRIPT,
-CITES, RELEVANT_TO, REFERENCED_IN, STUDIED_IN, CONTAINS, DEPENDS_ON,
-AROSE_FROM, INFORMED, BASED_ON, APPEARS_IN
+PROV (W3C standard):
+  USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
+  WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
+
+Semantic (Wheeler-specific):
+  SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO,
+  AROSE_FROM, DEPENDS_ON, CONTAINS
 
 ## Key Modules
 
 - `backend.py` — `GraphBackend` ABC (create/get/update/delete node, relationships, queries)
 - `schema.py` — Constraints, indexes, `generate_node_id()`. Imports prefixes from `models.py`
 - `context.py` — `fetch_context()` returns size-limited markdown for prompt injection
-- `provenance.py` — `hash_file()`, `detect_stale_analyses()`, `create_analysis_node()`
+- `provenance.py` — `hash_file()`, `detect_stale()`, staleness detection
 - `driver.py` — Neo4j connection pool singleton
 
 ## Neo4j Session Constraint

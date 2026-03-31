@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 
 from wheeler.models import (
-    AnalysisModel,
     DatasetModel,
     DocumentModel,
+    ExecutionModel,
     FindingModel,
     HypothesisModel,
     KNOWLEDGE_NODE_ADAPTER,
@@ -24,6 +24,7 @@ from wheeler.models import (
     OpenQuestionModel,
     PaperModel,
     PlanModel,
+    ScriptModel,
     model_for_label,
     title_for_node,
 )
@@ -130,23 +131,36 @@ def _make_document(**overrides) -> DocumentModel:
     return DocumentModel(**defaults)
 
 
-def _make_analysis(**overrides) -> AnalysisModel:
+def _make_script(**overrides) -> ScriptModel:
     defaults = dict(
-        id="A-55667788",
-        script_path="/scripts/analyze_temperature.py",
-        script_hash="abc123",
+        id="S-55667788",
+        path="/scripts/analyze_temperature.py",
+        hash="abc123def456",
         language="python",
-        language_version="3.11",
-        parameters='{"threshold": -40}',
-        output_path="/results/temp_analysis.json",
-        output_hash="def456",
-        executed_at=NOW,
+        version="3.11",
         tier="generated",
         created=NOW,
         updated=NOW,
     )
     defaults.update(overrides)
-    return AnalysisModel(**defaults)
+    return ScriptModel(**defaults)
+
+
+def _make_execution(**overrides) -> ExecutionModel:
+    defaults = dict(
+        id="X-55667788",
+        kind="script",
+        agent_id="wheeler",
+        status="completed",
+        started_at=NOW,
+        ended_at=NOW,
+        description="Temperature analysis run",
+        tier="generated",
+        created=NOW,
+        updated=NOW,
+    )
+    defaults.update(overrides)
+    return ExecutionModel(**defaults)
 
 
 # ===================================================================
@@ -166,7 +180,8 @@ class TestModelRoundTrip:
             _make_paper(),
             _make_dataset(),
             _make_document(),
-            _make_analysis(),
+            _make_script(),
+            _make_execution(),
             PlanModel(id="PL-plan0001", status="active", tier="generated", created=NOW, updated=NOW),
         ],
         ids=lambda m: m.type,
@@ -371,12 +386,19 @@ class TestRender:
         assert f"[{doc.id}]" in md
         assert doc.title in md
 
-    def test_render_analysis_shows_script_path(self):
-        a = _make_analysis()
-        md = render_node(a)
+    def test_render_script_shows_path(self):
+        s = _make_script()
+        md = render_node(s)
 
-        assert f"[{a.id}]" in md
-        assert a.script_path in md
+        assert f"[{s.id}]" in md
+        assert s.path in md
+
+    def test_render_execution_shows_description(self):
+        x = _make_execution()
+        md = render_node(x)
+
+        assert f"[{x.id}]" in md
+        assert x.description in md
 
     def test_render_finding_with_tags(self):
         finding = _make_finding(tags=["calcium", "imaging"])
@@ -394,7 +416,8 @@ class TestRender:
             _make_paper(),
             _make_dataset(),
             _make_document(),
-            _make_analysis(),
+            _make_script(),
+            _make_execution(),
         ]
         for m in models:
             md = render_node(m)
@@ -432,9 +455,13 @@ class TestTitleExtraction:
         ds = _make_dataset(description="Ephys recordings")
         assert title_for_node(ds) == "Ephys recordings"
 
-    def test_analysis_title(self):
-        a = _make_analysis(script_path="/scripts/run.py")
-        assert title_for_node(a) == "Analysis: /scripts/run.py"
+    def test_script_title(self):
+        s = _make_script()
+        assert title_for_node(s) == "Script: /scripts/analyze_temperature.py"
+
+    def test_execution_title(self):
+        x = _make_execution()
+        assert title_for_node(x) == "Temperature analysis run"
 
     def test_truncation_at_100_chars(self):
         long_desc = "x" * 200
@@ -460,7 +487,8 @@ class TestModelForLabel:
             ("Dataset", DatasetModel),
             ("Paper", PaperModel),
             ("Document", DocumentModel),
-            ("Analysis", AnalysisModel),
+            ("Script", ScriptModel),
+            ("Execution", ExecutionModel),
             ("Plan", PlanModel),
         ],
     )
@@ -709,18 +737,32 @@ class TestGraphDataToModel:
         assert isinstance(model, DocumentModel)
         assert model.title == "Draft results"
 
-    def test_analysis_conversion(self):
+    def test_script_conversion(self):
         data = {
-            "id": "A-migr0005",
-            "script_path": "/scripts/run.m",
-            "script_hash": "hash123",
-            "language": "matlab",
+            "id": "S-migr0005",
+            "path": "/foo.py",
+            "hash": "abc",
+            "language": "python",
             "created": NOW,
         }
-        model = _graph_data_to_model("Analysis", data)
-        assert isinstance(model, AnalysisModel)
-        assert model.script_path == "/scripts/run.m"
-        assert model.language == "matlab"
+        model = _graph_data_to_model("Script", data)
+        assert isinstance(model, ScriptModel)
+        assert model.path == "/foo.py"
+        assert model.language == "python"
+
+    def test_execution_conversion(self):
+        data = {
+            "id": "X-migr0006",
+            "kind": "script",
+            "agent_id": "wheeler",
+            "status": "completed",
+            "created": NOW,
+        }
+        model = _graph_data_to_model("Execution", data)
+        assert isinstance(model, ExecutionModel)
+        assert model.kind == "script"
+        assert model.agent_id == "wheeler"
+        assert model.status == "completed"
 
     def test_updated_defaults_to_created(self):
         """When 'updated' is missing, it should fall back to 'created'."""

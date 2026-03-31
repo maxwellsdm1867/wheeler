@@ -15,7 +15,7 @@ from wheeler.graph.schema import NODE_LABELS, PREFIX_TO_LABEL
 
 # Matches [F-3a2b], [PL-0012abcd], etc.
 CITATION_PATTERN = re.compile(
-    r"\[((?:PL|F|H|Q|E|A|D|P|C|T|W|N)-[0-9a-f]{4,8})\]"
+    r"\[((?:PL|F|H|Q|S|X|D|P|W|N|L)-[0-9a-f]{4,8})\]"
 )
 
 
@@ -54,12 +54,13 @@ def _label_from_id(node_id: str) -> str | None:
 
 
 # Provenance rules: what relationships a node label must have to be considered
-# properly grounded. Label → list of (relationship, target_label) that should exist.
-_PROVENANCE_RULES: dict[str, list[tuple[str, str]]] = {
-    "Finding": [("GENERATED|PRODUCED", "Analysis")],
-    "Analysis": [("USED_DATA", "Dataset")],
-    "Hypothesis": [("SUPPORTS|CONTRADICTS", "Finding")],
-    "Document": [("APPEARS_IN", "Finding|Paper|Analysis|Hypothesis")],
+# properly grounded. Label → list of (relationship, target_labels, direction).
+# direction: "in" means INCOMING edge (someone points at me),
+#            "out" means OUTGOING edge (I point at someone).
+_PROVENANCE_RULES: dict[str, list[tuple[str, str, str]]] = {
+    "Finding": [("WAS_GENERATED_BY", "Execution", "out")],
+    "Hypothesis": [("SUPPORTS|CONTRADICTS", "Finding", "in")],
+    "Document": [("APPEARS_IN", "Finding|Paper|Script|Hypothesis", "in")],
 }
 
 
@@ -145,24 +146,32 @@ async def validate_citations(
                 prov_status = CitationStatus.VALID
                 prov_detail = ""
                 if label in _PROVENANCE_RULES:
-                    for rel_pattern, target_pattern in _PROVENANCE_RULES[label]:
-                        if project_tag:
-                            check = await session.run(
+                    for rel_pattern, target_pattern, direction in _PROVENANCE_RULES[label]:
+                        if direction == "out":
+                            match_frag = (
+                                f"MATCH (n:{label} {{id: $id}})"
+                                f"-[:{rel_pattern}]->(t) "
+                            )
+                        else:
+                            match_frag = (
                                 f"MATCH (n:{label} {{id: $id}})"
                                 f"<-[:{rel_pattern}]-(t) "
-                                f"WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
-                                f"AND n._wheeler_project = $ptag "
-                                f"RETURN count(t) AS cnt",
+                            )
+                        if project_tag:
+                            check = await session.run(
+                                match_frag
+                                + "WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
+                                  "AND n._wheeler_project = $ptag "
+                                  "RETURN count(t) AS cnt",
                                 id=node_id,
                                 targets=target_pattern.split("|"),
                                 ptag=project_tag,
                             )
                         else:
                             check = await session.run(
-                                f"MATCH (n:{label} {{id: $id}})"
-                                f"<-[:{rel_pattern}]-(t) "
-                                f"WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
-                                f"RETURN count(t) AS cnt",
+                                match_frag
+                                + "WHERE any(lbl IN labels(t) WHERE lbl IN $targets) "
+                                  "RETURN count(t) AS cnt",
                                 id=node_id,
                                 targets=target_pattern.split("|"),
                             )
@@ -174,13 +183,13 @@ async def validate_citations(
                                 f"{rel_pattern} from {target_pattern}"
                             )
 
-                # Step 4: Staleness check for Analysis nodes
-                if prov_status == CitationStatus.VALID and label == "Analysis":
+                # Step 4: Staleness check for Script nodes
+                if prov_status == CitationStatus.VALID and label == "Script":
                     try:
                         from wheeler.graph.provenance import hash_file
                         node_data = found_nodes[node_id]
-                        sp = node_data.get("script_path")
-                        sh = node_data.get("script_hash")
+                        sp = node_data.get("path")
+                        sh = node_data.get("hash")
                         if sp and sh:
                             p = Path(sp).resolve()
                             if not p.exists():
@@ -188,7 +197,7 @@ async def validate_citations(
                                 prov_detail = f"Script file not found: {sp}"
                             elif hash_file(p) != sh:
                                 prov_status = CitationStatus.STALE
-                                prov_detail = "Script has been modified since analysis ran"
+                                prov_detail = "Script has been modified since last recorded hash"
                     except Exception:
                         logger.debug(
                             "Staleness check failed for %s", node_id,

@@ -18,6 +18,10 @@ class NodeBase(BaseModel):
     created: str = ""
     updated: str = ""
     tags: list[str] = []
+    stability: float = 0.0
+    stale: bool = False
+    stale_since: str = ""
+    session_id: str = ""
 
     @property
     def file_name(self) -> str:
@@ -70,16 +74,22 @@ class DocumentModel(NodeBase):
     status: str = "draft"
 
 
-class AnalysisModel(NodeBase):
-    type: Literal["Analysis"] = "Analysis"
-    script_path: str = ""
-    script_hash: str = ""
+class ScriptModel(NodeBase):
+    type: Literal["Script"] = "Script"
+    path: str = ""
+    hash: str = ""
     language: str = ""
-    language_version: str = ""
-    parameters: str = ""
-    output_path: str = ""
-    output_hash: str = ""
-    executed_at: str = ""
+    version: str = ""
+
+
+class ExecutionModel(NodeBase):
+    type: Literal["Execution"] = "Execution"
+    kind: str = ""
+    agent_id: str = "wheeler"
+    status: str = "completed"
+    started_at: str = ""
+    ended_at: str = ""
+    description: str = ""
 
 
 class PlanModel(NodeBase):
@@ -116,7 +126,8 @@ PREFIX_TO_LABEL: dict[str, str] = {
     "F": "Finding",
     "H": "Hypothesis",
     "Q": "OpenQuestion",
-    "A": "Analysis",
+    "S": "Script",
+    "X": "Execution",
     "D": "Dataset",
     "P": "Paper",
     "W": "Document",
@@ -141,7 +152,8 @@ KnowledgeNode = Annotated[
         DatasetModel,
         PaperModel,
         DocumentModel,
-        AnalysisModel,
+        ScriptModel,
+        ExecutionModel,
         PlanModel,
         ResearchNoteModel,
         LedgerModel,
@@ -162,7 +174,8 @@ _LABEL_TO_MODEL: dict[str, type[NodeBase]] = {
     "Dataset": DatasetModel,
     "Paper": PaperModel,
     "Document": DocumentModel,
-    "Analysis": AnalysisModel,
+    "Script": ScriptModel,
+    "Execution": ExecutionModel,
     "Plan": PlanModel,
     "ResearchNote": ResearchNoteModel,
     "Ledger": LedgerModel,
@@ -196,8 +209,10 @@ def title_for_node(node: NodeBase) -> str:
         return node.title[:100]
     if isinstance(node, DatasetModel):
         return node.description[:100]
-    if isinstance(node, AnalysisModel):
-        return f"Analysis: {node.script_path}"[:100]
+    if isinstance(node, ScriptModel):
+        return f"Script: {node.path}"[:100]
+    if isinstance(node, ExecutionModel):
+        return (node.description[:100] if node.description else f"Execution ({node.kind})")
     if isinstance(node, ResearchNoteModel):
         return (node.title[:100] if node.title else node.content[:100])
     if isinstance(node, LedgerModel):

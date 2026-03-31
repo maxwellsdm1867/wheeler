@@ -1,4 +1,4 @@
-"""Provenance capture: file hashing, analysis node creation, staleness detection."""
+"""Provenance capture: file hashing, script node creation, staleness detection."""
 
 from __future__ import annotations
 
@@ -25,47 +25,39 @@ def hash_file(path: str | Path) -> str:
 
 
 @dataclass
-class AnalysisProvenance:
-    script_path: str
-    script_hash: str
+class ScriptProvenance:
+    path: str
+    hash: str
     language: str
-    language_version: str = ""
-    parameters: str = ""
-    output_path: str = ""
-    output_hash: str = ""
+    version: str = ""
     tier: str = "generated"
 
 
 @dataclass
-class StaleAnalysis:
+class StaleScript:
     node_id: str
-    script_path: str
+    path: str
     stored_hash: str
     current_hash: str
-    executed_at: str = ""
 
 
 def _generate_id() -> str:
-    return generate_node_id("A")
+    return generate_node_id("S")
 
 
-async def create_analysis_node(
-    prov: AnalysisProvenance, config: WheelerConfig
+async def create_script_node(
+    prov: ScriptProvenance, config: WheelerConfig
 ) -> str:
-    """Create an Analysis node in Neo4j with provenance data. Returns node ID."""
+    """Create a Script node in Neo4j with provenance data. Returns node ID."""
     driver = get_async_driver(config)
     node_id = _generate_id()
     now = datetime.now(timezone.utc).isoformat()
     props: dict = {
         "id": node_id,
-        "script_path": prov.script_path,
-        "script_hash": prov.script_hash,
+        "path": prov.path,
+        "hash": prov.hash,
         "language": prov.language,
-        "language_version": prov.language_version,
-        "parameters": prov.parameters,
-        "output_path": prov.output_path,
-        "output_hash": prov.output_hash,
-        "executed_at": now,
+        "version": prov.version,
         "date": now,
         "tier": prov.tier,
     }
@@ -77,33 +69,69 @@ async def create_analysis_node(
     prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
     async with driver.session(database=config.neo4j.database) as session:
         await session.run(
-            f"CREATE (a:Analysis {{{prop_assignments}}})",
+            f"CREATE (s:Script {{{prop_assignments}}})",
             parameters={"props": props},
         )
     return node_id
 
 
-async def detect_stale_analyses(config: WheelerConfig) -> list[StaleAnalysis]:
-    """Find Analysis nodes whose script_hash doesn't match the file on disk."""
+async def create_execution_node(
+    kind: str,
+    agent_id: str,
+    description: str,
+    session_id: str,
+    config: WheelerConfig,
+) -> str:
+    """Create an Execution node in Neo4j. Returns node ID."""
     driver = get_async_driver(config)
-    stale: list[StaleAnalysis] = []
+    node_id = generate_node_id("X")
+    now = datetime.now(timezone.utc).isoformat()
+    props: dict = {
+        "id": node_id,
+        "kind": kind,
+        "agent_id": agent_id,
+        "description": description,
+        "session_id": session_id,
+        "started_at": now,
+        "date": now,
+        "status": "running",
+        "tier": "generated",
+    }
+    # Inject project namespace tag when isolation is active
+    project_tag = config.neo4j.project_tag
+    if project_tag:
+        props["_wheeler_project"] = project_tag
+
+    prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
+    async with driver.session(database=config.neo4j.database) as session:
+        await session.run(
+            f"CREATE (x:Execution {{{prop_assignments}}})",
+            parameters={"props": props},
+        )
+    return node_id
+
+
+async def detect_stale_scripts(config: WheelerConfig) -> list[StaleScript]:
+    """Find Script nodes whose hash doesn't match the file on disk."""
+    driver = get_async_driver(config)
+    stale: list[StaleScript] = []
 
     project_tag = config.neo4j.project_tag
     if project_tag:
         query = (
-            "MATCH (a:Analysis) WHERE a.script_path IS NOT NULL "
-            "AND a.script_hash IS NOT NULL "
-            "AND a._wheeler_project = $ptag "
-            "RETURN a.id AS id, a.script_path AS path, "
-            "a.script_hash AS hash, a.executed_at AS executed_at"
+            "MATCH (s:Script) WHERE s.path IS NOT NULL "
+            "AND s.hash IS NOT NULL "
+            "AND s._wheeler_project = $ptag "
+            "RETURN s.id AS id, s.path AS path, "
+            "s.hash AS hash"
         )
         params: dict = {"ptag": project_tag}
     else:
         query = (
-            "MATCH (a:Analysis) WHERE a.script_path IS NOT NULL "
-            "AND a.script_hash IS NOT NULL "
-            "RETURN a.id AS id, a.script_path AS path, "
-            "a.script_hash AS hash, a.executed_at AS executed_at"
+            "MATCH (s:Script) WHERE s.path IS NOT NULL "
+            "AND s.hash IS NOT NULL "
+            "RETURN s.id AS id, s.path AS path, "
+            "s.hash AS hash"
         )
         params = {}
 
@@ -113,21 +141,19 @@ async def detect_stale_analyses(config: WheelerConfig) -> list[StaleAnalysis]:
     for rec in records:
         script_path = Path(rec["path"])
         if not script_path.exists():
-            stale.append(StaleAnalysis(
+            stale.append(StaleScript(
                 node_id=rec["id"],
-                script_path=rec["path"],
+                path=rec["path"],
                 stored_hash=rec["hash"],
                 current_hash="FILE_NOT_FOUND",
-                executed_at=rec.get("executed_at", ""),
             ))
             continue
         current_hash = hash_file(script_path)
         if current_hash != rec["hash"]:
-            stale.append(StaleAnalysis(
+            stale.append(StaleScript(
                 node_id=rec["id"],
-                script_path=rec["path"],
+                path=rec["path"],
                 stored_hash=rec["hash"],
                 current_hash=current_hash,
-                executed_at=rec.get("executed_at", ""),
             ))
     return stale

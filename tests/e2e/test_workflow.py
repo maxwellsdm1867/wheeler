@@ -70,31 +70,31 @@ class TestIngestCode:
         assert hash_file(script) == h
 
     @pytest.mark.asyncio
-    async def test_add_analysis_with_provenance(self, sandbox, e2e_config):
-        from wheeler.graph.provenance import hash_file, AnalysisProvenance, create_analysis_node
+    async def test_add_script_with_provenance(self, sandbox, e2e_config):
+        from wheeler.graph.provenance import hash_file, ScriptProvenance, create_script_node
         script = sandbox / "scripts" / "fit_srm_model.m"
-        prov = AnalysisProvenance(
-            script_path=str(script),
-            script_hash=hash_file(script),
+        prov = ScriptProvenance(
+            path=str(script),
+            hash=hash_file(script),
             language="matlab",
             tier="reference",
         )
-        node_id = await create_analysis_node(prov, e2e_config)
-        assert node_id.startswith("A-")
+        node_id = await create_script_node(prov, e2e_config)
+        assert node_id.startswith("S-")
 
         # Tag for cleanup
         from wheeler.graph.driver import get_async_driver
         driver = get_async_driver(e2e_config)
         async with driver.session(database=e2e_config.neo4j.database) as session:
             await session.run(
-                "MATCH (a:Analysis {id: $id}) SET a.e2e_tag = $tag",
+                "MATCH (s:Script {id: $id}) SET s.e2e_tag = $tag",
                 id=node_id, tag=E2E_TAG,
             )
 
         # Verify it's reference tier
         async with driver.session(database=e2e_config.neo4j.database) as session:
             result = await session.run(
-                "MATCH (a:Analysis {id: $id}) RETURN a.tier AS tier",
+                "MATCH (s:Script {id: $id}) RETURN s.tier AS tier",
                 id=node_id,
             )
             rec = await result.single()
@@ -196,7 +196,7 @@ class TestIngestPapers:
 class TestExecuteFindings:
     @pytest.mark.asyncio
     async def test_full_provenance_chain(self, e2e_config):
-        """Paper → INFORMED → Analysis → GENERATED → Finding → SUPPORTS → Hypothesis.
+        """Paper → WAS_INFORMED_BY → Execution → Finding (WAS_GENERATED_BY) → SUPPORTS → Hypothesis.
         This is the core provenance chain Wheeler tracks."""
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.graph.driver import get_async_driver
@@ -352,11 +352,11 @@ class TestCitationValidation:
         async with driver.session(database=e2e_config.neo4j.database) as session:
             await session.run("MATCH (n {id: $id}) SET n.e2e_tag = $tag", id=node_id, tag=E2E_TAG)
 
-        # Validate — node exists but lacks provenance (no Analysis GENERATED it)
+        # Validate — node exists but lacks provenance (no WAS_GENERATED_BY edge)
         results = await validate_citations(f"See [{node_id}]", e2e_config)
         assert len(results) == 1
         assert results[0].node_id == node_id
-        # Finding without GENERATED/PRODUCED relationship = MISSING_PROVENANCE
+        # Finding without WAS_GENERATED_BY relationship = MISSING_PROVENANCE
         assert results[0].status == CitationStatus.MISSING_PROVENANCE
 
 
@@ -368,7 +368,7 @@ class TestGraphGaps:
         assert "total_gaps" in result
         assert "unlinked_questions" in result
         assert "unsupported_hypotheses" in result
-        assert "analyses_without_findings" in result
+        assert "executions_without_outputs" in result
         assert "unreported_findings" in result
         assert "orphaned_papers" in result
 
@@ -466,7 +466,7 @@ class TestDocumentCreation:
 class TestFullProvenanceChain:
     @pytest.mark.asyncio
     async def test_document_to_dataset_chain(self, e2e_config):
-        """Build and query the full chain: Document ← Finding ← Analysis ← Dataset."""
+        """Build and query the full chain: Document ← Finding → Execution → Dataset."""
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.graph.driver import get_async_driver
 
@@ -480,16 +480,12 @@ class TestFullProvenanceChain:
             e2e_config,
         ))
 
-        # Create analysis via raw Cypher (no add_analysis MCP tool)
-        async with driver.session(database=e2e_config.neo4j.database) as session:
-            from wheeler.graph.schema import generate_node_id
-            analysis_id = generate_node_id("A")
-            await session.run(
-                "CREATE (a:Analysis {id: $id, description: $desc, "
-                "script_path: $path, tier: 'reference', e2e_tag: $tag})",
-                id=analysis_id, desc="SRM fitting pipeline",
-                path="scripts/fit_srm_model.m", tag=E2E_TAG,
-            )
+        execution = json.loads(await execute_tool(
+            "add_execution",
+            {"kind": "script_run",
+             "description": "SRM fitting pipeline"},
+            e2e_config,
+        ))
 
         finding = json.loads(await execute_tool(
             "add_finding",
@@ -506,19 +502,20 @@ class TestFullProvenanceChain:
 
         # Tag for cleanup
         async with driver.session(database=e2e_config.neo4j.database) as session:
-            for nid in [dataset["node_id"], finding["node_id"], doc["node_id"]]:
+            for nid in [dataset["node_id"], execution["node_id"],
+                        finding["node_id"], doc["node_id"]]:
                 await session.run("MATCH (n {id: $id}) SET n.e2e_tag = $tag", id=nid, tag=E2E_TAG)
 
-        # Link: Analysis USED_DATA Dataset
+        # Link: Execution USED Dataset
         await execute_tool("link_nodes", {
-            "source_id": analysis_id, "target_id": dataset["node_id"],
-            "relationship": "USED_DATA",
+            "source_id": execution["node_id"], "target_id": dataset["node_id"],
+            "relationship": "USED",
         }, e2e_config)
 
-        # Link: Analysis GENERATED Finding
+        # Link: Finding WAS_GENERATED_BY Execution
         await execute_tool("link_nodes", {
-            "source_id": analysis_id, "target_id": finding["node_id"],
-            "relationship": "GENERATED",
+            "source_id": finding["node_id"], "target_id": execution["node_id"],
+            "relationship": "WAS_GENERATED_BY",
         }, e2e_config)
 
         # Link: Finding APPEARS_IN Document
@@ -527,18 +524,18 @@ class TestFullProvenanceChain:
             "relationship": "APPEARS_IN",
         }, e2e_config)
 
-        # THE FULL CHAIN QUERY: Document → Finding → Analysis → Dataset
+        # THE FULL CHAIN QUERY: Document ← Finding → Execution → Dataset
         async with driver.session(database=e2e_config.neo4j.database) as session:
             result = await session.run(
                 "MATCH (w:Document {id: $doc_id})"
                 "<-[:APPEARS_IN]-(f:Finding)"
-                "<-[:GENERATED]-(a:Analysis)"
-                "-[:USED_DATA]->(d:Dataset) "
-                "RETURN f.description AS finding, a.script_path AS script, d.path AS data",
+                "-[:WAS_GENERATED_BY]->(x:Execution)"
+                "-[:USED]->(d:Dataset) "
+                "RETURN f.description AS finding, x.description AS exec_desc, d.path AS data",
                 doc_id=doc["node_id"],
             )
             rec = await result.single()
             assert rec is not None, "Full provenance chain query returned nothing"
             assert "tau_decay" in rec["finding"]
-            assert "fit_srm_model" in rec["script"]
+            assert "SRM fitting" in rec["exec_desc"]
             assert "e2e_chain_test" in rec["data"]

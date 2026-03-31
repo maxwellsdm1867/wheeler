@@ -447,60 +447,143 @@ async def query_notes(backend, args: dict) -> str:
     return json.dumps({"notes": notes, "count": len(notes)})
 
 
-async def query_analyses(backend, args: dict) -> str:
+async def query_scripts(backend, args: dict) -> str:
     ctx = _extract_context(args)
     keyword = args.get("keyword", "")
-    limit = int(args.get("limit", 20))
+    limit = int(args.get("limit", 10))
 
     if keyword:
-        pw = _project_where("a", ctx.project_tag, has_existing_where=True)
+        pw = _project_where("s", ctx.project_tag, has_existing_where=True)
         records = await backend.run_cypher(
-            "MATCH (a:Analysis) WHERE (toLower(a.script_path) CONTAINS toLower($kw) "
-            "OR toLower(a.description) CONTAINS toLower($kw) "
-            "OR toLower(a.language) CONTAINS toLower($kw))"
+            "MATCH (s:Script) WHERE (toLower(s.path) CONTAINS toLower($kw) "
+            "OR toLower(s.language) CONTAINS toLower($kw))"
             f"{pw} "
-            "RETURN a.id AS id, a.script_path AS script_path, a.language AS language, "
-            "a.executed_at AS executed_at, a.date AS date "
-            "ORDER BY a.date DESC LIMIT $limit",
+            "RETURN s.id AS id, s.path AS path, s.language AS language, "
+            "s.hash AS hash, s.version AS version, s.date AS date "
+            "ORDER BY s.date DESC LIMIT $limit",
             _inject_ptag({"kw": keyword, "limit": limit}, ctx.project_tag),
         )
     else:
         records = await backend.run_cypher(
-            "MATCH (a:Analysis)"
-            f"{_project_where('a', ctx.project_tag, has_existing_where=False)} "
-            "RETURN a.id AS id, a.script_path AS script_path, a.language AS language, "
-            "a.executed_at AS executed_at, a.date AS date "
-            "ORDER BY a.date DESC LIMIT $limit",
+            "MATCH (s:Script)"
+            f"{_project_where('s', ctx.project_tag, has_existing_where=False)} "
+            "RETURN s.id AS id, s.path AS path, s.language AS language, "
+            "s.hash AS hash, s.version AS version, s.date AS date "
+            "ORDER BY s.date DESC LIMIT $limit",
             _inject_ptag({"limit": limit}, ctx.project_tag),
         )
 
-    analyses = []
+    scripts = []
     for r in records:
         node_id = r["id"]
         model = _read_knowledge_node(ctx.knowledge_path, node_id)
         if model is not None:
-            analyses.append({
+            scripts.append({
                 "id": model.id,
-                "script_path": model.script_path,
+                "path": model.path,
                 "language": model.language,
-                "executed_at": model.executed_at,
+                "hash": model.hash,
+                "version": model.version,
                 "date": model.created,
                 "tier": model.tier,
             })
         else:
-            analyses.append({
+            scripts.append({
                 "id": node_id,
-                "script_path": r["script_path"],
+                "path": r["path"],
                 "language": r["language"],
-                "executed_at": r["executed_at"],
+                "hash": r["hash"],
+                "version": r["version"],
                 "date": r["date"],
             })
 
-    return json.dumps({"analyses": analyses, "count": len(analyses)})
+    return json.dumps({"scripts": scripts, "count": len(scripts)})
+
+
+async def query_executions(backend, args: dict) -> str:
+    ctx = _extract_context(args)
+    keyword = args.get("keyword", "")
+    kind = args.get("kind", "")
+    limit = int(args.get("limit", 10))
+
+    if keyword and kind:
+        pw = _project_where("x", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (x:Execution) WHERE x.kind = $kind "
+            "AND (toLower(x.description) CONTAINS toLower($kw) "
+            "OR toLower(x.kind) CONTAINS toLower($kw))"
+            f"{pw} "
+            "RETURN x.id AS id, x.kind AS kind, x.description AS description, "
+            "x.agent_id AS agent_id, x.status AS status, "
+            "x.started_at AS started_at, x.ended_at AS ended_at "
+            "ORDER BY x.started_at DESC LIMIT $limit",
+            _inject_ptag({"kw": keyword, "kind": kind, "limit": limit}, ctx.project_tag),
+        )
+    elif keyword:
+        pw = _project_where("x", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (x:Execution) WHERE (toLower(x.description) CONTAINS toLower($kw) "
+            "OR toLower(x.kind) CONTAINS toLower($kw))"
+            f"{pw} "
+            "RETURN x.id AS id, x.kind AS kind, x.description AS description, "
+            "x.agent_id AS agent_id, x.status AS status, "
+            "x.started_at AS started_at, x.ended_at AS ended_at "
+            "ORDER BY x.started_at DESC LIMIT $limit",
+            _inject_ptag({"kw": keyword, "limit": limit}, ctx.project_tag),
+        )
+    elif kind:
+        pw = _project_where("x", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (x:Execution) WHERE x.kind = $kind"
+            f"{pw} "
+            "RETURN x.id AS id, x.kind AS kind, x.description AS description, "
+            "x.agent_id AS agent_id, x.status AS status, "
+            "x.started_at AS started_at, x.ended_at AS ended_at "
+            "ORDER BY x.started_at DESC LIMIT $limit",
+            _inject_ptag({"kind": kind, "limit": limit}, ctx.project_tag),
+        )
+    else:
+        records = await backend.run_cypher(
+            "MATCH (x:Execution)"
+            f"{_project_where('x', ctx.project_tag, has_existing_where=False)} "
+            "RETURN x.id AS id, x.kind AS kind, x.description AS description, "
+            "x.agent_id AS agent_id, x.status AS status, "
+            "x.started_at AS started_at, x.ended_at AS ended_at "
+            "ORDER BY x.started_at DESC LIMIT $limit",
+            _inject_ptag({"limit": limit}, ctx.project_tag),
+        )
+
+    executions = []
+    for r in records:
+        node_id = r["id"]
+        model = _read_knowledge_node(ctx.knowledge_path, node_id)
+        if model is not None:
+            executions.append({
+                "id": model.id,
+                "kind": model.kind,
+                "description": model.description,
+                "agent_id": model.agent_id,
+                "status": model.status,
+                "started_at": model.started_at,
+                "ended_at": model.ended_at,
+                "tier": model.tier,
+            })
+        else:
+            executions.append({
+                "id": node_id,
+                "kind": r["kind"],
+                "description": r["description"],
+                "agent_id": r["agent_id"],
+                "status": r["status"],
+                "started_at": r["started_at"],
+                "ended_at": r["ended_at"],
+            })
+
+    return json.dumps({"executions": executions, "count": len(executions)})
 
 
 async def graph_gaps(backend, args: dict | None = None) -> str:
-    """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses."""
+    """Find knowledge gaps: unlinked questions, unsupported hypotheses, idle executions."""
     if args is None:
         args = {}
     ctx = _extract_context(args)
@@ -508,7 +591,7 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
     # Build project WHERE fragments for each alias
     pw_q = _project_where("q", ctx.project_tag, has_existing_where=True)
     pw_h = _project_where("h", ctx.project_tag, has_existing_where=True)
-    pw_a = _project_where("a", ctx.project_tag, has_existing_where=True)
+    pw_x = _project_where("x", ctx.project_tag, has_existing_where=True)
     pw_f = _project_where("f", ctx.project_tag, has_existing_where=True)
     pw_p = _project_where("p", ctx.project_tag, has_existing_where=True)
 
@@ -531,11 +614,11 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
         _inject_ptag({}, ctx.project_tag) or None,
     )
 
-    a_records = await backend.run_cypher(
-        "MATCH (a:Analysis) "
-        "WHERE NOT (a)-[:GENERATED]->(:Finding)"
-        f"{pw_a} "
-        "RETURN a.id AS id, coalesce(a.script_path, '') AS path "
+    x_records = await backend.run_cypher(
+        "MATCH (x:Execution) "
+        "WHERE NOT ()-[:WAS_GENERATED_BY]->(x)"
+        f"{pw_x} "
+        "RETURN x.id AS id, coalesce(x.description, '') AS description "
         "LIMIT 10",
         _inject_ptag({}, ctx.project_tag) or None,
     )
@@ -551,8 +634,8 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
 
     p_records = await backend.run_cypher(
         "MATCH (p:Paper) "
-        "WHERE NOT (p)-[:INFORMED|RELEVANT_TO|CITES|APPEARS_IN]->() "
-        "AND NOT ()-[:BASED_ON|REFERENCED_IN]->(p)"
+        "WHERE NOT (p)-[:WAS_INFORMED_BY|RELEVANT_TO|CITES|APPEARS_IN]->() "
+        "AND NOT ()-[:WAS_DERIVED_FROM|CITES]->(p)"
         f"{pw_p} "
         "RETURN p.id AS id, coalesce(p.title, '') AS title "
         "LIMIT 10",
@@ -611,9 +694,9 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
     gaps: dict = {
         "unlinked_questions": unlinked_questions,
         "unsupported_hypotheses": unsupported_hypotheses,
-        "analyses_without_findings": [
-            {"id": r["id"], "script_path": r["path"]}
-            for r in a_records
+        "executions_without_outputs": [
+            {"id": r["id"], "description": r["description"]}
+            for r in x_records
         ],
         "unreported_findings": unreported_findings,
         "orphaned_papers": orphaned_papers,

@@ -83,7 +83,7 @@ paths:
   docs: ["docs/"]
 ```
 
-`/wh:ingest` scans these paths, creates Dataset and Analysis nodes that point to the actual files. `/wh:execute` knows where to find scripts and data without the scientist spelling it out. The graph stores paths as-is and validates with hashes.
+`/wh:ingest` scans these paths, creates Dataset and Script nodes that point to the actual files. `/wh:execute` knows where to find scripts and data without the scientist spelling it out. The graph stores paths as-is and validates with hashes.
 
 ### Wheeler-Managed
 
@@ -110,7 +110,7 @@ JSON files -- one per knowledge node. Structured data the graph indexes:
 }
 ```
 
-Pydantic v2 models (`wheeler/models.py`) define the schema for all 10 node types. `wh show F-3a2b` renders any node as readable markdown.
+Pydantic v2 models (`wheeler/models.py`) define the schema for all node types (including Script and Execution). `wh show F-3a2b` renders any node as readable markdown.
 
 ### Research Notes (`.notes/`)
 
@@ -157,11 +157,15 @@ For each node:
 - Filterable metadata: `confidence` (Finding), `priority` (OpenQuestion), `status` (Hypothesis), `doi` (Paper)
 - Relationships to other nodes
 
-For relationships (16 types):
+For relationships (14 types):
 ```
-PRODUCED, SUPPORTS, CONTRADICTS, USED_DATA, GENERATED, RAN_SCRIPT,
-CITES, RELEVANT_TO, REFERENCED_IN, STUDIED_IN, CONTAINS, DEPENDS_ON,
-AROSE_FROM, INFORMED, BASED_ON, APPEARS_IN
+PROV (W3C standard):
+  USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
+  WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
+
+Semantic (Wheeler-specific):
+  SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO,
+  AROSE_FROM, DEPENDS_ON, CONTAINS
 ```
 
 ### What the Graph Does NOT Store
@@ -178,7 +182,8 @@ Full descriptions, statements, questions, or other prose content. That lives in 
 | D | Dataset | path, data_type |
 | P | Paper | doi, year (always tier=reference) |
 | W | Document | status (draft/revision/final) |
-| A | Analysis | script_path, script_hash, language |
+| S | Script | path, hash, language |
+| X | Execution | kind, agent_id, status, started_at, ended_at |
 | PL | Plan | status |
 | N | ResearchNote | title, content, context |
 | L | Ledger | mode, pass_rate, ungrounded |
@@ -186,15 +191,16 @@ Full descriptions, statements, questions, or other prose content. That lives in 
 ### Provenance Chain
 
 ```
-Paper (reference)
-  -INFORMED-> Analysis (script_hash, params)
-                -USED_DATA-> Dataset (path, hash)
-                -GENERATED-> Finding
-                               -BASED_ON-> Paper
-                               -APPEARS_IN-> Document
+Execution (kind: "script")
+  -USED-> Paper (reference)
+  -USED-> Script (path, hash)
+  -USED-> Dataset (path, hash)
+Finding -WAS_GENERATED_BY-> Execution
+  -WAS_DERIVED_FROM-> Paper
+  -APPEARS_IN-> Document
 ```
 
-Analysis nodes store `script_hash` (SHA-256 at execution time) -- a cryptographic receipt of exactly what ran. `detect_stale` re-hashes scripts and flags mismatches.
+Script nodes store `hash` (SHA-256 at execution time) -- a cryptographic receipt of exactly what ran. Execution nodes record the activity (what ran, when, status). `detect_stale` re-hashes scripts and flags mismatches.
 
 ### Context Tiers
 
@@ -221,8 +227,9 @@ Optional (`pip install wheeler[search]`). fastembed + numpy, stored in `.wheeler
 /wh:execute
   -> runs analysis script
   -> writes F-3a2b.json to knowledge/
-  -> creates graph node (metadata + file pointer)
-  -> links Finding -> Analysis -> Dataset in graph
+  -> creates Script + Execution + Finding graph nodes
+  -> links: Execution -USED-> Script, Execution -USED-> Dataset
+  -> links: Finding -WAS_GENERATED_BY-> Execution
   -> indexes embedding for semantic search
 ```
 
@@ -565,6 +572,7 @@ wheeler/
 |   +-- context.py               # Size-limited graph context injection
 |   +-- provenance.py            # File hashing, staleness detection
 |   +-- trace.py                 # Provenance chain traversal
+|   +-- migration_prov.py        # PROV schema migration (Analysis→Script+Execution)
 +-- search/
 |   +-- __init__.py              # Conditional re-export of EmbeddingStore
 |   +-- embeddings.py            # EmbeddingStore (fastembed + numpy)

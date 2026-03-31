@@ -58,11 +58,12 @@ RETURN q.id AS id, q.question AS question, q.priority AS priority, q.date_added 
 ORDER BY q.priority DESC
 ```
 
-**Analyses (scripts run):**
+**Executions (scripts run):**
 ```cypher
-MATCH (a:Analysis) WHERE a.date >= $since
-RETURN a.id AS id, a.description AS desc, a.script_path AS script, a.date AS date
-ORDER BY a.date DESC
+MATCH (x:Execution) WHERE x.started_at >= $since
+OPTIONAL MATCH (x)-[:USED]->(s:Script)
+RETURN x.id AS id, x.description AS desc, x.kind AS kind, s.path AS script, x.started_at AS date
+ORDER BY x.started_at DESC
 ```
 
 **Papers added:**
@@ -110,13 +111,14 @@ Generated: {timestamp}
 
 ### New (generated)
 - [{id}] {description} (confidence: {conf})
-  ← from [{analysis_id}] {script_name}
+  ← from [{execution_id}] {script_name}
 
 ### Promoted to Reference
 - [{id}] {description} (promoted from generated)
 
-## Analyses Run ({count})
-- [{id}] {script_path} — {description}
+## Executions ({count})
+- [{id}] ({kind}) {description}
+  Script: [{script_id}]
   Used: [{dataset_ids}]
   Produced: [{finding_ids}]
 
@@ -140,11 +142,11 @@ Generated: {timestamp}
 
 ## Papers Added ({count})
 - [{id}] {authors} ({year}) — {title}
-  Informed: [{analysis_ids}]
+  Used by: [{execution_ids}]
 
 ## Graph Health
 - Total nodes: {count}
-- Stale analyses: {count}
+- Stale scripts: {count}
 - Orphaned papers: {count}
 - Unreported findings: {count}
 

@@ -115,24 +115,38 @@ async def add_note(backend, args: dict) -> str:
     return json.dumps({"node_id": node_id, "label": "ResearchNote", "status": "created"})
 
 
-async def add_analysis(backend, args: dict) -> str:
-    node_id = generate_node_id("A")
-    props: dict = {
+async def add_script(backend, args: dict) -> str:
+    node_id = generate_node_id("S")
+    await backend.create_node("Script", {
         "id": node_id,
-        "script_path": args.get("script_path", ""),
-        "script_hash": args.get("script_hash", ""),
+        "path": args.get("path", ""),
+        "hash": args.get("hash", ""),
         "language": args.get("language", ""),
-        "language_version": args.get("language_version", ""),
-        "parameters": args.get("parameters", ""),
-        "output_path": args.get("output_path", ""),
-        "output_hash": args.get("output_hash", ""),
-        "executed_at": args.get("executed_at", _now()),
+        "version": args.get("version", ""),
         "date": _now(),
         "tier": args.get("tier", "generated"),
-    }
-    await backend.create_node("Analysis", props)
-    logger.info("Created Analysis %s: %s", node_id, args.get("script_path", "")[:60])
-    return json.dumps({"node_id": node_id, "label": "Analysis", "status": "created"})
+    })
+    logger.info("Created Script %s: %s", node_id, args.get("path", "")[:60])
+    return json.dumps({"node_id": node_id, "label": "Script", "status": "created"})
+
+
+async def add_execution(backend, args: dict) -> str:
+    node_id = generate_node_id("X")
+    now = _now()
+    await backend.create_node("Execution", {
+        "id": node_id,
+        "kind": args.get("kind", ""),
+        "agent_id": args.get("agent_id", "wheeler"),
+        "status": args.get("status", "completed"),
+        "started_at": args.get("started_at", now),
+        "ended_at": args.get("ended_at", now),
+        "session_id": args.get("session_id", ""),
+        "description": args.get("description", ""),
+        "date": now,
+        "tier": args.get("tier", "generated"),
+    })
+    logger.info("Created Execution %s (%s): %s", node_id, args.get("kind", ""), args.get("description", "")[:60])
+    return json.dumps({"node_id": node_id, "label": "Execution", "status": "created"})
 
 
 async def add_ledger(backend, args: dict) -> str:

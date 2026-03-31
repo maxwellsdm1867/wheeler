@@ -46,9 +46,9 @@ Answer the scientist's question using the graph. No execution, no planning — j
      MATCH (n {id: $id})<-[r]-(m) RETURN type(r), m.id, labels(m)
      ```
    - "What's the difference between X and Y?" → query both, compare
-   - "What papers informed this analysis?" → raw Cypher:
+   - "What papers informed this execution?" → raw Cypher:
      ```cypher
-     MATCH (p:Paper)-[:INFORMED]->(a:Analysis {id: $id}) RETURN p
+     MATCH (x:Execution {id: $id})-[:USED]->(p:Paper) RETURN p
      ```
    - "What went into this document?" → raw Cypher:
      ```cypher
@@ -63,11 +63,12 @@ Answer the scientist's question using the graph. No execution, no planning — j
 
 4. **Show relationships** — when relevant, show how nodes connect:
    ```
-   [P-abc] Gerstner 1995
-     └─INFORMED─→ [A-def] SRM fitting
-                    ├─USED_DATA─→ [D-ghi] parasol recordings
-                    └─GENERATED─→ [F-jkl] tau_rise = 0.12ms
-                                    └─SUPPORTS─→ [H-mno] shared spike generation
+   [X-def] SRM fitting (kind: script)
+     ├─USED─→ [P-abc] Gerstner 1995
+     ├─USED─→ [S-stu] scripts/srm_fit.py
+     ├─USED─→ [D-ghi] parasol recordings
+     └──── [F-jkl] tau_rise = 0.12ms ─WAS_GENERATED_BY─→ [X-def]
+                    └─SUPPORTS─→ [H-mno] shared spike generation
    ```
 
 5. **Be concise** — this is a quick lookup, not a report.

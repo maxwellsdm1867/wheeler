@@ -92,7 +92,8 @@ knowledge/
   F-3a2b1c4d.json   # Finding: {description, confidence, tier, ...}
   N-4e5f6a7b.json   # Note: {title, file_path: ".notes/N-4e5f6a7b.md", ...}
   P-a4f20e91.json   # Paper: {title, authors, doi, year, ...}
-  A-2f4a7b8c.json   # Analysis: {script_path, script_hash, ...}
+  S-2f4a7b8c.json   # Script: {path, hash, language, ...}
+  X-9c1d3e5f.json   # Execution: {kind, agent_id, status, ...}
 ```
 
 **Research artifacts** — your actual writing, as natural files:
@@ -126,11 +127,14 @@ Every node is tagged `reference` (established) or `generated` (new work). Papers
 
 ### Provenance
 
-Every link is tracked. Findings trace to analyses, analyses carry script hashes, datasets have file paths. If a script changes after an analysis ran, the finding is flagged as STALE.
+Every link is tracked using W3C PROV standard relationships. Scripts carry file hashes. Executions record what ran, when, and what it consumed. If a script changes after an execution, downstream findings are flagged as STALE with reduced stability scores.
 
 ```text
-Paper ──INFORMED──> Analysis ──USED_DATA──> Dataset
-                      └──GENERATED──> Finding ──APPEARS_IN──> Document
+Execution ──USED──> Script (path, hash)
+Execution ──USED──> Dataset (path)
+Execution ──USED──> Paper (reference)
+Finding ──WAS_GENERATED_BY──> Execution
+Finding ──APPEARS_IN──> Document
 ```
 
 ### Citations
@@ -248,10 +252,10 @@ wheeler/
 ├── graph/
 │   ├── backend.py           # GraphBackend ABC + get_backend() factory
 │   ├── neo4j_backend.py     # Neo4j backend (default)
-│   ├── kuzu_backend.py      # Kuzu embedded (experimental)
 │   ├── schema.py            # Constraints, indexes, generate_node_id()
 │   ├── context.py           # Tier-separated context injection
-│   └── provenance.py        # Script hashing, staleness detection
+│   ├── provenance.py        # Script hashing, staleness detection
+│   └── migration_prov.py    # PROV schema migration (Analysis → Script + Execution)
 ├── search/
 │   └── embeddings.py        # EmbeddingStore (fastembed + numpy)
 ├── tools/
@@ -267,7 +271,7 @@ knowledge/                    # Graph metadata (JSON index)
 .logs/                        # Headless task output
 .claude/commands/wh/          # Slash commands (acts)
 bin/wh                        # Headless launcher
-tests/                        # 413 tests
+tests/                        # 490 tests
 ```
 
 ## Development

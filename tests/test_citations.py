@@ -17,16 +17,16 @@ class TestCitationExtraction:
         assert extract_citations(text) == ["F-3a2b"]
 
     def test_extract_multiple_citations(self):
-        text = "Both [F-3a2b] and [H-00ff] are relevant, plus [E-12345678]."
+        text = "Both [F-3a2b] and [H-00ff] are relevant, plus [X-12345678]."
         result = extract_citations(text)
-        assert result == ["F-3a2b", "H-00ff", "E-12345678"]
+        assert result == ["F-3a2b", "H-00ff", "X-12345678"]
 
     def test_extract_plan_prefix(self):
         text = "See plan [PL-abcd1234]."
         assert extract_citations(text) == ["PL-abcd1234"]
 
     def test_extract_all_prefixes(self):
-        prefixes = ["PL", "F", "H", "Q", "E", "A", "D", "P", "C", "T", "W"]
+        prefixes = ["PL", "F", "H", "Q", "S", "X", "D", "P", "W", "N", "L"]
         for prefix in prefixes:
             text = f"Node [{prefix}-abcd] found."
             result = extract_citations(text)
@@ -41,7 +41,7 @@ class TestCitationExtraction:
         assert extract_citations(text) == []
 
     def test_invalid_prefix_ignored(self):
-        text = "Invalid [X-abcd] and [ZZ-1234] are not matched."
+        text = "Invalid [ZZ-abcd] and [YY-1234] are not matched."
         assert extract_citations(text) == []
 
     def test_too_short_hex(self):
@@ -59,7 +59,7 @@ class TestCitationExtraction:
         assert extract_citations("[F-abcd1234]") == ["F-abcd1234"]
 
     def test_mixed_valid_invalid(self):
-        text = "[F-abcd] valid, [X-1234] invalid, [H-5678] valid"
+        text = "[F-abcd] valid, [ZZ-1234] invalid, [H-5678] valid"
         assert extract_citations(text) == ["F-abcd", "H-5678"]
 
 
@@ -70,7 +70,7 @@ class TestCitationPattern:
         assert CITATION_PATTERN.search("[Q-0000]")
 
     def test_pattern_rejects_invalid(self):
-        assert not CITATION_PATTERN.search("[X-abcd]")
+        assert not CITATION_PATTERN.search("[ZZ-abcd]")
         assert not CITATION_PATTERN.search("[F-abc]")  # too short
         assert not CITATION_PATTERN.search("F-abcd")  # no brackets
 
@@ -98,10 +98,10 @@ class TestCitationResult:
 
     def test_stale_result(self):
         r = CitationResult(
-            node_id="A-abcd",
+            node_id="S-abcd",
             status=CitationStatus.STALE,
-            label="Analysis",
-            details="Script has been modified since analysis ran",
+            label="Script",
+            details="Script has been modified since last recorded hash",
         )
         assert r.status == CitationStatus.STALE
 

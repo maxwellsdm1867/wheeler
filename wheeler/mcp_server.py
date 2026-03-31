@@ -209,19 +209,19 @@ async def add_analysis(
     output_path: str = "",
     output_hash: str = "",
 ) -> dict:
-    """Add an Analysis node to track a script execution with provenance.
+    """Add a Script node to track a code file with provenance (legacy alias).
 
     If script_hash is empty, Wheeler will compute it from the file.
-    Use this when registering scripts, recording analyses, or during /wh:ingest.
+    Use this when registering scripts or during /wh:ingest.
 
     Args:
         script_path: Path to the script file
         language: Programming language (matlab, python, r, julia, etc.)
         script_hash: SHA-256 hash (auto-computed if empty and file exists)
         language_version: Language version (e.g., "3.14", "R2022a")
-        parameters: JSON string of parameters used
-        output_path: Path to output file(s)
-        output_hash: SHA-256 hash of output
+        parameters: Unused (kept for backward compatibility)
+        output_path: Unused (kept for backward compatibility)
+        output_hash: Unused (kept for backward compatibility)
     """
     # Auto-compute hash if not provided
     if not script_hash:
@@ -231,15 +231,12 @@ async def add_analysis(
             script_hash = provenance.hash_file(p)
 
     result = await graph_tools.execute_tool(
-        "add_analysis",
+        "add_script",
         {
-            "script_path": script_path,
-            "script_hash": script_hash,
+            "path": script_path,
+            "hash": script_hash,
             "language": language,
-            "language_version": language_version,
-            "parameters": parameters,
-            "output_path": output_path,
-            "output_hash": output_hash,
+            "version": language_version,
         },
         _config,
     )
@@ -354,9 +351,9 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
 
 @mcp.tool()
 async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
-    """Search Analysis nodes in the knowledge graph by script path, description, or language."""
+    """Search Script nodes in the knowledge graph by path or language (legacy alias for query_scripts)."""
     result = await graph_tools.execute_tool(
-        "query_analyses", {"keyword": keyword, "limit": limit}, _config
+        "query_scripts", {"keyword": keyword, "limit": limit}, _config
     )
     return json.loads(result)
 
@@ -511,15 +508,14 @@ async def scan_workspace() -> dict:
 
 @mcp.tool()
 async def detect_stale() -> list[dict]:
-    """Find Analysis nodes whose script has been modified since execution."""
-    stale = await provenance.detect_stale_analyses(_config)
+    """Find Script nodes whose file has been modified since last recorded hash."""
+    stale = await provenance.detect_stale_scripts(_config)
     return [
         {
             "node_id": s.node_id,
-            "script_path": s.script_path,
+            "path": s.path,
             "stored_hash": s.stored_hash,
             "current_hash": s.current_hash,
-            "executed_at": s.executed_at,
         }
         for s in stale
     ]

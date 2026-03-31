@@ -28,7 +28,8 @@ _MUTATION_TOOLS = frozenset({
     "add_paper",
     "add_document",
     "add_note",
-    "add_analysis",
+    "add_script",
+    "add_execution",
     "add_ledger",
 })
 
@@ -43,7 +44,8 @@ _TOOL_REGISTRY: dict[str, object] = {
     "add_paper": mutations.add_paper,
     "add_document": mutations.add_document,
     "add_note": mutations.add_note,
-    "add_analysis": mutations.add_analysis,
+    "add_script": mutations.add_script,
+    "add_execution": mutations.add_execution,
     "add_ledger": mutations.add_ledger,
     "link_nodes": mutations.link_nodes,
     "set_tier": mutations.set_tier,
@@ -55,7 +57,8 @@ _TOOL_REGISTRY: dict[str, object] = {
     "query_papers": queries.query_papers,
     "query_documents": queries.query_documents,
     "query_notes": queries.query_notes,
-    "query_analyses": queries.query_analyses,
+    "query_scripts": queries.query_scripts,
+    "query_executions": queries.query_executions,
     "graph_gaps": queries.graph_gaps,
 }
 
@@ -142,7 +145,7 @@ TOOL_DEFINITIONS = [
         "name": "graph_gaps",
         "description": (
             "Find gaps in the knowledge graph: open questions without linked "
-            "analyses, hypotheses without supporting findings, stale analyses. "
+            "executions, hypotheses without supporting findings, idle executions. "
             "Use in planning mode to propose next investigations."
         ),
         "parameters": {},
@@ -254,11 +257,52 @@ TOOL_DEFINITIONS = [
         "required": [],
     },
     {
-        "name": "query_analyses",
-        "description": "Search Analysis nodes in the knowledge graph by script path, description, or language.",
+        "name": "add_script",
+        "description": (
+            "Add a Script node to the knowledge graph. Use when registering "
+            "a code file for provenance tracking. Returns the new node ID."
+        ),
+        "parameters": {
+            "path": {"type": "string", "description": "File path to the script"},
+            "language": {"type": "string", "description": "Programming language (e.g., python, matlab)"},
+            "hash": {"type": "string", "description": "Content hash of the script file", "default": ""},
+            "version": {"type": "string", "description": "Version tag or commit hash", "default": ""},
+        },
+        "required": ["path", "language"],
+    },
+    {
+        "name": "add_execution",
+        "description": (
+            "Add an Execution node to the knowledge graph. Use when recording "
+            "a run of a script, pipeline, or agent task. Returns the new node ID."
+        ),
+        "parameters": {
+            "kind": {"type": "string", "description": "Execution type (e.g., script_run, pipeline, agent_task)"},
+            "description": {"type": "string", "description": "What the execution did"},
+            "agent_id": {"type": "string", "description": "Agent or user who ran it", "default": "wheeler"},
+            "status": {"type": "string", "description": "completed, failed, or running", "default": "completed"},
+            "session_id": {"type": "string", "description": "Session or job ID", "default": ""},
+            "started_at": {"type": "string", "description": "ISO timestamp when execution started", "default": ""},
+            "ended_at": {"type": "string", "description": "ISO timestamp when execution ended", "default": ""},
+        },
+        "required": ["kind", "description"],
+    },
+    {
+        "name": "query_scripts",
+        "description": "Search Script nodes in the knowledge graph by path or language.",
         "parameters": {
             "keyword": {"type": "string", "description": "Optional keyword to filter by", "default": ""},
-            "limit": {"type": "integer", "description": "Max results (default 20)", "default": 20},
+            "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+        },
+        "required": [],
+    },
+    {
+        "name": "query_executions",
+        "description": "Search Execution nodes in the knowledge graph by kind or description.",
+        "parameters": {
+            "keyword": {"type": "string", "description": "Optional keyword to filter by", "default": ""},
+            "kind": {"type": "string", "description": "Filter by execution kind", "default": ""},
+            "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
         },
         "required": [],
     },

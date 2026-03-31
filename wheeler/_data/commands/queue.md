@@ -25,7 +25,7 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format. All
 4. Log ALL results to the graph using wheeler MCP tools:
    - `add_finding` with confidence scores
    - `add_dataset` for new data files
-   - `link_nodes` for relationships (GENERATED, USED_DATA, SUPPORTS, CONTRADICTS)
+   - `link_nodes` for relationships (WAS_GENERATED_BY, USED, SUPPORTS, CONTRADICTS)
    - `hash_file` for script provenance
 5. If you hit a decision point that needs human judgment, use `add_question` to create an OpenQuestion node flagging the checkpoint rather than guessing
 6. Write a summary of what was accomplished

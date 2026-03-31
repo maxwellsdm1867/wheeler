@@ -299,48 +299,45 @@ def graph_trace(
 
 @graph_app.command("stale")
 def graph_stale() -> None:
-    """Detect Analysis nodes with stale script hashes."""
-    from wheeler.graph.provenance import detect_stale_analyses
+    """Detect Script nodes with stale file hashes."""
+    from wheeler.graph.provenance import detect_stale_scripts
 
     config = load_config()
     try:
-        stale = asyncio.run(detect_stale_analyses(config))
+        stale = asyncio.run(detect_stale_scripts(config))
     except Exception as exc:
-        console.print(f"[red]Failed to detect stale analyses:[/red] {exc}")
+        console.print(f"[red]Failed to detect stale scripts:[/red] {exc}")
         raise typer.Exit(1)
 
     if not stale:
-        console.print("[green]No stale analyses found.[/green]")
+        console.print("[green]No stale scripts found.[/green]")
         return
 
-    table = Table(title="Stale Analyses")
+    table = Table(title="Stale Scripts")
     table.add_column("Node ID", style="cyan")
-    table.add_column("Script Path")
+    table.add_column("Path")
     table.add_column("Status", style="yellow")
-    table.add_column("Executed At")
 
     for s in stale:
         status = "FILE MISSING" if s.current_hash == "FILE_NOT_FOUND" else "HASH CHANGED"
-        table.add_row(s.node_id, s.script_path, status, s.executed_at or "unknown")
+        table.add_row(s.node_id, s.path, status)
     console.print(table)
 
 
 # ---------------------------------------------------------------------------
-# graph add-analysis
+# graph add-script
 # ---------------------------------------------------------------------------
 
 
-@graph_app.command("add-analysis")
-def graph_add_analysis(
-    script: str = typer.Option(..., "--script", "-s", help="Path to analysis script"),
+@graph_app.command("add-script")
+def graph_add_script(
+    script: str = typer.Option(..., "--script", "-s", help="Path to script file"),
     language: str = typer.Option(..., "--language", "-l", help="Language (e.g., matlab, python)"),
     version: str = typer.Option("", "--version", "-v", help="Language version"),
-    params: str = typer.Option("", "--params", "-p", help="Parameters used"),
-    output: str = typer.Option("", "--output", "-o", help="Path to output file"),
 ) -> None:
-    """Add an Analysis node with provenance tracking."""
+    """Add a Script node with provenance tracking."""
     from pathlib import Path as P
-    from wheeler.graph.provenance import AnalysisProvenance, create_analysis_node, hash_file
+    from wheeler.graph.provenance import ScriptProvenance, create_script_node, hash_file
 
     config = load_config()
     script_path = P(script)
@@ -349,32 +346,111 @@ def graph_add_analysis(
         raise typer.Exit(1)
 
     script_hash = hash_file(script_path)
-    output_hash = ""
-    if output:
-        output_path = P(output)
-        if output_path.exists():
-            output_hash = hash_file(output_path)
 
-    prov = AnalysisProvenance(
-        script_path=str(script_path.resolve()),
-        script_hash=script_hash,
+    prov = ScriptProvenance(
+        path=str(script_path.resolve()),
+        hash=script_hash,
         language=language,
-        language_version=version,
-        parameters=params,
-        output_path=output,
-        output_hash=output_hash,
+        version=version,
     )
 
     try:
-        node_id = asyncio.run(create_analysis_node(prov, config))
+        node_id = asyncio.run(create_script_node(prov, config))
         console.print(
-            f"[green]Created Analysis:[/green] [{node_id}]\n"
-            f"  Script: {script} (SHA-256: {script_hash[:12]}...)\n"
+            f"[green]Created Script:[/green] [{node_id}]\n"
+            f"  Path: {script} (SHA-256: {script_hash[:12]}...)\n"
             f"  Language: {language} {version}"
         )
     except Exception as exc:
         console.print(f"[red]Failed:[/red] {exc}")
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# graph migrate-prov
+# ---------------------------------------------------------------------------
+
+
+@graph_app.command("migrate-prov")
+def graph_migrate_prov(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing changes"),
+    skip_neo4j: bool = typer.Option(False, "--skip-neo4j", help="Only migrate knowledge/ JSON files"),
+    skip_files: bool = typer.Option(False, "--skip-files", help="Only migrate Neo4j graph"),
+) -> None:
+    """Migrate provenance schema: Analysis -> Script + Execution, rename relationships."""
+    from pathlib import Path as P
+
+    from wheeler.graph.migration_prov import (
+        migrate_analysis_nodes,
+        migrate_knowledge_files,
+        rename_relationships,
+    )
+
+    config = load_config()
+    knowledge_path = P(config.knowledge_path)
+
+    if dry_run:
+        console.print("[yellow]DRY RUN — showing what would be migrated[/yellow]\n")
+
+    # --- Neo4j migration ---
+    if not skip_files and not skip_neo4j:
+        # Both: Neo4j first, then files
+        pass  # fall through to unified logic below
+    elif skip_neo4j and skip_files:
+        console.print("[red]Cannot skip both Neo4j and files.[/red]")
+        raise typer.Exit(1)
+
+    if not skip_neo4j:
+        console.print("[bold]Phase 1: Migrate Analysis nodes in Neo4j[/bold]")
+        if dry_run:
+            console.print("  (would split Analysis -> Script + Execution)")
+        else:
+            try:
+                node_report = asyncio.run(migrate_analysis_nodes(config))
+                console.print(
+                    f"  Found: {node_report['analysis_nodes_found']}, "
+                    f"Migrated: {node_report['migrated']}, "
+                    f"Errors: {node_report['errors']}"
+                )
+                for d in node_report.get("details", []):
+                    console.print(d)
+            except Exception as exc:
+                console.print(f"  [red]Failed:[/red] {exc}")
+                raise typer.Exit(1)
+
+        console.print("\n[bold]Phase 2: Rename relationships in Neo4j[/bold]")
+        if dry_run:
+            console.print("  (would rename USED_DATA->USED, GENERATED->WAS_GENERATED_BY, etc.)")
+        else:
+            try:
+                rel_report = asyncio.run(rename_relationships(config))
+                console.print(f"  Total renamed: {rel_report['total_renamed']}")
+                for d in rel_report.get("details", []):
+                    console.print(d)
+            except Exception as exc:
+                console.print(f"  [red]Failed:[/red] {exc}")
+                raise typer.Exit(1)
+
+    if not skip_files:
+        console.print("\n[bold]Phase 3: Migrate knowledge/ JSON files[/bold]")
+        if dry_run:
+            a_files = sorted(knowledge_path.glob("A-*.json"))
+            console.print(f"  Would migrate {len(a_files)} A-*.json file(s)")
+        else:
+            try:
+                file_report = migrate_knowledge_files(knowledge_path)
+                console.print(
+                    f"  Found: {file_report['found']}, "
+                    f"Migrated: {file_report['migrated']}, "
+                    f"Errors: {file_report['errors']}"
+                )
+                for d in file_report.get("details", []):
+                    console.print(d)
+            except Exception as exc:
+                console.print(f"  [red]Failed:[/red] {exc}")
+                raise typer.Exit(1)
+
+    console.print("\n[green]Provenance migration complete.[/green]")
 
 
 # ---------------------------------------------------------------------------

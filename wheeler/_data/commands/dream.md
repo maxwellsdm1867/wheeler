@@ -61,8 +61,8 @@ Look for consolidation opportunities:
 
 1. **Provenance completeness** — which generated findings have full chains?
    ```cypher
-   MATCH (f:Finding {tier: 'generated'})<-[:GENERATED]-(a:Analysis)-[:USED_DATA]->(d:Dataset)
-   RETURN f.id AS id, f.description AS desc, f.confidence AS conf, a.id AS analysis
+   MATCH (f:Finding {tier: 'generated'})-[:WAS_GENERATED_BY]->(x:Execution)-[:USED]->(d:Dataset)
+   RETURN f.id AS id, f.description AS desc, f.confidence AS conf, x.id AS execution
    ```
 
 2. **Duplicate detection** — findings with similar descriptions:
@@ -86,7 +86,7 @@ Look for consolidation opportunities:
 
 4. **Orphaned papers** — from `graph_gaps` output.
 
-5. **Stale analyses** — call `detect_stale`.
+5. **Stale scripts** — call `detect_stale`.
 
 6. Read `.plans/STATE.md` and any recent `*-SUMMARY.md` for context on what happened recently.
 
@@ -96,7 +96,7 @@ Act on what you found. For each action, log it for the report.
 
 ### Tier Promotions
 For each generated finding with:
-- Full provenance chain (Analysis → GENERATED → Finding)
+- Full provenance chain (Finding → WAS_GENERATED_BY → Execution)
 - Confidence ≥ 0.8
 - Created more than 1 session ago (not brand new)
 
@@ -105,9 +105,9 @@ Call `set_tier(node_id, "reference")`. Log the promotion.
 ### Paper Linking
 For each orphaned paper (no relationships):
 - Search finding descriptions for keywords from the paper title
-- Search analysis descriptions for methodology matches
-- If a reasonable match exists, call `link_nodes(paper_id, analysis_id, "INFORMED")`
-- If uncertain, create an OpenQuestion: "Should [P-xxx] be linked to [A-yyy]?"
+- Search execution descriptions for methodology matches
+- If a reasonable match exists, call `link_nodes(execution_id, paper_id, "USED")`
+- If uncertain, create an OpenQuestion: "Should [P-xxx] be linked to [X-yyy]?"
 
 ### Duplicate Flagging
 For each pair of findings with >70% word overlap:
@@ -120,8 +120,8 @@ For each open hypothesis with 3+ supporting findings:
 - Set priority 6
 
 ### Staleness Handling
-For each stale analysis from `detect_stale`:
-- Create an OpenQuestion: "[A-xxx] is stale (script modified since execution) — re-run needed?"
+For each stale script from `detect_stale`:
+- Create an OpenQuestion: "[S-xxx] is stale (script modified since last execution) — re-run needed?"
 - Set priority 7
 
 ## Phase 4: Prune & Report
@@ -137,18 +137,18 @@ Consolidated: <timestamp>
 - Promotions: N findings promoted to reference
 - Links created: N
 - Flags raised: N new open questions
-- Stale analyses: N
+- Stale scripts: N
 
 ## Tier Promotions
 - [F-xxxx] → reference (confidence: 0.92, provenance: complete)
 
 ## Links Created
-- [P-aaaa] -INFORMED-> [A-bbbb] (match: "spike response model")
+- [X-aaaa] -USED-> [P-bbbb] (match: "spike response model")
 
 ## Flags Raised
 - [Q-cccc] Potential duplicate: [F-dddd] and [F-eeee]
 - [Q-ffff] Hypothesis [H-gggg] ready for review (4 supporting findings)
-- [Q-hhhh] Stale analysis [A-iiii] needs re-run
+- [Q-hhhh] Stale script [S-iiii] needs re-run
 
 ## No Action Needed
 - All papers linked

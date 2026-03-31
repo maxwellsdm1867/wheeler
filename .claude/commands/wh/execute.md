@@ -45,16 +45,22 @@ For each task:
 3. Execute the analysis (MATLAB via MCP or Python)
 4. Capture all outputs, figures, and results
 5. Use `add_finding`, `add_dataset`, `link_nodes`, `hash_file` wheeler MCP tools for graph provenance
-6. Display anchor figures for any Dataset or Analysis referenced
+6. Display anchor figures for any Dataset or Script referenced
 7. Report results and flag anything unexpected
 
 ## Provenance
-Every Analysis node must include:
-- `script_path`: path to the script that ran
-- `script_hash`: SHA-256 of the script at execution time (use `hash_file` tool)
-- `executed_at`: timestamp
-- Link to input Dataset nodes via USED_DATA
-- Link to output Finding nodes via GENERATED
+Every execution must record full provenance using Script + Execution nodes:
+
+1. **Create a Script node** (if the code file isn't already tracked):
+   `add_script(path, language, description)` — use `hash_file` to get the SHA-256
+2. **Create an Execution node**:
+   `add_execution(kind="script", description="...", status="completed")`
+3. **Link Execution to inputs** (activity consumed entities):
+   - `link_nodes(execution_id, script_id, "USED")` — the script that ran
+   - `link_nodes(execution_id, dataset_id, "USED")` — each input dataset
+4. **Link outputs to Execution** (entities produced by activity — note direction flip):
+   - `link_nodes(finding_id, execution_id, "WAS_GENERATED_BY")` — findings produced
+   - `link_nodes(output_dataset_id, execution_id, "WAS_GENERATED_BY")` — output data
 
 ## Checkpoints
 At decision points, STOP and surface the decision to the scientist:

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from wheeler.graph.provenance import (
-    AnalysisProvenance,
-    StaleAnalysis,
+    ScriptProvenance,
+    StaleScript,
     hash_file,
 )
 
@@ -44,47 +44,45 @@ class TestHashFile:
             hash_file("/nonexistent/file.m")
 
 
-class TestAnalysisProvenance:
+class TestScriptProvenance:
     def test_create_minimal(self):
-        prov = AnalysisProvenance(
-            script_path="/path/to/script.m",
-            script_hash="abc123",
+        prov = ScriptProvenance(
+            path="/path/to/script.m",
+            hash="abc123",
             language="matlab",
         )
-        assert prov.script_path == "/path/to/script.m"
+        assert prov.path == "/path/to/script.m"
         assert prov.language == "matlab"
-        assert prov.language_version == ""
-        assert prov.parameters == ""
+        assert prov.version == ""
+        assert prov.tier == "generated"
 
     def test_create_full(self):
-        prov = AnalysisProvenance(
-            script_path="/path/to/script.py",
-            script_hash="def456",
+        prov = ScriptProvenance(
+            path="/path/to/script.py",
+            hash="def456",
             language="python",
-            language_version="3.11",
-            parameters="--threshold 0.5",
-            output_path="/path/to/output.csv",
-            output_hash="ghi789",
+            version="3.11",
+            tier="reference",
         )
-        assert prov.language_version == "3.11"
-        assert prov.output_hash == "ghi789"
+        assert prov.version == "3.11"
+        assert prov.tier == "reference"
 
 
-class TestStaleAnalysis:
+class TestStaleScript:
     def test_create(self):
-        s = StaleAnalysis(
-            node_id="A-abcd1234",
-            script_path="/path/to/script.m",
+        s = StaleScript(
+            node_id="S-abcd1234",
+            path="/path/to/script.m",
             stored_hash="old_hash",
             current_hash="new_hash",
         )
-        assert s.node_id == "A-abcd1234"
+        assert s.node_id == "S-abcd1234"
         assert s.stored_hash != s.current_hash
 
     def test_missing_file(self):
-        s = StaleAnalysis(
-            node_id="A-abcd1234",
-            script_path="/missing/script.m",
+        s = StaleScript(
+            node_id="S-abcd1234",
+            path="/missing/script.m",
             stored_hash="old_hash",
             current_hash="FILE_NOT_FOUND",
         )

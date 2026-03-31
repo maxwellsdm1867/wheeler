@@ -9,8 +9,8 @@ Typer app with commands: `show`, `migrate`, `graph init`, `graph status`,
 ## Graph Tools (`graph_tools/`)
 
 MCP tool handlers, split into:
-- `mutations.py` — `add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`, `add_document`, `link_nodes`, `set_tier`
-- `queries.py` — `query_findings`, `query_hypotheses`, `query_open_questions`, `query_datasets`, `query_papers`, `query_documents`, `graph_gaps`
+- `mutations.py` — `add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`, `add_document`, `add_script`, `add_execution`, `link_nodes`, `set_tier`
+- `queries.py` — `query_findings`, `query_hypotheses`, `query_open_questions`, `query_datasets`, `query_papers`, `query_documents`, `query_scripts`, `query_executions`, `graph_gaps`
 - `_common.py` — `_now()` timestamp helper
 - `__init__.py` — Tool registry + `execute_tool()` dispatch
 

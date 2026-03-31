@@ -7,15 +7,16 @@ via ``wh show``.
 from __future__ import annotations
 
 from wheeler.models import (
-    AnalysisModel,
     DatasetModel,
     DocumentModel,
+    ExecutionModel,
     FindingModel,
     HypothesisModel,
     NodeBase,
     OpenQuestionModel,
     PaperModel,
     ResearchNoteModel,
+    ScriptModel,
 )
 
 
@@ -202,28 +203,56 @@ def _render_document(m: DocumentModel) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _render_analysis(m: AnalysisModel) -> str:
-    parts: list[str] = [f"# Analysis [{m.id}]", ""]
+def _render_script(m: ScriptModel) -> str:
+    parts: list[str] = [f"# Script [{m.id}]", ""]
 
-    if m.script_path:
-        parts.append(f"**Script**: {m.script_path}")
+    if m.path:
+        parts.append(f"**Path**: {m.path}")
     lang_str = ""
     if m.language:
         lang_str = m.language
-        if m.language_version:
-            lang_str += f" {m.language_version}"
+        if m.version:
+            lang_str += f" {m.version}"
         parts.append(f"**Language**: {lang_str}")
-    if m.script_hash:
-        parts.append(f"**Hash**: {m.script_hash}")
-    date = _fmt_date(m.executed_at)
-    if date:
-        parts.append(f"**Executed**: {date}")
-    if m.output_path:
-        parts.append(f"**Output**: {m.output_path}")
-    if m.parameters:
-        parts.append(f"**Parameters**: {m.parameters}")
+    if m.hash:
+        parts.append(f"**Hash**: {m.hash}")
 
     parts.append("")
+
+    tags = _tags_line(m.tags)
+    if tags:
+        parts.append(tags.strip())
+        parts.append("")
+
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def _render_execution(m: ExecutionModel) -> str:
+    parts: list[str] = [f"# Execution [{m.id}]", ""]
+
+    meta: list[str] = []
+    if m.kind:
+        meta.append(f"**Kind**: {m.kind}")
+    if m.status:
+        meta.append(f"**Status**: {m.status}")
+    if m.agent_id:
+        meta.append(f"**Agent**: {m.agent_id}")
+    if meta:
+        parts.append(" | ".join(meta))
+        parts.append("")
+
+    if m.description:
+        parts.append(m.description)
+        parts.append("")
+
+    started = _fmt_date(m.started_at)
+    ended = _fmt_date(m.ended_at)
+    if started:
+        parts.append(f"**Started**: {started}")
+    if ended:
+        parts.append(f"**Ended**: {ended}")
+    if started or ended:
+        parts.append("")
 
     tags = _tags_line(m.tags)
     if tags:
@@ -312,7 +341,8 @@ _RENDERERS: dict[str, object] = {
     "Paper": _render_paper,
     "Dataset": _render_dataset,
     "Document": _render_document,
-    "Analysis": _render_analysis,
+    "Script": _render_script,
+    "Execution": _render_execution,
     "ResearchNote": _render_note,
 }
 

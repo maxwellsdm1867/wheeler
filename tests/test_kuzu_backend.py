@@ -99,20 +99,30 @@ class TestCreateNode:
         })
         assert node_id.startswith("W-")
 
-    async def test_create_analysis(self, backend: KuzuBackend):
-        node_id = await backend.create_node("Analysis", {
-            "script_path": "/scripts/analyze.py",
-            "script_hash": "abc123",
+    async def test_create_script(self, backend: KuzuBackend):
+        node_id = await backend.create_node("Script", {
+            "path": "/scripts/analyze.py",
+            "hash": "abc123",
             "language": "python",
-            "language_version": "3.11",
-            "parameters": "{}",
-            "output_path": "/results/out.csv",
-            "output_hash": "def456",
-            "executed_at": "2024-01-01T00:00:00",
+            "version": "3.11",
             "date": "2024-01-01",
             "tier": "generated",
         })
-        assert node_id.startswith("A-")
+        assert node_id.startswith("S-")
+
+    async def test_create_execution(self, backend: KuzuBackend):
+        node_id = await backend.create_node("Execution", {
+            "kind": "script_run",
+            "agent_id": "wheeler",
+            "status": "completed",
+            "started_at": "2024-01-01T00:00:00",
+            "ended_at": "2024-01-01T00:01:00",
+            "session_id": "",
+            "description": "Test execution",
+            "date": "2024-01-01",
+            "tier": "generated",
+        })
+        assert node_id.startswith("X-")
 
     async def test_create_plan(self, backend: KuzuBackend):
         node_id = await backend.create_node("Plan", {
@@ -239,11 +249,14 @@ class TestCreateRelationship:
         )
         assert linked is True
 
-    async def test_link_analysis_to_finding(self, backend: KuzuBackend):
-        a_id = await backend.create_node("Analysis", {
-            "script_path": "/test.py",
-            "script_hash": "abc",
-            "language": "python",
+    async def test_link_finding_to_execution(self, backend: KuzuBackend):
+        x_id = await backend.create_node("Execution", {
+            "kind": "script_run",
+            "description": "Test run",
+            "agent_id": "wheeler",
+            "status": "completed",
+            "started_at": "2024-01-01T00:00:00",
+            "ended_at": "2024-01-01T00:01:00",
             "date": "2024-01-01",
             "tier": "generated",
         })
@@ -254,7 +267,7 @@ class TestCreateRelationship:
             "tier": "generated",
         })
         linked = await backend.create_relationship(
-            "Analysis", a_id, "GENERATED", "Finding", f_id,
+            "Finding", f_id, "WAS_GENERATED_BY", "Execution", x_id,
         )
         assert linked is True
 
@@ -404,8 +417,8 @@ class TestRunCypherGraphGaps:
 
         p_records = await backend.run_cypher(
             "MATCH (p:Paper) "
-            "WHERE NOT (p)-[:INFORMED|RELEVANT_TO|CITES|APPEARS_IN]->() "
-            "AND NOT ()-[:BASED_ON|REFERENCED_IN]->(p) "
+            "WHERE NOT (p)-[:WAS_INFORMED_BY|RELEVANT_TO|CITES|APPEARS_IN]->() "
+            "AND NOT ()-[:WAS_DERIVED_FROM|CITES]->(p) "
             "RETURN p.id AS id, coalesce(p.title, '') AS title "
             "LIMIT 10"
         )

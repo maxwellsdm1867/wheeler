@@ -16,7 +16,7 @@ mcp_server.py          ← everything
 
 ## Key Modules
 
-- `models.py` — Pydantic v2 models for all 11 node types + prefix mappings
+- `models.py` — Pydantic v2 models for all node types (incl. Script, Execution) + prefix mappings
 - `config.py` — YAML config loader (`wheeler.yaml`), Pydantic models for config sections
 - `mcp_server.py` — FastMCP server, 26 tools. Entry point: `python -m wheeler.mcp_server`
 - `workspace.py` — File discovery + context formatting for system prompts
