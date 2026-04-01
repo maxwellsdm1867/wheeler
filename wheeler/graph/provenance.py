@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -117,26 +117,22 @@ async def detect_stale_scripts(config: WheelerConfig) -> list[StaleScript]:
     stale: list[StaleScript] = []
 
     project_tag = config.neo4j.project_tag
+    ptag_filter = ""
+    props: dict = {}
     if project_tag:
-        query = (
-            "MATCH (s:Script) WHERE s.path IS NOT NULL "
-            "AND s.hash IS NOT NULL "
-            "AND s._wheeler_project = $ptag "
-            "RETURN s.id AS id, s.path AS path, "
-            "s.hash AS hash"
-        )
-        params: dict = {"ptag": project_tag}
-    else:
-        query = (
-            "MATCH (s:Script) WHERE s.path IS NOT NULL "
-            "AND s.hash IS NOT NULL "
-            "RETURN s.id AS id, s.path AS path, "
-            "s.hash AS hash"
-        )
-        params = {}
+        ptag_filter = "AND s._wheeler_project = $props.ptag "
+        props["ptag"] = project_tag
+
+    query = (
+        "MATCH (s:Script) WHERE s.path IS NOT NULL "
+        "AND s.hash IS NOT NULL "
+        f"{ptag_filter}"
+        "RETURN s.id AS id, s.path AS path, "
+        "s.hash AS hash"
+    )
 
     async with driver.session(database=config.neo4j.database) as session:
-        result = await session.run(query, parameters=params)
+        result = await session.run(query, parameters={"props": props})
         records = [r async for r in result]
     for rec in records:
         script_path = Path(rec["path"])

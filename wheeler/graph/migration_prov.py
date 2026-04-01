@@ -86,7 +86,9 @@ async def migrate_analysis_nodes(config: WheelerConfig) -> dict:
     errors = 0
     details: list[str] = []
 
-    for rec in records:
+    # Use a single session for all migrations (avoids per-node session overhead)
+    async with driver.session(database=db) as session:
+      for rec in records:
         a = dict(rec["a"])
         a_id = a.get("id", "unknown")
         try:
@@ -126,8 +128,6 @@ async def migrate_analysis_nodes(config: WheelerConfig) -> dict:
             }
             if project_tag:
                 exec_props["_wheeler_project"] = project_tag
-
-            async with driver.session(database=db) as session:
                 # 1. Create Script node
                 s_assignments = ", ".join(
                     f"{k}: $props.{k}" for k in script_props

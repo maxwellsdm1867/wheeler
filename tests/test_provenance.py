@@ -1,7 +1,8 @@
-"""Tests for wheeler.graph.provenance module."""
+"""Tests for wheeler.graph.provenance and wheeler.provenance modules."""
 
 import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -9,6 +10,11 @@ from wheeler.graph.provenance import (
     ScriptProvenance,
     StaleScript,
     hash_file,
+)
+from wheeler.provenance import (
+    InvalidatedNode,
+    default_stability,
+    PROVENANCE_RELS,
 )
 
 
@@ -87,3 +93,186 @@ class TestStaleScript:
             current_hash="FILE_NOT_FOUND",
         )
         assert s.current_hash == "FILE_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# Tests for wheeler.provenance (top-level module)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultStability:
+    def test_paper_reference(self):
+        assert default_stability("Paper", "reference") == 0.9
+
+    def test_finding_generated(self):
+        assert default_stability("Finding", "generated") == 0.3
+
+    def test_script_generated(self):
+        assert default_stability("Script", "generated") == 0.5
+
+    def test_dataset_reference(self):
+        assert default_stability("Dataset", "reference") == 1.0
+
+    def test_unknown_label_uses_tier_fallback(self):
+        assert default_stability("UnknownType", "reference") == 0.8
+        assert default_stability("UnknownType", "generated") == 0.3
+
+    def test_unknown_tier_uses_default(self):
+        assert default_stability("Finding", "unknown_tier") == 0.3
+
+
+class TestProvenanceRels:
+    def test_contains_prov_standard_names(self):
+        assert "USED" in PROVENANCE_RELS
+        assert "WAS_GENERATED_BY" in PROVENANCE_RELS
+        assert "WAS_DERIVED_FROM" in PROVENANCE_RELS
+
+    def test_no_old_names(self):
+        for rel in PROVENANCE_RELS:
+            assert rel not in ("USED_DATA", "GENERATED", "BASED_ON", "INFORMED")
+
+
+class TestInvalidatedNode:
+    def test_create(self):
+        n = InvalidatedNode(
+            node_id="F-1234abcd",
+            label="Finding",
+            old_stability=0.8,
+            new_stability=0.3,
+            hops=2,
+        )
+        assert n.node_id == "F-1234abcd"
+        assert n.old_stability > n.new_stability
+        assert n.hops == 2
+
+
+class TestPropagateInvalidation:
+    """Test propagate_invalidation with mocked Neo4j driver."""
+
+    @pytest.mark.asyncio
+    async def test_node_not_found_returns_empty(self):
+        """When the changed node doesn't exist, return empty list."""
+        from wheeler.provenance import propagate_invalidation
+
+        mock_config = MagicMock()
+        mock_config.neo4j.project_tag = ""
+        mock_config.neo4j.database = "neo4j"
+
+        # Mock driver returns no records for source query
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        mock_driver = MagicMock()
+        mock_driver.session = MagicMock(return_value=mock_session)
+
+        with patch("wheeler.graph.driver.get_async_driver", return_value=mock_driver):
+            result = await propagate_invalidation(
+                mock_config, changed_node_id="S-nonexistent"
+            )
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_source_marked_stale(self):
+        """Source query should SET stale=true and use $props.key params."""
+        from wheeler.provenance import propagate_invalidation
+
+        mock_config = MagicMock()
+        mock_config.neo4j.project_tag = ""
+        mock_config.neo4j.database = "neo4j"
+
+        # Source query returns stability
+        source_result = AsyncMock()
+        source_result.single = AsyncMock(return_value={"new_stab": 0.3})
+
+        # Downstream query returns empty
+        async def _empty_aiter():
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        downstream_result = AsyncMock()
+        downstream_result.__aiter__ = lambda self: _empty_aiter()
+
+        mock_session = AsyncMock()
+        call_count = 0
+
+        async def mock_run(query, parameters=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Verify source query uses $props.key style
+                assert "$props.nid" in query
+                assert "$props.now" in query
+                assert "props" in parameters
+                return source_result
+            return downstream_result
+
+        mock_session.run = mock_run
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        mock_driver = MagicMock()
+        mock_driver.session = MagicMock(return_value=mock_session)
+
+        with patch("wheeler.graph.driver.get_async_driver", return_value=mock_driver):
+            result = await propagate_invalidation(
+                mock_config,
+                changed_node_id="S-12345678",
+                new_stability=0.3,
+            )
+
+        assert result == []
+        assert call_count == 2  # source + downstream queries
+
+    @pytest.mark.asyncio
+    async def test_downstream_query_uses_prov_directions(self):
+        """Downstream query should follow PROV-DM edge directions."""
+        from wheeler.provenance import propagate_invalidation
+
+        mock_config = MagicMock()
+        mock_config.neo4j.project_tag = ""
+        mock_config.neo4j.database = "neo4j"
+
+        source_result = AsyncMock()
+        source_result.single = AsyncMock(return_value={"new_stab": 0.3})
+
+        async def _empty_aiter():
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        downstream_result = AsyncMock()
+        downstream_result.__aiter__ = lambda self: _empty_aiter()
+
+        queries_captured = []
+
+        mock_session = AsyncMock()
+
+        async def mock_run(query, parameters=None):
+            queries_captured.append(query)
+            if len(queries_captured) == 1:
+                return source_result
+            return downstream_result
+
+        mock_session.run = mock_run
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        mock_driver = MagicMock()
+        mock_driver.session = MagicMock(return_value=mock_session)
+
+        with patch("wheeler.graph.driver.get_async_driver", return_value=mock_driver):
+            await propagate_invalidation(
+                mock_config, changed_node_id="S-12345678", new_stability=0.3
+            )
+
+        # Verify downstream query uses correct PROV directions:
+        # changed<-[:USED]-(exec)<-[:WAS_GENERATED_BY]-(downstream)
+        downstream_q = queries_captured[1]
+        assert "<-[:USED]-" in downstream_q
+        assert "<-[:WAS_GENERATED_BY]-" in downstream_q
+        assert "WAS_DERIVED_FROM" in downstream_q
