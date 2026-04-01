@@ -638,6 +638,83 @@ class TestDualWrite:
 
         assert list(tmp_path.glob("*.json")) == []
 
+    def test_finding_gets_default_stability(self, tmp_path: Path):
+        from wheeler.tools.graph_tools import _write_knowledge_file
+
+        config = self._make_config(tmp_path)
+        args = {"description": "Stability test finding", "confidence": 0.7}
+        result = json.dumps({"node_id": "F-stab0001", "label": "Finding", "status": "created"})
+
+        _write_knowledge_file("add_finding", args, result, config)
+
+        node = read_node(tmp_path, "F-stab0001")
+        assert node.stability == 0.3  # Finding + generated -> 0.3
+
+    def test_paper_gets_reference_stability(self, tmp_path: Path):
+        from wheeler.tools.graph_tools import _write_knowledge_file
+
+        config = self._make_config(tmp_path)
+        args = {"title": "Stability test paper", "authors": "Test", "doi": "", "year": 2024}
+        result = json.dumps({"node_id": "P-stab0002", "label": "Paper", "status": "created"})
+
+        _write_knowledge_file("add_paper", args, result, config)
+
+        node = read_node(tmp_path, "P-stab0002")
+        assert node.stability == 0.9  # Paper + reference -> 0.9
+
+    def test_session_id_flows_to_knowledge_file(self, tmp_path: Path):
+        """session_id in args should propagate to the written knowledge file."""
+        from wheeler.tools.graph_tools import _write_knowledge_file
+
+        config = self._make_config(tmp_path)
+        args = {
+            "description": "Session test finding",
+            "confidence": 0.8,
+            "session_id": "session-abc12345",
+        }
+        result = json.dumps({"node_id": "F-sess0001", "label": "Finding", "status": "created"})
+
+        _write_knowledge_file("add_finding", args, result, config)
+
+        node = read_node(tmp_path, "F-sess0001")
+        assert isinstance(node, FindingModel)
+        assert node.session_id == "session-abc12345"
+
+    def test_session_id_defaults_to_empty(self, tmp_path: Path):
+        """When session_id is not in args, it should default to empty string."""
+        from wheeler.tools.graph_tools import _write_knowledge_file
+
+        config = self._make_config(tmp_path)
+        args = {"description": "No session finding", "confidence": 0.6}
+        result = json.dumps({"node_id": "F-sess0002", "label": "Finding", "status": "created"})
+
+        _write_knowledge_file("add_finding", args, result, config)
+
+        node = read_node(tmp_path, "F-sess0002")
+        assert node.session_id == ""
+
+    def test_session_id_on_multiple_node_types(self, tmp_path: Path):
+        """session_id should propagate for all mutation node types."""
+        from wheeler.tools.graph_tools import _write_knowledge_file
+
+        config = self._make_config(tmp_path)
+        sid = "session-multi001"
+
+        cases = [
+            ("add_hypothesis", {"statement": "Test", "session_id": sid},
+             {"node_id": "H-sess0003", "label": "Hypothesis", "status": "created"}),
+            ("add_question", {"question": "Test?", "priority": 5, "session_id": sid},
+             {"node_id": "Q-sess0004", "label": "OpenQuestion", "status": "created"}),
+            ("add_note", {"content": "Test note", "session_id": sid},
+             {"node_id": "N-sess0005", "label": "ResearchNote", "status": "created"}),
+        ]
+        for tool_name, args, result_dict in cases:
+            _write_knowledge_file(tool_name, args, json.dumps(result_dict), config)
+
+        for nid in ("H-sess0003", "Q-sess0004", "N-sess0005"):
+            node = read_node(tmp_path, nid)
+            assert node.session_id == sid, f"{nid} missing session_id"
+
 
 # ===================================================================
 # 7. Migration: _graph_data_to_model

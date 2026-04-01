@@ -119,6 +119,52 @@ class TestGenerateId:
         assert len(ids) == 100
 
 
+class TestMutationStability:
+    """Verify that mutation tools include stability in the props dict."""
+
+    @pytest.mark.asyncio
+    async def test_add_finding_includes_stability(self):
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_finding(FakeBackend(), {"description": "test", "confidence": 0.8})
+        assert "stability" in captured_props
+        assert captured_props["stability"] == 0.3  # Finding + generated
+
+    @pytest.mark.asyncio
+    async def test_add_paper_includes_stability(self):
+        from wheeler.tools.graph_tools.mutations import add_paper
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_paper(FakeBackend(), {"title": "Test paper"})
+        assert "stability" in captured_props
+        assert captured_props["stability"] == 0.9  # Paper + reference
+
+    @pytest.mark.asyncio
+    async def test_add_script_includes_stability(self):
+        from wheeler.tools.graph_tools.mutations import add_script
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_script(FakeBackend(), {"path": "/test.py", "language": "python"})
+        assert "stability" in captured_props
+        assert captured_props["stability"] == 0.5  # Script + generated
+
+
 class TestToolImports:
     def test_execute_tool_is_callable(self):
         from wheeler.tools.graph_tools import execute_tool

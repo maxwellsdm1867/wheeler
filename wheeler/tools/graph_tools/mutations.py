@@ -10,6 +10,7 @@ import json
 import logging
 
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS, PREFIX_TO_LABEL, generate_node_id
+from wheeler.provenance import default_stability
 
 from ._common import _now
 
@@ -24,6 +25,8 @@ async def add_finding(backend, args: dict) -> str:
         "confidence": float(args["confidence"]),
         "date": _now(),
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("Finding", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Finding %s (confidence=%.2f)", node_id, float(args["confidence"]))
     return json.dumps({"node_id": node_id, "label": "Finding", "status": "created"})
@@ -37,6 +40,8 @@ async def add_hypothesis(backend, args: dict) -> str:
         "status": args.get("status", "open"),
         "date": _now(),
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("Hypothesis", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Hypothesis %s", node_id)
     return json.dumps({"node_id": node_id, "label": "Hypothesis", "status": "created"})
@@ -50,6 +55,8 @@ async def add_question(backend, args: dict) -> str:
         "priority": int(args.get("priority", 5)),
         "date_added": _now(),
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("OpenQuestion", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created OpenQuestion %s (priority=%d)", node_id, int(args.get("priority", 5)))
     return json.dumps({"node_id": node_id, "label": "OpenQuestion", "status": "created"})
@@ -64,6 +71,8 @@ async def add_dataset(backend, args: dict) -> str:
         "description": args["description"],
         "date_added": _now(),
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("Dataset", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Dataset %s: %s", node_id, args["path"])
     return json.dumps({"node_id": node_id, "label": "Dataset", "status": "created"})
@@ -79,6 +88,8 @@ async def add_paper(backend, args: dict) -> str:
         "year": int(args.get("year", 0)),
         "date_added": _now(),
         "tier": "reference",  # Papers are published — always reference
+        "stability": default_stability("Paper", "reference"),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Paper %s: %s", node_id, args["title"][:60])
     return json.dumps({"node_id": node_id, "label": "Paper", "status": "created"})
@@ -96,6 +107,8 @@ async def add_document(backend, args: dict) -> str:
         "date": now,
         "updated": now,
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("Document", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Document %s: %s", node_id, args["title"][:60])
     return json.dumps({"node_id": node_id, "label": "Document", "status": "created"})
@@ -110,6 +123,8 @@ async def add_note(backend, args: dict) -> str:
         "context": args.get("context", ""),
         "date": _now(),
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("ResearchNote", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created ResearchNote %s: %s", node_id, args.get("title", "")[:60])
     return json.dumps({"node_id": node_id, "label": "ResearchNote", "status": "created"})
@@ -125,6 +140,8 @@ async def add_script(backend, args: dict) -> str:
         "version": args.get("version", ""),
         "date": _now(),
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("Script", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Script %s: %s", node_id, args.get("path", "")[:60])
     return json.dumps({"node_id": node_id, "label": "Script", "status": "created"})
@@ -144,6 +161,7 @@ async def add_execution(backend, args: dict) -> str:
         "description": args.get("description", ""),
         "date": now,
         "tier": args.get("tier", "generated"),
+        "stability": default_stability("Execution", args.get("tier", "generated")),
     })
     logger.info("Created Execution %s (%s): %s", node_id, args.get("kind", ""), args.get("description", "")[:60])
     return json.dumps({"node_id": node_id, "label": "Execution", "status": "created"})
@@ -159,6 +177,8 @@ async def add_ledger(backend, args: dict) -> str:
         "pass_rate": float(args.get("pass_rate", 0.0)),
         "date": _now(),
         "tier": "generated",
+        "stability": default_stability("Ledger", "generated"),
+        "session_id": args.get("session_id", ""),
     })
     logger.info("Created Ledger %s (mode=%s)", node_id, args.get("mode", ""))
     return json.dumps({"node_id": node_id, "label": "Ledger", "status": "created"})

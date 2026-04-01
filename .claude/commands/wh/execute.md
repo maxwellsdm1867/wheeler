@@ -49,18 +49,25 @@ For each task:
 7. Report results and flag anything unexpected
 
 ## Provenance
-Every execution must record full provenance using Script + Execution nodes:
+Every execution must record full provenance using Script + Execution nodes.
 
-1. **Create a Script node** (if the code file isn't already tracked):
-   `add_script(path, language, description)` — use `hash_file` to get the SHA-256
-2. **Create an Execution node**:
-   `add_execution(kind="script", description="...", status="completed")`
-3. **Link Execution to inputs** (activity consumed entities):
-   - `link_nodes(execution_id, script_id, "USED")` — the script that ran
-   - `link_nodes(execution_id, dataset_id, "USED")` — each input dataset
-4. **Link outputs to Execution** (entities produced by activity — note direction flip):
-   - `link_nodes(finding_id, execution_id, "WAS_GENERATED_BY")` — findings produced
-   - `link_nodes(output_dataset_id, execution_id, "WAS_GENERATED_BY")` — output data
+### Provenance Protocol (mandatory)
+
+**When running a script:**
+1. Check if Script node exists for this file: `query_scripts` by path
+2. If not, create one: `add_script` with path and `hash_file` result
+3. Create Execution node: `add_execution` with kind="script", description of what's being done
+4. Link: `link_nodes(execution_id, script_id, "USED")`
+5. Link: `link_nodes(execution_id, dataset_id, "USED")` for each input dataset
+6. After analysis produces results, for each Finding/Dataset created:
+   `link_nodes(finding_id, execution_id, "WAS_GENERATED_BY")`
+
+**When discussion produces insights (findings, hypotheses, questions):**
+1. Create Execution node: `add_execution` with kind="discuss"
+2. Link inputs that were discussed: `link_nodes(execution_id, entity_id, "USED")`
+3. Link outputs: `link_nodes(output_id, execution_id, "WAS_GENERATED_BY")`
+
+Do NOT skip provenance. Every entity created must be traceable to an Execution.
 
 ## Checkpoints
 At decision points, STOP and surface the decision to the scientist:

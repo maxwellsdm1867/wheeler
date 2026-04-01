@@ -47,6 +47,7 @@ Each act is a `.md` file in `.claude/commands/wh/` with YAML frontmatter control
 | `/wh:resume` | Restore context | Read |
 | `/wh:ask` | Query graph, trace provenance | Read + graph reads |
 | `/wh:dream` | Graph consolidation | Graph + Write |
+| `/wh:close` | End-of-session provenance sweep | Read + graph reads/writes |
 | `/wh:ingest` | Bootstrap from existing data | Everything |
 | `/wh:init` | Set up new project | Everything |
 

@@ -76,6 +76,7 @@ Each stage has its own slash command with specific tools and constraints:
 | `/wh:reconvene` | Review results from independent work |
 | `/wh:ingest` | Bootstrap graph from existing code, data, papers |
 | `/wh:dream` | Consolidate: promote tiers, link orphans, flag stale |
+| `/wh:close` | End-of-session provenance sweep |
 | `/wh:pause` / `/wh:resume` | Save and restore investigation state |
 | `/wh:status` | Show progress, suggest next action |
 

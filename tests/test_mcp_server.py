@@ -118,6 +118,22 @@ class TestHashFile:
         assert result == {"path": "/tmp/test.py", "sha256": "abc123"}
 
 
+class TestSessionId:
+    """Verify that _SESSION_ID is generated at module level and has the right format."""
+
+    def test_session_id_format(self):
+        from wheeler.mcp_server import _SESSION_ID
+        assert _SESSION_ID.startswith("session-")
+        hex_part = _SESSION_ID.removeprefix("session-")
+        assert len(hex_part) == 8  # token_hex(4) -> 8 hex chars
+        int(hex_part, 16)  # should not raise — valid hex
+
+    def test_session_id_is_stable_within_import(self):
+        from wheeler.mcp_server import _SESSION_ID as sid1
+        from wheeler.mcp_server import _SESSION_ID as sid2
+        assert sid1 == sid2  # same module, same value
+
+
 class TestGraphToolWrappers:
     """Graph tools delegate to graph_tools.execute_tool — mock that."""
 
@@ -133,6 +149,63 @@ class TestGraphToolWrappers:
         assert call_args[0][0] == "add_finding"
         assert call_args[0][1]["description"] == "test finding"
         assert call_args[0][1]["confidence"] == 0.9
+
+    @pytest.mark.asyncio
+    async def test_add_finding_includes_session_id(self):
+        from wheeler.mcp_server import _SESSION_ID
+        mock_result = json.dumps({"node_id": "F-sid01234", "label": "Finding", "status": "created"})
+        with patch("wheeler.mcp_server.graph_tools.execute_tool", new_callable=AsyncMock, return_value=mock_result) as mock_exec:
+            from wheeler.mcp_server import add_finding
+            await add_finding("session test", 0.7)
+        args_dict = mock_exec.call_args[0][1]
+        assert args_dict["session_id"] == _SESSION_ID
+
+    @pytest.mark.asyncio
+    async def test_mutation_tools_include_session_id(self):
+        """All mutation MCP handlers should pass session_id in their args."""
+        from wheeler.mcp_server import _SESSION_ID
+        from wheeler.mcp_server import (
+            add_finding, add_hypothesis, add_question, add_note,
+            add_dataset, add_paper, add_document,
+        )
+
+        async def _check(coro_fn, mock_result):
+            with patch("wheeler.mcp_server.graph_tools.execute_tool",
+                       new_callable=AsyncMock, return_value=mock_result) as mock_exec:
+                await coro_fn()
+            args_dict = mock_exec.call_args[0][1]
+            tool_name = mock_exec.call_args[0][0]
+            assert "session_id" in args_dict, f"Missing session_id for {tool_name}"
+            assert args_dict["session_id"] == _SESSION_ID, f"Wrong session_id for {tool_name}"
+
+        await _check(
+            lambda: add_finding("test", 0.5),
+            json.dumps({"node_id": "F-sid00001", "label": "Finding", "status": "created"}),
+        )
+        await _check(
+            lambda: add_hypothesis("test"),
+            json.dumps({"node_id": "H-sid00002", "label": "Hypothesis", "status": "created"}),
+        )
+        await _check(
+            lambda: add_question("test?"),
+            json.dumps({"node_id": "Q-sid00003", "label": "OpenQuestion", "status": "created"}),
+        )
+        await _check(
+            lambda: add_note("test note"),
+            json.dumps({"node_id": "N-sid00004", "label": "ResearchNote", "status": "created"}),
+        )
+        await _check(
+            lambda: add_dataset("/data", "csv", "test"),
+            json.dumps({"node_id": "D-sid00005", "label": "Dataset", "status": "created"}),
+        )
+        await _check(
+            lambda: add_paper("test paper"),
+            json.dumps({"node_id": "P-sid00006", "label": "Paper", "status": "created"}),
+        )
+        await _check(
+            lambda: add_document("test doc", "/doc.md"),
+            json.dumps({"node_id": "W-sid00007", "label": "Document", "status": "created"}),
+        )
 
     @pytest.mark.asyncio
     async def test_add_hypothesis_delegates(self):

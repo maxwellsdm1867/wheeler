@@ -366,6 +366,10 @@ def _write_knowledge_file(
         # Tier: papers are always reference, everything else from args
         kwargs["tier"] = "reference" if label == "Paper" else args.get("tier", "generated")
 
+        # Assign default stability based on node type and tier
+        from wheeler.provenance import default_stability
+        kwargs["stability"] = default_stability(label, kwargs["tier"])
+
         # Dataset has "type" in args but "data_type" in model
         if label == "Dataset" and "type" in args:
             kwargs["data_type"] = args["type"]

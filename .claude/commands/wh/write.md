@@ -18,6 +18,7 @@ allowed-tools:
   - mcp__wheeler__query_documents
   - mcp__wheeler__query_papers
   - mcp__wheeler__link_nodes
+  - mcp__wheeler__add_execution
   - mcp__wheeler__run_cypher
 ---
 
@@ -43,6 +44,12 @@ This distinction MUST be visible in all drafts. The scientist needs to see exact
 7. After drafting, call `validate_citations` wheeler MCP tool to check all [NODE_ID] references
 8. After validation passes, create a Document node with `add_document` (title = section name, path = file written, section = section type, status = "draft")
 9. For each [NODE_ID] cited in the text, link it to the Document: `link_nodes(source_id=NODE_ID, target_id=DOC_ID, relationship="APPEARS_IN")`. This creates the full provenance chain from literature through analysis to written output.
+
+### Provenance Protocol (mandatory)
+After creating the Document node, also record the writing activity:
+1. Create Execution node: `add_execution` with kind="write", description of what was drafted
+2. Link inputs: `link_nodes(execution_id, finding_id, "USED")` for each finding cited, `link_nodes(execution_id, paper_id, "USED")` for each paper referenced
+3. Link output: `link_nodes(document_id, execution_id, "WAS_GENERATED_BY")`
 
 ## Style
 - Formal scientific writing

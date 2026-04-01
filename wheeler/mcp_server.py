@@ -9,6 +9,7 @@ Run: python -m wheeler.mcp_server
 from __future__ import annotations
 
 import json
+import secrets
 
 from fastmcp import FastMCP
 
@@ -22,6 +23,9 @@ from wheeler import workspace
 # Configure logging and load config once at startup
 configure_logging()
 _config: WheelerConfig = load_config()
+
+# Unique session ID generated once per MCP server process
+_SESSION_ID: str = f"session-{secrets.token_hex(4)}"
 
 # Lazy-loaded singleton for semantic search
 _embedding_store: object | None = None
@@ -144,7 +148,9 @@ async def show_node(node_id: str) -> dict:
 async def add_finding(description: str, confidence: float) -> dict:
     """Add a Finding to the knowledge graph. Returns the new node ID."""
     result = await graph_tools.execute_tool(
-        "add_finding", {"description": description, "confidence": confidence}, _config
+        "add_finding",
+        {"description": description, "confidence": confidence, "session_id": _SESSION_ID},
+        _config,
     )
     parsed = json.loads(result)
     similar = _check_similar_nodes(description, "Finding", exclude_id=parsed.get("node_id"))
@@ -157,7 +163,9 @@ async def add_finding(description: str, confidence: float) -> dict:
 async def add_hypothesis(statement: str, status: str = "open") -> dict:
     """Add a Hypothesis to the knowledge graph. Returns the new node ID."""
     result = await graph_tools.execute_tool(
-        "add_hypothesis", {"statement": statement, "status": status}, _config
+        "add_hypothesis",
+        {"statement": statement, "status": status, "session_id": _SESSION_ID},
+        _config,
     )
     parsed = json.loads(result)
     similar = _check_similar_nodes(statement, "Hypothesis", exclude_id=parsed.get("node_id"))
@@ -170,7 +178,9 @@ async def add_hypothesis(statement: str, status: str = "open") -> dict:
 async def add_question(question: str, priority: int = 5) -> dict:
     """Add an OpenQuestion to the knowledge graph. Returns the new node ID."""
     result = await graph_tools.execute_tool(
-        "add_question", {"question": question, "priority": priority}, _config
+        "add_question",
+        {"question": question, "priority": priority, "session_id": _SESSION_ID},
+        _config,
     )
     parsed = json.loads(result)
     similar = _check_similar_nodes(question, "OpenQuestion", exclude_id=parsed.get("node_id"))
@@ -184,7 +194,8 @@ async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
     """Create a relationship between two graph nodes."""
     result = await graph_tools.execute_tool(
         "link_nodes",
-        {"source_id": source_id, "target_id": target_id, "relationship": relationship},
+        {"source_id": source_id, "target_id": target_id, "relationship": relationship,
+         "session_id": _SESSION_ID},
         _config,
     )
     return json.loads(result)
@@ -194,7 +205,9 @@ async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
 async def add_dataset(path: str, type: str, description: str) -> dict:
     """Add a Dataset node to the knowledge graph. Returns the new node ID."""
     result = await graph_tools.execute_tool(
-        "add_dataset", {"path": path, "type": type, "description": description}, _config
+        "add_dataset",
+        {"path": path, "type": type, "description": description, "session_id": _SESSION_ID},
+        _config,
     )
     return json.loads(result)
 
@@ -237,6 +250,7 @@ async def add_analysis(
             "hash": script_hash,
             "language": language,
             "version": language_version,
+            "session_id": _SESSION_ID,
         },
         _config,
     )
@@ -247,7 +261,7 @@ async def add_analysis(
 async def set_tier(node_id: str, tier: str) -> dict:
     """Set context tier of a node to 'reference' (established) or 'generated' (new work)."""
     result = await graph_tools.execute_tool(
-        "set_tier", {"node_id": node_id, "tier": tier}, _config
+        "set_tier", {"node_id": node_id, "tier": tier, "session_id": _SESSION_ID}, _config
     )
     return json.loads(result)
 
@@ -257,7 +271,8 @@ async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0)
     """Add a Paper to the knowledge graph for literature provenance. Returns the new node ID."""
     result = await graph_tools.execute_tool(
         "add_paper",
-        {"title": title, "authors": authors, "doi": doi, "year": year},
+        {"title": title, "authors": authors, "doi": doi, "year": year,
+         "session_id": _SESSION_ID},
         _config,
     )
     return json.loads(result)
@@ -268,7 +283,8 @@ async def add_document(title: str, path: str, section: str = "", status: str = "
     """Add a Document to the knowledge graph to track written output. Returns the new node ID."""
     result = await graph_tools.execute_tool(
         "add_document",
-        {"title": title, "path": path, "section": section, "status": status},
+        {"title": title, "path": path, "section": section, "status": status,
+         "session_id": _SESSION_ID},
         _config,
     )
     return json.loads(result)
@@ -278,7 +294,9 @@ async def add_document(title: str, path: str, section: str = "", status: str = "
 async def add_note(content: str, title: str = "", context: str = "") -> dict:
     """Add a ResearchNote to capture an insight, observation, or idea. Returns the new node ID."""
     result = await graph_tools.execute_tool(
-        "add_note", {"content": content, "title": title, "context": context}, _config
+        "add_note",
+        {"content": content, "title": title, "context": context, "session_id": _SESSION_ID},
+        _config,
     )
     return json.loads(result)
 
