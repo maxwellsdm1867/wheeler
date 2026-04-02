@@ -1,10 +1,10 @@
 <p align="center">
   <h1 align="center">WHEELER</h1>
-  <p align="center">Your scientific operating system in Claude Code.</p>
+  <p align="center">Reliable, trustworthy, trackable AI workflows for science.</p>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.5.0-blue" alt="v0.5.0">
+  <img src="https://img.shields.io/badge/v0.5.1-blue" alt="v0.5.1">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -16,23 +16,87 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
-Wheeler is three layers:
+Wheeler makes every AI-produced research artifact traceable. When a finding appears in your manuscript, you can trace it back to the exact script, data, and parameters that produced it — automatically, without manual bookkeeping.
 
-**Acts** — slash commands that guide you through the scientific process. Discuss the question, plan the investigation, execute analyses, capture notes, write up results. Each mode gives Claude the right tools and constraints for that stage. Hand off grinding tasks to run independently. Come back and reconvene.
-
-**File system** — your data, scripts, analysis outputs, notes, and drafts. Wheeler works with your existing project layout — point it at your directories (local, NAS, wherever) and it knows where to find things. Agents know where data lives, where scripts are, and where results go.
-
-**Knowledge graph** — the index that connects everything. `knowledge/` holds JSON metadata for each node. The graph database stores relationships, embeddings, and file pointers. Which finding came from which analysis, which paper informed which method, what questions are still open. The graph is the library catalog. The files are the books.
+Built natively on Claude Code. Runs 100% locally. No API keys, no cloud services. Your data never leaves your machine.
 
 > Named after great physicist John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
-Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
+---
+
+## Why Wheeler
+
+Science requires reproducibility. As AI becomes embedded in research workflows — data analysis, literature review, manuscript drafting — the gap between "AI helped me" and "here's the auditable chain of how this result was produced" becomes a credibility problem.
+
+Wheeler solves this with two guarantees:
+
+**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full provenance chain — the agent focuses on science, infrastructure handles bookkeeping.
+
+**Changes propagate.** When a script changes or data is updated, Wheeler flags every downstream finding as stale and reduces its stability score. You always know what to trust and what needs re-verification.
+
+---
+
+## How It Works
+
+Wheeler wraps every AI action in [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provenance. The core primitive is the **provenance-completing tool call**:
+
+```python
+add_finding(
+    description="Calcium oscillation frequency scales with cell density",
+    confidence=0.85,
+    execution_kind="script",                    # auto-creates Execution activity
+    used_entities="D-abc123,S-def456",          # auto-links inputs
+    execution_description="cold exposure run"
+)
+```
+
+One call. Wheeler internally:
+1. Creates the Finding entity
+2. Creates an Execution activity node (what process produced this)
+3. Links Finding --WAS_GENERATED_BY--> Execution (output provenance)
+4. Links Execution --USED--> Dataset, Script (input provenance)
+5. Sets stability score (0.3 for LLM-generated, 0.9 for papers, 1.0 for primary data)
+6. Persists to both Neo4j and JSON file (dual-write, no single point of failure)
+
+The provenance chain is always complete because the agent never had to remember to create it.
+
+### Stability Scoring
+
+Every entity carries a stability score (0.0-1.0) encoding epistemic trust:
+
+| Type | Score | Meaning |
+|------|-------|---------|
+| Primary data (recordings) | 1.0 | Immutable source data |
+| Published papers | 0.9 | Peer-reviewed, unlikely to change |
+| Verified findings | 0.8 | Human-checked, reproducible |
+| Validated scripts | 0.7 | Tested code |
+| LLM-generated findings | 0.3 | Plausible but unverified |
+
+When an upstream entity changes, stability decays downstream: `new = source * (0.8 ^ hops)`. A script edit at stability 0.3 reduces a 2-hop-away document to 0.19. Everything downstream is flagged stale.
+
+### The Provenance Chain
+
+```text
+(:Paper {title: "Bhatt 2024"})
+  <-[:USED]- (:Execution {kind: "script"})
+(:Script {path: "scripts/spike_gen.py", hash: "a3f2..."})
+  <-[:USED]- (:Execution)
+(:Dataset {path: "data/cell_042.mat"})
+  <-[:USED]- (:Execution)
+
+(:Finding {description: "Ca freq scales with density"})
+  -[:WAS_GENERATED_BY]-> (:Execution)
+  -[:SUPPORTS]-> (:Hypothesis)
+  -[:APPEARS_IN]-> (:Document)
+```
+
+Every entity traces back through PROV relationships (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY) to its sources. Semantic relationships (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN) carry scientific meaning on top.
 
 ---
 
 ## The Workflow
 
-Wheeler gives you a fluid cycle — not a rigid pipeline. You can enter at any point, skip stages, or repeat them.
+Wheeler gives you a fluid cycle — not a rigid pipeline. Enter at any point, skip stages, repeat them.
 
 ```text
  ┌─────────────────────────────────────────────────────┐
@@ -40,27 +104,25 @@ Wheeler gives you a fluid cycle — not a rigid pipeline. You can enter at any p
  │  discuss  plan  chat  pair  write  note  ask         │
  └────────────────────────┬────────────────────────────┘
                           │ remaining work is grinding
-                          ▼
+                          v
  ┌─────────────────────────────────────────────────────┐
  │  HANDOFF            propose independent tasks        │
  │  handoff            you approve, modify, or keep     │
  │                     talking                          │
  └────────────────────────┬────────────────────────────┘
                           │
-                          ▼
+                          v
  ┌─────────────────────────────────────────────────────┐
  │  INDEPENDENT        wheeler works alone              │
  │  wh queue "..."     logged, stops at decision points │
  └────────────────────────┬────────────────────────────┘
                           │
-                          ▼
+                          v
  ┌─────────────────────────────────────────────────────┐
  │  RECONVENE          results + flags + surprises      │
  │  reconvene          back to TOGETHER                 │
  └─────────────────────────────────────────────────────┘
 ```
-
-Each stage has its own slash command with specific tools and constraints:
 
 | Command | What it does |
 |---------|-------------|
@@ -82,65 +144,71 @@ Each stage has its own slash command with specific tools and constraints:
 
 **Wheeler never does your thinking.** Every task gets tagged — SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
 
-## The Knowledge
+---
 
-Two kinds of files: **graph metadata** (JSON, the index) and **research artifacts** (markdown, the actual writing).
+## The Knowledge Graph
 
-**Graph metadata** — `knowledge/*.json`. Structured data the system indexes:
+Two kinds of files: **graph metadata** (JSON, the provenance index) and **research artifacts** (markdown, the actual writing).
+
+**Graph metadata** — `knowledge/*.json`. One file per entity, dual-written to Neo4j:
 
 ```
 knowledge/
-  F-3a2b1c4d.json   # Finding: {description, confidence, tier, ...}
-  N-4e5f6a7b.json   # Note: {title, file_path: ".notes/N-4e5f6a7b.md", ...}
-  P-a4f20e91.json   # Paper: {title, authors, doi, year, ...}
-  S-2f4a7b8c.json   # Script: {path, hash, language, ...}
-  X-9c1d3e5f.json   # Execution: {kind, agent_id, status, ...}
+  F-3a2b1c4d.json   # Finding: {description, confidence, stability: 0.3, ...}
+  S-2f4a7b8c.json   # Script: {path, hash, language, stability: 0.5, ...}
+  X-9c1d3e5f.json   # Execution: {kind: "script", agent_id: "wheeler", ...}
+  P-a4f20e91.json   # Paper: {title, authors, doi, stability: 0.9, ...}
+  D-7e8f9a0b.json   # Dataset: {path, data_type, stability: 1.0, ...}
 ```
 
 **Research artifacts** — your actual writing, as natural files:
 
 ```
-.notes/
-  N-4e5f6a7b.md     # the actual research note (markdown + YAML frontmatter)
-docs/
-  spike-generation.md  # a draft from /wh:write
+.notes/N-4e5f6a7b.md     # research note (markdown + YAML frontmatter)
+docs/spike-generation.md  # draft from /wh:write
+scripts/analyze_temp.py   # your analysis code
+data/cell_042.mat         # your data
 ```
 
-```markdown
----
-id: N-4e5f6a7b
-title: "Temperature dependence of calcium oscillations"
-created: 2026-03-26
-context: "Reviewing cell_042 recordings"
----
+The graph is the index. The files are the work. When you need connections ("what findings came from this dataset?"), ask the graph. When you need content, read the file.
 
-The oscillation frequency drops when we cool the bath below 30C.
-Could this be a channel gating effect?
-```
+### 11 Entity Types
 
-The graph node is the index card. The markdown file is the real work. When you need connections ("what findings came from this dataset?"), ask the graph. When you need content, read the file.
+| Prefix | Type | What it tracks |
+|--------|------|---------------|
+| F | Finding | A result or observation with confidence score |
+| H | Hypothesis | A proposed explanation (open/supported/rejected) |
+| Q | OpenQuestion | A knowledge gap with priority |
+| D | Dataset | A data file (path, type, hash) |
+| P | Paper | A literature reference (always tier=reference) |
+| S | Script | A code file (path, hash, language) |
+| X | Execution | An activity: what ran, when, what it consumed/produced |
+| W | Document | A draft or manuscript |
+| N | ResearchNote | A quick insight or observation |
+| PL | Plan | An investigation plan |
+| L | Ledger | A validation record |
 
-`wh show F-3a2b` renders any node as readable markdown. `search_findings "calcium dynamics"` finds related nodes by meaning, not just keywords.
+### 14 Relationship Types
 
-### Tiers
+**W3C PROV standard (6)** — how things were made:
+- USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
 
-Every node is tagged `reference` (established) or `generated` (new work). Papers are always reference. Findings start as generated and get promoted after verification.
-
-### Provenance
-
-Every link is tracked using W3C PROV standard relationships. Scripts carry file hashes. Executions record what ran, when, and what it consumed. If a script changes after an execution, downstream findings are flagged as STALE with reduced stability scores.
-
-```text
-Execution ──USED──> Script (path, hash)
-Execution ──USED──> Dataset (path)
-Execution ──USED──> Paper (reference)
-Finding ──WAS_GENERATED_BY──> Execution
-Finding ──APPEARS_IN──> Document
-```
+**Wheeler semantic (8)** — what things mean to each other:
+- SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS
 
 ### Citations
 
 In write mode, research claims are validated deterministically (regex + Cypher). Cite your data: `[F-3a2b]`. Mark interpretations. No citation needed for speculation or textbook knowledge.
+
+### Invalidation
+
+When a script file changes:
+1. `detect_stale` compares stored hashes against files on disk
+2. Changed scripts get stability reduced to 0.3
+3. All downstream entities (findings, documents) are flagged stale
+4. Stability decays with distance: `source_stability * (0.8 ^ hops)`
+
+You always know what's current and what needs re-verification.
 
 ---
 
@@ -167,7 +235,7 @@ wheeler-tools graph init
 **Graph backend** — Neo4j via Docker:
 
 ```bash
-# Quick start with docker-compose
+# Quick start
 docker compose up -d
 
 # Or manually
@@ -179,7 +247,7 @@ docker run -d --name neo4j \
 
 Browse your graph at http://localhost:7474.
 
-**Semantic search** (optional):
+**Semantic search** (included by default):
 
 ```bash
 pip install -e ".[search]"             # adds fastembed (~33MB model, local-only)
@@ -205,6 +273,8 @@ wh dream                                      # graph consolidation
 wh status                                     # quick status check
 ```
 
+---
+
 ## Architecture
 
 ```text
@@ -212,11 +282,13 @@ wh status                                     # quick status check
 │  ACTS          /wh:* slash commands                 │  What you DO
 │                bin/wh headless runner                │
 ├─────────────────────────────────────────────────────┤
-│  FILE SYSTEM   .notes/*.md (prose)                  │  What you KNOW
-│                .plans/*.md, docs/, scripts/          │  (real artifacts)
+│  FILE SYSTEM   .notes/*.md, docs/, scripts/         │  What you KNOW
+│                .plans/*.md (state)                   │  (real artifacts)
 ├─────────────────────────────────────────────────────┤
-│  GRAPH         knowledge/*.json (index)             │  How things CONNECT
-│                metadata + relationships              │
+│  PROVENANCE    knowledge/*.json (dual-write)        │  What you can TRACE
+│  ENGINE        Neo4j: W3C PROV relationships         │
+│                Stability scores + invalidation       │
+│                Provenance-completing MCP tools        │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -224,10 +296,12 @@ wh status                                     # quick status check
 Claude Code (interactive)
     ├── /wh:* slash commands (.claude/commands/wh/*.md)
     │       ├── YAML frontmatter: tool restrictions per mode
-    │       └── System prompt: workflow protocol
+    │       └── System prompt: workflow + provenance protocol
     │
     ├── MCP Servers
-    │       ├── wheeler (30 tools) — graph, knowledge, citations, search, provenance, raw Cypher
+    │       ├── wheeler (34 tools) — provenance-completing mutations,
+    │       │     queries, search, citations, staleness detection,
+    │       │     request logging, raw Cypher
     │       ├── matlab — MATLAB execution (optional)
     │       └── papers — literature search (optional)
     │
@@ -238,7 +312,7 @@ bin/wh (headless)
 | When you're here | When you're away |
 | ---------------- | ---------------- |
 | Loose, creative, freeform | Structured, validated, logged |
-| Graph optional | Graph mandatory |
+| Provenance auto-captured | Provenance mandatory |
 | You are quality control | System is quality control |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
@@ -247,44 +321,44 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
 
 ```text
 wheeler/
-├── models.py                # Pydantic v2 models, prefix mappings (source of truth)
+├── models.py                # Pydantic v2: 11 node types, prefix mappings
 ├── config.py                # YAML loader, Pydantic config models
-├── mcp_server.py            # FastMCP — 28 tools exposed to Claude Code
+├── provenance.py            # Stability scoring, invalidation propagation
+├── mcp_server.py            # FastMCP — 34 provenance-completing tools
+├── request_log.py           # Structured request logging (JSONL)
 ├── knowledge/
 │   ├── store.py             # File I/O: read, write, list, delete (atomic)
 │   ├── render.py            # Markdown rendering for wh show
-│   └── migrate.py           # Migrate existing graph nodes to files
+│   └── migrate.py           # Graph ↔ filesystem migration
 ├── graph/
-│   ├── backend.py           # GraphBackend ABC + get_backend() factory
-│   ├── neo4j_backend.py     # Neo4j backend (default)
-│   ├── schema.py            # Constraints, indexes, generate_node_id()
+│   ├── backend.py           # GraphBackend ABC + factory
+│   ├── neo4j_backend.py     # Neo4j backend
+│   ├── schema.py            # W3C PROV constraints, indexes, ID generation
 │   ├── context.py           # Tier-separated context injection
 │   ├── provenance.py        # Script hashing, staleness detection
-│   └── migration_prov.py    # PROV schema migration (Analysis → Script + Execution)
+│   ├── trace.py             # Provenance chain traversal
+│   └── migration_prov.py    # PROV schema migration tool
 ├── search/
-│   └── embeddings.py        # EmbeddingStore (fastembed + numpy)
-├── tools/
-│   ├── graph_tools/         # Mutations + queries + dual-write dispatch
-│   └── cli.py               # CLI: show, migrate, graph ops, citations
+│   ├── embeddings.py        # EmbeddingStore (fastembed + numpy)
+│   └── retrieval.py         # Multi-channel search with RRF fusion
 ├── validation/
 │   └── citations.py         # Regex extraction + Cypher validation
+├── tools/
+│   ├── graph_tools/         # Provenance-completing mutations + queries
+│   └── cli.py               # CLI: show, migrate, graph ops, citations
 └── workspace.py             # Project file scanner
 
-knowledge/                    # Graph metadata (JSON index)
-.notes/                       # Research notes (markdown artifacts)
-.plans/                       # Investigation state, plans, summaries
-.logs/                        # Headless task output
-.claude/commands/wh/          # Slash commands (acts)
-bin/wh                        # Headless launcher
-tests/                        # 490 tests
+tests/                        # 665 tests
+docs/                         # Research docs, project spec
 ```
 
 ## Development
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v                 # unit tests
+python -m pytest tests/ -v                 # unit + integration tests (665 tests)
 python -m pytest tests/e2e/ -v             # e2e tests (requires Neo4j)
+python tests/evaluation/eval_retrieval.py  # retrieval quality evaluation
 ```
 
 Set `WHEELER_LOG_LEVEL=DEBUG` for verbose output.
