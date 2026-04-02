@@ -16,9 +16,9 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
-Wheeler makes every AI-produced research artifact traceable. When a finding appears in your manuscript, you can trace it back to the exact script, data, and parameters that produced it — automatically, without manual bookkeeping.
+Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research — discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other. The graph serves two purposes: it provides agents with context about your project's structure and dependencies, and it makes every AI-produced result traceable back to the exact script, data, and parameters that produced it — automatically, without manual bookkeeping.
 
-Built natively on Claude Code. Runs 100% locally. No API keys, no cloud services. Your data never leaves your machine.
+Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
 
 > Named after great physicist John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
