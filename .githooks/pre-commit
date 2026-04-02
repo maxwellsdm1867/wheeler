@@ -70,8 +70,13 @@ else
     pass "API key safety (no staged files)"
 fi
 
-# ── Check 2: Tests pass ──────────────────────────────────────────
-if [[ -d ".venv" ]]; then
+# ── Check 2: Tests pass (skip if only docs/markdown changed) ─────
+# Detect if any Python or config files are staged
+PYTHON_CHANGED=$(echo "$STAGED_FILES" | grep -E '\.(py|toml|cfg|yaml|yml)$' || true)
+
+if [[ -z "$PYTHON_CHANGED" ]]; then
+    pass "Tests ${DIM}(skipped, no code changes)${RESET}"
+elif [[ -d ".venv" ]]; then
     info "Running tests..."
     TEST_OUTPUT=$(.venv/bin/python -m pytest tests/ -q --tb=short 2>&1) || true
     TEST_EXIT=${PIPESTATUS[0]:-$?}
@@ -79,7 +84,7 @@ if [[ -d ".venv" ]]; then
     # Check if pytest actually reported failures
     if echo "$TEST_OUTPUT" | grep -qE "^(FAILED|ERROR)" || echo "$TEST_OUTPUT" | grep -qE "[0-9]+ failed"; then
         FAIL_COUNT=$(echo "$TEST_OUTPUT" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo "?")
-        fail "Tests — ${FAIL_COUNT} failed"
+        fail "Tests: ${FAIL_COUNT} failed"
         echo "$TEST_OUTPUT" | grep -E "^(FAILED|ERROR|tests/)" | head -10 | while read -r line; do
             echo -e "    ${DIM}${line}${RESET}"
         done
@@ -88,7 +93,7 @@ if [[ -d ".venv" ]]; then
         pass "Tests ${DIM}(${PASS_COUNT})${RESET}"
     fi
 else
-    warn "Tests skipped — .venv not found"
+    warn "Tests skipped: .venv not found"
 fi
 
 # ── Check 3: Type checking ───────────────────────────────────────
