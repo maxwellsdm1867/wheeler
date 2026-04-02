@@ -1,14 +1,20 @@
 services:
   neo4j:
-    image: neo4j:community
+    image: neo4j:5
     container_name: wheeler-neo4j
     ports:
-      - "7687:7687"
-      - "7474:7474"
+      - "7474:7474"  # Browser UI
+      - "7687:7687"  # Bolt protocol
     environment:
       NEO4J_AUTH: neo4j/research-graph
+      NEO4J_PLUGINS: '[]'
     volumes:
       - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "neo4j status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   neo4j_data:

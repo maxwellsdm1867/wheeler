@@ -1,0 +1,11 @@
+.venv/
+.kuzu/
+.logs/
+.notes/
+.plans/
+.wheeler/
+knowledge/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/

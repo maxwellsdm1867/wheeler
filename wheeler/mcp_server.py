@@ -8,14 +8,19 @@ Run: python -m wheeler.mcp_server
 
 from __future__ import annotations
 
+import functools
 import json
 import secrets
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastmcp import FastMCP
 
 from wheeler.config import configure_logging, load_config, WheelerConfig
 from wheeler.graph import context, schema
 from wheeler.graph import provenance
+from wheeler.request_log import RequestLog, RequestLogger
 from wheeler.tools import graph_tools
 from wheeler.validation import citations
 from wheeler import workspace
@@ -26,6 +31,9 @@ _config: WheelerConfig = load_config()
 
 # Unique session ID generated once per MCP server process
 _SESSION_ID: str = f"session-{secrets.token_hex(4)}"
+
+# Request logger — append-only JSONL in .wheeler/
+_request_logger = RequestLogger(Path(".wheeler"))
 
 # Lazy-loaded singleton for semantic search
 _embedding_store: object | None = None
@@ -49,6 +57,49 @@ mcp = FastMCP(
 )
 
 
+def _logged(func):
+    """Wrap an MCP tool handler with request logging."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        tool_name = func.__name__
+        try:
+            result = await func(*args, **kwargs)
+            elapsed = (time.perf_counter() - start) * 1000
+            node_id = ""
+            label = ""
+            if isinstance(result, dict):
+                node_id = result.get("node_id", "") or ""
+                label = result.get("label", "") or ""
+            _request_logger.log(RequestLog(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                tool_name=tool_name,
+                latency_ms=round(elapsed, 1),
+                status="ok",
+                session_id=_SESSION_ID,
+                node_id=str(node_id),
+                label=str(label),
+                error="",
+            ))
+            return result
+        except Exception as exc:
+            elapsed = (time.perf_counter() - start) * 1000
+            _request_logger.log(RequestLog(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                tool_name=tool_name,
+                latency_ms=round(elapsed, 1),
+                status="error",
+                session_id=_SESSION_ID,
+                node_id="",
+                label="",
+                error=str(exc),
+            ))
+            raise
+
+    return wrapper
+
+
 def _check_similar_nodes(text: str, label: str, exclude_id: str | None = None) -> list[dict]:
     """Check for similar existing nodes. Returns matches or empty list.
 
@@ -69,6 +120,7 @@ def _check_similar_nodes(text: str, label: str, exclude_id: str | None = None) -
 
 
 @mcp.tool()
+@_logged
 async def graph_health() -> dict:
     """Check graph database connectivity and report diagnostics.
 
@@ -108,12 +160,14 @@ async def graph_health() -> dict:
 
 
 @mcp.tool()
+@_logged
 async def graph_status() -> dict:
     """Return node counts per label in the knowledge graph."""
     return await schema.get_status(_config)
 
 
 @mcp.tool()
+@_logged
 async def graph_context() -> str:
     """Fetch size-limited graph context (recent findings, open questions, hypotheses)."""
     return await context.fetch_context(_config)
@@ -123,6 +177,7 @@ async def graph_context() -> str:
 
 
 @mcp.tool()
+@_logged
 async def show_node(node_id: str) -> dict:
     """Read the full content of a knowledge node from its JSON file.
 
@@ -145,6 +200,7 @@ async def show_node(node_id: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def add_finding(
     description: str,
     confidence: float,
@@ -176,6 +232,7 @@ async def add_finding(
 
 
 @mcp.tool()
+@_logged
 async def add_hypothesis(
     statement: str,
     status: str = "open",
@@ -204,6 +261,7 @@ async def add_hypothesis(
 
 
 @mcp.tool()
+@_logged
 async def add_question(
     question: str,
     priority: int = 5,
@@ -232,6 +290,7 @@ async def add_question(
 
 
 @mcp.tool()
+@_logged
 async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
     """Create a relationship between two graph nodes."""
     result = await graph_tools.execute_tool(
@@ -244,6 +303,7 @@ async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def add_dataset(path: str, type: str, description: str) -> dict:
     """Add a Dataset node to the knowledge graph. Returns the new node ID."""
     result = await graph_tools.execute_tool(
@@ -255,6 +315,7 @@ async def add_dataset(path: str, type: str, description: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def add_analysis(
     script_path: str,
     language: str,
@@ -300,6 +361,7 @@ async def add_analysis(
 
 
 @mcp.tool()
+@_logged
 async def set_tier(node_id: str, tier: str) -> dict:
     """Set context tier of a node to 'reference' (established) or 'generated' (new work)."""
     result = await graph_tools.execute_tool(
@@ -309,6 +371,7 @@ async def set_tier(node_id: str, tier: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0) -> dict:
     """Add a Paper to the knowledge graph for literature provenance. Returns the new node ID."""
     result = await graph_tools.execute_tool(
@@ -321,6 +384,7 @@ async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0)
 
 
 @mcp.tool()
+@_logged
 async def add_document(
     title: str,
     path: str,
@@ -349,6 +413,7 @@ async def add_document(
 
 
 @mcp.tool()
+@_logged
 async def add_note(
     content: str,
     title: str = "",
@@ -378,6 +443,7 @@ async def add_note(
 
 
 @mcp.tool()
+@_logged
 async def query_findings(keyword: str = "", limit: int = 10) -> dict:
     """Search findings in the knowledge graph, optionally filtered by keyword."""
     result = await graph_tools.execute_tool(
@@ -387,6 +453,7 @@ async def query_findings(keyword: str = "", limit: int = 10) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def query_hypotheses(status: str = "all", limit: int = 10) -> dict:
     """List hypotheses, optionally filtered by status (open/supported/rejected/all)."""
     result = await graph_tools.execute_tool(
@@ -396,6 +463,7 @@ async def query_hypotheses(status: str = "all", limit: int = 10) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def query_open_questions(limit: int = 10) -> dict:
     """List open questions from the knowledge graph, sorted by priority."""
     result = await graph_tools.execute_tool(
@@ -405,6 +473,7 @@ async def query_open_questions(limit: int = 10) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def query_datasets(keyword: str = "", limit: int = 10) -> dict:
     """Search Dataset nodes in the knowledge graph."""
     result = await graph_tools.execute_tool(
@@ -414,6 +483,7 @@ async def query_datasets(keyword: str = "", limit: int = 10) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def query_papers(keyword: str = "", limit: int = 10) -> dict:
     """Search Paper nodes in the knowledge graph by title or authors."""
     result = await graph_tools.execute_tool(
@@ -423,6 +493,7 @@ async def query_papers(keyword: str = "", limit: int = 10) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def query_notes(keyword: str = "", limit: int = 10) -> dict:
     """Search research notes in the knowledge graph."""
     result = await graph_tools.execute_tool(
@@ -432,6 +503,7 @@ async def query_notes(keyword: str = "", limit: int = 10) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def query_documents(keyword: str = "", status: str = "", limit: int = 10) -> dict:
     """Search Document nodes in the knowledge graph."""
     result = await graph_tools.execute_tool(
@@ -441,6 +513,7 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
 
 
 @mcp.tool()
+@_logged
 async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
     """Search Script nodes in the knowledge graph by path or language (legacy alias for query_scripts)."""
     result = await graph_tools.execute_tool(
@@ -450,6 +523,7 @@ async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def graph_gaps() -> dict:
     """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates."""
     result = await graph_tools.execute_tool("graph_gaps", {}, _config)
@@ -479,39 +553,45 @@ async def graph_gaps() -> dict:
 
 
 @mcp.tool()
-async def search_findings(query: str, limit: int = 10, label: str = "") -> dict:
-    """Semantic search across knowledge graph nodes by meaning, not just keywords.
+@_logged
+async def search_findings(
+    query: str,
+    limit: int = 10,
+    label: str = "",
+    mode: str = "multi",
+) -> dict:
+    """Search across knowledge graph nodes using multi-channel retrieval.
 
-    Uses embeddings to find findings, hypotheses, questions, and other nodes
-    that are semantically similar to the query text. Much more powerful than
-    keyword search — finds conceptually related results even with different wording.
+    Combines semantic (embedding similarity), keyword (graph queries), and
+    temporal (recency) channels via Reciprocal Rank Fusion for better recall
+    than any single channel alone.
 
     Args:
         query: Natural language search query
         limit: Maximum results (default 10)
         label: Optional filter by node type (Finding, Hypothesis, OpenQuestion, Paper, Dataset, Document)
+        mode: Retrieval mode — "multi" (default, all channels), "semantic" (embeddings only),
+              "keyword" (graph keyword only), "temporal" (most recent only)
     """
     try:
-        store = _get_embedding_store()
-        results = store.search(query, limit=limit, label_filter=label or None)
+        from wheeler.search.retrieval import multi_search
+
+        results = await multi_search(
+            query, _config, limit=limit, label=label, mode=mode,
+        )
         return {
             "results": [
                 {
-                    "node_id": r.node_id,
-                    "label": r.label,
-                    "text": r.text,
-                    "score": round(r.score, 4),
+                    "node_id": r.get("id", ""),
+                    "label": r.get("type", ""),
+                    "text": _extract_display_text(r),
+                    "score": r.get("rrf_score", 0.0),
                 }
                 for r in results
             ],
             "count": len(results),
             "query": query,
-        }
-    except ImportError:
-        return {
-            "error": "Semantic search not available. Install with: pip install wheeler[search]",
-            "results": [],
-            "count": 0,
+            "mode": mode,
         }
     except Exception as exc:
         return {
@@ -521,7 +601,20 @@ async def search_findings(query: str, limit: int = 10, label: str = "") -> dict:
         }
 
 
+def _extract_display_text(node: dict) -> str:
+    """Extract the best display text from a node dict.
+
+    Tries common text fields in priority order.
+    """
+    for field in ("description", "statement", "question", "title", "content"):
+        val = node.get(field)
+        if val:
+            return val
+    return ""
+
+
 @mcp.tool()
+@_logged
 async def index_node(node_id: str, label: str, text: str) -> dict:
     """Add or update a node's semantic embedding for search.
 
@@ -548,12 +641,14 @@ async def index_node(node_id: str, label: str, text: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def extract_citations(text: str) -> list[str]:
     """Extract all node ID citations ([F-3a2b] format) from text using regex."""
     return citations.extract_citations(text)
 
 
 @mcp.tool()
+@_logged
 async def validate_citations(text: str) -> dict:
     """Validate all citations in text against Neo4j. Checks existence and provenance."""
     results = await citations.validate_citations(text, _config)
@@ -577,6 +672,7 @@ async def validate_citations(text: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def scan_workspace() -> dict:
     """Scan the project directory for scripts and data files."""
     summary = workspace.scan_workspace(_config.workspace, _config.paths)
@@ -598,6 +694,7 @@ async def scan_workspace() -> dict:
 
 
 @mcp.tool()
+@_logged
 async def detect_stale() -> list[dict]:
     """Find Script nodes whose file has been modified since last recorded hash."""
     stale = await provenance.detect_stale_scripts(_config)
@@ -613,6 +710,7 @@ async def detect_stale() -> list[dict]:
 
 
 @mcp.tool()
+@_logged
 async def hash_file(path: str) -> dict:
     """Compute SHA-256 hash of a file for provenance tracking."""
     sha = provenance.hash_file(path)
@@ -620,6 +718,7 @@ async def hash_file(path: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def scan_dependencies(script_path: str, link_to_graph: bool = False) -> dict:
     """Scan a Python script for imports, data file references, and function calls.
 
@@ -701,6 +800,7 @@ async def _link_dependencies(
 
 
 @mcp.tool()
+@_logged
 async def run_cypher(query: str) -> dict:
     """Run a read-only Cypher query against the graph database.
 
@@ -733,10 +833,20 @@ async def run_cypher(query: str) -> dict:
 
 
 @mcp.tool()
+@_logged
 async def init_schema() -> dict:
     """Apply all constraints and indexes to Neo4j. Returns count of applied statements."""
     applied = await schema.init_schema(_config)
     return {"applied": len(applied)}
+
+
+# --- Request log ---
+
+
+@mcp.tool()
+async def request_log_summary() -> dict:
+    """Return summary stats of recent MCP tool calls (latency, error rate, call counts)."""
+    return _request_logger.summary()
 
 
 # --- Startup health check ---

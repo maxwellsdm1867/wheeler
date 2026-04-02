@@ -470,28 +470,30 @@ class TestConfigIntegration:
 
 
 class TestMCPSearchFindings:
-    """Test the MCP search_findings tool via mocking."""
+    """Test the MCP search_findings tool via mocking multi_search."""
 
     @pytest.mark.asyncio
     async def test_search_findings_returns_structure(self) -> None:
         mock_results = [
-            SearchResult(
-                node_id="F-abc12345",
-                label="Finding",
-                text="Neurons fire in bursts",
-                score=0.9234,
-            ),
-            SearchResult(
-                node_id="H-def67890",
-                label="Hypothesis",
-                text="Bursting is calcium-driven",
-                score=0.8100,
-            ),
+            {
+                "id": "F-abc12345",
+                "type": "Finding",
+                "description": "Neurons fire in bursts",
+                "rrf_score": 0.9234,
+            },
+            {
+                "id": "H-def67890",
+                "type": "Hypothesis",
+                "statement": "Bursting is calcium-driven",
+                "rrf_score": 0.8100,
+            },
         ]
-        mock_store = MagicMock()
-        mock_store.search.return_value = mock_results
 
-        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            return_value=mock_results,
+        ):
             from wheeler.mcp_server import search_findings
 
             result = await search_findings("neural bursting calcium", limit=5)
@@ -512,10 +514,11 @@ class TestMCPSearchFindings:
 
     @pytest.mark.asyncio
     async def test_search_findings_handles_empty_results(self) -> None:
-        mock_store = MagicMock()
-        mock_store.search.return_value = []
-
-        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
             from wheeler.mcp_server import search_findings
 
             result = await search_findings("nonexistent topic")
@@ -526,17 +529,20 @@ class TestMCPSearchFindings:
 
     @pytest.mark.asyncio
     async def test_search_findings_with_label_filter(self) -> None:
-        mock_store = MagicMock()
-        mock_store.search.return_value = []
-
-        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_multi:
             from wheeler.mcp_server import search_findings
 
             await search_findings("query", limit=5, label="Finding")
 
-        mock_store.search.assert_called_once_with(
-            "query", limit=5, label_filter="Finding",
-        )
+        mock_multi.assert_awaited_once()
+        call_kwargs = mock_multi.call_args
+        # multi_search is called with query, config, limit, label, mode
+        assert call_kwargs[1]["limit"] == 5
+        assert call_kwargs[1]["label"] == "Finding"
 
 
 # ---------------------------------------------------------------------------

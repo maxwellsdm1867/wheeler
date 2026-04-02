@@ -1,0 +1,182 @@
+[
+  {
+    "query": "calcium oscillation frequency",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["calcium", "oscillation", "frequency"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "sodium channel conductance",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["sodium", "channel", "conductance"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "membrane potential resting state",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["membrane", "potential", "resting"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "action potential threshold voltage",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["action", "potential", "threshold"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "synaptic vesicle release probability",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["synaptic", "vesicle", "release"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "Hodgkin Huxley model parameters",
+    "expected_node_type": "Paper",
+    "expected_keywords": ["Hodgkin", "Huxley"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "patch clamp recording method",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["patch", "clamp", "recording"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "EPSP amplitude measurement",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["EPSP", "amplitude"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "firing rate interneuron",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["firing", "rate", "interneuron"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "potassium delayed rectifier",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["potassium", "delayed", "rectifier"],
+    "difficulty": "simple"
+  },
+  {
+    "query": "what affects spike timing in cold conditions",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["temperature", "spike", "cold"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "how do neurons communicate at junctions",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["synapse", "transmission", "neurotransmitter"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "brain waves during sleep",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["oscillation", "sleep", "EEG"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "energy consumption in neural tissue",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["metabolic", "ATP", "mitochondria"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "learning and memory molecular basis",
+    "expected_node_type": "Hypothesis",
+    "expected_keywords": ["plasticity", "LTP", "NMDA"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "cell death in neurodegeneration",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["apoptosis", "neurodegeneration", "toxicity"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "signal propagation speed along axons",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["conduction", "velocity", "myelination"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "electrical properties of the cell barrier",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["membrane", "resistance", "capacitance"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "rhythmic activity in neural circuits",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["oscillation", "rhythm", "circuit"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "drug effects on brain electrical activity",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["pharmacology", "receptor", "modulation"],
+    "difficulty": "semantic"
+  },
+  {
+    "query": "which scripts produced findings about channel gating",
+    "expected_node_type": "Execution",
+    "expected_keywords": ["channel", "gating"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "what hypotheses are supported by calcium imaging results",
+    "expected_node_type": "Hypothesis",
+    "expected_keywords": ["calcium", "imaging", "hypothesis"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "which datasets were used in spike sorting analyses",
+    "expected_node_type": "Dataset",
+    "expected_keywords": ["spike", "sorting", "dataset"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "papers cited by findings about synaptic plasticity",
+    "expected_node_type": "Paper",
+    "expected_keywords": ["plasticity", "synaptic", "cite"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "findings that contradict the inhibitory dominance hypothesis",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["inhibitory", "contradict"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "what open questions arose from voltage clamp experiments",
+    "expected_node_type": "OpenQuestion",
+    "expected_keywords": ["voltage", "clamp", "question"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "trace provenance of the membrane time constant finding",
+    "expected_node_type": "Execution",
+    "expected_keywords": ["membrane", "time", "constant", "provenance"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "which analyses depend on the raw ephys recording dataset",
+    "expected_node_type": "Execution",
+    "expected_keywords": ["ephys", "recording", "analysis"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "documents that cite findings from the burst detection pipeline",
+    "expected_node_type": "Document",
+    "expected_keywords": ["burst", "detection", "document"],
+    "difficulty": "multi_hop"
+  },
+  {
+    "query": "stale findings downstream of the updated impedance script",
+    "expected_node_type": "Finding",
+    "expected_keywords": ["stale", "impedance", "script"],
+    "difficulty": "multi_hop"
+  }
+]

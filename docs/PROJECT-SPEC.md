@@ -203,10 +203,18 @@ Three retrieval channels (not yet fused):
 
 | Metric | Description | Baseline | Current |
 |--------|-------------|----------|---------|
-| Retrieval accuracy | N/A | N/A | Not measured |
-| Answer accuracy | N/A | N/A | Not measured |
+| Precision@5 (semantic) | Of top 5 semantic results, fraction containing expected keywords | N/A | Pending (run `eval_retrieval.py` with live graph) |
+| Precision@5 (keyword) | Of top 5 keyword results, fraction containing expected keywords | N/A | Pending |
+| Recall (semantic) | Did any semantic result contain expected keywords? | N/A | Pending |
+| Recall (keyword) | Did any keyword result contain expected keywords? | N/A | Pending |
+| MRR (semantic) | Mean Reciprocal Rank of first relevant semantic result | N/A | Pending |
+| MRR (keyword) | Mean Reciprocal Rank of first relevant keyword result | N/A | Pending |
 
-**Gap:** No retrieval evaluation framework. No test set of questions with known answer locations. This is a significant gap for validating that the graph actually helps the LLM perform better. Research (GraphRAG-Bench) found that graph-based retrieval underperforms naive RAG on simple queries and only helps on multi-hop reasoning.
+**Framework:** `tests/evaluation/eval_retrieval.py` evaluates both `search_findings` (semantic, fastembed) and `query_findings` (keyword, Cypher) against a 30-case test set (`tests/evaluation/retrieval_test_set.json`). Test cases span three difficulty levels: simple (10 keyword-match cases), semantic (10 meaning-based cases), and multi_hop (10 graph-traversal cases), all in the neuroscience/electrophysiology domain. The framework runs offline with mock data when no graph backend is available. Scores are reported per-difficulty and overall.
+
+**Run:** `python tests/evaluation/eval_retrieval.py` (mock data) or `python tests/evaluation/eval_retrieval.py --json` for machine-readable output.
+
+**Remaining gap:** No multi-channel fusion (Reciprocal Rank Fusion). No graph-distance ranking. No temporal boosting. Research identified Hindsight's TEMPR (4-channel retrieval) as the target architecture. Not yet implemented. Live-graph evaluation numbers pending once a populated project graph is available.
 
 ---
 
@@ -474,7 +482,7 @@ bin/wh                         # Headless launcher
 
 | Gap | Priority | Section |
 |-----|----------|---------|
-| No retrieval evaluation framework | High | 4 |
+| ~~No retrieval evaluation framework~~ (added: `tests/evaluation/`) | Done | 4 |
 | No multi-channel retrieval fusion | High | 4 |
 | No adversarial or task-completion tests | Medium | 5 |
 | No Dockerfile / docker-compose | Medium | 6 |

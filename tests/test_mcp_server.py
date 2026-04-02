@@ -50,13 +50,14 @@ class TestToolRegistration:
             "add_note",
             "query_notes",
             "query_analyses",
+            "request_log_summary",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 33
+        assert len(tools) == 34
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
@@ -277,23 +278,18 @@ class TestValidateCitations:
 
 
 class TestSearchFindings:
-    """search_findings delegates to EmbeddingStore — mock it."""
+    """search_findings delegates to multi_search — mock it."""
 
     @pytest.mark.asyncio
     async def test_search_returns_structure(self):
-        @dataclass
-        class FakeResult:
-            node_id: str
-            label: str
-            text: str
-            score: float
-
         mock_results = [
-            FakeResult(node_id="F-test1234", label="Finding", text="test finding", score=0.95),
+            {"id": "F-test1234", "type": "Finding", "description": "test finding", "rrf_score": 0.95},
         ]
-        mock_store = MagicMock()
-        mock_store.search.return_value = mock_results
-        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            return_value=mock_results,
+        ):
             from wheeler.mcp_server import search_findings
 
             result = await search_findings("test query", limit=5)
@@ -301,10 +297,15 @@ class TestSearchFindings:
         assert result["results"][0]["node_id"] == "F-test1234"
         assert result["results"][0]["score"] == 0.95
         assert result["query"] == "test query"
+        assert result["mode"] == "multi"
 
     @pytest.mark.asyncio
     async def test_search_handles_import_error(self):
-        with patch("wheeler.mcp_server._get_embedding_store", side_effect=ImportError("no fastembed")):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            side_effect=ImportError("no fastembed"),
+        ):
             from wheeler.mcp_server import search_findings
 
             result = await search_findings("test")
@@ -313,23 +314,31 @@ class TestSearchFindings:
 
     @pytest.mark.asyncio
     async def test_search_passes_label_filter(self):
-        mock_store = MagicMock()
-        mock_store.search.return_value = []
-        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_multi:
             from wheeler.mcp_server import search_findings
 
             await search_findings("test", label="Finding")
-        mock_store.search.assert_called_once_with("test", limit=10, label_filter="Finding")
+        mock_multi.assert_awaited_once()
+        call_kwargs = mock_multi.call_args
+        assert call_kwargs[1]["label"] == "Finding"
 
     @pytest.mark.asyncio
     async def test_search_empty_label_passes_none(self):
-        mock_store = MagicMock()
-        mock_store.search.return_value = []
-        with patch("wheeler.mcp_server._get_embedding_store", return_value=mock_store):
+        with patch(
+            "wheeler.search.retrieval.multi_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_multi:
             from wheeler.mcp_server import search_findings
 
             await search_findings("test", label="")
-        mock_store.search.assert_called_once_with("test", limit=10, label_filter=None)
+        mock_multi.assert_awaited_once()
+        call_kwargs = mock_multi.call_args
+        assert call_kwargs[1]["label"] == ""
 
 
 class TestIndexNode:
