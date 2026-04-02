@@ -145,11 +145,27 @@ async def show_node(node_id: str) -> dict:
 
 
 @mcp.tool()
-async def add_finding(description: str, confidence: float) -> dict:
-    """Add a Finding to the knowledge graph. Returns the new node ID."""
+async def add_finding(
+    description: str,
+    confidence: float,
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
+) -> dict:
+    """Add a Finding to the knowledge graph. Returns the new node ID.
+
+    Provenance-completing: set execution_kind (e.g. "script", "discuss")
+    to auto-create an Execution activity and link provenance.  Pass
+    used_entities as comma-separated node IDs (e.g. "D-abc,S-def") to
+    link what the execution consumed.
+    """
     result = await graph_tools.execute_tool(
         "add_finding",
-        {"description": description, "confidence": confidence, "session_id": _SESSION_ID},
+        {"description": description, "confidence": confidence,
+         "session_id": _SESSION_ID,
+         "execution_kind": execution_kind,
+         "used_entities": used_entities,
+         "execution_description": execution_description},
         _config,
     )
     parsed = json.loads(result)
@@ -160,11 +176,24 @@ async def add_finding(description: str, confidence: float) -> dict:
 
 
 @mcp.tool()
-async def add_hypothesis(statement: str, status: str = "open") -> dict:
-    """Add a Hypothesis to the knowledge graph. Returns the new node ID."""
+async def add_hypothesis(
+    statement: str,
+    status: str = "open",
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
+) -> dict:
+    """Add a Hypothesis to the knowledge graph. Returns the new node ID.
+
+    Provenance-completing: set execution_kind to auto-create an Execution
+    and link provenance. Pass used_entities as comma-separated node IDs.
+    """
     result = await graph_tools.execute_tool(
         "add_hypothesis",
-        {"statement": statement, "status": status, "session_id": _SESSION_ID},
+        {"statement": statement, "status": status, "session_id": _SESSION_ID,
+         "execution_kind": execution_kind,
+         "used_entities": used_entities,
+         "execution_description": execution_description},
         _config,
     )
     parsed = json.loads(result)
@@ -175,11 +204,24 @@ async def add_hypothesis(statement: str, status: str = "open") -> dict:
 
 
 @mcp.tool()
-async def add_question(question: str, priority: int = 5) -> dict:
-    """Add an OpenQuestion to the knowledge graph. Returns the new node ID."""
+async def add_question(
+    question: str,
+    priority: int = 5,
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
+) -> dict:
+    """Add an OpenQuestion to the knowledge graph. Returns the new node ID.
+
+    Provenance-completing: set execution_kind to auto-create an Execution
+    and link provenance. Pass used_entities as comma-separated node IDs.
+    """
     result = await graph_tools.execute_tool(
         "add_question",
-        {"question": question, "priority": priority, "session_id": _SESSION_ID},
+        {"question": question, "priority": priority, "session_id": _SESSION_ID,
+         "execution_kind": execution_kind,
+         "used_entities": used_entities,
+         "execution_description": execution_description},
         _config,
     )
     parsed = json.loads(result)
@@ -279,23 +321,54 @@ async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0)
 
 
 @mcp.tool()
-async def add_document(title: str, path: str, section: str = "", status: str = "draft") -> dict:
-    """Add a Document to the knowledge graph to track written output. Returns the new node ID."""
+async def add_document(
+    title: str,
+    path: str,
+    section: str = "",
+    status: str = "draft",
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
+) -> dict:
+    """Add a Document to the knowledge graph. Returns the new node ID.
+
+    Provenance-completing: set execution_kind (e.g. "write") to auto-create
+    an Execution and link provenance. Pass used_entities as comma-separated
+    node IDs of findings and papers cited.
+    """
     result = await graph_tools.execute_tool(
         "add_document",
         {"title": title, "path": path, "section": section, "status": status,
-         "session_id": _SESSION_ID},
+         "session_id": _SESSION_ID,
+         "execution_kind": execution_kind,
+         "used_entities": used_entities,
+         "execution_description": execution_description},
         _config,
     )
     return json.loads(result)
 
 
 @mcp.tool()
-async def add_note(content: str, title: str = "", context: str = "") -> dict:
-    """Add a ResearchNote to capture an insight, observation, or idea. Returns the new node ID."""
+async def add_note(
+    content: str,
+    title: str = "",
+    context: str = "",
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
+) -> dict:
+    """Add a ResearchNote to capture an insight or idea. Returns the new node ID.
+
+    Provenance-completing: set execution_kind to auto-create an Execution
+    and link provenance. Pass used_entities as comma-separated node IDs.
+    """
     result = await graph_tools.execute_tool(
         "add_note",
-        {"content": content, "title": title, "context": context, "session_id": _SESSION_ID},
+        {"content": content, "title": title, "context": context,
+         "session_id": _SESSION_ID,
+         "execution_kind": execution_kind,
+         "used_entities": used_entities,
+         "execution_description": execution_description},
         _config,
     )
     return json.loads(result)

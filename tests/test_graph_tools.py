@@ -165,6 +165,127 @@ class TestMutationStability:
         assert captured_props["stability"] == 0.5  # Script + generated
 
 
+class TestProvenanceCompleting:
+    """Verify that mutation tools auto-create Execution + links when execution_kind is set."""
+
+    @pytest.mark.asyncio
+    async def test_add_finding_without_provenance(self):
+        """Without execution_kind, no Execution is created."""
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        nodes_created = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                nodes_created.append(label)
+            async def create_relationship(self, *a):
+                pass
+
+        result = json.loads(await add_finding(
+            FakeBackend(), {"description": "test", "confidence": 0.8}
+        ))
+        assert result["status"] == "created"
+        assert "provenance" not in result
+        assert nodes_created == ["Finding"]
+
+    @pytest.mark.asyncio
+    async def test_add_finding_with_provenance(self):
+        """With execution_kind, auto-creates Execution + links."""
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        nodes_created = []
+        rels_created = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                nodes_created.append((label, props.get("id", "")))
+            async def create_relationship(self, src_l, src_id, rel, tgt_l, tgt_id):
+                rels_created.append((src_l, rel, tgt_l))
+                return True
+
+        result = json.loads(await add_finding(
+            FakeBackend(),
+            {
+                "description": "spike freq doubles",
+                "confidence": 0.85,
+                "execution_kind": "script",
+                "used_entities": "D-abc12345,S-def67890",
+                "execution_description": "cold exposure analysis",
+            },
+        ))
+
+        # Finding + Execution created
+        labels = [n[0] for n in nodes_created]
+        assert "Finding" in labels
+        assert "Execution" in labels
+
+        # Provenance in response
+        assert "provenance" in result
+        prov = result["provenance"]
+        assert prov["execution_kind"] == "script"
+        assert len(prov["linked_inputs"]) == 2
+        assert "D-abc12345" in prov["linked_inputs"]
+        assert "S-def67890" in prov["linked_inputs"]
+
+        # Relationships: WAS_GENERATED_BY + 2x USED
+        rel_types = [r[1] for r in rels_created]
+        assert "WAS_GENERATED_BY" in rel_types
+        assert rel_types.count("USED") == 2
+
+    @pytest.mark.asyncio
+    async def test_add_hypothesis_with_provenance(self):
+        """Provenance-completing works on Hypothesis too."""
+        from wheeler.tools.graph_tools.mutations import add_hypothesis
+
+        nodes_created = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                nodes_created.append(label)
+            async def create_relationship(self, *a):
+                return True
+
+        result = json.loads(await add_hypothesis(
+            FakeBackend(),
+            {
+                "statement": "channel gating drives temp dependence",
+                "execution_kind": "discuss",
+                "used_entities": "F-aaa11111",
+            },
+        ))
+        assert "Hypothesis" in nodes_created
+        assert "Execution" in nodes_created
+        assert result["provenance"]["execution_kind"] == "discuss"
+
+    @pytest.mark.asyncio
+    async def test_provenance_with_empty_used_entities(self):
+        """Execution is created even with no inputs."""
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        rels_created = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                pass
+            async def create_relationship(self, *a):
+                rels_created.append(a)
+                return True
+
+        result = json.loads(await add_finding(
+            FakeBackend(),
+            {
+                "description": "observation",
+                "confidence": 0.5,
+                "execution_kind": "discuss",
+                "used_entities": "",
+            },
+        ))
+        assert "provenance" in result
+        # Only WAS_GENERATED_BY, no USED (no inputs)
+        assert len(rels_created) == 1
+        assert rels_created[0][2] == "WAS_GENERATED_BY"
+
+
 class TestToolImports:
     def test_execute_tool_is_callable(self):
         from wheeler.tools.graph_tools import execute_tool

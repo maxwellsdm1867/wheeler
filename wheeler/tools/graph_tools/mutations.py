@@ -2,6 +2,11 @@
 
 All handlers take a ``GraphBackend`` instance (not a raw session) so
 they work with any configured backend (Neo4j, Kuzu, etc.).
+
+Provenance-completing: when ``execution_kind`` is passed, mutation tools
+auto-create an Execution activity node and link inputs (USED) and
+outputs (WAS_GENERATED_BY) in a single call.  The agent focuses on
+science; infrastructure handles bookkeeping.
 """
 
 from __future__ import annotations
@@ -17,6 +22,89 @@ from ._common import _now
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Provenance-completing helper
+# ---------------------------------------------------------------------------
+
+
+async def _complete_provenance(
+    backend,
+    entity_id: str,
+    entity_label: str,
+    args: dict,
+) -> dict | None:
+    """Auto-create an Execution node and provenance links if requested.
+
+    If ``args["execution_kind"]`` is set, creates an Execution activity
+    and links:
+      - (entity) -[:WAS_GENERATED_BY]-> (execution)
+      - (execution) -[:USED]-> (input) for each ID in args["used_entities"]
+
+    Returns a provenance summary dict, or None if no provenance was requested.
+    """
+    execution_kind = args.get("execution_kind", "")
+    if not execution_kind:
+        return None
+
+    now = _now()
+    exec_id = generate_node_id("X")
+
+    # Create the Execution activity node
+    await backend.create_node("Execution", {
+        "id": exec_id,
+        "kind": execution_kind,
+        "agent_id": args.get("agent_id", "wheeler"),
+        "status": "completed",
+        "started_at": args.get("started_at", now),
+        "ended_at": args.get("ended_at", now),
+        "session_id": args.get("session_id", ""),
+        "description": args.get("execution_description", ""),
+        "date": now,
+        "tier": "generated",
+        "stability": default_stability("Execution", "generated"),
+    })
+
+    # Link: entity -[:WAS_GENERATED_BY]-> execution
+    entity_prefix = entity_id.split("-", 1)[0]
+    src_label = PREFIX_TO_LABEL.get(entity_prefix, entity_label)
+    await backend.create_relationship(
+        src_label, entity_id, "WAS_GENERATED_BY", "Execution", exec_id,
+    )
+
+    # Link: execution -[:USED]-> each input entity
+    used_entities = args.get("used_entities", [])
+    if isinstance(used_entities, str):
+        used_entities = [s.strip() for s in used_entities.split(",") if s.strip()]
+
+    linked_inputs = []
+    for input_id in used_entities:
+        input_prefix = input_id.split("-", 1)[0]
+        input_label = PREFIX_TO_LABEL.get(input_prefix)
+        if input_label:
+            await backend.create_relationship(
+                "Execution", exec_id, "USED", input_label, input_id,
+            )
+            linked_inputs.append(input_id)
+        else:
+            logger.warning("_complete_provenance: unknown prefix in %s", input_id)
+
+    logger.info(
+        "Provenance: %s -[WAS_GENERATED_BY]-> %s (kind=%s, used %d inputs)",
+        entity_id, exec_id, execution_kind, len(linked_inputs),
+    )
+
+    return {
+        "execution_id": exec_id,
+        "execution_kind": execution_kind,
+        "linked_inputs": linked_inputs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Mutation tools
+# ---------------------------------------------------------------------------
+
+
 async def add_finding(backend, args: dict) -> str:
     node_id = generate_node_id("F")
     await backend.create_node("Finding", {
@@ -29,7 +117,13 @@ async def add_finding(backend, args: dict) -> str:
         "session_id": args.get("session_id", ""),
     })
     logger.info("Created Finding %s (confidence=%.2f)", node_id, float(args["confidence"]))
-    return json.dumps({"node_id": node_id, "label": "Finding", "status": "created"})
+    result = {"node_id": node_id, "label": "Finding", "status": "created"}
+
+    prov = await _complete_provenance(backend, node_id, "Finding", args)
+    if prov:
+        result["provenance"] = prov
+
+    return json.dumps(result)
 
 
 async def add_hypothesis(backend, args: dict) -> str:
@@ -44,7 +138,11 @@ async def add_hypothesis(backend, args: dict) -> str:
         "session_id": args.get("session_id", ""),
     })
     logger.info("Created Hypothesis %s", node_id)
-    return json.dumps({"node_id": node_id, "label": "Hypothesis", "status": "created"})
+    result = {"node_id": node_id, "label": "Hypothesis", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "Hypothesis", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_question(backend, args: dict) -> str:
@@ -59,7 +157,11 @@ async def add_question(backend, args: dict) -> str:
         "session_id": args.get("session_id", ""),
     })
     logger.info("Created OpenQuestion %s (priority=%d)", node_id, int(args.get("priority", 5)))
-    return json.dumps({"node_id": node_id, "label": "OpenQuestion", "status": "created"})
+    result = {"node_id": node_id, "label": "OpenQuestion", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "OpenQuestion", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_dataset(backend, args: dict) -> str:
@@ -75,7 +177,11 @@ async def add_dataset(backend, args: dict) -> str:
         "session_id": args.get("session_id", ""),
     })
     logger.info("Created Dataset %s: %s", node_id, args["path"])
-    return json.dumps({"node_id": node_id, "label": "Dataset", "status": "created"})
+    result = {"node_id": node_id, "label": "Dataset", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "Dataset", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_paper(backend, args: dict) -> str:
@@ -111,7 +217,11 @@ async def add_document(backend, args: dict) -> str:
         "session_id": args.get("session_id", ""),
     })
     logger.info("Created Document %s: %s", node_id, args["title"][:60])
-    return json.dumps({"node_id": node_id, "label": "Document", "status": "created"})
+    result = {"node_id": node_id, "label": "Document", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "Document", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_note(backend, args: dict) -> str:
@@ -127,7 +237,11 @@ async def add_note(backend, args: dict) -> str:
         "session_id": args.get("session_id", ""),
     })
     logger.info("Created ResearchNote %s: %s", node_id, args.get("title", "")[:60])
-    return json.dumps({"node_id": node_id, "label": "ResearchNote", "status": "created"})
+    result = {"node_id": node_id, "label": "ResearchNote", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "ResearchNote", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_script(backend, args: dict) -> str:
