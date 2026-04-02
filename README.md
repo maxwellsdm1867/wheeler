@@ -16,21 +16,21 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
-Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research — discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other. The graph serves two purposes: it provides agents with context about your project's structure and dependencies, and it makes every AI-produced result traceable back to the exact script, data, and parameters that produced it — automatically, without manual bookkeeping.
+Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research: discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other. The graph serves two purposes: it provides agents with context about your project's structure and dependencies, and it makes every AI-produced result traceable back to the exact script, data, and parameters that produced it. No manual bookkeeping required.
 
 Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
 
-> Named after great physicist John Archibald Wheeler — Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
+> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ---
 
 ## Why Wheeler
 
-Science requires reproducibility. As AI becomes embedded in research workflows — data analysis, literature review, manuscript drafting — the gap between "AI helped me" and "here's the auditable chain of how this result was produced" becomes a credibility problem.
+Science requires reproducibility. As AI gets embedded in research workflows (data analysis, literature review, manuscript drafting), the gap between "AI helped me" and "here's the auditable chain of how this result was produced" becomes a credibility problem.
 
 Wheeler solves this with two guarantees:
 
-**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full provenance chain — the agent focuses on science, infrastructure handles bookkeeping.
+**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full provenance chain. The agent focuses on science, infrastructure handles bookkeeping.
 
 **Changes propagate.** When a script changes or data is updated, Wheeler flags every downstream finding as stale and reduces its stability score. You always know what to trust and what needs re-verification.
 
@@ -96,7 +96,7 @@ Every entity traces back through PROV relationships (USED, WAS_GENERATED_BY, WAS
 
 ## The Workflow
 
-Wheeler gives you a fluid cycle — not a rigid pipeline. Enter at any point, skip stages, repeat them.
+Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip stages, repeat them.
 
 ```text
  ┌─────────────────────────────────────────────────────┐
@@ -131,7 +131,7 @@ Wheeler gives you a fluid cycle — not a rigid pipeline. Enter at any point, sk
 | `/wh:execute` | Run analyses, log findings to graph with provenance |
 | `/wh:write` | Draft text with strict citation enforcement |
 | `/wh:note` | Quick-capture an insight, observation, or idea |
-| `/wh:pair` | Live co-work — scientist drives, Wheeler assists |
+| `/wh:pair` | Live co-work: scientist drives, Wheeler assists |
 | `/wh:chat` | Quick discussion, no execution |
 | `/wh:ask` | Query the graph, trace provenance chains |
 | `/wh:handoff` | Propose tasks for independent execution |
@@ -142,7 +142,7 @@ Wheeler gives you a fluid cycle — not a rigid pipeline. Enter at any point, sk
 | `/wh:pause` / `/wh:resume` | Save and restore investigation state |
 | `/wh:status` | Show progress, suggest next action |
 
-**Wheeler never does your thinking.** Every task gets tagged — SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
+**Wheeler never does your thinking.** Every task gets tagged: SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
 
 ---
 
@@ -150,7 +150,7 @@ Wheeler gives you a fluid cycle — not a rigid pipeline. Enter at any point, sk
 
 Two kinds of files: **graph metadata** (JSON, the provenance index) and **research artifacts** (markdown, the actual writing).
 
-**Graph metadata** — `knowledge/*.json`. One file per entity, dual-written to Neo4j:
+**Graph metadata** (`knowledge/*.json`). One file per entity, dual-written to Neo4j:
 
 ```
 knowledge/
@@ -161,7 +161,7 @@ knowledge/
   D-7e8f9a0b.json   # Dataset: {path, data_type, stability: 1.0, ...}
 ```
 
-**Research artifacts** — your actual writing, as natural files:
+**Research artifacts** (your actual writing, as natural files):
 
 ```
 .notes/N-4e5f6a7b.md     # research note (markdown + YAML frontmatter)
@@ -190,10 +190,10 @@ The graph is the index. The files are the work. When you need connections ("what
 
 ### 14 Relationship Types
 
-**W3C PROV standard (6)** — how things were made:
+**W3C PROV standard (6)**, how things were made:
 - USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
 
-**Wheeler semantic (8)** — what things mean to each other:
+**Wheeler semantic (8)**, what things mean to each other:
 - SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS
 
 ### Citations
@@ -232,7 +232,7 @@ pip install -e ".[test]"
 wheeler-tools graph init
 ```
 
-**Graph backend** — Neo4j via Docker:
+**Graph backend** (Neo4j via Docker):
 
 ```bash
 # Quick start
@@ -299,11 +299,11 @@ Claude Code (interactive)
     │       └── System prompt: workflow + provenance protocol
     │
     ├── MCP Servers
-    │       ├── wheeler (34 tools) — provenance-completing mutations,
+    │       ├── wheeler (34 tools): provenance-completing mutations,
     │       │     queries, search, citations, staleness detection,
     │       │     request logging, raw Cypher
-    │       ├── matlab — MATLAB execution (optional)
-    │       └── papers — literature search (optional)
+    │       ├── matlab: MATLAB execution (optional)
+    │       └── papers: literature search (optional)
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -324,7 +324,7 @@ wheeler/
 ├── models.py                # Pydantic v2: 11 node types, prefix mappings
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
-├── mcp_server.py            # FastMCP — 34 provenance-completing tools
+├── mcp_server.py            # FastMCP, 34 provenance-completing tools
 ├── request_log.py           # Structured request logging (JSONL)
 ├── knowledge/
 │   ├── store.py             # File I/O: read, write, list, delete (atomic)
