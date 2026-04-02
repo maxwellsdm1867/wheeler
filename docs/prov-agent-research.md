@@ -572,6 +572,69 @@ indexes needed.
 
 ---
 
+## 9. Provenance-Completing Tools
+
+### The Enforcement Problem
+
+The universal protocol (create Execution → link inputs → create entity →
+link outputs) was originally enforced via system prompt guidance in act
+files. A code audit (2026-04-02) found **zero programmatic enforcement**:
+an agent could call `add_finding()` without any provenance and succeed.
+Orphan nodes accumulated silently until `/wh:close` caught them.
+
+Research (ESAA paper, AgentSpec) showed that infrastructure enforcement
+produces zero protocol violations, while prompt-based guidance is
+unreliable. Scientific workflow systems (Galaxy, CWL, Nextflow) all
+enforce provenance at the infrastructure level, not by asking the tool
+to self-report.
+
+### The Solution: Provenance-Completing MCP Tools
+
+Every `add_*` MCP tool now accepts optional provenance parameters:
+
+```python
+add_finding(
+    description="Ca freq scales with density",
+    confidence=0.85,
+    execution_kind="script",                  # auto-creates Execution
+    used_entities="D-abc123,S-def456",        # auto-links inputs
+    execution_description="cold exposure run"
+)
+```
+
+When `execution_kind` is set, the tool atomically:
+1. Creates the entity node (Finding, Hypothesis, etc.)
+2. Creates an Execution activity node
+3. Links entity → WAS_GENERATED_BY → Execution
+4. Links Execution → USED → each input entity
+
+One call. Full provenance chain. Backward compatible — without the
+provenance params, tools work exactly as before.
+
+### Performance (benchmarked 2026-04-02, Neo4j 5.x local)
+
+```
+Without provenance:    9 ms per call  (1 node, 1 JSON file)
+With provenance:      21 ms per call  (2 nodes, 1 rel, 2 JSON files)
+Overhead:            +12 ms           (~4 ms per additional USED link)
+```
+
+Provenance overhead is imperceptible compared to LLM inference latency
+(2-10 seconds per turn). Full provenance is essentially free.
+
+### Evidence Basis
+
+- ESAA (2602.23193): zero protocol violations with schema enforcement
+  across 135 events, 4 LLM providers
+- AgentSpec (ICSE 2026): >90% unsafe execution prevention with runtime
+  constraints, millisecond overhead
+- Galaxy/CWL/Nextflow: all enforce provenance at runner level, not tool
+  level. The tool does not choose to log — the infrastructure does it.
+- LbMAS (2510.01285): blackboard/shared-ledger pattern validated,
+  13-57% improvement over alternatives
+
+---
+
 ## Appendix A: Flowcept Codebase Findings
 
 Flowcept collapses all PROV-AGENT classes into a single `TaskObject` with
