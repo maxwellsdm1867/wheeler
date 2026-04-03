@@ -20,7 +20,7 @@ Wheeler is a thinking partner for scientists, built natively on Claude Code. It 
 
 Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
 
-> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
+> Named after great physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ---
 
