@@ -68,3 +68,4 @@ wheeler = ["_data/**/*.md", "_data/**/*.json", "_data/**/*.js"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+norecursedirs = ["tests/e2e/sandbox"]
