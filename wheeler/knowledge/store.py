@@ -104,3 +104,21 @@ def delete_node(knowledge_path: Path, node_id: str) -> bool:
 def node_exists(knowledge_path: Path, node_id: str) -> bool:
     """Check if a node's JSON file exists."""
     return (knowledge_path / f"{node_id}.json").is_file()
+
+
+def write_synthesis(synthesis_path: Path, node_id: str, markdown: str) -> Path:
+    """Write a synthesis markdown file.  Atomic write (tmp + rename).
+
+    Creates *synthesis_path* directory if it doesn't exist.
+    Returns the path to the written file.
+    """
+    synthesis_path.mkdir(parents=True, exist_ok=True)
+
+    target = synthesis_path / f"{node_id}.md"
+    tmp = target.with_suffix(".md.tmp")
+
+    tmp.write_text(markdown, encoding="utf-8")
+    tmp.rename(target)
+
+    logger.info("Wrote synthesis %s -> %s", node_id, target)
+    return target

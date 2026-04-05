@@ -394,6 +394,9 @@ def _write_knowledge_file(
         write_node(Path(config.knowledge_path), model)
         logger.info("Dual-write: %s -> %s/%s.json", tool_name, config.knowledge_path, node_id)
 
+        # Triple-write: synthesis markdown
+        _write_synthesis_file(node_id, model, config)
+
     except Exception:
         logger.error(
             "Dual-write failed for %s (best-effort, continuing)",
@@ -429,10 +432,117 @@ def _update_knowledge_tier(
         write_node(knowledge_dir, node)
         logger.info("Dual-write tier update: %s -> %s", node_id, new_tier)
 
+        # Update synthesis file too
+        _write_synthesis_file(node_id, node, config)
+
     except Exception:
         logger.error(
             "Dual-write tier update failed for %s (best-effort, continuing)",
             args.get("node_id", "?"),
+            exc_info=True,
+        )
+
+
+# --- Synthesis write ---
+
+
+def _write_synthesis_file(
+    node_id: str,
+    model: "NodeBase",
+    config: WheelerConfig,
+    relationships: list[dict] | None = None,
+) -> None:
+    """Best-effort synthesis markdown write."""
+    try:
+        from wheeler.knowledge.render import render_synthesis
+        from wheeler.knowledge.store import write_synthesis
+
+        markdown = render_synthesis(model, relationships=relationships)
+        write_synthesis(Path(config.synthesis_path), node_id, markdown)
+    except Exception:
+        logger.error(
+            "Synthesis write failed for %s (best-effort, continuing)",
+            node_id,
+            exc_info=True,
+        )
+
+
+async def _update_synthesis_for_link(
+    backend, args: dict, config: WheelerConfig
+) -> None:
+    """Update synthesis files for both endpoints of a new relationship.
+
+    Queries all relationships for each node and re-renders their
+    synthesis files with a Relationships section.
+    """
+    try:
+        from wheeler.knowledge.store import read_node
+        from wheeler.models import PREFIX_TO_LABEL, title_for_node
+
+        knowledge_dir = Path(config.knowledge_path)
+        src_id: str = args["source_id"]
+        tgt_id: str = args["target_id"]
+        rel_type: str = args["relationship"]
+
+        for node_id in (src_id, tgt_id):
+            try:
+                model = read_node(knowledge_dir, node_id)
+            except FileNotFoundError:
+                continue
+
+            # Query all relationships for this node
+            rels = []
+            try:
+                prefix = node_id.split("-", 1)[0]
+                label = PREFIX_TO_LABEL.get(prefix, "")
+                # Outgoing relationships
+                out_records = await backend.run_cypher(
+                    f"MATCH (n:{label} {{id: $nid}})-[r]->(m) "
+                    "RETURN type(r) AS rel, m.id AS tid, labels(m)[0] AS tlabel",
+                    {"nid": node_id},
+                )
+                for rec in out_records:
+                    tid = rec.get("tid", "")
+                    title = ""
+                    try:
+                        tmodel = read_node(knowledge_dir, tid)
+                        title = title_for_node(tmodel)
+                    except (FileNotFoundError, Exception):
+                        pass
+                    rels.append({
+                        "target_id": tid,
+                        "relationship": rec.get("rel", ""),
+                        "target_title": title,
+                        "direction": "outgoing",
+                    })
+                # Incoming relationships
+                in_records = await backend.run_cypher(
+                    f"MATCH (m)-[r]->(n:{label} {{id: $nid}}) "
+                    "RETURN type(r) AS rel, m.id AS sid, labels(m)[0] AS slabel",
+                    {"nid": node_id},
+                )
+                for rec in in_records:
+                    sid = rec.get("sid", "")
+                    title = ""
+                    try:
+                        smodel = read_node(knowledge_dir, sid)
+                        title = title_for_node(smodel)
+                    except (FileNotFoundError, Exception):
+                        pass
+                    rels.append({
+                        "source_id": sid,
+                        "relationship": rec.get("rel", ""),
+                        "target_title": title,
+                        "direction": "incoming",
+                    })
+            except Exception:
+                logger.debug("Could not query relationships for %s", node_id)
+
+            _write_synthesis_file(node_id, model, config, relationships=rels or None)
+
+    except Exception:
+        logger.error(
+            "Synthesis link update failed (best-effort, continuing)",
             exc_info=True,
         )
 
@@ -459,12 +569,16 @@ async def execute_tool(
 ) -> str:
     """Execute a graph tool by name and return a JSON string result.
 
-    Uses the configured backend (Neo4j, Kuzu, etc.) — selected by
+    Uses the configured backend (Neo4j, Kuzu, etc.) -- selected by
     ``config.graph.backend``.
 
-    For mutation tools (add_*), a best-effort dual-write persists the new
-    node as a JSON file under ``config.knowledge_path``.  For ``set_tier``,
-    the existing JSON file (if any) is updated.
+    Triple-write: mutation tools (add_*) persist each new node as:
+    1. Graph node (Neo4j)
+    2. JSON file (knowledge/{node_id}.json)
+    3. Synthesis markdown (synthesis/{node_id}.md)
+
+    For ``set_tier``, updates both JSON and synthesis files.
+    For ``link_nodes``, re-renders synthesis files for both endpoints.
     """
     handler = _TOOL_REGISTRY.get(tool_name)
     if handler is None:
@@ -480,11 +594,15 @@ async def execute_tool(
 
         result = await handler(backend, args)
 
-        # Dual-write: persist node as JSON file
+        # Dual-write: persist node as JSON file + synthesis markdown
         if tool_name in _MUTATION_TOOLS:
             _write_knowledge_file(tool_name, args, result, config)
         elif tool_name == "set_tier":
             _update_knowledge_tier(args, result, config)
+        elif tool_name == "link_nodes":
+            parsed = json.loads(result)
+            if parsed.get("status") == "linked":
+                await _update_synthesis_for_link(backend, args, config)
 
         logger.debug("execute_tool: %s completed", tool_name)
         return result

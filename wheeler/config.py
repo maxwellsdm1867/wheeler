@@ -96,6 +96,7 @@ class WheelerConfig(BaseModel):
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     knowledge_path: str = "knowledge"
+    synthesis_path: str = "synthesis"
 
 
 def load_config(path: Path | None = None) -> WheelerConfig:

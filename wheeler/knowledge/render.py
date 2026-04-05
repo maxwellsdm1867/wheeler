@@ -2,9 +2,14 @@
 
 Renders Pydantic node models as pretty markdown for human reading
 via ``wh show``.
+
+``render_synthesis`` produces Obsidian-compatible markdown with YAML
+frontmatter for the synthesis/ directory (human-browsable layer).
 """
 
 from __future__ import annotations
+
+import re
 
 from wheeler.models import (
     DatasetModel,
@@ -353,3 +358,106 @@ def render_node(model: NodeBase) -> str:
     if renderer is not None:
         return renderer(model)  # type: ignore[operator]
     return _render_generic(model)
+
+
+# ---------------------------------------------------------------------------
+# Synthesis renderer (Obsidian-compatible markdown with YAML frontmatter)
+# ---------------------------------------------------------------------------
+
+# Regex to find node ID references like [F-3a2b] and convert to [[F-3a2b]]
+_NODE_ID_RE = re.compile(r"\[([A-Z]{1,2}-[0-9a-f]{4,8})\]")
+
+
+def _obsidian_backlinks(text: str) -> str:
+    """Convert [F-3a2b] citations to Obsidian [[F-3a2b]] backlinks."""
+    return _NODE_ID_RE.sub(r"[[\1]]", text)
+
+
+def render_synthesis(
+    model: NodeBase,
+    relationships: list[dict] | None = None,
+) -> str:
+    """Render a node as Obsidian-compatible markdown with YAML frontmatter.
+
+    Parameters
+    ----------
+    model
+        The knowledge node to render.
+    relationships
+        Optional list of relationship dicts with keys:
+        ``source_id``, ``target_id``, ``relationship``, ``target_label``,
+        ``target_title``.  Used to build a Relationships section.
+    """
+    # YAML frontmatter
+    fm: dict = {
+        "id": model.id,
+        "type": model.type,
+        "tier": model.tier,
+    }
+    if model.created:
+        fm["created"] = model.created.split("T")[0] if "T" in model.created else model.created
+    if model.tags:
+        fm["tags"] = model.tags
+    if model.stability:
+        fm["stability"] = model.stability
+
+    # Add type-specific frontmatter
+    if isinstance(model, FindingModel):
+        fm["confidence"] = model.confidence
+        if model.artifact_type:
+            fm["artifact_type"] = model.artifact_type
+        if model.source:
+            fm["source"] = model.source
+    elif isinstance(model, HypothesisModel):
+        fm["status"] = model.status
+    elif isinstance(model, OpenQuestionModel):
+        fm["priority"] = model.priority
+    elif isinstance(model, PaperModel):
+        if model.year:
+            fm["year"] = model.year
+        if model.doi:
+            fm["doi"] = model.doi
+
+    # Build frontmatter string
+    fm_lines = ["---"]
+    for key, val in fm.items():
+        if isinstance(val, list):
+            fm_lines.append(f"{key}:")
+            for item in val:
+                fm_lines.append(f"  - {item}")
+        else:
+            fm_lines.append(f"{key}: {val}")
+    fm_lines.append("---")
+    fm_lines.append("")
+
+    # Body: reuse existing render_node output, convert to Obsidian backlinks
+    body = render_node(model)
+    body = _obsidian_backlinks(body)
+
+    # Artifact embed
+    if isinstance(model, FindingModel) and model.path:
+        body += f"\n![{model.artifact_type or 'artifact'}]({model.path})\n"
+
+    # Source attribution
+    if isinstance(model, FindingModel) and model.source:
+        body += f"\n*Source*: {model.source}\n"
+
+    # Relationships section
+    if relationships:
+        body += "\n## Relationships\n\n"
+        for rel in relationships:
+            target_id = rel.get("target_id", "")
+            rel_type = rel.get("relationship", "")
+            target_title = rel.get("target_title", "")
+            direction = rel.get("direction", "outgoing")
+
+            if direction == "outgoing":
+                line = f"- **{rel_type}** [[{target_id}]]"
+            else:
+                line = f"- [[{rel.get('source_id', '')}]] **{rel_type}** this"
+
+            if target_title:
+                line += f" ({target_title})"
+            body += line + "\n"
+
+    return "\n".join(fm_lines) + body
