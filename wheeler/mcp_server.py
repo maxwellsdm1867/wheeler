@@ -204,11 +204,19 @@ async def show_node(node_id: str) -> dict:
 async def add_finding(
     description: str,
     confidence: float,
+    path: str = "",
+    artifact_type: str = "",
+    source: str = "",
     execution_kind: str = "",
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
     """Add a Finding to the knowledge graph. Returns the new node ID.
+
+    A finding can be a number, a figure, a table, or any result worth
+    recording. Set artifact_type (e.g. "figure", "number", "table") and
+    path to link to the actual file. Set source for external findings
+    (e.g. a collaborator's name or paper ID).
 
     Provenance-completing: set execution_kind (e.g. "script", "discuss")
     to auto-create an Execution activity and link provenance.  Pass
@@ -218,6 +226,7 @@ async def add_finding(
     result = await graph_tools.execute_tool(
         "add_finding",
         {"description": description, "confidence": confidence,
+         "path": path, "artifact_type": artifact_type, "source": source,
          "session_id": _SESSION_ID,
          "execution_kind": execution_kind,
          "used_entities": used_entities,

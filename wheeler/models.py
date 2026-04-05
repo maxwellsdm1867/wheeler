@@ -37,6 +37,9 @@ class FindingModel(NodeBase):
     type: Literal["Finding"] = "Finding"
     description: str = ""
     confidence: float = 0.0
+    path: str = ""  # optional: path to artifact (figure, table, CSV)
+    artifact_type: str = ""  # figure, table, number, csv, etc.
+    source: str = ""  # who/what produced this (e.g., collaborator name, paper ID)
 
 
 class HypothesisModel(NodeBase):
