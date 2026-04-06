@@ -569,7 +569,7 @@ async def execute_tool(
 ) -> str:
     """Execute a graph tool by name and return a JSON string result.
 
-    Uses the configured backend (Neo4j, Kuzu, etc.) -- selected by
+    Uses the configured backend (Neo4j) -- selected by
     ``config.graph.backend``.
 
     Triple-write: mutation tools (add_*) persist each new node as:

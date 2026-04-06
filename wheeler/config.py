@@ -77,8 +77,7 @@ class SearchConfig(BaseModel):
 
 class GraphConfig(BaseModel):
     """Graph backend selection."""
-    backend: str = "neo4j"  # "neo4j" or "kuzu"
-    kuzu_path: str = ".kuzu"
+    backend: str = "neo4j"
 
 
 class WheelerConfig(BaseModel):

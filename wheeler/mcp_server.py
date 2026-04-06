@@ -883,9 +883,7 @@ async def _verify_backend() -> None:
         _log.error(
             "GRAPH BACKEND FAILED (%s): %s — "
             "graph operations will not work until this is fixed. "
-            "If using neo4j, ensure Docker is running. "
-            "Switch to kuzu (no server needed) by setting "
-            "graph.backend: kuzu in wheeler.yaml",
+            "Ensure Neo4j is running (Desktop or Docker).",
             _config.graph.backend,
             exc,
         )

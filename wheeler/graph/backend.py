@@ -1,6 +1,6 @@
 """Abstract graph database backend.
 
-Defines the interface that all graph backends (Neo4j, Kuzu, etc.) must
+Defines the interface that graph backends (Neo4j) must
 implement. Each backend provides node CRUD, relationship creation, and
 query operations over the Wheeler knowledge graph.
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class GraphBackend(ABC):
     """Abstract graph database backend.
 
-    All methods are async. Backends that use sync drivers (e.g. Kuzu)
+    All methods are async. Backends that use sync drivers
     should wrap blocking calls with ``asyncio.to_thread``.
     """
 
@@ -139,19 +139,7 @@ class GraphBackend(ABC):
 
 
 def get_backend(config: WheelerConfig) -> GraphBackend:
-    """Return the configured graph backend instance.
-
-    Uses lazy imports so that only the selected backend's dependencies
-    need to be installed.
-    """
-    backend_name = config.graph.backend
-
-    if backend_name == "kuzu":
-        from wheeler.graph.kuzu_backend import KuzuBackend
-
-        return KuzuBackend(config.graph.kuzu_path)
-
-    # Default: neo4j
+    """Return the configured graph backend instance (Neo4j)."""
     from wheeler.graph.neo4j_backend import Neo4jBackend
 
     return Neo4jBackend(config)

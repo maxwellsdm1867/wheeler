@@ -336,3 +336,117 @@ class TestTripleWriteIntegration:
 
             # Verify updated tier in synthesis
             assert "tier: reference" in synth_file.read_text()
+
+    async def test_add_finding_with_artifact_fields(self, tmp_path):
+        """Finding with path, artifact_type, source creates synthesis with those fields."""
+        from wheeler.tools.graph_tools import execute_tool
+
+        mock_config = MagicMock()
+        mock_config.knowledge_path = str(tmp_path / "knowledge")
+        mock_config.synthesis_path = str(tmp_path / "synthesis")
+        mock_config.graph.backend = "neo4j"
+        mock_config.neo4j.project_tag = ""
+        mock_config.neo4j.database = "neo4j"
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                return props.get("id", "")
+            async def create_relationship(self, *a):
+                return True
+            async def run_cypher(self, *a, **kw):
+                return []
+
+        with patch("wheeler.tools.graph_tools._get_backend", new_callable=AsyncMock, return_value=FakeBackend()):
+            result_str = await execute_tool(
+                "add_finding",
+                {
+                    "description": "VP-loss curve across cell types",
+                    "confidence": 0.88,
+                    "path": "figures/vploss.png",
+                    "artifact_type": "figure",
+                    "source": "Jane (collaborator)",
+                },
+                mock_config,
+            )
+
+        node_id = json.loads(result_str)["node_id"]
+
+        # Check JSON has the fields
+        json_data = json.loads((tmp_path / "knowledge" / f"{node_id}.json").read_text())
+        assert json_data["path"] == "figures/vploss.png"
+        assert json_data["artifact_type"] == "figure"
+        assert json_data["source"] == "Jane (collaborator)"
+
+        # Check synthesis has the fields
+        synth = (tmp_path / "synthesis" / f"{node_id}.md").read_text()
+        assert "artifact_type: figure" in synth
+        assert "source: Jane (collaborator)" in synth
+        assert "![figure](figures/vploss.png)" in synth
+        assert "*Source*: Jane (collaborator)" in synth
+
+    async def test_link_nodes_updates_synthesis(self, tmp_path):
+        """link_nodes re-renders synthesis files for both endpoints."""
+        from wheeler.tools.graph_tools import execute_tool
+
+        mock_config = MagicMock()
+        mock_config.knowledge_path = str(tmp_path / "knowledge")
+        mock_config.synthesis_path = str(tmp_path / "synthesis")
+        mock_config.graph.backend = "neo4j"
+        mock_config.neo4j.project_tag = ""
+        mock_config.neo4j.database = "neo4j"
+
+        class FakeBackend:
+            def __init__(self):
+                self.nodes = {}
+                self.rels = []
+            async def create_node(self, label, props):
+                self.nodes[props["id"]] = (label, props)
+                return props["id"]
+            async def get_node(self, label, node_id):
+                entry = self.nodes.get(node_id)
+                return dict(entry[1]) if entry else None
+            async def create_relationship(self, src_label, src_id, rel, tgt_label, tgt_id):
+                self.rels.append((src_label, src_id, rel, tgt_label, tgt_id))
+                return True
+            async def run_cypher(self, query, params=None):
+                # Return relationships for the queried node
+                results = []
+                nid = (params or {}).get("nid", "")
+                for sl, sid, rel, tl, tid in self.rels:
+                    if sid == nid:
+                        results.append({"rel": rel, "tid": tid, "tlabel": tl})
+                    elif tid == nid:
+                        results.append({"rel": rel, "sid": sid, "slabel": sl})
+                return results
+
+        backend = FakeBackend()
+        with patch("wheeler.tools.graph_tools._get_backend", new_callable=AsyncMock, return_value=backend):
+            # Create finding and hypothesis
+            f_result = json.loads(await execute_tool(
+                "add_finding",
+                {"description": "Test finding for link", "confidence": 0.8},
+                mock_config,
+            ))
+            h_result = json.loads(await execute_tool(
+                "add_hypothesis",
+                {"statement": "Test hypothesis for link"},
+                mock_config,
+            ))
+
+            f_id = f_result["node_id"]
+            h_id = h_result["node_id"]
+
+            # Link them
+            link_result = json.loads(await execute_tool(
+                "link_nodes",
+                {"source_id": f_id, "target_id": h_id, "relationship": "SUPPORTS"},
+                mock_config,
+            ))
+            assert link_result["status"] == "linked"
+
+        # Both synthesis files should now have Relationships sections
+        f_synth = (tmp_path / "synthesis" / f"{f_id}.md").read_text()
+        h_synth = (tmp_path / "synthesis" / f"{h_id}.md").read_text()
+
+        assert "## Relationships" in f_synth
+        assert "## Relationships" in h_synth

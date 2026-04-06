@@ -42,9 +42,6 @@ Issues = "https://github.com/maxwellsdm1867/wheeler/issues"
 Documentation = "https://github.com/maxwellsdm1867/wheeler/blob/main/ARCHITECTURE.md"
 
 [project.optional-dependencies]
-kuzu = [
-    "kuzu>=0.8",
-]
 search = [
     "fastembed>=0.4",
     "numpy>=1.24",

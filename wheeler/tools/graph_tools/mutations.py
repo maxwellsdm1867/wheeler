@@ -1,7 +1,7 @@
 """Graph mutation tools: create nodes, link nodes, set properties.
 
 All handlers take a ``GraphBackend`` instance (not a raw session) so
-they work with any configured backend (Neo4j, Kuzu, etc.).
+they work with the configured backend (Neo4j).
 
 Provenance-completing: when ``execution_kind`` is passed, mutation tools
 auto-create an Execution activity node and link inputs (USED) and
