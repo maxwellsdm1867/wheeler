@@ -5,7 +5,7 @@ tool layer (mutations + queries), verifying that the graph structure is
 correct after each multi-step workflow.
 
 Uses a richer FakeBackend that tracks nodes and relationships in memory
-so the full graph structure can be inspected without Neo4j or Kuzu.
+so the full graph structure can be inspected without Neo4j.
 """
 
 from __future__ import annotations
