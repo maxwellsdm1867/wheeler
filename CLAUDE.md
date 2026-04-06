@@ -9,18 +9,21 @@ dialogue, not delivered as a report.
 ACTS         /wh:* slash commands              What you DO
 FILE SYSTEM  .notes/*.md, .plans/, docs/       What you KNOW (prose artifacts)
 GRAPH        knowledge/*.json + relationships  How things CONNECT (index)
+SYNTHESIS    synthesis/*.md                    How you BROWSE (Obsidian-ready)
 ```
 
 Research artifacts (notes, drafts, scripts) are real files. The graph
-(`knowledge/*.json`) is the index — metadata that connects them.
+(`knowledge/*.json`) is the index. `synthesis/*.md` is the human-readable
+mirror with YAML frontmatter and Obsidian [[backlinks]].
 See `ARCHITECTURE.md` for full technical spec.
 
 ## Workflow: Discuss → Plan → Handoff → Independent → Reconvene
 
 Structure scales with presence — loose when interactive, strict when independent.
 
-**Together**: `/wh:discuss` → `/wh:plan` → `/wh:execute`. Also `/wh:chat`,
-`/wh:pair`, `/wh:write`, `/wh:ask`, `/wh:dream`, `/wh:note`.
+**Together**: `/wh:discuss`, `/wh:plan`, `/wh:execute`. Also `/wh:chat`,
+`/wh:pair`, `/wh:write`, `/wh:ask`, `/wh:dream`, `/wh:note`, `/wh:add`,
+`/wh:compile`.
 
 **Handoff**: Wheeler proposes tasks when remaining work is all grinding.
 `/wh:handoff` to enter explicitly.
