@@ -328,6 +328,21 @@ async def delete_node(node_id: str) -> dict:
 
 @mcp.tool()
 @_logged
+async def execute_merge(keep_id: str, merge_from_id: str) -> dict:
+    """Merge two duplicate nodes: redirect relationships, merge metadata, delete duplicate.
+
+    Two-phase commit: prepares merged state in temp files, then commits
+    graph changes and atomic file renames. If the graph operation fails,
+    temp files are discarded and no changes are made.
+
+    Always call propose_merge first to preview what will happen.
+    """
+    from wheeler.merge import execute_merge as _execute
+    return await _execute(_config, keep_id, merge_from_id)
+
+
+@mcp.tool()
+@_logged
 async def set_tier(node_id: str, tier: str) -> dict:
     """Set context tier of a Wheeler knowledge graph node to 'reference' (established) or 'generated' (new work)."""
     result = await graph_tools.execute_tool(

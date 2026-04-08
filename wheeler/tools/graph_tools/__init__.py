@@ -717,6 +717,25 @@ async def execute_tool(
                 _repair_queue.enqueue(receipt)
             except Exception:
                 pass  # receipt tracking should never break the tool
+
+            # Set _search_text for fulltext index (best-effort)
+            try:
+                parsed_for_ft = json.loads(result)
+                ft_node_id = parsed_for_ft.get("node_id", "")
+                ft_label = parsed_for_ft.get("label", "")
+                if ft_node_id and ft_label:
+                    # Use full text, not truncated display_name
+                    search_text = (
+                        args.get("description") or args.get("statement")
+                        or args.get("question") or args.get("title")
+                        or args.get("content") or ""
+                    )
+                    if search_text:
+                        await backend.update_node(
+                            ft_label, ft_node_id, {"_search_text": search_text}
+                        )
+            except Exception:
+                pass  # best-effort, fulltext is advisory
         elif tool_name == "set_tier":
             _update_knowledge_tier(args, result, config)
         elif tool_name == "link_nodes":

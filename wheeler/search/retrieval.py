@@ -158,6 +158,46 @@ async def _temporal_channel(
         return []
 
 
+async def _fulltext_channel(
+    query: str,
+    config: WheelerConfig,
+    limit: int,
+    label: str,
+) -> list[str]:
+    """Retrieve node IDs via Neo4j fulltext index search (RRF channel 4)."""
+    from wheeler.tools.graph_tools import _get_backend
+
+    try:
+        backend = await _get_backend(config)
+
+        # Build query with optional namespace filter
+        cypher = (
+            "CALL db.index.fulltext.queryNodes('wheeler_fulltext', $query) "
+            "YIELD node, score "
+            "WHERE node.id IS NOT NULL"
+        )
+        params: dict = {"query": query}
+
+        if config.neo4j.project_tag:
+            cypher += " AND node._wheeler_project = $ptag"
+            params["ptag"] = config.neo4j.project_tag
+
+        if label:
+            cypher += f" AND '{label}' IN labels(node)"
+
+        cypher += (
+            " RETURN node.id AS id, labels(node)[0] AS type, score"
+            " ORDER BY score DESC LIMIT $limit"
+        )
+        params["limit"] = limit
+
+        records = await backend.run_cypher(cypher, params)
+        return [rec.get("id", "") for rec in records if rec.get("id")]
+    except Exception:
+        logger.debug("Fulltext channel failed", exc_info=True)
+        return []  # graceful degradation if fulltext index doesn't exist yet
+
+
 def _label_to_query_targets(label: str) -> list[tuple[str, str | None]]:
     """Map a node label to the (tool_name, keyword_param) pairs to query."""
     mapping: dict[str, tuple[str, str | None]] = {
@@ -198,6 +238,153 @@ def _enrich_node(node_id: str, knowledge_path: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Graph expansion
+# ---------------------------------------------------------------------------
+
+
+async def expand_search_results(
+    seeds: list[dict],
+    config: WheelerConfig,
+    max_hops_prov: int = 2,
+    max_hops_semantic: int = 1,
+) -> dict:
+    """Expand search seeds via graph traversal, returning provenance chains.
+
+    Starting from the seed nodes returned by ``multi_search``, traverses the
+    graph to collect:
+
+    - 1-hop neighbors via any relationship type
+    - 2-hop neighbors via PROV relationships only (provenance chains)
+
+    Results are deduplicated, scored by relationship type and distance,
+    and returned alongside the relationship edges found.
+
+    Args:
+        seeds: List of enriched node dicts from ``multi_search`` (must have
+               ``id`` and ``type`` keys).
+        config: Wheeler configuration.
+        max_hops_prov: Maximum depth for provenance chain traversal (default 2).
+        max_hops_semantic: Maximum depth for semantic link traversal (default 1).
+
+    Returns:
+        Dict with ``seed_nodes``, ``related_nodes``, ``relationships``,
+        and ``total_related``.
+    """
+    from wheeler.tools.graph_tools import _get_backend
+    from wheeler.models import PREFIX_TO_LABEL
+
+    backend = await _get_backend(config)
+    all_related: list[dict] = []
+    all_relationships: list[dict] = []
+
+    for seed in seeds:
+        node_id = seed.get("id", "")
+        prefix = node_id.split("-", 1)[0] if "-" in node_id else ""
+        label = PREFIX_TO_LABEL.get(prefix, "")
+        if not label or not node_id:
+            continue
+
+        # 1-hop: all relationship types
+        try:
+            hop1 = await backend.run_cypher(
+                f"MATCH (seed:{label} {{id: $id}})-[r]-(n) "
+                "RETURN n.id AS nid, labels(n)[0] AS nlabel, "
+                "type(r) AS rel, "
+                "CASE WHEN startNode(r).id = $id THEN 'out' ELSE 'in' END AS dir",
+                {"id": node_id},
+            )
+            for rec in hop1:
+                all_related.append({
+                    "node_id": rec["nid"],
+                    "label": rec["nlabel"],
+                    "relationship": rec["rel"],
+                    "direction": rec["dir"],
+                    "from_seed": node_id,
+                    "hops": 1,
+                })
+                all_relationships.append({
+                    "source": node_id if rec["dir"] == "out" else rec["nid"],
+                    "target": rec["nid"] if rec["dir"] == "out" else node_id,
+                    "relationship": rec["rel"],
+                })
+        except Exception:
+            logger.debug("1-hop expansion failed for %s", node_id, exc_info=True)
+
+        # 2-hop: PROV relationships only (provenance chains)
+        if max_hops_prov >= 2:
+            try:
+                hop2 = await backend.run_cypher(
+                    f"MATCH (seed:{label} {{id: $id}})"
+                    "-[:USED|WAS_GENERATED_BY|WAS_DERIVED_FROM|WAS_INFORMED_BY]-(h1)"
+                    "-[r2:USED|WAS_GENERATED_BY|WAS_DERIVED_FROM|WAS_INFORMED_BY]-(h2) "
+                    "WHERE h2.id <> $id "
+                    "RETURN DISTINCT h2.id AS nid, labels(h2)[0] AS nlabel, "
+                    "type(r2) AS rel, h1.id AS via",
+                    {"id": node_id},
+                )
+                for rec in hop2:
+                    all_related.append({
+                        "node_id": rec["nid"],
+                        "label": rec["nlabel"],
+                        "relationship": rec["rel"],
+                        "from_seed": node_id,
+                        "via": rec["via"],
+                        "hops": 2,
+                    })
+            except Exception:
+                logger.debug(
+                    "2-hop prov expansion failed for %s", node_id, exc_info=True,
+                )
+
+    # Deduplicate related nodes (keep closest hop)
+    seen: dict[str, dict] = {}
+    for rel in all_related:
+        nid = rel["node_id"]
+        if nid not in seen or rel["hops"] < seen[nid]["hops"]:
+            seen[nid] = rel
+    # Remove seeds from related
+    seed_ids = {s.get("id") for s in seeds}
+    unique_related = [v for k, v in sorted(seen.items()) if k not in seed_ids]
+
+    # Rank: PROV relationships score higher than semantic
+    prov_rels = {"USED", "WAS_GENERATED_BY", "WAS_DERIVED_FROM", "WAS_INFORMED_BY"}
+    semantic_rels = {"SUPPORTS", "CONTRADICTS"}
+    for node in unique_related:
+        rel = node.get("relationship", "")
+        hops = node.get("hops", 1)
+        if rel in prov_rels:
+            node["relevance_score"] = 1.0 / hops
+        elif rel in semantic_rels:
+            node["relevance_score"] = 0.8 / hops
+        else:
+            node["relevance_score"] = 0.5 / hops
+    unique_related.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+    # Deduplicate relationships
+    unique_rels: list[dict] = []
+    rel_seen: set[tuple[str, str, str]] = set()
+    for r in all_relationships:
+        key = (r["source"], r["target"], r["relationship"])
+        if key not in rel_seen:
+            rel_seen.add(key)
+            unique_rels.append(r)
+
+    return {
+        "seed_nodes": [
+            {
+                "id": s.get("id"),
+                "label": s.get("type", ""),
+                "score": s.get("rrf_score", 0),
+            }
+            for s in seeds
+        ],
+        "related_nodes": unique_related,
+        "relationships": unique_rels,
+        "total_related": len(unique_related),
+    }
+
+
 async def multi_search(
     query: str,
     config: WheelerConfig,
@@ -207,17 +394,19 @@ async def multi_search(
 ) -> list[dict]:
     """Run multi-channel retrieval and fuse results with RRF.
 
-    Runs up to three channels (semantic, keyword, temporal) in parallel,
-    fuses their ranked ID lists with Reciprocal Rank Fusion, then enriches
-    the top results from knowledge JSON files.
+    Runs up to four channels (semantic, keyword, temporal, fulltext) in
+    parallel, fuses their ranked ID lists with Reciprocal Rank Fusion,
+    then enriches the top results from knowledge JSON files.
 
     Args:
         query: Natural language search query.
         config: Wheeler configuration.
         limit: Maximum results to return.
         label: Optional node-type filter (e.g. ``"Finding"``).
-        mode: Retrieval mode — ``"multi"`` (default), ``"semantic"``,
-              ``"keyword"``, or ``"temporal"``.
+        mode: Retrieval mode: ``"multi"`` (default, all channels),
+              ``"semantic"`` (embeddings only), ``"keyword"``
+              (graph keyword only), ``"temporal"`` (most recent only),
+              ``"fulltext"`` (Neo4j fulltext index only).
 
     Returns:
         List of enriched node dicts, each with at least ``id`` and
@@ -232,17 +421,20 @@ async def multi_search(
         ranked_lists = [await _keyword_channel(query, config, per_channel, label)]
     elif mode == "temporal":
         ranked_lists = [await _temporal_channel(config, per_channel, label)]
+    elif mode == "fulltext":
+        ranked_lists = [await _fulltext_channel(query, config, per_channel, label)]
     else:
         # Multi: run all channels concurrently
         results = await asyncio.gather(
             _semantic_channel(query, config, per_channel, label),
             _keyword_channel(query, config, per_channel, label),
             _temporal_channel(config, per_channel, label),
+            _fulltext_channel(query, config, per_channel, label),
             return_exceptions=True,
         )
         ranked_lists = []
         for i, r in enumerate(results):
-            channel_name = ["semantic", "keyword", "temporal"][i]
+            channel_name = ["semantic", "keyword", "temporal", "fulltext"][i]
             if isinstance(r, BaseException):
                 logger.warning("Channel %s raised: %s", channel_name, r)
             elif r:

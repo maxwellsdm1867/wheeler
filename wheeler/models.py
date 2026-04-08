@@ -130,6 +130,11 @@ class LedgerModel(NodeBase):
     citations_stale: list[str] = []
     ungrounded: bool = False
     pass_rate: float = 0.0
+    # Retrieval quality metrics
+    context_nodes_used: int = 0       # nodes retrieved and actually cited
+    context_nodes_retrieved: int = 0  # total nodes retrieved
+    context_precision: float = 0.0    # used / retrieved (0.0 if none retrieved)
+    coverage_gaps: list[str] = []     # keywords in output not backed by graph nodes
 
 
 # ---------------------------------------------------------------------------

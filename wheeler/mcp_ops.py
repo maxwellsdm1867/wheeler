@@ -191,6 +191,51 @@ async def validate_citations(text: str) -> dict:
     }
 
 
+# --- Retrieval quality ---
+
+
+@mcp.tool()
+@_logged
+async def compute_retrieval_quality(
+    output_text: str,
+    retrieved_node_ids: str = "",
+) -> dict:
+    """Compute retrieval quality metrics for generated text.
+
+    Measures how effectively the knowledge graph was used:
+    - context_precision: fraction of retrieved nodes actually cited
+    - coverage_gaps: terms in output not backed by any graph node
+
+    Args:
+        output_text: The generated text to evaluate
+        retrieved_node_ids: Comma-separated node IDs that were retrieved as context
+    """
+    from wheeler.validation.ledger import compute_retrieval_metrics
+    from wheeler.knowledge.store import list_nodes
+    from pathlib import Path
+
+    retrieved = (
+        [r.strip() for r in retrieved_node_ids.split(",") if r.strip()]
+        if retrieved_node_ids
+        else []
+    )
+
+    # Build node text corpus from knowledge files
+    knowledge_dir = Path(_config.knowledge_path)
+    node_texts: dict[str, str] = {}
+    try:
+        from wheeler.models import title_for_node
+
+        nodes = list_nodes(knowledge_dir)
+        for node in nodes:
+            node_texts[node.id] = title_for_node(node)
+    except Exception:
+        pass  # if knowledge dir doesn't exist, corpus is empty
+
+    metrics = compute_retrieval_metrics(output_text, retrieved, node_texts)
+    return metrics
+
+
 # --- Consistency ---
 
 
@@ -222,6 +267,28 @@ async def graph_consistency_check(repair: bool = False) -> dict:
         result["repairs"] = await repair_consistency(_config, report, dry_run=True)
 
     return result
+
+
+# --- Community detection ---
+
+
+@mcp.tool()
+@_logged
+async def detect_communities(min_size: int = 3) -> dict:
+    """Detect research theme clusters in the Wheeler knowledge graph.
+
+    Uses connected components to find groups of related nodes.
+    Returns communities with member details, label distributions,
+    and summary statistics.
+
+    Use during /wh:dream consolidation to surface emergent research themes.
+    Communities with 3+ nodes are returned by default.
+
+    Args:
+        min_size: Minimum community size to include (default 3)
+    """
+    from wheeler.communities import find_communities
+    return await find_communities(_config, min_size=min_size)
 
 
 # --- Contract validation ---

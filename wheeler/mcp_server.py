@@ -232,6 +232,37 @@ async def show_node(node_id: str) -> dict:
         return {"error": f"Node {node_id} not found"}
 
 
+# --- Entity resolution ---
+
+
+@mcp.tool()
+@_logged
+async def propose_merge(node_id_a: str, node_id_b: str) -> dict:
+    """Compare two knowledge graph nodes and propose a merge.
+
+    Returns which node to keep (more relationships), field conflicts,
+    and relationships that would be redirected. Read-only, no changes made.
+    Use before execute_merge to preview the operation.
+    """
+    from wheeler.merge import propose_merge as _propose
+    return await _propose(_config, node_id_a, node_id_b)
+
+
+@mcp.tool()
+@_logged
+async def execute_merge(keep_id: str, merge_from_id: str) -> dict:
+    """Merge two duplicate nodes: redirect relationships, merge metadata, delete duplicate.
+
+    Two-phase commit: prepares merged state in temp files, then commits
+    graph changes and atomic file renames. If the graph operation fails,
+    temp files are discarded and no changes are made.
+
+    Always call propose_merge first to preview what will happen.
+    """
+    from wheeler.merge import execute_merge as _execute
+    return await _execute(_config, keep_id, merge_from_id)
+
+
 # --- Graph mutations ---
 
 
@@ -724,6 +755,46 @@ def _extract_display_text(node: dict) -> str:
 
 @mcp.tool()
 @_logged
+async def search_context(
+    query: str,
+    limit: int = 5,
+    hops: int = 2,
+    label: str = "",
+) -> dict:
+    """Search the knowledge graph and expand results via graph traversal.
+
+    Returns seed nodes from search plus their graph neighborhood:
+    provenance chains (2 hops via USED/WAS_GENERATED_BY/WAS_DERIVED_FROM),
+    semantic links (1 hop via SUPPORTS/CONTRADICTS), and other relationships.
+
+    Use this instead of search_findings when you need the full experimental
+    context around results, not just the results themselves. Especially
+    useful for "why" and "how" questions that need provenance chains.
+
+    Args:
+        query: Natural language search query
+        limit: Maximum seed results (default 5)
+        hops: Maximum provenance chain depth (default 2)
+        label: Optional filter by node type
+    """
+    from wheeler.search.retrieval import multi_search, expand_search_results
+
+    try:
+        seeds = await multi_search(query, _config, limit=limit, label=label)
+        expanded = await expand_search_results(
+            seeds, _config, max_hops_prov=hops,
+        )
+        return expanded
+    except Exception as exc:
+        return {
+            "error": f"Search context failed: {exc}",
+            "seed_nodes": [],
+            "related_nodes": [],
+        }
+
+
+@mcp.tool()
+@_logged
 async def index_node(node_id: str, label: str, text: str) -> dict:
     """Add or update a Wheeler knowledge graph node's semantic embedding for search.
 
@@ -775,6 +846,50 @@ async def validate_citations(text: str) -> dict:
             for r in results
         ],
     }
+
+
+# --- Retrieval quality ---
+
+
+@mcp.tool()
+@_logged
+async def compute_retrieval_quality(
+    output_text: str,
+    retrieved_node_ids: str = "",
+) -> dict:
+    """Compute retrieval quality metrics for generated text.
+
+    Measures how effectively the knowledge graph was used:
+    - context_precision: fraction of retrieved nodes actually cited
+    - coverage_gaps: terms in output not backed by any graph node
+
+    Args:
+        output_text: The generated text to evaluate
+        retrieved_node_ids: Comma-separated node IDs that were retrieved as context
+    """
+    from wheeler.validation.ledger import compute_retrieval_metrics
+    from wheeler.knowledge.store import list_nodes
+
+    retrieved = (
+        [r.strip() for r in retrieved_node_ids.split(",") if r.strip()]
+        if retrieved_node_ids
+        else []
+    )
+
+    # Build node text corpus from knowledge files
+    knowledge_dir = Path(_config.knowledge_path)
+    node_texts: dict[str, str] = {}
+    try:
+        from wheeler.models import title_for_node
+
+        nodes = list_nodes(knowledge_dir)
+        for node in nodes:
+            node_texts[node.id] = title_for_node(node)
+    except Exception:
+        pass  # if knowledge dir doesn't exist, corpus is empty
+
+    metrics = compute_retrieval_metrics(output_text, retrieved, node_texts)
+    return metrics
 
 
 # --- Contract validation ---
@@ -1042,6 +1157,25 @@ async def graph_consistency_check(repair: bool = False) -> dict:
         result["repairs"] = await repair_consistency(_config, report, dry_run=True)
 
     return result
+
+
+@mcp.tool()
+@_logged
+async def detect_communities(min_size: int = 3) -> dict:
+    """Detect research theme clusters in the Wheeler knowledge graph.
+
+    Uses connected components to find groups of related nodes.
+    Returns communities with member details, label distributions,
+    and summary statistics.
+
+    Use during /wh:dream consolidation to surface emergent research themes.
+    Communities with 3+ nodes are returned by default.
+
+    Args:
+        min_size: Minimum community size to include (default 3)
+    """
+    from wheeler.communities import find_communities
+    return await find_communities(_config, min_size=min_size)
 
 
 @mcp.tool()

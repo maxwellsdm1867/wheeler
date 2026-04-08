@@ -163,6 +163,22 @@ async def show_node(node_id: str) -> dict:
         return {"error": f"Node {node_id} not found"}
 
 
+# --- Entity resolution (read-only) ---
+
+
+@mcp.tool()
+@_logged
+async def propose_merge(node_id_a: str, node_id_b: str) -> dict:
+    """Compare two knowledge graph nodes and propose a merge.
+
+    Returns which node to keep (more relationships), field conflicts,
+    and relationships that would be redirected. Read-only, no changes made.
+    Use before execute_merge to preview the operation.
+    """
+    from wheeler.merge import propose_merge as _propose
+    return await _propose(_config, node_id_a, node_id_b)
+
+
 # --- Raw Cypher ---
 
 
@@ -220,17 +236,18 @@ async def search_findings(
 ) -> dict:
     """Search across Wheeler knowledge graph nodes for research context retrieval.
 
-    Combines semantic (embedding similarity), keyword (graph queries), and
-    temporal (recency) channels via Reciprocal Rank Fusion for better recall
-    than any single channel alone. Use for finding related research nodes
-    when linking new entries or exploring existing knowledge.
+    Combines semantic (embedding similarity), keyword (graph queries),
+    temporal (recency), and fulltext (Neo4j index) channels via Reciprocal
+    Rank Fusion for better recall than any single channel alone. Use for
+    finding related research nodes when linking new entries or exploring
+    existing knowledge.
 
     Args:
         query: Natural language search query
         limit: Maximum results (default 10)
         label: Optional filter by node type (Finding, Hypothesis, OpenQuestion, Paper, Dataset, Document)
         mode: Retrieval mode -- "multi" (default, all channels), "semantic" (embeddings only),
-              "keyword" (graph keyword only), "temporal" (most recent only)
+              "keyword" (graph keyword only), "temporal" (most recent only), "fulltext" (Neo4j fulltext index only)
     """
     try:
         from wheeler.search.retrieval import multi_search
@@ -257,6 +274,46 @@ async def search_findings(
             "error": f"Search failed: {exc}",
             "results": [],
             "count": 0,
+        }
+
+
+@mcp.tool()
+@_logged
+async def search_context(
+    query: str,
+    limit: int = 5,
+    hops: int = 2,
+    label: str = "",
+) -> dict:
+    """Search the knowledge graph and expand results via graph traversal.
+
+    Returns seed nodes from search plus their graph neighborhood:
+    provenance chains (2 hops via USED/WAS_GENERATED_BY/WAS_DERIVED_FROM),
+    semantic links (1 hop via SUPPORTS/CONTRADICTS), and other relationships.
+
+    Use this instead of search_findings when you need the full experimental
+    context around results, not just the results themselves. Especially
+    useful for "why" and "how" questions that need provenance chains.
+
+    Args:
+        query: Natural language search query
+        limit: Maximum seed results (default 5)
+        hops: Maximum provenance chain depth (default 2)
+        label: Optional filter by node type
+    """
+    from wheeler.search.retrieval import multi_search, expand_search_results
+
+    try:
+        seeds = await multi_search(query, _config, limit=limit, label=label)
+        expanded = await expand_search_results(
+            seeds, _config, max_hops_prov=hops,
+        )
+        return expanded
+    except Exception as exc:
+        return {
+            "error": f"Search context failed: {exc}",
+            "seed_nodes": [],
+            "related_nodes": [],
         }
 
 

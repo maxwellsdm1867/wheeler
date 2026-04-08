@@ -57,6 +57,10 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (n:ResearchNote) ON (n.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (s:Script) ON (s.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (x:Execution) ON (x.file_path)",
+    # Fulltext search index (RRF channel 4)
+    "CREATE FULLTEXT INDEX wheeler_fulltext IF NOT EXISTS "
+    "FOR (n:Finding|Hypothesis|OpenQuestion|Paper|Document|ResearchNote) "
+    "ON EACH [n._search_text]",
 ]
 
 # Project namespace indexes — used for Community Edition isolation.

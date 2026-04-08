@@ -55,13 +55,18 @@ class TestToolRegistration:
             "request_log_summary",
             "graph_consistency_check",
             "validate_task_contract",
+            "search_context",
+            "compute_retrieval_quality",
+            "detect_communities",
+            "propose_merge",
+            "execute_merge",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 38
+        assert len(tools) == 43
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
