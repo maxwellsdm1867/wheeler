@@ -11,6 +11,10 @@ description: Sharpen the question
 argument-hint: "[topic]"
 allowed-tools:
   - Read
+  - mcp__wheeler_core__*
+  - mcp__wheeler_query__*
+  - mcp__wheeler_mutations__*
+  - mcp__wheeler_ops__*
   - mcp__wheeler__*
 ---
 

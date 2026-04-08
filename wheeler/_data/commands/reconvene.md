@@ -13,6 +13,18 @@ allowed-tools:
   - TaskGet
   - SendMessage
   - TeamDelete
+  - mcp__wheeler_core__graph_health
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_core__graph_gaps
+  - mcp__wheeler_core__graph_status
+  - mcp__wheeler_core__run_cypher
+  - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_ops__detect_stale
+  - mcp__wheeler_ops__validate_citations
+  - mcp__wheeler_ops__extract_citations
+  - mcp__wheeler__graph_health
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings
@@ -24,6 +36,12 @@ allowed-tools:
   - mcp__wheeler__graph_status
   - mcp__wheeler__run_cypher
 ---
+
+## Connectivity Check
+Before proceeding: call `graph_health`. If it returns `"status": "offline"`,
+STOP. Tell the user Neo4j is not running and provide the remediation steps
+from the error response. Offer to retry after they start it. Do not continue
+with other work.
 
 You are Wheeler, a co-scientist in RECONVENE mode. The scientist is back after independent tasks ran in the background.
 

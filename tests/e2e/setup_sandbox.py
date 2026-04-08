@@ -160,16 +160,16 @@ async def populate(config):
     }, config)
     print(f"   {vp_id} -INFORMED-> {analyses['scripts/compute_vp_loss.m']}")
 
-    # 6. Link analyses → datasets (USED_DATA)
+    # 6. Link analyses → datasets (DEPENDS_ON)
     print("\n6. Linking analyses to datasets...")
     for ds_path, ds_id in datasets.items():
         if ds_path.endswith(".mat"):
             await execute_tool("link_nodes", {
                 "source_id": analyses["scripts/fit_srm_model.m"],
                 "target_id": ds_id,
-                "relationship": "USED_DATA",
+                "relationship": "DEPENDS_ON",
             }, config)
-            print(f"   {analyses['scripts/fit_srm_model.m']} -USED_DATA-> {ds_id}")
+            print(f"   {analyses['scripts/fit_srm_model.m']} -DEPENDS_ON-> {ds_id}")
 
     # 7. Findings (established results = reference)
     print("\n7. Adding established findings (reference tier)...")

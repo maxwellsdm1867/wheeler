@@ -9,6 +9,20 @@ allowed-tools:
   - Glob
   - WebFetch
   - AskUserQuestion
+  - mcp__wheeler_mutations__add_finding
+  - mcp__wheeler_mutations__add_hypothesis
+  - mcp__wheeler_mutations__add_question
+  - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__add_paper
+  - mcp__wheeler_mutations__add_dataset
+  - mcp__wheeler_mutations__add_document
+  - mcp__wheeler_mutations__add_analysis
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__set_tier
+  - mcp__wheeler_core__search_findings
+  - mcp__wheeler_core__show_node
+  - mcp__wheeler_core__index_node
+  - mcp__wheeler_core__graph_context
   - mcp__wheeler__add_finding
   - mcp__wheeler__add_hypothesis
   - mcp__wheeler__add_question
@@ -124,16 +138,17 @@ Ask: "What kind of thing is this?" with options `["Dataset", "Document", "Analys
 
 ## After Creating Any Node
 
-Do these steps for every node created:
+Do these steps for every node created. Steps 1 and 2 are MANDATORY. Do not skip them.
 
-1. **Index it**: Call `index_node(node_id, label, text)` to make the node searchable.
+1. **Index it**: You MUST call `index_node(node_id, label, text)` to make the node searchable.
    - `label`: the node type (Finding, Paper, Dataset, ResearchNote, etc.)
    - `text`: title + description, concatenated
 
-2. **Find related nodes**: Call `search_findings` with a short query derived from the node's content.
-   - If a result has high similarity and is clearly related, suggest it: "Related: [F-xxxx] description. Link them?"
-   - If the scientist confirms, call `link_nodes` with `RELEVANT_TO`, `SUPPORTS`, `CONTRADICTS`, or `AROSE_FROM` (whichever fits).
-   - If nothing relevant comes up, skip silently.
+2. **Find related nodes**: You MUST call `search_findings` with keywords from the new node's title and description.
+   - Present the top 3 results to the user. For each, state the node ID, type, and why it might be related.
+   - Ask the user which (if any) to link. Use `RELEVANT_TO` as the default relationship type. Other options: `SUPPORTS`, `CONTRADICTS`, `AROSE_FROM` (use whichever fits best).
+   - If the user confirms one or more links, call `link_nodes` for each.
+   - If `search_findings` returns no results, state: "No related nodes found in the graph." Do not skip this step silently.
 
 3. **External source handling**: If the scientist mentions this came from a collaborator or external source, ask about tier:
    - "Is this established reference material or new generated work?" with options `["Reference (established)", "Generated (new work)"]`

@@ -24,6 +24,7 @@ class RequestLog:
     node_id: str = ""  # if a node was created
     label: str = ""  # if a node was created
     error: str = ""  # if status == "error"
+    trace_id: str = ""  # unique per logical MCP tool invocation
 
 
 class RequestLogger:
@@ -50,6 +51,10 @@ class RequestLogger:
                 except json.JSONDecodeError:
                     continue
         return entries
+
+    def query_trace(self, trace_id: str) -> list[dict]:
+        """Return all log entries matching a trace_id."""
+        return [e for e in self.read_recent(1000) if e.get("trace_id") == trace_id]
 
     def summary(self) -> dict:
         """Return summary stats: total calls, avg latency, error rate."""

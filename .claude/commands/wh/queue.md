@@ -9,6 +9,10 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
+  - mcp__wheeler_core__*
+  - mcp__wheeler_query__*
+  - mcp__wheeler_mutations__*
+  - mcp__wheeler_ops__*
   - mcp__wheeler__*
   - mcp__wheeler__run_cypher
 ---

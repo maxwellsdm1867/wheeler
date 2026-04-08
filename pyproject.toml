@@ -56,6 +56,10 @@ test = [
 wheeler = "wheeler.tools.cli:app"
 wheeler-tools = "wheeler.tools.cli:app"
 wheeler-mcp = "wheeler.mcp_server:main"
+wheeler-core-mcp = "wheeler.mcp_core:main"
+wheeler-query-mcp = "wheeler.mcp_query:main"
+wheeler-mutations-mcp = "wheeler.mcp_mutations:main"
+wheeler-ops-mcp = "wheeler.mcp_ops:main"
 
 [tool.setuptools.packages.find]
 include = ["wheeler*"]

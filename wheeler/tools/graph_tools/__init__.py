@@ -12,12 +12,16 @@ import logging
 from pathlib import Path
 
 from wheeler.config import WheelerConfig
+from wheeler.graph.circuit_breaker import CircuitOpenError
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS
+from wheeler.write_receipt import RepairQueue, WriteReceipt
 
 from . import mutations, queries
 from ._common import _now
 
 logger = logging.getLogger(__name__)
+
+_repair_queue = RepairQueue(Path(".wheeler"))
 
 # Tools that create graph nodes and should be dual-written to knowledge/ files
 _MUTATION_TOOLS = frozenset({
@@ -48,6 +52,8 @@ _TOOL_REGISTRY: dict[str, object] = {
     "add_execution": mutations.add_execution,
     "add_ledger": mutations.add_ledger,
     "link_nodes": mutations.link_nodes,
+    "unlink_nodes": mutations.unlink_nodes,
+    "delete_node": mutations.delete_node,
     "set_tier": mutations.set_tier,
     # Queries
     "query_findings": queries.query_findings,
@@ -114,6 +120,32 @@ TOOL_DEFINITIONS = [
             "relationship": {"type": "string", "description": f"One of: {', '.join(ALLOWED_RELATIONSHIPS)}"},
         },
         "required": ["source_id", "target_id", "relationship"],
+    },
+    {
+        "name": "unlink_nodes",
+        "description": (
+            "Remove a specific relationship between two nodes. "
+            "Use for correcting wrong links created during ingest. "
+            f"Allowed types: {', '.join(ALLOWED_RELATIONSHIPS)}"
+        ),
+        "parameters": {
+            "source_id": {"type": "string", "description": "Source node ID (e.g., F-3a2b)"},
+            "target_id": {"type": "string", "description": "Target node ID"},
+            "relationship": {"type": "string", "description": f"One of: {', '.join(ALLOWED_RELATIONSHIPS)}"},
+        },
+        "required": ["source_id", "target_id", "relationship"],
+    },
+    {
+        "name": "delete_node",
+        "description": (
+            "Permanently delete a node, its knowledge file, synthesis file, "
+            "all relationships, and embedding. This is irreversible. "
+            "Use for removing incorrect or duplicate nodes."
+        ),
+        "parameters": {
+            "node_id": {"type": "string", "description": "Node ID to delete (e.g., F-3a2b)"},
+        },
+        "required": ["node_id"],
     },
     {
         "name": "query_findings",
@@ -340,20 +372,24 @@ TOOL_DEFINITIONS = [
 
 def _write_knowledge_file(
     tool_name: str, args: dict, result_str: str, config: WheelerConfig
-) -> None:
+) -> tuple[bool, bool]:
     """Best-effort dual-write: persist a new graph node as a JSON file.
 
     Uses the label from the result to look up the Pydantic model class,
     then builds it from the tool args. Any errors are logged but never
-    propagated — the graph write has already succeeded.
+    propagated -- the graph write has already succeeded.
+
+    Returns (json_ok, synthesis_ok) indicating which layers succeeded.
     """
+    json_ok = False
+    synthesis_ok = False
     try:
         parsed = json.loads(result_str)
         node_id: str | None = parsed.get("node_id")
         label: str | None = parsed.get("label")
         if not node_id or not label:
             logger.warning("_write_knowledge_file: missing node_id/label for %s", tool_name)
-            return
+            return (json_ok, synthesis_ok)
 
         from wheeler.models import model_for_label
         from wheeler.knowledge.store import write_node
@@ -391,11 +427,19 @@ def _write_knowledge_file(
         model_cls = model_for_label(label)
         model = model_cls.model_validate(kwargs)
 
+        from wheeler.models import ChangeEntry
+        model.change_log = [ChangeEntry(
+            timestamp=now,
+            action="created",
+            actor=args.get("session_id", "system"),
+        )]
+
         write_node(Path(config.knowledge_path), model)
+        json_ok = True
         logger.info("Dual-write: %s -> %s/%s.json", tool_name, config.knowledge_path, node_id)
 
         # Triple-write: synthesis markdown
-        _write_synthesis_file(node_id, model, config)
+        synthesis_ok = _write_synthesis_file(node_id, model, config)
 
     except Exception:
         logger.error(
@@ -403,6 +447,7 @@ def _write_knowledge_file(
             tool_name,
             exc_info=True,
         )
+    return (json_ok, synthesis_ok)
 
 
 def _update_knowledge_tier(
@@ -427,8 +472,16 @@ def _update_knowledge_tier(
             logger.debug("set_tier: no knowledge file for %s, skipping", node_id)
             return
 
+        from wheeler.models import ChangeEntry
+        old_tier = node.tier
         node.tier = new_tier
         node.updated = _now()
+        node.change_log.append(ChangeEntry(
+            timestamp=_now(),
+            action="tier_changed",
+            changes={"tier": [old_tier, new_tier]},
+            actor=args.get("session_id", "system"),
+        ))
         write_node(knowledge_dir, node)
         logger.info("Dual-write tier update: %s -> %s", node_id, new_tier)
 
@@ -443,6 +496,54 @@ def _update_knowledge_tier(
         )
 
 
+# --- Delete helpers ---
+
+
+def _delete_knowledge_and_synthesis(
+    args: dict, config: WheelerConfig
+) -> None:
+    """Best-effort cleanup: delete knowledge JSON, synthesis markdown, and embedding."""
+    node_id: str = args["node_id"]
+    try:
+        from wheeler.knowledge.store import delete_node as delete_knowledge_file
+
+        knowledge_dir = Path(config.knowledge_path)
+        deleted = delete_knowledge_file(knowledge_dir, node_id)
+        if deleted:
+            logger.info("Deleted knowledge file for %s", node_id)
+    except Exception:
+        logger.error(
+            "Knowledge file deletion failed for %s (best-effort, continuing)",
+            node_id,
+            exc_info=True,
+        )
+
+    try:
+        synthesis_path = Path(config.synthesis_path) / f"{node_id}.md"
+        if synthesis_path.exists():
+            synthesis_path.unlink()
+            logger.info("Deleted synthesis file for %s", node_id)
+    except Exception:
+        logger.error(
+            "Synthesis file deletion failed for %s (best-effort, continuing)",
+            node_id,
+            exc_info=True,
+        )
+
+    try:
+        from wheeler.search.embeddings import EmbeddingStore
+
+        store_path = config.search.store_path
+        store = EmbeddingStore(store_path)
+        store.load()
+        store.remove(node_id)
+        store.save()
+        logger.info("Deleted embedding for %s", node_id)
+    except (ImportError, Exception):
+        # Embeddings not available or removal failed. Best-effort.
+        pass
+
+
 # --- Synthesis write ---
 
 
@@ -451,20 +552,25 @@ def _write_synthesis_file(
     model: "NodeBase",
     config: WheelerConfig,
     relationships: list[dict] | None = None,
-) -> None:
-    """Best-effort synthesis markdown write."""
+) -> bool:
+    """Best-effort synthesis markdown write.
+
+    Returns True if the synthesis file was written successfully.
+    """
     try:
         from wheeler.knowledge.render import render_synthesis
         from wheeler.knowledge.store import write_synthesis
 
         markdown = render_synthesis(model, relationships=relationships)
         write_synthesis(Path(config.synthesis_path), node_id, markdown)
+        return True
     except Exception:
         logger.error(
             "Synthesis write failed for %s (best-effort, continuing)",
             node_id,
             exc_info=True,
         )
+        return False
 
 
 async def _update_synthesis_for_link(
@@ -596,16 +702,41 @@ async def execute_tool(
 
         # Dual-write: persist node as JSON file + synthesis markdown
         if tool_name in _MUTATION_TOOLS:
-            _write_knowledge_file(tool_name, args, result, config)
+            json_ok, synthesis_ok = _write_knowledge_file(tool_name, args, result, config)
+            # Build receipt (graph succeeded if we reached this point)
+            try:
+                parsed = json.loads(result)
+                receipt = WriteReceipt(
+                    node_id=parsed.get("node_id", ""),
+                    label=parsed.get("label", ""),
+                    timestamp=_now(),
+                    graph=True,
+                    json=json_ok,
+                    synthesis=synthesis_ok,
+                )
+                _repair_queue.enqueue(receipt)
+            except Exception:
+                pass  # receipt tracking should never break the tool
         elif tool_name == "set_tier":
             _update_knowledge_tier(args, result, config)
         elif tool_name == "link_nodes":
             parsed = json.loads(result)
             if parsed.get("status") == "linked":
                 await _update_synthesis_for_link(backend, args, config)
+        elif tool_name == "unlink_nodes":
+            parsed = json.loads(result)
+            if parsed.get("status") == "unlinked":
+                await _update_synthesis_for_link(backend, args, config)
+        elif tool_name == "delete_node":
+            parsed = json.loads(result)
+            if parsed.get("status") == "deleted":
+                _delete_knowledge_and_synthesis(args, config)
 
         logger.debug("execute_tool: %s completed", tool_name)
         return result
+    except CircuitOpenError as exc:
+        logger.warning("execute_tool %s: %s", tool_name, exc)
+        return json.dumps({"error": str(exc), "circuit_open": True})
     except Exception as exc:
         logger.error("execute_tool %s failed: %s", tool_name, exc, exc_info=True)
         return json.dumps({"error": f"{tool_name} failed: {exc}"})

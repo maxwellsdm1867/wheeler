@@ -8,6 +8,17 @@ allowed-tools:
   - Edit
   - Glob
   - Grep
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_core__run_cypher
+  - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_documents
+  - mcp__wheeler_query__query_papers
+  - mcp__wheeler_mutations__add_document
+  - mcp__wheeler_mutations__add_paper
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_ops__validate_citations
+  - mcp__wheeler_ops__extract_citations
   - mcp__wheeler__graph_context
   - mcp__wheeler__query_findings
   - mcp__wheeler__query_hypotheses

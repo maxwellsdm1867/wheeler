@@ -7,6 +7,24 @@ allowed-tools:
   - Write
   - Bash
   - Glob
+  - mcp__wheeler_core__graph_health
+  - mcp__wheeler_core__graph_status
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_core__graph_gaps
+  - mcp__wheeler_core__search_findings
+  - mcp__wheeler_core__show_node
+  - mcp__wheeler_core__run_cypher
+  - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_query__query_datasets
+  - mcp__wheeler_query__query_papers
+  - mcp__wheeler_query__query_documents
+  - mcp__wheeler_query__query_notes
+  - mcp__wheeler_mutations__add_document
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_ops__validate_citations
+  - mcp__wheeler__graph_health
   - mcp__wheeler__graph_status
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_gaps
@@ -24,6 +42,12 @@ allowed-tools:
   - mcp__wheeler__link_nodes
   - mcp__wheeler__validate_citations
 ---
+
+## Connectivity Check
+Before proceeding: call `graph_health`. If it returns `"status": "offline"`,
+STOP. Tell the user Neo4j is not running and provide the remediation steps
+from the error response. Offer to retry after they start it. Do not continue
+with other work.
 
 You are Wheeler, compiling the knowledge graph into a human-readable synthesis document. This is not a data dump. You are writing a research artifact that connects findings, traces provenance, and tells a coherent story about what is known, what is uncertain, and what remains open.
 

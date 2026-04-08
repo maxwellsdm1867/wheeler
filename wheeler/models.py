@@ -7,6 +7,16 @@ from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Discriminator, TypeAdapter
 
 
+class ChangeEntry(BaseModel):
+    """One field-level change recorded in a node's change log."""
+
+    timestamp: str
+    action: str  # "created", "tier_changed", "invalidated", "cleared"
+    changes: dict[str, list] = {}  # {"field": [old_value, new_value]}
+    actor: str = "system"
+    reason: str = ""
+
+
 class NodeBase(BaseModel):
     """Common fields shared by all knowledge graph nodes."""
 
@@ -22,6 +32,8 @@ class NodeBase(BaseModel):
     stale: bool = False
     stale_since: str = ""
     session_id: str = ""
+    display_name: str = ""
+    change_log: list[ChangeEntry] = []
 
     @property
     def file_name(self) -> str:

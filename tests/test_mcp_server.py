@@ -26,6 +26,8 @@ class TestToolRegistration:
             "add_hypothesis",
             "add_question",
             "link_nodes",
+            "unlink_nodes",
+            "delete_node",
             "query_findings",
             "query_hypotheses",
             "query_open_questions",
@@ -51,13 +53,15 @@ class TestToolRegistration:
             "query_notes",
             "query_analyses",
             "request_log_summary",
+            "graph_consistency_check",
+            "validate_task_contract",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 34
+        assert len(tools) == 38
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):
@@ -241,6 +245,41 @@ class TestGraphToolWrappers:
         assert result["total_gaps"] == 0
 
 
+class TestUnlinkNodesMCP:
+    """unlink_nodes MCP wrapper delegates to graph_tools.execute_tool."""
+
+    @pytest.mark.asyncio
+    async def test_unlink_delegates(self):
+        mock_result = json.dumps({"status": "unlinked", "source": "F-abc12345", "target": "H-def67890", "relationship": "SUPPORTS"})
+        with patch("wheeler.mcp_server.graph_tools.execute_tool", new_callable=AsyncMock, return_value=mock_result) as mock_exec:
+            from wheeler.mcp_server import unlink_nodes
+            result = await unlink_nodes("F-abc12345", "H-def67890", "SUPPORTS")
+        assert result["status"] == "unlinked"
+        mock_exec.assert_called_once()
+        call_args = mock_exec.call_args
+        assert call_args[0][0] == "unlink_nodes"
+        assert call_args[0][1]["source_id"] == "F-abc12345"
+        assert call_args[0][1]["target_id"] == "H-def67890"
+        assert call_args[0][1]["relationship"] == "SUPPORTS"
+
+
+class TestDeleteNodeMCP:
+    """delete_node MCP wrapper delegates to graph_tools.execute_tool."""
+
+    @pytest.mark.asyncio
+    async def test_delete_delegates(self):
+        mock_result = json.dumps({"status": "deleted", "node_id": "F-abc12345", "label": "Finding"})
+        with patch("wheeler.mcp_server.graph_tools.execute_tool", new_callable=AsyncMock, return_value=mock_result) as mock_exec:
+            from wheeler.mcp_server import delete_node
+            result = await delete_node("F-abc12345")
+        assert result["status"] == "deleted"
+        assert result["node_id"] == "F-abc12345"
+        mock_exec.assert_called_once()
+        call_args = mock_exec.call_args
+        assert call_args[0][0] == "delete_node"
+        assert call_args[0][1]["node_id"] == "F-abc12345"
+
+
 class TestGraphStatus:
     @pytest.mark.asyncio
     async def test_graph_status_delegates(self):
@@ -249,6 +288,89 @@ class TestGraphStatus:
             from wheeler.mcp_server import graph_status
             result = await graph_status()
         assert result == {"Finding": 3, "Hypothesis": 1}
+
+    @pytest.mark.asyncio
+    async def test_graph_status_offline_returns_remediation(self):
+        """When get_status returns _status=offline, graph_status surfaces it clearly."""
+        mock_counts = {"Finding": 0, "Hypothesis": 0, "_status": "offline", "_error": "Connection refused"}
+        with patch("wheeler.mcp_server.schema.get_status", new_callable=AsyncMock, return_value=mock_counts):
+            from wheeler.mcp_server import graph_status
+            result = await graph_status()
+        assert result["status"] == "offline"
+        assert result["blocking"] is True
+        assert "remediation" in result
+        assert "Connection refused" in result["error"]
+        # The node_counts should not include _status or _error
+        assert "_status" not in result["node_counts"]
+        assert "_error" not in result["node_counts"]
+
+
+class TestGetStatusOffline:
+    """Test that schema.get_status marks offline state instead of silently returning zeros."""
+
+    @pytest.mark.asyncio
+    async def test_get_status_offline_includes_status_key(self):
+        """When Neo4j is unreachable, get_status returns _status=offline and _error."""
+        from wheeler.graph.schema import get_status
+        from wheeler.config import load_config
+        config = load_config()
+        # Force a bad URI to guarantee connection failure
+        config.neo4j.uri = "bolt://localhost:1"
+        result = await get_status(config)
+        assert result.get("_status") == "offline"
+        assert "_error" in result
+        assert isinstance(result["_error"], str)
+        assert len(result["_error"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_get_status_offline_still_has_zeroed_counts(self):
+        """Offline result still contains zeroed counts for backward compatibility."""
+        from wheeler.graph.schema import get_status
+        from wheeler.models import NODE_LABELS
+        from wheeler.config import load_config
+        config = load_config()
+        config.neo4j.uri = "bolt://localhost:1"
+        result = await get_status(config)
+        for label in NODE_LABELS:
+            assert label in result
+            assert result[label] == 0
+
+
+class TestGraphHealth:
+    @pytest.mark.asyncio
+    async def test_graph_health_connected(self):
+        mock_counts = {"Finding": 3, "Hypothesis": 1}
+        with patch("wheeler.mcp_server.schema.get_status", new_callable=AsyncMock, return_value=mock_counts):
+            from wheeler.mcp_server import graph_health
+            result = await graph_health()
+        assert result["status"] == "connected"
+        assert result["node_count"] == 4
+        assert "blocking" not in result
+
+    @pytest.mark.asyncio
+    async def test_graph_health_offline_via_status_key(self):
+        """When get_status returns _status=offline, graph_health includes remediation."""
+        mock_counts = {"Finding": 0, "_status": "offline", "_error": "Connection refused"}
+        with patch("wheeler.mcp_server.schema.get_status", new_callable=AsyncMock, return_value=mock_counts):
+            from wheeler.mcp_server import graph_health
+            result = await graph_health()
+        assert result["status"] == "offline"
+        assert result["blocking"] is True
+        assert "remediation" in result
+        assert "Neo4j Desktop" in result["remediation"]
+        assert "docker start" in result["remediation"]
+        assert "Connection refused" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_graph_health_offline_via_exception(self):
+        """Fallback: if get_status raises, graph_health still includes remediation."""
+        with patch("wheeler.mcp_server.schema.get_status", new_callable=AsyncMock, side_effect=RuntimeError("driver crashed")):
+            from wheeler.mcp_server import graph_health
+            result = await graph_health()
+        assert result["status"] == "offline"
+        assert result["blocking"] is True
+        assert "remediation" in result
+        assert "driver crashed" in result["error"]
 
 
 class TestInitSchema:

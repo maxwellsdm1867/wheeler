@@ -1,5 +1,9 @@
 """Wheeler MCP Server — exposes knowledge graph, citations, workspace, and provenance.
 
+DEPRECATED: This monolithic server is kept for backward compatibility.
+Prefer the split servers: mcp_core, mcp_query, mcp_mutations, mcp_ops.
+See .plans/MCP-SERVER-SPLIT.md for rationale.
+
 Thin wrapper over existing Wheeler modules. Each tool loads config once at startup,
 calls the same functions the CLI and engine use, and returns JSON-serializable results.
 
@@ -53,7 +57,7 @@ def _get_embedding_store():
 
 mcp = FastMCP(
     "wheeler",
-    instructions="Wheeler knowledge graph, citation validation, and workspace tools",
+    instructions="Wheeler research knowledge graph tools. Use only for research graph operations (querying nodes, adding findings/hypotheses/papers, citation validation, research asset discovery). Not for general file browsing, document editing, or non-research tasks.",
 )
 
 
@@ -62,6 +66,7 @@ def _logged(func):
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
+        trace_id = f"t-{secrets.token_hex(6)}"
         start = time.perf_counter()
         tool_name = func.__name__
         try:
@@ -81,6 +86,7 @@ def _logged(func):
                 node_id=str(node_id),
                 label=str(label),
                 error="",
+                trace_id=trace_id,
             ))
             return result
         except Exception as exc:
@@ -94,6 +100,7 @@ def _logged(func):
                 node_id="",
                 label="",
                 error=str(exc),
+                trace_id=trace_id,
             ))
             raise
 
@@ -122,11 +129,11 @@ def _check_similar_nodes(text: str, label: str, exclude_id: str | None = None) -
 @mcp.tool()
 @_logged
 async def graph_health() -> dict:
-    """Check graph database connectivity and report diagnostics.
+    """Check Wheeler knowledge graph database connectivity and report diagnostics.
 
     Returns backend type, connection status, database name, node counts,
     and any errors. Use this to verify the graph is working before
-    starting work that depends on it.
+    starting research work that depends on it.
     """
     result: dict = {
         "backend": _config.graph.backend,
@@ -137,13 +144,29 @@ async def graph_health() -> dict:
     }
     try:
         counts = await schema.get_status(_config)
-        total = sum(counts.values())
-        result["status"] = "connected"
-        result["node_count"] = total
-        result["node_counts"] = counts
+        if counts.get("_status") == "offline":
+            result["status"] = "offline"
+            result["error"] = counts.get("_error", "Unknown error")
+            result["blocking"] = True
+            result["remediation"] = (
+                "Open Neo4j Desktop and start the database, "
+                "or run: docker start wheeler-neo4j"
+            )
+        else:
+            node_counts = {k: v for k, v in counts.items()
+                          if not k.startswith("_")}
+            total = sum(node_counts.values())
+            result["status"] = "connected"
+            result["node_count"] = total
+            result["node_counts"] = node_counts
     except Exception as exc:
         result["status"] = "offline"
         result["error"] = str(exc)
+        result["blocking"] = True
+        result["remediation"] = (
+            "Open Neo4j Desktop and start the database, "
+            "or run: docker start wheeler-neo4j"
+        )
 
     # Check knowledge/ directory
     from pathlib import Path
@@ -162,14 +185,27 @@ async def graph_health() -> dict:
 @mcp.tool()
 @_logged
 async def graph_status() -> dict:
-    """Return node counts per label in the knowledge graph."""
-    return await schema.get_status(_config)
+    """Return node counts per label in the Wheeler knowledge graph."""
+    counts = await schema.get_status(_config)
+    if counts.get("_status") == "offline":
+        return {
+            "status": "offline",
+            "error": counts.get("_error", "Unknown error"),
+            "blocking": True,
+            "remediation": (
+                "Open Neo4j Desktop and start the database, "
+                "or run: docker start wheeler-neo4j"
+            ),
+            "node_counts": {k: v for k, v in counts.items()
+                           if not k.startswith("_")},
+        }
+    return counts
 
 
 @mcp.tool()
 @_logged
 async def graph_context() -> str:
-    """Fetch size-limited graph context (recent findings, open questions, hypotheses)."""
+    """Fetch size-limited context from the Wheeler knowledge graph (recent findings, open questions, hypotheses)."""
     return await context.fetch_context(_config)
 
 
@@ -179,7 +215,7 @@ async def graph_context() -> str:
 @mcp.tool()
 @_logged
 async def show_node(node_id: str) -> dict:
-    """Read the full content of a knowledge node from its JSON file.
+    """Read the full content of a Wheeler knowledge graph node from its JSON file.
 
     Returns the complete node data including all fields. Use this to
     read findings, hypotheses, questions, papers, etc. without needing
@@ -211,7 +247,7 @@ async def add_finding(
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
-    """Add a Finding to the knowledge graph. Returns the new node ID.
+    """Add a Finding to the Wheeler knowledge graph. Returns the new node ID.
 
     A finding can be a number, a figure, a table, or any result worth
     recording. Set artifact_type (e.g. "figure", "number", "table") and
@@ -249,7 +285,7 @@ async def add_hypothesis(
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
-    """Add a Hypothesis to the knowledge graph. Returns the new node ID.
+    """Add a Hypothesis to the Wheeler knowledge graph. Returns the new node ID.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
@@ -278,7 +314,7 @@ async def add_question(
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
-    """Add an OpenQuestion to the knowledge graph. Returns the new node ID.
+    """Add an OpenQuestion to the Wheeler knowledge graph. Returns the new node ID.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
@@ -301,7 +337,18 @@ async def add_question(
 @mcp.tool()
 @_logged
 async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
-    """Create a relationship between two graph nodes."""
+    """Create a relationship between two Wheeler knowledge graph nodes.
+
+    Valid relationship types (exactly one of):
+      PROV: USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
+            WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
+      Semantic: SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO,
+                AROSE_FROM, DEPENDS_ON, CONTAINS
+
+    Common aliases are auto-mapped (e.g. USES -> USED, DERIVED_FROM ->
+    WAS_DERIVED_FROM). Any other value returns an error with the full
+    list of allowed types.
+    """
     result = await graph_tools.execute_tool(
         "link_nodes",
         {"source_id": source_id, "target_id": target_id, "relationship": relationship,
@@ -313,8 +360,55 @@ async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
 
 @mcp.tool()
 @_logged
+async def unlink_nodes(source_id: str, target_id: str, relationship: str) -> dict:
+    """Remove a specific relationship between two Wheeler knowledge graph nodes. Use for correcting
+    wrong links created during ingest.
+
+    This is a destructive operation: the relationship is permanently deleted.
+    Both nodes remain in the graph. To re-render synthesis files for the
+    affected nodes, both endpoints are automatically updated.
+
+    Valid relationship types (same as link_nodes):
+      PROV: USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
+            WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
+      Semantic: SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO,
+                AROSE_FROM, DEPENDS_ON, CONTAINS
+
+    Common aliases are auto-mapped (e.g. USES -> USED).
+    """
+    result = await graph_tools.execute_tool(
+        "unlink_nodes",
+        {"source_id": source_id, "target_id": target_id, "relationship": relationship,
+         "session_id": _SESSION_ID},
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def delete_node(node_id: str) -> dict:
+    """Permanently delete a Wheeler knowledge graph node, its knowledge file, synthesis file, all
+    relationships, and embedding. This is irreversible. Use for removing
+    incorrect or duplicate research nodes.
+
+    The node is identified by its ID prefix (e.g. F- for Finding, H- for
+    Hypothesis). All relationships connected to the node are also removed
+    (DETACH DELETE). The knowledge JSON file and synthesis markdown file
+    are deleted from disk. The embedding is removed from the search index.
+    """
+    result = await graph_tools.execute_tool(
+        "delete_node",
+        {"node_id": node_id, "session_id": _SESSION_ID},
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
 async def add_dataset(path: str, type: str, description: str) -> dict:
-    """Add a Dataset node to the knowledge graph. Returns the new node ID."""
+    """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID."""
     result = await graph_tools.execute_tool(
         "add_dataset",
         {"path": path, "type": type, "description": description, "session_id": _SESSION_ID},
@@ -334,7 +428,7 @@ async def add_analysis(
     output_path: str = "",
     output_hash: str = "",
 ) -> dict:
-    """Add a Script node to track a code file with provenance (legacy alias).
+    """Add a Script node to the Wheeler knowledge graph to track a code file with provenance (legacy alias).
 
     If script_hash is empty, Wheeler will compute it from the file.
     Use this when registering scripts or during /wh:ingest.
@@ -372,7 +466,7 @@ async def add_analysis(
 @mcp.tool()
 @_logged
 async def set_tier(node_id: str, tier: str) -> dict:
-    """Set context tier of a node to 'reference' (established) or 'generated' (new work)."""
+    """Set context tier of a Wheeler knowledge graph node to 'reference' (established) or 'generated' (new work)."""
     result = await graph_tools.execute_tool(
         "set_tier", {"node_id": node_id, "tier": tier, "session_id": _SESSION_ID}, _config
     )
@@ -382,7 +476,7 @@ async def set_tier(node_id: str, tier: str) -> dict:
 @mcp.tool()
 @_logged
 async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0) -> dict:
-    """Add a Paper to the knowledge graph for literature provenance. Returns the new node ID."""
+    """Add a Paper to the Wheeler knowledge graph for literature provenance. Returns the new node ID."""
     result = await graph_tools.execute_tool(
         "add_paper",
         {"title": title, "authors": authors, "doi": doi, "year": year,
@@ -403,7 +497,7 @@ async def add_document(
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
-    """Add a Document to the knowledge graph. Returns the new node ID.
+    """Add a Document to the Wheeler knowledge graph. Returns the new node ID.
 
     Provenance-completing: set execution_kind (e.g. "write") to auto-create
     an Execution and link provenance. Pass used_entities as comma-separated
@@ -431,7 +525,7 @@ async def add_note(
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
-    """Add a ResearchNote to capture an insight or idea. Returns the new node ID.
+    """Add a ResearchNote to the Wheeler knowledge graph to capture an insight or idea. Returns the new node ID.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
@@ -454,7 +548,7 @@ async def add_note(
 @mcp.tool()
 @_logged
 async def query_findings(keyword: str = "", limit: int = 10) -> dict:
-    """Search findings in the knowledge graph, optionally filtered by keyword."""
+    """Search Finding nodes in the Wheeler knowledge graph, optionally filtered by keyword."""
     result = await graph_tools.execute_tool(
         "query_findings", {"keyword": keyword, "limit": limit}, _config
     )
@@ -464,7 +558,7 @@ async def query_findings(keyword: str = "", limit: int = 10) -> dict:
 @mcp.tool()
 @_logged
 async def query_hypotheses(status: str = "all", limit: int = 10) -> dict:
-    """List hypotheses, optionally filtered by status (open/supported/rejected/all)."""
+    """List Hypothesis nodes in the Wheeler knowledge graph, optionally filtered by status (open/supported/rejected/all)."""
     result = await graph_tools.execute_tool(
         "query_hypotheses", {"status": status, "limit": limit}, _config
     )
@@ -474,7 +568,7 @@ async def query_hypotheses(status: str = "all", limit: int = 10) -> dict:
 @mcp.tool()
 @_logged
 async def query_open_questions(limit: int = 10) -> dict:
-    """List open questions from the knowledge graph, sorted by priority."""
+    """List OpenQuestion nodes in the Wheeler knowledge graph, sorted by priority."""
     result = await graph_tools.execute_tool(
         "query_open_questions", {"limit": limit}, _config
     )
@@ -484,7 +578,7 @@ async def query_open_questions(limit: int = 10) -> dict:
 @mcp.tool()
 @_logged
 async def query_datasets(keyword: str = "", limit: int = 10) -> dict:
-    """Search Dataset nodes in the knowledge graph."""
+    """Search Dataset nodes in the Wheeler knowledge graph."""
     result = await graph_tools.execute_tool(
         "query_datasets", {"keyword": keyword, "limit": limit}, _config
     )
@@ -494,7 +588,7 @@ async def query_datasets(keyword: str = "", limit: int = 10) -> dict:
 @mcp.tool()
 @_logged
 async def query_papers(keyword: str = "", limit: int = 10) -> dict:
-    """Search Paper nodes in the knowledge graph by title or authors."""
+    """Search Paper nodes in the Wheeler knowledge graph by title or authors."""
     result = await graph_tools.execute_tool(
         "query_papers", {"keyword": keyword, "limit": limit}, _config
     )
@@ -504,7 +598,7 @@ async def query_papers(keyword: str = "", limit: int = 10) -> dict:
 @mcp.tool()
 @_logged
 async def query_notes(keyword: str = "", limit: int = 10) -> dict:
-    """Search research notes in the knowledge graph."""
+    """Search ResearchNote nodes in the Wheeler knowledge graph."""
     result = await graph_tools.execute_tool(
         "query_notes", {"keyword": keyword, "limit": limit}, _config
     )
@@ -514,7 +608,12 @@ async def query_notes(keyword: str = "", limit: int = 10) -> dict:
 @mcp.tool()
 @_logged
 async def query_documents(keyword: str = "", status: str = "", limit: int = 10) -> dict:
-    """Search Document nodes in the knowledge graph."""
+    """Search Document nodes in the Wheeler knowledge graph.
+
+    Returns documents registered as graph nodes (research drafts, synthesis
+    docs), not arbitrary files. Use standard Read/Glob tools for general file
+    operations.
+    """
     result = await graph_tools.execute_tool(
         "query_documents", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
@@ -524,7 +623,7 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
 @mcp.tool()
 @_logged
 async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
-    """Search Script nodes in the knowledge graph by path or language (legacy alias for query_scripts)."""
+    """Search Script nodes in the Wheeler knowledge graph by path or language (legacy alias for query_scripts)."""
     result = await graph_tools.execute_tool(
         "query_scripts", {"keyword": keyword, "limit": limit}, _config
     )
@@ -534,7 +633,7 @@ async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
 @mcp.tool()
 @_logged
 async def graph_gaps() -> dict:
-    """Find knowledge gaps: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates."""
+    """Find gaps in the Wheeler knowledge graph: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates."""
     result = await graph_tools.execute_tool("graph_gaps", {}, _config)
     gaps = json.loads(result)
 
@@ -569,11 +668,12 @@ async def search_findings(
     label: str = "",
     mode: str = "multi",
 ) -> dict:
-    """Search across knowledge graph nodes using multi-channel retrieval.
+    """Search across Wheeler knowledge graph nodes for research context retrieval.
 
     Combines semantic (embedding similarity), keyword (graph queries), and
     temporal (recency) channels via Reciprocal Rank Fusion for better recall
-    than any single channel alone.
+    than any single channel alone. Use for finding related research nodes
+    when linking new entries or exploring existing knowledge.
 
     Args:
         query: Natural language search query
@@ -625,9 +725,9 @@ def _extract_display_text(node: dict) -> str:
 @mcp.tool()
 @_logged
 async def index_node(node_id: str, label: str, text: str) -> dict:
-    """Add or update a node's semantic embedding for search.
+    """Add or update a Wheeler knowledge graph node's semantic embedding for search.
 
-    Call this after creating or updating a node to make it searchable.
+    Call this after creating or updating a research node to make it searchable.
     The embedding is generated from the text content using a local model.
 
     Args:
@@ -652,14 +752,14 @@ async def index_node(node_id: str, label: str, text: str) -> dict:
 @mcp.tool()
 @_logged
 async def extract_citations(text: str) -> list[str]:
-    """Extract all node ID citations ([F-3a2b] format) from text using regex."""
+    """Extract all Wheeler knowledge graph node ID citations ([F-3a2b] format) from text using regex."""
     return citations.extract_citations(text)
 
 
 @mcp.tool()
 @_logged
 async def validate_citations(text: str) -> dict:
-    """Validate all citations in text against Neo4j. Checks existence and provenance."""
+    """Validate all Wheeler knowledge graph citations in text against Neo4j. Checks existence and provenance."""
     results = await citations.validate_citations(text, _config)
     valid = sum(1 for r in results if r.status == citations.CitationStatus.VALID)
     return {
@@ -677,13 +777,86 @@ async def validate_citations(text: str) -> dict:
     }
 
 
+# --- Contract validation ---
+
+
+@mcp.tool()
+@_logged
+async def validate_task_contract(
+    session_id: str,
+    required_finding_count: int = 0,
+    confidence_min: float = 0.0,
+    required_hypothesis_count: int = 0,
+    require_provenance: bool = True,
+    must_reference: str = "",
+) -> dict:
+    """Validate task output against a contract.
+
+    Check that a task session produced the expected graph nodes,
+    provenance links, and references. Use during /wh:reconvene to
+    verify independent tasks met their goals.
+
+    Args:
+        session_id: The session ID of the task to validate
+        required_finding_count: Minimum Finding nodes expected (0 = skip check)
+        confidence_min: Minimum confidence for findings (0.0 = skip check)
+        required_hypothesis_count: Minimum Hypothesis nodes expected (0 = skip check)
+        require_provenance: Check that findings have WAS_GENERATED_BY links
+        must_reference: Comma-separated node IDs that must be referenced by task output
+    """
+    from wheeler.contracts import (
+        TaskContract, NodeRequirement, LinkRequirement, validate_contract,
+    )
+
+    reqs: list[NodeRequirement] = []
+    if required_finding_count > 0:
+        reqs.append(NodeRequirement(
+            type="Finding", min_count=required_finding_count,
+            confidence_min=confidence_min,
+        ))
+    if required_hypothesis_count > 0:
+        reqs.append(NodeRequirement(
+            type="Hypothesis", min_count=required_hypothesis_count,
+        ))
+
+    links: list[LinkRequirement] = []
+    if require_provenance and required_finding_count > 0:
+        links.append(LinkRequirement(
+            from_type="Finding",
+            relationship="WAS_GENERATED_BY",
+            to_type="Execution",
+        ))
+
+    refs = [r.strip() for r in must_reference.split(",") if r.strip()] if must_reference else []
+
+    contract = TaskContract(
+        task_id=f"validate-{session_id}",
+        required_nodes=reqs,
+        required_links=links,
+        must_reference=refs,
+    )
+
+    result = await validate_contract(_config, contract, session_id)
+    return {
+        "passed": result.passed,
+        "violations": result.violations,
+        "checks_run": result.checks_run,
+        "summary": result.summary,
+    }
+
+
 # --- Workspace ---
 
 
 @mcp.tool()
 @_logged
 async def scan_workspace() -> dict:
-    """Scan the project directory for scripts and data files."""
+    """Scan research workspace paths defined in wheeler.yaml to discover data files and scripts for knowledge graph indexing.
+
+    Only use for research asset discovery when building or updating the Wheeler
+    knowledge graph (e.g. during /wh:ingest), not for general file browsing or
+    non-research tasks. For general file operations use Read/Glob tools instead.
+    """
     summary = workspace.scan_workspace(_config.workspace, _config.paths)
     return {
         "project_dir": summary.project_dir,
@@ -705,7 +878,7 @@ async def scan_workspace() -> dict:
 @mcp.tool()
 @_logged
 async def detect_stale() -> list[dict]:
-    """Find Script nodes whose file has been modified since last recorded hash."""
+    """Find Wheeler knowledge graph Script nodes whose file has been modified since last recorded hash."""
     stale = await provenance.detect_stale_scripts(_config)
     return [
         {
@@ -721,7 +894,7 @@ async def detect_stale() -> list[dict]:
 @mcp.tool()
 @_logged
 async def hash_file(path: str) -> dict:
-    """Compute SHA-256 hash of a file for provenance tracking."""
+    """Compute SHA-256 hash of a file for Wheeler research provenance tracking."""
     sha = provenance.hash_file(path)
     return {"path": path, "sha256": sha}
 
@@ -729,7 +902,7 @@ async def hash_file(path: str) -> dict:
 @mcp.tool()
 @_logged
 async def scan_dependencies(script_path: str, link_to_graph: bool = False) -> dict:
-    """Scan a Python script for imports, data file references, and function calls.
+    """Scan a Python script for imports and data file references for Wheeler research provenance.
 
     Uses AST parsing (no execution) to extract:
     - imports: all imported modules
@@ -795,7 +968,7 @@ async def _link_dependencies(
                     {
                         "source_id": analysis_id,
                         "target_id": ds["id"],
-                        "relationship": "USED_DATA",
+                        "relationship": "DEPENDS_ON",
                     },
                     _config,
                 )
@@ -811,9 +984,9 @@ async def _link_dependencies(
 @mcp.tool()
 @_logged
 async def run_cypher(query: str) -> dict:
-    """Run a read-only Cypher query against the graph database.
+    """Run a read-only Cypher query against the Wheeler knowledge graph database.
 
-    Use for ad-hoc graph exploration: relationship traversal, path queries,
+    Use for ad-hoc research graph exploration: relationship traversal, path queries,
     aggregations, or anything the higher-level tools don't cover.
 
     Examples:
@@ -843,8 +1016,38 @@ async def run_cypher(query: str) -> dict:
 
 @mcp.tool()
 @_logged
+async def graph_consistency_check(repair: bool = False) -> dict:
+    """Check consistency across graph, JSON, and synthesis layers.
+
+    Compares node inventories in Neo4j, knowledge/*.json, and synthesis/*.md.
+    Reports nodes that exist in one layer but not others.
+
+    Set repair=True to fix detected drift:
+    - Regenerate missing synthesis files from JSON
+    - Delete orphaned synthesis files with no backing JSON
+    - Warn about graph/JSON mismatches (manual intervention needed)
+
+    Use during /wh:dream consolidation or /wh:close end-of-session sweep.
+    """
+    from dataclasses import asdict
+    from wheeler.consistency import check_consistency, repair_consistency
+
+    report = await check_consistency(_config)
+    result = asdict(report)
+
+    if repair:
+        repair_log = await repair_consistency(_config, report, dry_run=False)
+        result["repairs"] = repair_log
+    else:
+        result["repairs"] = await repair_consistency(_config, report, dry_run=True)
+
+    return result
+
+
+@mcp.tool()
+@_logged
 async def init_schema() -> dict:
-    """Apply all constraints and indexes to Neo4j. Returns count of applied statements."""
+    """Apply Wheeler knowledge graph constraints and indexes to Neo4j. Returns count of applied statements."""
     applied = await schema.init_schema(_config)
     return {"applied": len(applied)}
 
@@ -854,7 +1057,7 @@ async def init_schema() -> dict:
 
 @mcp.tool()
 async def request_log_summary() -> dict:
-    """Return summary stats of recent MCP tool calls (latency, error rate, call counts)."""
+    """Return summary stats of recent Wheeler MCP tool calls (latency, error rate, call counts)."""
     return _request_logger.summary()
 
 

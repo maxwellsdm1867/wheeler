@@ -25,6 +25,9 @@ class Neo4jConfig(BaseModel):
     # by it.  Empty string means no namespacing (Enterprise/Aura uses a
     # dedicated database instead).  Populated automatically by ensure_database().
     project_tag: str = ""
+    # Circuit breaker: fail fast when Neo4j is unreachable.
+    cb_failure_threshold: int = 3
+    cb_recovery_timeout: float = 60.0
 
 
 class DataSourcesConfig(BaseModel):

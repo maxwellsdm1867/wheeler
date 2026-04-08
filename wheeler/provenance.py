@@ -257,13 +257,41 @@ async def propagate_invalidation(
         records = [r async for r in result]
 
         for rec in records:
+            dep_id = rec["nid"]
+            old_stab = rec["old_stab"]
+            new_stab = rec["new_stab"]
             affected.append(InvalidatedNode(
-                node_id=rec["nid"],
+                node_id=dep_id,
                 label=rec["label"] or "Unknown",
-                old_stability=rec["old_stab"],
-                new_stability=rec["new_stab"],
+                old_stability=old_stab,
+                new_stability=new_stab,
                 hops=rec["hops"],
             ))
+
+            # Best-effort: update JSON change log for invalidated node
+            try:
+                from wheeler.knowledge.store import read_node, write_node
+                from wheeler.models import ChangeEntry
+                from pathlib import Path
+
+                knowledge_path = Path(config.knowledge_path)
+                node_model = read_node(knowledge_path, dep_id)
+                node_model.change_log.append(ChangeEntry(
+                    timestamp=now,
+                    action="invalidated",
+                    changes={
+                        "stale": [False, True],
+                        "stability": [round(old_stab, 4), round(new_stab, 4)],
+                    },
+                    actor="provenance_system",
+                    reason=f"upstream change in {changed_node_id}",
+                ))
+                node_model.stale = True
+                node_model.stale_since = now
+                node_model.stability = new_stab
+                write_node(knowledge_path, node_model)
+            except (FileNotFoundError, Exception):
+                pass  # pre-migration node or file error
 
     logger.info(
         "Invalidation from %s: %d downstream nodes affected",

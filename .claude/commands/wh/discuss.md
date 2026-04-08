@@ -10,6 +10,14 @@ allowed-tools:
   - WebSearch
   - WebFetch
   - AskUserQuestion
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_core__graph_gaps
+  - mcp__wheeler_core__run_cypher
+  - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_query__query_datasets
+  - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_gaps
   - mcp__wheeler__query_findings

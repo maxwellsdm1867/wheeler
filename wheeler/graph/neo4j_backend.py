@@ -17,6 +17,7 @@ import logging
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.backend import GraphBackend
+from wheeler.graph.circuit_breaker import CircuitBreaker, CircuitOpenError
 from wheeler.graph.schema import (
     LABEL_TO_PREFIX,
     generate_node_id,
@@ -30,6 +31,10 @@ class Neo4jBackend(GraphBackend):
 
     def __init__(self, config: WheelerConfig) -> None:
         self._config = config
+        self._cb = CircuitBreaker(
+            failure_threshold=config.neo4j.cb_failure_threshold,
+            recovery_timeout=config.neo4j.cb_recovery_timeout,
+        )
 
     def _driver(self):
         from wheeler.graph.driver import get_async_driver
@@ -62,6 +67,7 @@ class Neo4jBackend(GraphBackend):
     # -- node CRUD --
 
     async def create_node(self, label: str, properties: dict) -> str:
+        self._cb.check()
         props = dict(properties)
         if "id" not in props:
             prefix = LABEL_TO_PREFIX.get(label)
@@ -75,19 +81,27 @@ class Neo4jBackend(GraphBackend):
         if self._project_tag:
             props["_wheeler_project"] = self._project_tag
 
-        # Build SET clause from properties — reference via $props.key
+        # Build SET clause from properties -- reference via $props.key
         # to avoid kwarg collision with the Neo4j driver's own parameters.
         prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
         stmt = f"CREATE (n:{label} {{{prop_assignments}}})"
 
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            await session.run(stmt, parameters={"props": props})
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                await session.run(stmt, parameters={"props": props})
+            self._cb.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
         logger.debug("Created %s node %s", label, node_id)
         return node_id
 
     async def get_node(self, label: str, node_id: str) -> dict | None:
+        self._cb.check()
         params: dict = {"id": node_id}
         if self._project_tag:
             stmt = (
@@ -98,10 +112,17 @@ class Neo4jBackend(GraphBackend):
         else:
             stmt = f"MATCH (n:{label} {{id: $id}}) RETURN n"
 
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            record = await result.single()
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                result = await session.run(stmt, parameters=params)
+                record = await result.single()
+            self._cb.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
         if record is None:
             return None
@@ -112,6 +133,7 @@ class Neo4jBackend(GraphBackend):
     async def update_node(
         self, label: str, node_id: str, properties: dict
     ) -> bool:
+        self._cb.check()
         props = {k: v for k, v in properties.items() if k != "id"}
         if not props:
             return False
@@ -129,14 +151,22 @@ class Neo4jBackend(GraphBackend):
         else:
             stmt = f"MATCH (n:{label} {{id: $id}}) SET {set_clauses} RETURN n.id"
 
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            record = await result.single()
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                result = await session.run(stmt, parameters=params)
+                record = await result.single()
+            self._cb.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
         return record is not None
 
     async def delete_node(self, label: str, node_id: str) -> bool:
+        self._cb.check()
         params: dict = {"id": node_id}
         if self._project_tag:
             match_clause = (
@@ -147,21 +177,29 @@ class Neo4jBackend(GraphBackend):
         else:
             match_clause = f"MATCH (n:{label} {{id: $id}})"
 
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            # Check existence
-            result = await session.run(
-                f"{match_clause} RETURN n.id",
-                parameters=params,
-            )
-            record = await result.single()
-            if record is None:
-                return False
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                # Check existence
+                result = await session.run(
+                    f"{match_clause} RETURN n.id",
+                    parameters=params,
+                )
+                record = await result.single()
+                if record is None:
+                    self._cb.record_success()
+                    return False
 
-            await session.run(
-                f"{match_clause} DETACH DELETE n",
-                parameters=params,
-            )
+                await session.run(
+                    f"{match_clause} DETACH DELETE n",
+                    parameters=params,
+                )
+            self._cb.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
         logger.debug("Deleted %s node %s", label, node_id)
         return True
@@ -176,6 +214,7 @@ class Neo4jBackend(GraphBackend):
         tgt_label: str,
         tgt_id: str,
     ) -> bool:
+        self._cb.check()
         params: dict = {"src": src_id, "tgt": tgt_id}
         if self._project_tag:
             stmt = (
@@ -190,10 +229,17 @@ class Neo4jBackend(GraphBackend):
                 f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
             )
 
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            record = await result.single()
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                result = await session.run(stmt, parameters=params)
+                record = await result.single()
+            self._cb.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
         if record:
             logger.debug("Linked %s -[%s]-> %s", src_id, rel_type, tgt_id)
@@ -209,6 +255,7 @@ class Neo4jBackend(GraphBackend):
         order_by: str | None = None,
         limit: int = 10,
     ) -> list[dict]:
+        self._cb.check()
         where_parts: list[str] = []
         params: dict = {"limit": limit}
         if filters:
@@ -234,25 +281,50 @@ class Neo4jBackend(GraphBackend):
             f" RETURN n{order_clause} LIMIT $limit"
         )
 
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(stmt, parameters=params)
-            records = [r async for r in result]
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                result = await session.run(stmt, parameters=params)
+                records = [r async for r in result]
+            self._cb.record_success()
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
         return [dict(r["n"]) for r in records]
 
     async def count_all(self) -> dict[str, int]:
         """Use the existing schema.get_status implementation."""
+        self._cb.check()
         from wheeler.graph.schema import get_status
 
-        return await get_status(self._config)
+        try:
+            result = await get_status(self._config)
+            self._cb.record_success()
+            return result
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise
 
     # -- raw cypher --
 
     async def run_cypher(
         self, query: str, params: dict | None = None
     ) -> list[dict]:
-        driver = self._driver()
-        async with driver.session(database=self._database) as session:
-            result = await session.run(query, parameters=params or {})
-            return [dict(r) async for r in result]
+        self._cb.check()
+        try:
+            driver = self._driver()
+            async with driver.session(database=self._database) as session:
+                result = await session.run(query, parameters=params or {})
+                records = [dict(r) async for r in result]
+            self._cb.record_success()
+            return records
+        except CircuitOpenError:
+            raise
+        except Exception:
+            self._cb.record_failure()
+            raise

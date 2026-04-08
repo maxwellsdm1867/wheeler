@@ -6,6 +6,7 @@ import logging
 import secrets
 
 from wheeler.config import WheelerConfig
+from wheeler.graph.circuit_breaker import CircuitOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,12 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS FOR (w:Document) ON (w.status)",
     "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.title)",
     "CREATE INDEX IF NOT EXISTS FOR (n:ResearchNote) ON (n.date)",
+    # Display names for Neo4j Browser captions
+    "CREATE INDEX IF NOT EXISTS FOR (f:Finding) ON (f.display_name)",
+    "CREATE INDEX IF NOT EXISTS FOR (h:Hypothesis) ON (h.display_name)",
+    "CREATE INDEX IF NOT EXISTS FOR (s:Script) ON (s.display_name)",
+    "CREATE INDEX IF NOT EXISTS FOR (p:Paper) ON (p.display_name)",
+    "CREATE INDEX IF NOT EXISTS FOR (x:Execution) ON (x.display_name)",
     # Knowledge file pointers
     "CREATE INDEX IF NOT EXISTS FOR (f:Finding) ON (f.file_path)",
     "CREATE INDEX IF NOT EXISTS FOR (h:Hypothesis) ON (h.file_path)",
@@ -177,6 +184,11 @@ async def get_status(config: WheelerConfig) -> dict[str, int]:
             records = [r async for r in result]
             for rec in records:
                 counts[rec["label"]] = rec["cnt"]
+    except CircuitOpenError:
+        logger.warning("graph_status: circuit breaker open")
+        counts["_status"] = "circuit_open"
     except Exception as exc:
         logger.warning("graph_status failed (Neo4j offline?): %s", exc)
+        counts["_status"] = "offline"
+        counts["_error"] = str(exc)
     return counts

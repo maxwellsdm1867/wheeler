@@ -26,6 +26,8 @@ class TestToolDefinitions:
             "add_script",
             "add_execution",
             "link_nodes",
+            "unlink_nodes",
+            "delete_node",
             "query_findings",
             "query_open_questions",
             "query_hypotheses",
@@ -165,6 +167,159 @@ class TestMutationStability:
         assert captured_props["stability"] == 0.5  # Script + generated
 
 
+class TestDisplayName:
+    """Verify that mutation tools set display_name on created nodes (Issue #8)."""
+
+    @pytest.mark.asyncio
+    async def test_add_finding_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_finding(FakeBackend(), {
+            "description": "tau_rise equals 0.12ms across all tested cell types in the dataset",
+            "confidence": 0.8,
+        })
+        # First 40 chars of description
+        assert captured_props["display_name"] == "tau_rise equals 0.12ms across all tested"
+        assert len(captured_props["display_name"]) == 40
+
+    @pytest.mark.asyncio
+    async def test_add_script_display_name_is_filename(self):
+        from wheeler.tools.graph_tools.mutations import add_script
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_script(FakeBackend(), {"path": "/data/scripts/analyze_spikes.py", "language": "python"})
+        assert captured_props["display_name"] == "analyze_spikes.py"
+
+    @pytest.mark.asyncio
+    async def test_add_paper_display_name_with_authors_and_year(self):
+        from wheeler.tools.graph_tools.mutations import add_paper
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_paper(FakeBackend(), {"title": "Spike Response Model", "authors": "Gerstner, Kistler", "year": 1995})
+        assert captured_props["display_name"] == "Gerstner et al., 1995"
+
+    @pytest.mark.asyncio
+    async def test_add_paper_display_name_without_authors(self):
+        from wheeler.tools.graph_tools.mutations import add_paper
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_paper(FakeBackend(), {"title": "A Very Long Paper Title That Exceeds Forty Characters Easily"})
+        assert captured_props["display_name"] == "A Very Long Paper Title That Exceeds For"
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_display_name_from_path(self):
+        from wheeler.tools.graph_tools.mutations import add_dataset
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_dataset(FakeBackend(), {"path": "/data/recordings/cell_data.mat", "type": "mat", "description": "Cell recordings"})
+        assert captured_props["display_name"] == "cell_data.mat"
+
+    @pytest.mark.asyncio
+    async def test_add_execution_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_execution
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_execution(FakeBackend(), {"kind": "script_run", "description": "Analyze cold exposure responses across multiple conditions"})
+        # Format: "{kind}: {description[:30]}"
+        assert captured_props["display_name"] == "script_run: Analyze cold exposure response"
+
+    @pytest.mark.asyncio
+    async def test_add_ledger_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_ledger
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_ledger(FakeBackend(), {"mode": "execute"})
+        assert captured_props["display_name"] == "Ledger: execute"
+
+    @pytest.mark.asyncio
+    async def test_add_hypothesis_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_hypothesis
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_hypothesis(FakeBackend(), {"statement": "Channel gating drives temperature dependence"})
+        assert captured_props["display_name"] == "Channel gating drives temperature depend"
+
+    @pytest.mark.asyncio
+    async def test_add_question_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_question
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_question(FakeBackend(), {"question": "Does cell type affect tau?"})
+        assert captured_props["display_name"] == "Does cell type affect tau?"
+
+    @pytest.mark.asyncio
+    async def test_add_document_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_document
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_document(FakeBackend(), {"title": "Results: Spike Generation", "path": "docs/results.md"})
+        assert captured_props["display_name"] == "Results: Spike Generation"
+
+    @pytest.mark.asyncio
+    async def test_add_note_display_name(self):
+        from wheeler.tools.graph_tools.mutations import add_note
+
+        captured_props = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+        await add_note(FakeBackend(), {"title": "Insight about tau", "content": "The tau values are consistent"})
+        assert captured_props["display_name"] == "Insight about tau"
+
+
 class TestProvenanceCompleting:
     """Verify that mutation tools auto-create Execution + links when execution_kind is set."""
 
@@ -286,6 +441,160 @@ class TestProvenanceCompleting:
         assert rels_created[0][2] == "WAS_GENERATED_BY"
 
 
+
+
+class TestUnlinkNodes:
+    """Verify unlink_nodes mutation handler."""
+
+    @pytest.mark.asyncio
+    async def test_unlink_success(self):
+        from wheeler.tools.graph_tools.mutations import unlink_nodes
+
+        class FakeBackend:
+            async def run_cypher(self, query, params=None):
+                return [{"deleted": 1}]
+
+        result = json.loads(await unlink_nodes(
+            FakeBackend(),
+            {"source_id": "F-abc12345", "target_id": "H-def67890", "relationship": "SUPPORTS"},
+        ))
+        assert result["status"] == "unlinked"
+        assert result["source"] == "F-abc12345"
+        assert result["target"] == "H-def67890"
+        assert result["relationship"] == "SUPPORTS"
+
+    @pytest.mark.asyncio
+    async def test_unlink_not_found(self):
+        from wheeler.tools.graph_tools.mutations import unlink_nodes
+
+        class FakeBackend:
+            async def run_cypher(self, query, params=None):
+                return [{"deleted": 0}]
+
+        result = json.loads(await unlink_nodes(
+            FakeBackend(),
+            {"source_id": "F-abc12345", "target_id": "H-def67890", "relationship": "SUPPORTS"},
+        ))
+        assert "error" in result
+        assert result["error"] == "Relationship not found"
+
+    @pytest.mark.asyncio
+    async def test_unlink_invalid_relationship(self):
+        from wheeler.tools.graph_tools.mutations import unlink_nodes
+
+        class FakeBackend:
+            pass
+
+        result = json.loads(await unlink_nodes(
+            FakeBackend(),
+            {"source_id": "F-abc12345", "target_id": "H-def67890", "relationship": "BOGUS"},
+        ))
+        assert "error" in result
+        assert "Invalid relationship" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_unlink_alias_mapping(self):
+        """Aliases like USES should map to USED before deletion."""
+        from wheeler.tools.graph_tools.mutations import unlink_nodes
+
+        captured_query = []
+
+        class FakeBackend:
+            async def run_cypher(self, query, params=None):
+                captured_query.append(query)
+                return [{"deleted": 1}]
+
+        result = json.loads(await unlink_nodes(
+            FakeBackend(),
+            {"source_id": "F-abc12345", "target_id": "D-def67890", "relationship": "USES"},
+        ))
+        assert result["status"] == "unlinked"
+        assert result["relationship"] == "USED"  # mapped from USES
+        assert "USED" in captured_query[0]
+
+    @pytest.mark.asyncio
+    async def test_unlink_bad_prefix(self):
+        from wheeler.tools.graph_tools.mutations import unlink_nodes
+
+        class FakeBackend:
+            pass
+
+        result = json.loads(await unlink_nodes(
+            FakeBackend(),
+            {"source_id": "ZZ-abc123", "target_id": "H-def67890", "relationship": "SUPPORTS"},
+        ))
+        assert "error" in result
+        assert "Could not determine node labels" in result["error"]
+
+
+class TestDeleteNode:
+    """Verify delete_node mutation handler."""
+
+    @pytest.mark.asyncio
+    async def test_delete_success(self):
+        from wheeler.tools.graph_tools.mutations import delete_node
+
+        class FakeBackend:
+            async def delete_node(self, label, node_id):
+                return True
+
+        result = json.loads(await delete_node(
+            FakeBackend(),
+            {"node_id": "F-abc12345"},
+        ))
+        assert result["status"] == "deleted"
+        assert result["node_id"] == "F-abc12345"
+        assert result["label"] == "Finding"
+
+    @pytest.mark.asyncio
+    async def test_delete_not_found(self):
+        from wheeler.tools.graph_tools.mutations import delete_node
+
+        class FakeBackend:
+            async def delete_node(self, label, node_id):
+                return False
+
+        result = json.loads(await delete_node(
+            FakeBackend(),
+            {"node_id": "F-abc12345"},
+        ))
+        assert "error" in result
+        assert "not found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_delete_bad_prefix(self):
+        from wheeler.tools.graph_tools.mutations import delete_node
+
+        class FakeBackend:
+            pass
+
+        result = json.loads(await delete_node(
+            FakeBackend(),
+            {"node_id": "ZZ-abc123"},
+        ))
+        assert "error" in result
+        assert "Unknown node prefix" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_delete_resolves_all_prefixes(self):
+        """All known prefixes should resolve to a label."""
+        from wheeler.tools.graph_tools.mutations import delete_node
+        from wheeler.graph.schema import PREFIX_TO_LABEL
+
+        for prefix, expected_label in PREFIX_TO_LABEL.items():
+
+            class FakeBackend:
+                async def delete_node(self, label, node_id):
+                    return True
+
+            result = json.loads(await delete_node(
+                FakeBackend(),
+                {"node_id": f"{prefix}-test1234"},
+            ))
+            assert result["status"] == "deleted"
+            assert result["label"] == expected_label
+
+
 class TestToolImports:
     def test_execute_tool_is_callable(self):
         from wheeler.tools.graph_tools import execute_tool
@@ -293,4 +602,4 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 23
+        assert len(TOOL_DEFINITIONS) == 25

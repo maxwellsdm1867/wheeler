@@ -7,6 +7,13 @@ allowed-tools:
   - Write
   - Bash
   - AskUserQuestion
+  - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_query__query_notes
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_core__show_node
+  - mcp__wheeler_core__search_findings
+  - mcp__wheeler_core__index_node
   - mcp__wheeler__add_note
   - mcp__wheeler__query_notes
   - mcp__wheeler__link_nodes

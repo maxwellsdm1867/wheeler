@@ -394,6 +394,8 @@ def render_synthesis(
         "type": model.type,
         "tier": model.tier,
     }
+    if model.display_name:
+        fm["display_name"] = model.display_name
     if model.created:
         fm["created"] = model.created.split("T")[0] if "T" in model.created else model.created
     if model.tags:

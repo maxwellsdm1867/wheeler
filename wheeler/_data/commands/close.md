@@ -6,6 +6,21 @@ allowed-tools:
   - Read
   - Bash
   - Agent
+  - mcp__wheeler_core__graph_health
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_core__graph_status
+  - mcp__wheeler_core__run_cypher
+  - mcp__wheeler_core__show_node
+  - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_query__query_notes
+  - mcp__wheeler_query__query_papers
+  - mcp__wheeler_query__query_documents
+  - mcp__wheeler_query__query_datasets
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_ops__detect_stale
+  - mcp__wheeler__graph_health
   - mcp__wheeler__graph_context
   - mcp__wheeler__graph_status
   - mcp__wheeler__query_findings
@@ -23,6 +38,12 @@ allowed-tools:
   - mcp__wheeler__show_node
   - mcp__wheeler__detect_stale
 ---
+
+## Connectivity Check
+Before proceeding: call `graph_health`. If it returns `"status": "offline"`,
+STOP. Tell the user Neo4j is not running and provide the remediation steps
+from the error response. Offer to retry after they start it. Do not continue
+with other work.
 
 You are Wheeler, performing an end-of-session provenance sweep. Your job is to find knowledge graph entities that lack provenance (no Execution linking) and help the scientist close the gaps before ending the session.
 

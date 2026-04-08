@@ -10,6 +10,13 @@ allowed-tools:
   - Glob
   - Grep
   - AskUserQuestion
+  - mcp__wheeler_core__graph_health
+  - mcp__wheeler_core__graph_status
+  - mcp__wheeler_core__init_schema
+  - mcp__wheeler_core__show_node
+  - mcp__wheeler_mutations__add_question
+  - mcp__wheeler_mutations__add_dataset
+  - mcp__wheeler_ops__scan_workspace
   - mcp__wheeler__graph_health
   - mcp__wheeler__graph_status
   - mcp__wheeler__init_schema
@@ -122,6 +129,14 @@ Plus default sections for workspace and models. The neo4j URI, username, and pas
   ```
   Then re-run `/wh:init` or `/wh:status` once it's up. Do NOT silently proceed — the graph is essential for Wheeler to work properly.
 - If **connected**: run `init_schema` to apply constraints and indexes.
+- Tell the scientist about Neo4j Browser captions (one-time setup):
+  ```
+  Tip: To see human-readable labels in Neo4j Browser instead of hash IDs,
+  open the browser at http://localhost:7474, click any node label in the
+  sidebar, and select "display_name" as the Caption property. Do this once
+  per label type (Finding, Script, Paper, etc.). Wheeler sets display_name
+  automatically on every node.
+  ```
 - Ask: "What question are you investigating?" and seed the first OpenQuestion using `add_question` with priority 8.
 - Optionally: call `scan_workspace` and offer to register key datasets with `add_dataset`.
 
