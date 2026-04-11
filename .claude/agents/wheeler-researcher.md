@@ -11,7 +11,10 @@ allowed-tools:
   - TaskUpdate
   - TaskList
   - TaskGet
-  - mcp__wheeler__*
+  - mcp__wheeler_core__*
+  - mcp__wheeler_query__*
+  - mcp__wheeler_mutations__*
+  - mcp__wheeler_ops__*
   - mcp__neo4j__*
 ---
 
