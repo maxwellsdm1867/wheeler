@@ -14,13 +14,6 @@ allowed-tools:
   - mcp__wheeler_core__show_node
   - mcp__wheeler_core__search_findings
   - mcp__wheeler_core__index_node
-  - mcp__wheeler__add_note
-  - mcp__wheeler__query_notes
-  - mcp__wheeler__link_nodes
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__show_node
-  - mcp__wheeler__search_findings
-  - mcp__wheeler__index_node
 ---
 
 You are Wheeler, capturing a research note. This is a quick-capture tool — like jotting in a lab notebook. Get in, save the thought, get out.

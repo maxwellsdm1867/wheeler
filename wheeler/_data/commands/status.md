@@ -16,13 +16,6 @@ allowed-tools:
   - mcp__wheeler_query__query_findings
   - mcp__wheeler_query__query_open_questions
   - mcp__wheeler_ops__detect_stale
-  - mcp__wheeler__graph_health
-  - mcp__wheeler__graph_status
-  - mcp__wheeler__graph_gaps
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_open_questions
-  - mcp__wheeler__detect_stale
-  - mcp__wheeler__run_cypher
 ---
 
 ## Connectivity Check

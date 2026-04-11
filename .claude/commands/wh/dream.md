@@ -23,24 +23,6 @@ allowed-tools:
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_mutations__add_question
   - mcp__wheeler_ops__detect_stale
-  - mcp__wheeler_ops__detect_communities
-  - mcp__wheeler__graph_health
-  - mcp__wheeler__graph_status
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__graph_gaps
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_hypotheses
-  - mcp__wheeler__query_open_questions
-  - mcp__wheeler__query_datasets
-  - mcp__wheeler__query_papers
-  - mcp__wheeler__query_documents
-  - mcp__wheeler__query_notes
-  - mcp__wheeler__detect_stale
-  - mcp__wheeler__detect_communities
-  - mcp__wheeler__set_tier
-  - mcp__wheeler__link_nodes
-  - mcp__wheeler__add_question
-  - mcp__wheeler__run_cypher
 ---
 
 ## Connectivity Check

@@ -13,8 +13,6 @@ allowed-tools:
   - mcp__wheeler_query__*
   - mcp__wheeler_mutations__*
   - mcp__wheeler_ops__*
-  - mcp__wheeler__*
-  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist executing a queued background task. This is non-interactive — complete the task fully and log results to the graph.

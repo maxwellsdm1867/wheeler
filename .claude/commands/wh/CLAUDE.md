@@ -15,7 +15,6 @@ allowed-tools:
   - mcp__wheeler_query__*
   - mcp__wheeler_mutations__*
   - mcp__wheeler_ops__*
-  - mcp__wheeler__*
 ---
 
 System prompt markdown here...

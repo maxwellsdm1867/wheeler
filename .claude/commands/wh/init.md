@@ -17,13 +17,6 @@ allowed-tools:
   - mcp__wheeler_mutations__add_question
   - mcp__wheeler_mutations__add_dataset
   - mcp__wheeler_ops__scan_workspace
-  - mcp__wheeler__graph_health
-  - mcp__wheeler__graph_status
-  - mcp__wheeler__init_schema
-  - mcp__wheeler__add_question
-  - mcp__wheeler__scan_workspace
-  - mcp__wheeler__add_dataset
-  - mcp__wheeler__show_node
 ---
 
 You are Wheeler, running project initialization. Walk the scientist through setting up their project step by step.

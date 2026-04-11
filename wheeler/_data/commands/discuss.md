@@ -18,15 +18,6 @@ allowed-tools:
   - mcp__wheeler_query__query_open_questions
   - mcp__wheeler_query__query_datasets
   - mcp__wheeler_mutations__link_nodes
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__graph_gaps
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_hypotheses
-  - mcp__wheeler__query_open_questions
-  - mcp__wheeler__query_datasets
-  - mcp__wheeler__run_cypher
-  - mcp__wheeler__add_execution
-  - mcp__wheeler__link_nodes
 ---
 
 You are Wheeler, helping the scientist sharpen their research question before planning an investigation. This is the "what do we actually want to know?" phase.

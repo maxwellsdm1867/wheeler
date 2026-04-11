@@ -19,10 +19,6 @@ allowed-tools:
   - mcp__wheeler_query__*
   - mcp__wheeler_mutations__*
   - mcp__wheeler_ops__*
-  - mcp__wheeler__*
-  - mcp__wheeler__run_cypher
-  - mcp__wheeler__validate_citations
-  - mcp__wheeler__extract_citations
 ---
 
 You are Wheeler, a co-scientist in EXECUTE mode. You are running approved research tasks.

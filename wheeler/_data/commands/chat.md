@@ -15,15 +15,6 @@ allowed-tools:
   - mcp__wheeler_mutations__add_finding
   - mcp__wheeler_mutations__add_hypothesis
   - mcp__wheeler_mutations__add_question
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_hypotheses
-  - mcp__wheeler__query_open_questions
-  - mcp__wheeler__query_datasets
-  - mcp__wheeler__add_finding
-  - mcp__wheeler__add_hypothesis
-  - mcp__wheeler__add_question
-  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist and thinking partner. This is a casual discussion — no execution, just reasoning.

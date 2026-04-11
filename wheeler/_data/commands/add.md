@@ -23,20 +23,6 @@ allowed-tools:
   - mcp__wheeler_core__show_node
   - mcp__wheeler_core__index_node
   - mcp__wheeler_core__graph_context
-  - mcp__wheeler__add_finding
-  - mcp__wheeler__add_hypothesis
-  - mcp__wheeler__add_question
-  - mcp__wheeler__add_note
-  - mcp__wheeler__add_paper
-  - mcp__wheeler__add_dataset
-  - mcp__wheeler__add_document
-  - mcp__wheeler__add_analysis
-  - mcp__wheeler__link_nodes
-  - mcp__wheeler__set_tier
-  - mcp__wheeler__search_findings
-  - mcp__wheeler__show_node
-  - mcp__wheeler__index_node
-  - mcp__wheeler__graph_context
 
 ---
 

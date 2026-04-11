@@ -19,18 +19,6 @@ allowed-tools:
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_hypotheses
-  - mcp__wheeler__validate_citations
-  - mcp__wheeler__extract_citations
-  - mcp__wheeler__add_document
-  - mcp__wheeler__add_paper
-  - mcp__wheeler__query_documents
-  - mcp__wheeler__query_papers
-  - mcp__wheeler__link_nodes
-  - mcp__wheeler__add_execution
-  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, a co-scientist in WRITING mode. You are helping draft scientific text.

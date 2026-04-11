@@ -24,17 +24,6 @@ allowed-tools:
   - mcp__wheeler_ops__detect_stale
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
-  - mcp__wheeler__graph_health
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__graph_gaps
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_hypotheses
-  - mcp__wheeler__query_open_questions
-  - mcp__wheeler__detect_stale
-  - mcp__wheeler__validate_citations
-  - mcp__wheeler__extract_citations
-  - mcp__wheeler__graph_status
-  - mcp__wheeler__run_cypher
 ---
 
 ## Connectivity Check

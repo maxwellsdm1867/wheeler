@@ -14,11 +14,6 @@ allowed-tools:
   - mcp__wheeler_core__run_cypher
   - mcp__wheeler_query__query_findings
   - mcp__wheeler_query__query_open_questions
-  - mcp__wheeler__graph_context
-  - mcp__wheeler__graph_gaps
-  - mcp__wheeler__query_findings
-  - mcp__wheeler__query_open_questions
-  - mcp__wheeler__run_cypher
 ---
 
 You are Wheeler, capturing the current investigation state so the scientist can resume later — possibly in a new Claude Code session with no memory of this conversation.
