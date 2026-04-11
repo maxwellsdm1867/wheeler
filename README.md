@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.5.1-blue" alt="v0.5.1">
+  <img src="https://img.shields.io/badge/v0.6.0-blue" alt="v0.6.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -131,16 +131,21 @@ Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip 
 | `/wh:execute` | Run analyses, log findings to graph with provenance |
 | `/wh:write` | Draft text with strict citation enforcement |
 | `/wh:note` | Quick-capture an insight, observation, or idea |
+| `/wh:add` | General-purpose ingest: text, DOI, file, URL |
+| `/wh:compile` | Compile graph into synthesis documents with citations |
 | `/wh:pair` | Live co-work: scientist drives, Wheeler assists |
 | `/wh:chat` | Quick discussion, no execution |
 | `/wh:ask` | Query the graph, trace provenance chains |
 | `/wh:handoff` | Propose tasks for independent execution |
 | `/wh:reconvene` | Review results from independent work |
 | `/wh:ingest` | Bootstrap graph from existing code, data, papers |
-| `/wh:dream` | Consolidate: promote tiers, link orphans, flag stale |
+| `/wh:dream` | Consolidate: promote tiers, detect communities, link orphans, flag stale |
+| `/wh:triage` | Triage GitHub issues against planned work |
+| `/wh:report` | Generate work log from graph (time period) |
 | `/wh:close` | End-of-session provenance sweep |
 | `/wh:pause` / `/wh:resume` | Save and restore investigation state |
 | `/wh:status` | Show progress, suggest next action |
+| `/wh:update` | Check for Wheeler updates |
 
 **Wheeler never does your thinking.** Every task gets tagged: SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
 
@@ -209,6 +214,27 @@ When a script file changes:
 4. Stability decays with distance: `source_stability * (0.8 ^ hops)`
 
 You always know what's current and what needs re-verification.
+
+---
+
+## What's New in v0.6.0
+
+**Infrastructure hardening** (6 distributed-systems patterns):
+- **Circuit breaker** on Neo4j: fail fast in <1ms after 3 consecutive failures instead of 30s timeout. Auto-recovers via half-open probe after 60s.
+- **Consistency checker**: detects and repairs drift between graph, `knowledge/*.json`, and `synthesis/*.md`. New `graph_consistency_check` tool with dry-run and repair modes.
+- **Trace IDs**: every MCP call gets a unique `trace_id` for correlating multi-step operations (provenance-completing adds, triple-writes, link updates).
+- **Write receipts**: tracks which layers succeeded per triple-write. Incomplete writes queued to `.wheeler/repair_queue.jsonl`.
+- **Node change log**: field-level diffs on `set_tier` and invalidation propagation, stored on every node.
+- **Task contracts**: structured output specs (required nodes, links, citation pass rates) validated at reconvene via `validate_task_contract`.
+
+**GraphRAG enhancements** (5 retrieval upgrades):
+- **Graph-expanded local search**: new `search_context` tool seeds from RRF then expands via 1-hop (all rels) + 2-hop (PROV only). Returns provenance chains alongside results.
+- **Neo4j fulltext index**: denormalized `_search_text` property maintained via triple-write, fulltext as RRF channel 4.
+- **Community detection**: BFS-based connected components via `detect_communities`, used by `/wh:dream` Phase 3.25. No external deps.
+- **Entity resolution**: `propose_merge` (read-only) + `execute_merge` (two-phase commit with relationship redirection). Per-relationship Cypher, no APOC.
+- **Retrieval quality metrics**: context precision + coverage gaps on ledger entries via keyword extraction.
+
+**Split MCP servers**: the monolithic `wheeler` server is now available as 4 focused servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`) plus the legacy monolith. 43 tools total.
 
 ---
 
@@ -298,12 +324,22 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers
-    │       ├── wheeler (34 tools): provenance-completing mutations,
-    │       │     queries, search, citations, staleness detection,
-    │       │     request logging, raw Cypher
-    │       ├── matlab: MATLAB execution (optional)
-    │       └── papers: literature search (optional)
+    ├── MCP Servers (43 tools, split into 4 focused servers + legacy monolith)
+    │       ├── wheeler_core (12): health, status, context, show_node,
+    │       │     search_findings, search_context, run_cypher, init_schema,
+    │       │     index_node, graph_gaps, propose_merge, request_log_summary
+    │       ├── wheeler_query (8): query_findings, query_hypotheses,
+    │       │     query_open_questions, query_datasets, query_papers,
+    │       │     query_documents, query_notes, query_analyses
+    │       ├── wheeler_mutations (13): add_*, link_nodes, unlink_nodes,
+    │       │     delete_node, execute_merge, set_tier
+    │       ├── wheeler_ops (10): detect_stale, hash_file, scan_dependencies,
+    │       │     scan_workspace, extract_citations, validate_citations,
+    │       │     compute_retrieval_quality, graph_consistency_check,
+    │       │     detect_communities, validate_task_contract
+    │       ├── wheeler (legacy monolith, 43 tools): same surface, one server
+    │       ├── neo4j (mcp-neo4j-cypher): raw Cypher access
+    │       └── matlab: MATLAB execution (optional)
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -321,34 +357,47 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
 
 ```text
 wheeler/
-├── models.py                # Pydantic v2: 11 node types, prefix mappings
+├── models.py                # Pydantic v2: 11 node types, prefix mappings, ChangeEntry
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
-├── mcp_server.py            # FastMCP, 34 provenance-completing tools
-├── request_log.py           # Structured request logging (JSONL)
+├── consistency.py           # Cross-layer drift detection and repair
+├── contracts.py             # Task output contracts for handoff validation
+├── write_receipt.py         # Per-layer write tracking + repair queue
+├── communities.py           # BFS-based community detection
+├── merge.py                 # Entity resolution: propose + execute merges
+├── mcp_server.py            # Legacy monolith: all 43 tools in one server
+├── mcp_core.py              # Split server: health, context, search, raw cypher (12)
+├── mcp_query.py             # Split server: query_* read-only tools (8)
+├── mcp_mutations.py         # Split server: add_*, link, delete, merge (13)
+├── mcp_ops.py               # Split server: staleness, citations, consistency (10)
+├── mcp_shared.py            # Shared helpers: trace IDs, decorators, context
+├── request_log.py           # Structured JSONL logging with trace IDs
 ├── knowledge/
 │   ├── store.py             # File I/O: read, write, list, delete (atomic)
-│   ├── render.py            # Markdown rendering for wh show
+│   ├── render.py            # Markdown rendering for wh show + synthesis
 │   └── migrate.py           # Graph ↔ filesystem migration
 ├── graph/
 │   ├── backend.py           # GraphBackend ABC + factory
-│   ├── neo4j_backend.py     # Neo4j backend
-│   ├── schema.py            # W3C PROV constraints, indexes, ID generation
+│   ├── neo4j_backend.py     # Neo4j backend (with project namespace isolation)
+│   ├── circuit_breaker.py   # Fail-fast on Neo4j outages (<1ms vs 30s timeout)
+│   ├── schema.py            # W3C PROV constraints, indexes, fulltext, ID gen
 │   ├── context.py           # Tier-separated context injection
 │   ├── provenance.py        # Script hashing, staleness detection
 │   ├── trace.py             # Provenance chain traversal
 │   └── migration_prov.py    # PROV schema migration tool
 ├── search/
 │   ├── embeddings.py        # EmbeddingStore (fastembed + numpy)
-│   └── retrieval.py         # Multi-channel search with RRF fusion
+│   ├── backfill.py          # Batch embedding for existing nodes
+│   └── retrieval.py         # Multi-channel search with RRF fusion + local graph expansion
 ├── validation/
-│   └── citations.py         # Regex extraction + Cypher validation
+│   ├── citations.py         # Regex extraction + Cypher validation
+│   └── ledger.py            # Ledger nodes with retrieval quality metrics
 ├── tools/
-│   ├── graph_tools/         # Provenance-completing mutations + queries
+│   ├── graph_tools/         # Provenance-completing mutations + queries (triple-write)
 │   └── cli.py               # CLI: show, migrate, graph ops, citations
 └── workspace.py             # Project file scanner
 
-tests/                        # 665 tests
+tests/                        # 838 tests
 docs/                         # Research docs, project spec
 ```
 
@@ -356,7 +405,7 @@ docs/                         # Research docs, project spec
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v                 # unit + integration tests (665 tests)
+python -m pytest tests/ -v                 # unit + integration tests (838 tests)
 python -m pytest tests/e2e/ -v             # e2e tests (requires Neo4j)
 python tests/evaluation/eval_retrieval.py  # retrieval quality evaluation
 ```

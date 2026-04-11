@@ -60,6 +60,7 @@ Each act is a `.md` file in `.claude/commands/wh/` with YAML frontmatter control
 | `/wh:note` | Quick-capture research note | Read + Write + graph mutations |
 | `/wh:status` | Show investigation progress | Read + graph reads |
 | `/wh:report` | Generate work log from graph | Read + Write + graph reads |
+| `/wh:triage` | Triage GitHub issues against planned work | Read + Write + Bash + graph reads |
 | `/wh:update` | Check for Wheeler updates | Read + Bash |
 | `/wh:queue` | Background task execution | Everything |
 
@@ -299,7 +300,80 @@ Community Edition supports per-project isolation via a `_wheeler_project` proper
 
 ### Semantic Search
 
-Included by default (`fastembed` and `numpy` are core dependencies). Uses fastembed (BAAI/bge-small-en-v1.5) + numpy, stored in `.wheeler/embeddings/`. The `search_findings` tool uses multi-channel retrieval with Reciprocal Rank Fusion (RRF), combining semantic (embedding similarity), keyword (graph queries), and temporal (recency) channels for better recall than any single channel alone.
+Included by default (`fastembed` and `numpy` are core dependencies). Uses fastembed (BAAI/bge-small-en-v1.5) + numpy, stored in `.wheeler/embeddings/`. The `search_findings` tool uses multi-channel retrieval with Reciprocal Rank Fusion (RRF), combining four channels:
+
+1. **Semantic**: cosine similarity on fastembed vectors in `.wheeler/embeddings/`
+2. **Keyword**: graph substring queries over title and structured metadata
+3. **Temporal**: recency boost scored by `updated` timestamp
+4. **Fulltext**: Neo4j fulltext index on the denormalized `_search_text` property, maintained via triple-write (added in v0.6.0)
+
+Any channel can be missing (no embeddings, empty graph, no fulltext index) and the others still produce results. RRF fuses rank positions across surviving channels.
+
+### Graph-Expanded Local Search
+
+`search_context` (v0.6.0) layers graph neighborhood expansion on top of RRF. It seeds from the top-k RRF hits, then traverses:
+
+1. **1-hop** out from each seed across all relationship types
+2. **2-hop** out along PROV edges only (`USED`, `WAS_GENERATED_BY`, `WAS_DERIVED_FROM`, `WAS_INFORMED_BY`)
+
+The result is a subgraph of seeds plus immediate neighbors plus two-hop provenance ancestors. `/wh:write` uses this to pull provenance chains alongside direct matches so citations can cover inputs, not just the finding itself.
+
+### Fulltext Index and `_search_text`
+
+`graph/schema.py` creates a Neo4j fulltext index over the `_search_text` property on every node. `tools/graph_tools/__init__.py` populates this property on every write by concatenating title, description, statement, question, content, or any other prose field on the node. This keeps fulltext search in lockstep with the canonical JSON layer.
+
+When a `neo4j.project_tag` is set (Community Edition namespace), fulltext queries filter results by that tag in Python after retrieval, since the Community fulltext index does not support per-namespace scoping directly.
+
+---
+
+## Infrastructure Hardening (v0.6.0)
+
+Six distributed-systems patterns applied to Wheeler's multi-agent graph surface.
+
+### Circuit Breaker on Neo4j
+
+`graph/circuit_breaker.py` wraps the Neo4j backend in a three-state circuit breaker:
+
+| State | Behavior |
+|-------|----------|
+| CLOSED | Normal operation. Each failure increments a counter. |
+| OPEN | After 3 consecutive failures, trip the breaker. All subsequent calls fail fast in <1ms. |
+| HALF_OPEN | After 60 seconds, allow one probe call. Success -> CLOSED, failure -> OPEN. |
+
+Without the breaker, a dead Neo4j instance would time out each MCP call at 30s, stalling Claude Code for minutes on a provenance chain lookup. With it, Claude gets an immediate error and can route around the outage or surface the problem cleanly.
+
+### Consistency Checker
+
+`consistency.py` exposes `check_consistency()` and `repair_consistency()`. A cross-layer check compares three sources:
+
+1. Neo4j graph nodes by id and label
+2. `knowledge/*.json` files
+3. `synthesis/*.md` files
+
+For each node id it records which layers contain it, flags missing layers (`graph_only`, `json_only`, `synthesis_only`), and when `repair=True` regenerates the missing layer from the surviving source of truth. The MCP tool `graph_consistency_check` wraps this for interactive use with a dry-run default.
+
+### Trace IDs
+
+Every MCP call goes through the `@_logged` decorator in `mcp_shared.py`. The decorator generates a fresh `trace_id` and threads it through the request log. Multi-step operations (provenance-completing add, triple-write, link update) can be correlated by grouping on `trace_id` in the log.
+
+### Write Receipts and Repair Queue
+
+`write_receipt.py` defines `WriteReceipt` as a per-layer success record: `graph_written`, `json_written`, `synthesis_written`, `embedding_indexed`. The triple-write path in `tools/graph_tools/__init__.py` fills out the receipt as each layer succeeds or fails. If any layer fails with others succeeding, the receipt is appended to `.wheeler/repair_queue.jsonl` for later reconciliation rather than dropped on the floor.
+
+### Change Log on Nodes
+
+`models.ChangeEntry` is a Pydantic model for field-level diffs. `NodeBase` carries a `change_log: list[ChangeEntry]` field (default empty, backward-compatible). `set_tier` and `propagate_invalidation` append entries with before/after values, timestamp, and reason. This gives an append-only audit trail on each node without needing a separate history store.
+
+### Task Contracts
+
+`contracts.py` defines `TaskContract` for the handoff system. A contract specifies required output nodes (type and minimum count), required provenance links, citation pass rate, and literature that must be referenced. `validate_task_contract` (MCP tool, backed by `validate_contract()`) checks the current graph state against a contract and returns pass/fail with violations. This turns the reconvene step from "look at logs" into "did the independent run actually produce what was promised?".
+
+### Entity Resolution
+
+`merge.py` handles duplicate nodes found by `/wh:dream` or the `graph_gaps` near-duplicate detector. Two phases:
+
+1. `propose_merge(a, b)` (read-only): loads both nodes, refuses if types differ, counts relationships on each side, picks the higher-connected node as `keep`, computes a merged metadata dict, and lists relationships that would need to be redirected.
+2. `execute_merge(keep_id, merge_from_id)`: opens a Neo4j transaction, redirects each relationship with per-relationship Cypher (no APOC required), deletes the merged-from node from graph, then atomically moves the knowledge JSON and synthesis markdown into the keep node's files.
 
 ---
 
@@ -385,11 +459,16 @@ LAYER 0 (leaf nodes, zero internal deps):
   depscanner.py          top-level: (none)
   log_summary.py         top-level: (none)
   request_log.py         top-level: (none)
+  write_receipt.py       top-level: (none)
+  graph/circuit_breaker  top-level: (none)
 
 LAYER 1 (depends on layer 0 only):
   knowledge/store.py     top-level: models
   knowledge/render.py    top-level: models
   workspace.py           top-level: config
+  consistency.py         top-level: config
+  contracts.py           top-level: config
+  communities.py         top-level: config
   scaffold.py            top-level: config (DEAD CODE: zero callers)
   installer.py           top-level: wheeler (version only)
                          lazy:      packaging.version (optional)
@@ -405,9 +484,12 @@ LAYER 2 (depends on layers 0-1):
   graph/context.py       top-level: config, graph.driver
   graph/provenance.py    top-level: config, graph.driver, graph.schema
   graph/trace.py         top-level: config, graph.driver, graph.schema
-  graph/neo4j_backend.py top-level: config, graph.backend, graph.schema
+  graph/neo4j_backend.py top-level: config, graph.backend, graph.schema,
+                                    graph.circuit_breaker
                          lazy:      graph.driver, graph.schema
   graph/__init__.py      top-level: graph.schema
+  merge.py               top-level: config, models
+                         lazy:      tools.graph_tools, knowledge.store
   search/embeddings.py   top-level: (none internal)
   search/__init__.py     top-level: search.embeddings (try/except)
   search/backfill.py     top-level: search.embeddings
@@ -434,14 +516,28 @@ LAYER 3 (depends on layers 0-2):
   tools/graph_tools/__init__.py     top-level: config, graph.schema,
                                                .mutations, .queries, ._common
                                     lazy:      graph.backend, models, knowledge.store,
-                                               knowledge.render, provenance
+                                               knowledge.render, provenance,
+                                               write_receipt
+
+  mcp_shared.py                     top-level: config, request_log
 
 LAYER 4 (top, depends on everything):
   mcp_server.py          top-level: config, graph.context, graph.schema,
                                     graph.provenance, tools.graph_tools,
                                     request_log, validation.citations, workspace
                          lazy:      search.embeddings, search.retrieval,
-                                    knowledge.store, depscanner
+                                    knowledge.store, depscanner, merge,
+                                    communities, consistency, contracts
+  mcp_core.py            top-level: config, graph (context, schema),
+                                    tools.graph_tools, mcp_shared
+                         lazy:      search.retrieval, merge
+  mcp_query.py           top-level: tools.graph_tools, mcp_shared
+  mcp_mutations.py       top-level: graph.provenance, tools.graph_tools,
+                                    mcp_shared
+                         lazy:      merge
+  mcp_ops.py             top-level: graph.provenance, tools.graph_tools,
+                                    validation.citations, workspace, mcp_shared
+                         lazy:      consistency, communities, contracts
   tools/cli.py           top-level: config, graph.driver, graph.schema,
                                     validation.citations
                          lazy:      graph.trace, graph.provenance,
@@ -561,7 +657,11 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 | Entry Point | Module | Purpose |
 |-------------|--------|---------|
-| `wheeler-mcp` | `wheeler.mcp_server:main` | MCP server (FastMCP, stdio transport) |
+| `wheeler-mcp` | `wheeler.mcp_server:main` | Legacy monolith MCP server (43 tools, stdio transport) |
+| `wheeler-core-mcp` | `wheeler.mcp_core:main` | Split server: reads + search + cypher + schema (12) |
+| `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (8) |
+| `wheeler-mutations-mcp` | `wheeler.mcp_mutations:main` | Split server: add_*, link, unlink, delete, merge (13) |
+| `wheeler-ops-mcp` | `wheeler.mcp_ops:main` | Split server: staleness, citations, consistency, ops (10) |
 | `wheeler` | `wheeler.tools.cli:app` | Typer CLI (show, graph, validate, install) |
 | `wheeler-tools` | `wheeler.tools.cli:app` | Alias for CLI |
 | `python -m wheeler.task_log` | `wheeler.task_log:main` | Post-hoc task log builder |
@@ -570,9 +670,48 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ---
 
-## MCP Tools (34 total)
+## MCP Tools (43 total, 5 servers)
 
-The MCP server (`wheeler/mcp_server.py`) exposes 34 tools via FastMCP:
+As of v0.6.0 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
+
+| Server | Module | Tools | Scope |
+|--------|--------|-------|-------|
+| `wheeler` | `wheeler/mcp_server.py` | 43 | Legacy monolith, all tools in one process |
+| `wheeler_core` | `wheeler/mcp_core.py` | 12 | Reads + search + raw cypher + schema |
+| `wheeler_query` | `wheeler/mcp_query.py` | 8 | Read-only `query_*` tools |
+| `wheeler_mutations` | `wheeler/mcp_mutations.py` | 13 | Writes: add_*, link, unlink, delete, merge, set_tier |
+| `wheeler_ops` | `wheeler/mcp_ops.py` | 10 | Ops: staleness, citations, consistency, communities, contracts |
+
+Shared request logging, trace ID generation, and backend access live in `wheeler/mcp_shared.py` so all five servers emit a uniform log stream to `.wheeler/request_log.jsonl`.
+
+### wheeler_core (12)
+`graph_health`, `graph_status`, `graph_context`, `graph_gaps`, `show_node`,
+`search_findings`, `search_context` (graph-expanded local search),
+`propose_merge`, `run_cypher` (read-only), `init_schema`, `index_node`,
+`request_log_summary`
+
+### wheeler_query (8)
+`query_findings`, `query_hypotheses`, `query_open_questions`, `query_datasets`,
+`query_papers`, `query_documents`, `query_notes`, `query_analyses`
+(legacy alias for `query_scripts`)
+
+### wheeler_mutations (13)
+`add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`,
+`add_document`, `add_note`, `add_analysis` (legacy alias for `add_script`),
+`link_nodes`, `unlink_nodes`, `delete_node`, `execute_merge`, `set_tier`
+
+### wheeler_ops (10)
+`detect_stale`, `hash_file`, `scan_dependencies`, `scan_workspace`,
+`extract_citations`, `validate_citations`, `compute_retrieval_quality`,
+`graph_consistency_check`, `detect_communities`, `validate_task_contract`
+
+Every mutation logs to `.wheeler/request_log.jsonl` via the `@_logged` decorator in `mcp_shared.py` with timestamp, latency, status, `session_id`, and `trace_id`.
+
+---
+
+## Legacy Tool Groups (mcp_server.py monolith)
+
+The following groupings are preserved in the monolith server for backward compatibility:
 
 ### Graph health and status (3)
 `graph_health`, `graph_status`, `graph_context`
@@ -580,11 +719,11 @@ The MCP server (`wheeler/mcp_server.py`) exposes 34 tools via FastMCP:
 ### Node read (1)
 `show_node`
 
-### Mutations (9)
-`add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`, `add_document`, `add_note`, `add_analysis` (legacy alias for add_script), `link_nodes`
+### Mutations (13)
+`add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`, `add_document`, `add_note`, `add_analysis` (legacy alias for add_script), `link_nodes`, `unlink_nodes`, `delete_node`, `execute_merge`, `set_tier`
 
-### Tier management (1)
-`set_tier`
+### Entity resolution (1)
+`propose_merge` (read-only comparison; paired with `execute_merge` in mutations)
 
 ### Queries (8)
 `query_findings`, `query_hypotheses`, `query_open_questions`, `query_datasets`, `query_papers`, `query_notes`, `query_documents`, `query_analyses` (legacy alias for query_scripts)
@@ -592,17 +731,23 @@ The MCP server (`wheeler/mcp_server.py`) exposes 34 tools via FastMCP:
 ### Gap analysis (1)
 `graph_gaps` (enriched with near-duplicate detection from embeddings)
 
-### Search (2)
-`search_findings` (multi-channel RRF retrieval), `index_node`
+### Search (3)
+`search_findings` (multi-channel RRF retrieval), `search_context` (graph-expanded local search), `index_node`
 
 ### Citation validation (2)
 `extract_citations`, `validate_citations`
 
+### Retrieval quality (1)
+`compute_retrieval_quality` (context precision + coverage via keyword extraction)
+
 ### Workspace (1)
 `scan_workspace`
 
-### Provenance (3)
+### Provenance and staleness (3)
 `detect_stale`, `hash_file`, `scan_dependencies`
+
+### Infrastructure (3)
+`graph_consistency_check` (cross-layer drift detection, dry-run or repair), `detect_communities` (BFS connected components), `validate_task_contract` (handoff contract validation)
 
 ### Raw graph (1)
 `run_cypher` (read-only, write operations blocked)
@@ -613,7 +758,7 @@ The MCP server (`wheeler/mcp_server.py`) exposes 34 tools via FastMCP:
 ### Diagnostics (1)
 `request_log_summary`
 
-Every mutation tool logs to `.wheeler/request_log.jsonl` via the `@_logged` decorator with timestamp, latency, status, and session_id.
+Every mutation tool logs to `.wheeler/request_log.jsonl` via the `@_logged` decorator with timestamp, latency, status, `session_id`, and `trace_id`.
 
 ---
 
@@ -673,17 +818,28 @@ Note: `fastembed` and `numpy` are declared as both core and `[search]` optional 
 ```
 wheeler/
 +-- __init__.py                  # Version, logging setup
-+-- models.py                    # Pydantic models, prefix mappings (source of truth)
++-- models.py                    # Pydantic models, prefix mappings, ChangeEntry (source of truth)
 +-- config.py                    # YAML config loader (incl. synthesis_path)
 +-- provenance.py                # Stability scoring, invalidation propagation
++-- consistency.py               # Cross-layer drift detection + repair (graph/JSON/synthesis)
++-- contracts.py                 # Task output contracts (required nodes, links, pass rates)
++-- write_receipt.py             # Triple-write receipts + .wheeler/repair_queue.jsonl
++-- communities.py               # BFS connected components for /wh:dream
++-- merge.py                     # Entity resolution: propose_merge + execute_merge
 +-- depscanner.py                # AST-based Python script dependency scanner
 +-- workspace.py                 # File discovery + context formatting
 +-- scaffold.py                  # Project directory detection (DEAD CODE: zero callers)
 +-- installer.py                 # Install/uninstall/update slash commands + MCP
-+-- request_log.py               # Append-only JSONL request logging for MCP tools
++-- request_log.py               # Append-only JSONL logging + trace_id generation
 +-- task_log.py                  # Structured task logging for headless runs
 +-- log_summary.py               # Reconvene log summarizer
 +-- validate_output.py           # Post-hoc citation validation for headless output
++-- mcp_server.py                # Legacy monolith MCP server (43 tools)
++-- mcp_shared.py                # Shared helpers: trace IDs, @_logged, backend access
++-- mcp_core.py                  # Split server: reads + search + cypher + schema (12 tools)
++-- mcp_query.py                 # Split server: query_* read-only tools (8 tools)
++-- mcp_mutations.py             # Split server: add_*, link, unlink, delete, merge (13 tools)
++-- mcp_ops.py                   # Split server: staleness, citations, consistency, ops (10 tools)
 +-- knowledge/
 |   +-- __init__.py              # Re-exports: write_node, read_node, render_node
 |   +-- store.py                 # File I/O: read, write, list, delete, write_synthesis
@@ -693,8 +849,9 @@ wheeler/
 |   +-- __init__.py              # Re-exports: get_status, init_schema
 |   +-- backend.py               # GraphBackend ABC + factory (returns Neo4jBackend)
 |   +-- neo4j_backend.py         # Neo4j backend (with project namespace isolation)
+|   +-- circuit_breaker.py       # Fail-fast Neo4j guard (<1ms vs 30s timeout)
 |   +-- driver.py                # Neo4j connection pool singleton (async + sync)
-|   +-- schema.py                # Constraints, indexes, generate_node_id()
+|   +-- schema.py                # Constraints, indexes, fulltext index, generate_node_id()
 |   +-- context.py               # Size-limited graph context injection
 |   +-- provenance.py            # File hashing, staleness detection
 |   +-- trace.py                 # Provenance chain traversal
@@ -703,25 +860,24 @@ wheeler/
 |   +-- __init__.py              # Conditional re-export of EmbeddingStore
 |   +-- embeddings.py            # EmbeddingStore (fastembed + numpy)
 |   +-- backfill.py              # Batch embedding for existing nodes
-|   +-- retrieval.py             # Multi-channel retrieval with RRF
+|   +-- retrieval.py             # Multi-channel RRF + graph-expanded local search
 +-- validation/
 |   +-- __init__.py              # Re-exports: citations + ledger
 |   +-- citations.py             # Regex extraction + Cypher validation
-|   +-- ledger.py                # Provenance ledger (L-prefix nodes)
+|   +-- ledger.py                # Ledger (L-prefix nodes) + retrieval quality metrics
 +-- tools/
 |   +-- __init__.py              # (empty docstring)
 |   +-- cli.py                   # Typer CLI (show, migrate, graph ops)
 |   +-- graph_tools/             # MCP tool handlers (mutations + queries)
 |       +-- __init__.py          # Tool registry + execute_tool() + triple-write
 |       +-- _common.py           # _now() timestamp helper
-|       +-- mutations.py         # add_*, link_nodes, set_tier
+|       +-- mutations.py         # add_*, link_nodes, unlink_nodes, delete_node, set_tier
 |       +-- queries.py           # query_*, graph_gaps
-+-- mcp_server.py                # FastMCP server (34 tools)
 
-.claude/commands/wh/*.md         # Slash commands (22 acts)
+.claude/commands/wh/*.md         # Slash commands (24 acts)
 bin/wh                           # Headless task runner
 wheeler.yaml                     # Project config
-.mcp.json                        # MCP server definitions
+.mcp.json                        # MCP server definitions (1 monolith + 4 split + neo4j)
 ```
 
 ---
