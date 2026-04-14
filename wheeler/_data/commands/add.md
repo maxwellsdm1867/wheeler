@@ -122,6 +122,18 @@ Route by extension:
 ### Anything else
 Ask: "What kind of thing is this?" with options `["Dataset", "Document", "Analysis script"]`.
 
+## Before Calling Any Mutation Tool
+
+Validate arguments BEFORE calling `add_*` tools. Invalid values are rejected with a structured error.
+
+1. **Paths must be absolute**: Always resolve to a full path starting with `/`. Use `Bash` with `realpath "$path"` if you have a relative path. For datasets and scripts, the file MUST exist on disk: verify with `ls -la "$path"` first.
+2. **Confidence is 0.0-1.0**: For findings, use 0.3 for exploratory results, 0.7 for solid results, 0.9 for highly confident. Values outside [0.0, 1.0] are rejected.
+3. **Priority is 1-10**: For questions, 10 is highest urgency. Values outside [1, 10] are rejected.
+4. **Status values are fixed**: Hypothesis: open/supported/rejected. Document: draft/revision/final. Other values are rejected.
+5. **Required fields cannot be empty**: description, statement, question, title, content, path (when required), type, language, kind.
+
+If a tool call returns `"error": "validation_failed"`, read the `fields` dict to see what's wrong, fix the values, and retry.
+
 ## After Creating Any Node
 
 Do these steps for every node created. Steps 1 and 2 are MANDATORY. Do not skip them.

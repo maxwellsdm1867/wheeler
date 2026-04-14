@@ -281,9 +281,14 @@ async def add_finding(
     """Add a Finding to the Wheeler knowledge graph. Returns the new node ID.
 
     A finding can be a number, a figure, a table, or any result worth
-    recording. Set artifact_type (e.g. "figure", "number", "table") and
-    path to link to the actual file. Set source for external findings
-    (e.g. a collaborator's name or paper ID).
+    recording.
+
+    Field constraints (enforced, invalid values are rejected):
+      confidence: float 0.0-1.0 (required). 0.3 = exploratory, 0.7 = solid.
+      description: non-empty string (required).
+      path: absolute file path if provided. Verify the file exists first.
+      artifact_type: figure, number, table, plot, text, or code.
+      tier: 'generated' (default) or 'reference'.
 
     Provenance-completing: set execution_kind (e.g. "script", "discuss")
     to auto-create an Execution activity and link provenance.  Pass
@@ -318,6 +323,11 @@ async def add_hypothesis(
 ) -> dict:
     """Add a Hypothesis to the Wheeler knowledge graph. Returns the new node ID.
 
+    Field constraints (enforced):
+      statement: non-empty string (required).
+      status: 'open' (default), 'supported', or 'rejected'. Other values rejected.
+      tier: 'generated' (default) or 'reference'.
+
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
     """
@@ -346,6 +356,10 @@ async def add_question(
     execution_description: str = "",
 ) -> dict:
     """Add an OpenQuestion to the Wheeler knowledge graph. Returns the new node ID.
+
+    Field constraints (enforced):
+      question: non-empty string (required).
+      priority: integer 1-10, where 10 is highest (default 5). Out-of-range rejected.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
@@ -439,7 +453,14 @@ async def delete_node(node_id: str) -> dict:
 @mcp.tool()
 @_logged
 async def add_dataset(path: str, type: str, description: str) -> dict:
-    """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID."""
+    """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID.
+
+    Field constraints (enforced):
+      path: absolute file path (required). File MUST exist on disk.
+        Verify with ls or Read before calling. Relative paths are rejected.
+      type: dataset format, e.g. 'mat', 'h5', 'csv' (required).
+      description: what the dataset contains (required, non-empty).
+    """
     result = await graph_tools.execute_tool(
         "add_dataset",
         {"path": path, "type": type, "description": description, "session_id": _SESSION_ID},
@@ -461,17 +482,13 @@ async def add_analysis(
 ) -> dict:
     """Add a Script node to the Wheeler knowledge graph to track a code file with provenance (legacy alias).
 
+    Field constraints (enforced):
+      script_path: absolute file path (required). File MUST exist on disk.
+        Verify with ls or Read before calling.
+      language: programming language, e.g. 'python', 'matlab' (required).
+
     If script_hash is empty, Wheeler will compute it from the file.
     Use this when registering scripts or during /wh:ingest.
-
-    Args:
-        script_path: Path to the script file
-        language: Programming language (matlab, python, r, julia, etc.)
-        script_hash: SHA-256 hash (auto-computed if empty and file exists)
-        language_version: Language version (e.g., "3.14", "R2022a")
-        parameters: Unused (kept for backward compatibility)
-        output_path: Unused (kept for backward compatibility)
-        output_hash: Unused (kept for backward compatibility)
     """
     # Auto-compute hash if not provided
     if not script_hash:
@@ -507,7 +524,12 @@ async def set_tier(node_id: str, tier: str) -> dict:
 @mcp.tool()
 @_logged
 async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0) -> dict:
-    """Add a Paper to the Wheeler knowledge graph for literature provenance. Returns the new node ID."""
+    """Add a Paper to the Wheeler knowledge graph for literature provenance. Returns the new node ID.
+
+    Field constraints (enforced):
+      title: non-empty string (required).
+      year: integer publication year. 0 means unknown (triggers warning).
+    """
     result = await graph_tools.execute_tool(
         "add_paper",
         {"title": title, "authors": authors, "doi": doi, "year": year,
@@ -529,6 +551,11 @@ async def add_document(
     execution_description: str = "",
 ) -> dict:
     """Add a Document to the Wheeler knowledge graph. Returns the new node ID.
+
+    Field constraints (enforced):
+      title: non-empty string (required).
+      path: absolute file path (required). Use the full path to the document.
+      status: 'draft' (default), 'revision', or 'final'. Other values rejected.
 
     Provenance-completing: set execution_kind (e.g. "write") to auto-create
     an Execution and link provenance. Pass used_entities as comma-separated

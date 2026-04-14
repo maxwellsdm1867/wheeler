@@ -426,17 +426,21 @@ class TestMCPToolRoundTrip:
         mock_config.neo4j.project_tag = ""
         mock_config.neo4j.database = "neo4j"
 
+        # Create a real file so path validation passes
+        data_file = tmp_path / "spikes.mat"
+        data_file.write_bytes(b"fake mat data")
+
         backend = RichFakeBackend()
         with patch("wheeler.tools.graph_tools._get_backend", new_callable=AsyncMock, return_value=backend):
             result_str = await execute_tool(
                 "add_dataset",
-                {"path": "/data/spikes.mat", "type": "mat", "description": "Spike data"},
+                {"path": str(data_file), "type": "mat", "description": "Spike data"},
                 mock_config,
             )
 
         result = json.loads(result_str)
         model = read_node(tmp_path, result["node_id"])
-        assert model.path == "/data/spikes.mat"
+        assert model.path == str(data_file)
         assert model.type == "Dataset"
 
     async def test_add_document_round_trip(self, tmp_path):
@@ -474,17 +478,21 @@ class TestMCPToolRoundTrip:
         mock_config.neo4j.project_tag = ""
         mock_config.neo4j.database = "neo4j"
 
+        # Create a real file so path validation passes
+        script_file = tmp_path / "fit.py"
+        script_file.write_text("print('hello')")
+
         backend = RichFakeBackend()
         with patch("wheeler.tools.graph_tools._get_backend", new_callable=AsyncMock, return_value=backend):
             result_str = await execute_tool(
                 "add_script",
-                {"path": "/analysis/fit.py", "language": "python", "hash": "deadbeef"},
+                {"path": str(script_file), "language": "python", "hash": "deadbeef"},
                 mock_config,
             )
 
         result = json.loads(result_str)
         model = read_node(tmp_path, result["node_id"])
-        assert model.path == "/analysis/fit.py"
+        assert model.path == str(script_file)
         assert model.type == "Script"
 
 

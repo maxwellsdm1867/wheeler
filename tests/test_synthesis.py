@@ -371,17 +371,19 @@ class TestTripleWriteIntegration:
 
         node_id = json.loads(result_str)["node_id"]
 
-        # Check JSON has the fields
+        # Check JSON has the fields (path is resolved to absolute)
         json_data = json.loads((tmp_path / "knowledge" / f"{node_id}.json").read_text())
-        assert json_data["path"] == "figures/vploss.png"
+        from pathlib import Path as _P
+        assert json_data["path"] == str(_P("figures/vploss.png").resolve())
         assert json_data["artifact_type"] == "figure"
         assert json_data["source"] == "Jane (collaborator)"
 
-        # Check synthesis has the fields
+        # Check synthesis has the fields (path is absolute after normalization)
         synth = (tmp_path / "synthesis" / f"{node_id}.md").read_text()
         assert "artifact_type: figure" in synth
         assert "source: Jane (collaborator)" in synth
-        assert "![figure](figures/vploss.png)" in synth
+        resolved_path = str(_P("figures/vploss.png").resolve())
+        assert f"![figure]({resolved_path})" in synth
         assert "*Source*: Jane (collaborator)" in synth
 
     async def test_link_nodes_updates_synthesis(self, tmp_path):

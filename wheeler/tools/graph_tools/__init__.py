@@ -698,7 +698,34 @@ async def execute_tool(
         if tool_name.startswith("query_") or tool_name == "graph_gaps":
             args["_config"] = config
 
+        # Validate and normalize args for mutation tools
+        from ._field_specs import validate_and_normalize
+
+        field_warnings: dict[str, str] = {}
+        if tool_name in _MUTATION_TOOLS:
+            field_errors, field_warnings = validate_and_normalize(tool_name, args)
+            if field_errors:
+                logger.warning("execute_tool %s: validation failed: %s", tool_name, field_errors)
+                return json.dumps({
+                    "error": "validation_failed",
+                    "message": (
+                        f"{tool_name} was NOT executed. "
+                        f"{len(field_errors)} field(s) failed validation. "
+                        "Fix the fields listed below and retry."
+                    ),
+                    "fields": field_errors,
+                })
+
         result = await handler(backend, args)
+
+        # Attach field warnings to successful result
+        if field_warnings:
+            try:
+                parsed_result = json.loads(result)
+                parsed_result["warnings"] = field_warnings
+                result = json.dumps(parsed_result)
+            except Exception:
+                pass
 
         # Dual-write: persist node as JSON file + synthesis markdown
         if tool_name in _MUTATION_TOOLS:

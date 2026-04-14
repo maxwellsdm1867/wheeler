@@ -22,6 +22,7 @@ from wheeler.tools.graph_tools.mutations import (
     link_nodes,
     set_tier,
 )
+from wheeler.tools.graph_tools._field_specs import validate_and_normalize
 from wheeler.validation.citations import extract_citations
 
 
@@ -80,16 +81,13 @@ class TestAdversarialMutations:
 
     # ---- Empty / missing required fields ----
 
-    async def test_add_finding_empty_description(self):
-        """An empty description is accepted (not validated at tool layer)
-        but should still produce a valid JSON response with node_id."""
-        backend = FakeBackend()
-        result = json.loads(await add_finding(backend, {"description": "", "confidence": 0.5}))
-        assert result["status"] == "created"
-        assert result["node_id"].startswith("F-")
-        # The empty description is stored as-is
-        stored = backend.nodes["Finding"][0]
-        assert stored["description"] == ""
+    def test_add_finding_empty_description(self):
+        """Empty description is rejected by field validation."""
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "", "confidence": 0.5}
+        )
+        assert "description" in errors
+        assert "non-empty" in errors["description"]["error"]
 
     async def test_add_finding_missing_description_raises(self):
         """Missing required 'description' key should raise KeyError."""
@@ -103,21 +101,21 @@ class TestAdversarialMutations:
         with pytest.raises(KeyError):
             await add_finding(backend, {"description": "test"})
 
-    async def test_add_finding_negative_confidence(self):
-        """Negative confidence is passed through (no validation at tool layer)."""
-        backend = FakeBackend()
-        result = json.loads(await add_finding(backend, {"description": "test", "confidence": -0.5}))
-        assert result["status"] == "created"
-        stored = backend.nodes["Finding"][0]
-        assert stored["confidence"] == -0.5
+    def test_add_finding_negative_confidence(self):
+        """Negative confidence is rejected by field validation."""
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "test", "confidence": -0.5}
+        )
+        assert "confidence" in errors
+        assert "0.0-1.0" in errors["confidence"]["error"]
 
-    async def test_add_finding_confidence_over_one(self):
-        """Confidence > 1.0 is passed through (no validation at tool layer)."""
-        backend = FakeBackend()
-        result = json.loads(await add_finding(backend, {"description": "test", "confidence": 2.5}))
-        assert result["status"] == "created"
-        stored = backend.nodes["Finding"][0]
-        assert stored["confidence"] == 2.5
+    def test_add_finding_confidence_over_one(self):
+        """Confidence > 1.0 is rejected by field validation."""
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "test", "confidence": 2.5}
+        )
+        assert "confidence" in errors
+        assert "0.0-1.0" in errors["confidence"]["error"]
 
     async def test_add_finding_confidence_not_a_number(self):
         """Non-numeric confidence should raise ValueError from float()."""
@@ -125,27 +123,29 @@ class TestAdversarialMutations:
         with pytest.raises((ValueError, TypeError)):
             await add_finding(backend, {"description": "test", "confidence": "not_a_number"})
 
-    async def test_add_hypothesis_empty_statement(self):
-        """Empty statement is accepted at tool layer."""
-        backend = FakeBackend()
-        result = json.loads(await add_hypothesis(backend, {"statement": ""}))
-        assert result["status"] == "created"
+    def test_add_hypothesis_empty_statement(self):
+        """Empty statement is rejected by field validation."""
+        errors, _ = validate_and_normalize(
+            "add_hypothesis", {"statement": ""}
+        )
+        assert "statement" in errors
+        assert "non-empty" in errors["statement"]["error"]
 
-    async def test_add_question_zero_priority(self):
-        """Priority of 0 should be accepted."""
-        backend = FakeBackend()
-        result = json.loads(await add_question(backend, {"question": "Why?", "priority": 0}))
-        assert result["status"] == "created"
-        stored = backend.nodes["OpenQuestion"][0]
-        assert stored["priority"] == 0
+    def test_add_question_zero_priority(self):
+        """Priority 0 is out of 1-10 range, rejected by validation."""
+        errors, _ = validate_and_normalize(
+            "add_question", {"question": "Why?", "priority": 0}
+        )
+        assert "priority" in errors
+        assert "1-10" in errors["priority"]["error"]
 
-    async def test_add_question_negative_priority(self):
-        """Negative priority is passed through (no validation at tool layer)."""
-        backend = FakeBackend()
-        result = json.loads(await add_question(backend, {"question": "Why?", "priority": -5}))
-        assert result["status"] == "created"
-        stored = backend.nodes["OpenQuestion"][0]
-        assert stored["priority"] == -5
+    def test_add_question_negative_priority(self):
+        """Negative priority is rejected by field validation."""
+        errors, _ = validate_and_normalize(
+            "add_question", {"question": "Why?", "priority": -5}
+        )
+        assert "priority" in errors
+        assert "1-10" in errors["priority"]["error"]
 
     async def test_add_document_missing_path_raises(self):
         """Missing required 'path' key should raise KeyError."""
@@ -357,6 +357,251 @@ class TestAdversarialMutations:
         }))
         assert "provenance" not in result
         assert "Execution" not in backend.nodes
+
+
+# ===================================================================
+# Field validation tests
+# ===================================================================
+
+
+class TestFieldValidation:
+    """Test the _field_specs validation and normalization layer."""
+
+    # --- Confidence ---
+
+    def test_confidence_at_zero_valid(self):
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "test", "confidence": 0.0}
+        )
+        assert "confidence" not in errors
+
+    def test_confidence_at_one_valid(self):
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "test", "confidence": 1.0}
+        )
+        assert "confidence" not in errors
+
+    def test_confidence_string_coerced(self):
+        """String '0.5' is coerced to float before range check."""
+        args = {"description": "test", "confidence": "0.5"}
+        errors, _ = validate_and_normalize("add_finding", args)
+        assert not errors
+        assert args["confidence"] == 0.5
+
+    def test_confidence_non_numeric_errors(self):
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "test", "confidence": "not_a_number"}
+        )
+        assert "confidence" in errors
+
+    # --- Priority ---
+
+    def test_priority_at_one_valid(self):
+        errors, _ = validate_and_normalize(
+            "add_question", {"question": "Why?", "priority": 1}
+        )
+        assert "priority" not in errors
+
+    def test_priority_at_ten_valid(self):
+        errors, _ = validate_and_normalize(
+            "add_question", {"question": "Why?", "priority": 10}
+        )
+        assert "priority" not in errors
+
+    def test_priority_eleven_invalid(self):
+        errors, _ = validate_and_normalize(
+            "add_question", {"question": "Why?", "priority": 11}
+        )
+        assert "priority" in errors
+
+    def test_priority_absent_ok(self):
+        """Priority absent is fine (handler defaults to 5)."""
+        errors, _ = validate_and_normalize(
+            "add_question", {"question": "Why?"}
+        )
+        assert not errors
+
+    # --- Tier ---
+
+    def test_tier_normalized_lowercase(self):
+        args = {"description": "test", "confidence": 0.5, "tier": "  GENERATED  "}
+        errors, _ = validate_and_normalize("add_finding", args)
+        assert not errors
+        assert args["tier"] == "generated"
+
+    def test_tier_invalid_value(self):
+        args = {"description": "test", "confidence": 0.5, "tier": "premium"}
+        errors, _ = validate_and_normalize("add_finding", args)
+        assert "tier" in errors
+
+    def test_tier_absent_ok(self):
+        """Tier absent is fine (handler defaults to 'generated')."""
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "test", "confidence": 0.5}
+        )
+        assert not errors
+
+    # --- Path ---
+
+    def test_path_normalized_to_absolute(self):
+        """Path is resolved to absolute (tested via finding where existence is optional)."""
+        args = {"description": "test", "confidence": 0.5, "path": "data/file.csv"}
+        errors, _ = validate_and_normalize("add_finding", args)
+        assert not errors
+        assert args["path"].startswith("/")
+
+    def test_path_nonexistent_errors_for_dataset(self):
+        """Dataset path must exist on disk (the file is the input)."""
+        args = {"path": "/nonexistent/path.csv", "type": "csv", "description": "test"}
+        errors, warnings = validate_and_normalize("add_dataset", args)
+        assert "path" in errors
+        assert "does not exist" in errors["path"]["error"]
+
+    def test_path_nonexistent_errors_for_script(self):
+        """Script path must exist on disk."""
+        args = {"path": "/nonexistent/script.py", "language": "python"}
+        errors, _ = validate_and_normalize("add_script", args)
+        assert "path" in errors
+
+    def test_path_nonexistent_warns_for_finding(self):
+        """Finding path warns (artifact may be created later)."""
+        args = {"description": "test", "confidence": 0.5, "path": "/nonexistent/fig.png"}
+        errors, warnings = validate_and_normalize("add_finding", args)
+        assert not errors
+        assert "path" in warnings
+
+    def test_path_nonexistent_warns_for_document(self):
+        """Document path warns (draft may be written later)."""
+        args = {"title": "doc", "path": "/nonexistent/draft.md"}
+        errors, warnings = validate_and_normalize("add_document", args)
+        assert not errors
+        assert "path" in warnings
+
+    def test_path_empty_required_errors(self):
+        """Empty path on a tool where path is required."""
+        args = {"path": "", "type": "csv", "description": "test"}
+        errors, _ = validate_and_normalize("add_dataset", args)
+        assert "path" in errors
+
+    def test_path_optional_empty_ok(self):
+        """Empty path on add_finding is fine (path is optional)."""
+        args = {"description": "test", "confidence": 0.5, "path": ""}
+        errors, _ = validate_and_normalize("add_finding", args)
+        assert not errors
+
+    # --- Status enums ---
+
+    def test_hypothesis_valid_status(self):
+        errors, _ = validate_and_normalize(
+            "add_hypothesis", {"statement": "test", "status": "supported"}
+        )
+        assert not errors
+
+    def test_hypothesis_invalid_status(self):
+        errors, _ = validate_and_normalize(
+            "add_hypothesis", {"statement": "test", "status": "maybe"}
+        )
+        assert "status" in errors
+
+    def test_document_invalid_status(self):
+        errors, _ = validate_and_normalize(
+            "add_document", {"title": "doc", "path": "/tmp/doc.md", "status": "published"}
+        )
+        assert "status" in errors
+
+    def test_execution_invalid_status(self):
+        errors, _ = validate_and_normalize(
+            "add_execution", {"kind": "script", "description": "test", "status": "pending"}
+        )
+        assert "status" in errors
+
+    def test_status_absent_ok(self):
+        """Status absent is fine (handler defaults to 'open')."""
+        errors, _ = validate_and_normalize(
+            "add_hypothesis", {"statement": "test hypothesis"}
+        )
+        assert not errors
+
+    # --- Year ---
+
+    def test_year_zero_warns(self):
+        _, warnings = validate_and_normalize(
+            "add_paper", {"title": "Paper Title", "year": 0}
+        )
+        assert "year" in warnings
+
+    def test_year_valid(self):
+        errors, warnings = validate_and_normalize(
+            "add_paper", {"title": "Paper Title", "year": 2024}
+        )
+        assert not errors
+        assert "year" not in warnings
+
+    def test_year_non_int_errors(self):
+        errors, _ = validate_and_normalize(
+            "add_paper", {"title": "Paper Title", "year": "twenty"}
+        )
+        assert "year" in errors
+
+    # --- Excluded tools and fields ---
+
+    def test_add_ledger_not_validated(self):
+        """add_ledger has no field specs, passes through."""
+        errors, warnings = validate_and_normalize("add_ledger", {"mode": "write"})
+        assert not errors
+        assert not warnings
+
+    def test_query_tool_skips_validation(self):
+        errors, warnings = validate_and_normalize("query_findings", {"keyword": "test"})
+        assert not errors
+        assert not warnings
+
+    def test_provenance_fields_not_validated(self):
+        """execution_kind etc. should not trigger validation."""
+        errors, _ = validate_and_normalize(
+            "add_finding",
+            {"description": "test", "confidence": 0.5,
+             "execution_kind": "", "used_entities": ""},
+        )
+        assert not errors
+
+    # --- Multiple errors ---
+
+    def test_multiple_errors_returned(self):
+        """All field errors returned in one response."""
+        errors, _ = validate_and_normalize(
+            "add_finding", {"description": "", "confidence": 5.0}
+        )
+        assert "description" in errors
+        assert "confidence" in errors
+        assert len(errors) == 2
+
+    # --- Integration: execute_tool blocks on validation error ---
+
+    async def test_execute_tool_validation_blocks_graph_write(self):
+        """Validation error prevents graph write entirely."""
+        from unittest.mock import AsyncMock, patch
+        from wheeler.tools.graph_tools import execute_tool
+        from unittest.mock import MagicMock
+
+        mock_config = MagicMock()
+        mock_config.graph.backend = "neo4j"
+        mock_config.neo4j.project_tag = ""
+        mock_config.neo4j.database = "neo4j"
+
+        backend = FakeBackend()
+        with patch("wheeler.tools.graph_tools._get_backend", new_callable=AsyncMock, return_value=backend):
+            result = json.loads(await execute_tool(
+                "add_finding",
+                {"description": "test", "confidence": 5.0},
+                mock_config,
+            ))
+
+        assert result["error"] == "validation_failed"
+        assert "confidence" in result["fields"]
+        assert "NOT executed" in result["message"]
+        # Backend has NO nodes
+        assert len(backend.nodes) == 0
 
 
 # ===================================================================
