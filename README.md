@@ -48,11 +48,15 @@ claude
 
 Science requires reproducibility. As AI gets embedded in research workflows, the gap between "AI helped me" and "here's the auditable chain of how this result was produced" becomes a credibility problem.
 
-Wheeler solves this with two guarantees:
+Wheeler solves this with three guarantees:
 
 **Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full provenance chain. The agent focuses on science; infrastructure handles bookkeeping.
 
 **Changes propagate.** When a script changes or data is updated, Wheeler flags every downstream finding as stale and reduces its stability score. You always know what to trust and what needs re-verification.
+
+**Knowledge compounds.** Because all components read from and write to the same graph, a new finding from data analysis becomes available as context for subsequent literature searches, experimental design, and manuscript preparation. The graph provides joint memory for the entire research project, not just an audit trail. Richer, project-specific context improves the quality of every agent output. Information is progressively disclosed and retrieved only when relevant, so agents get what they need without being overwhelmed.
+
+Wheeler's knowledge graph represents a new kind of scientific artifact that moves beyond the static nature of a traditional PDF. It functions as an executable map of discovery: any scientist can directly inherit, explore, and build upon the full experimental context of a project.
 
 ---
 
