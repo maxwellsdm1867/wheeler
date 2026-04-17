@@ -657,7 +657,7 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 | Entry Point | Module | Purpose |
 |-------------|--------|---------|
-| `wheeler-mcp` | `wheeler.mcp_server:main` | Legacy monolith MCP server (43 tools, stdio transport) |
+| `wheeler-mcp` | `wheeler.mcp_server:main` | Legacy monolith MCP server (44 tools, stdio transport) |
 | `wheeler-core-mcp` | `wheeler.mcp_core:main` | Split server: reads + search + cypher + schema (12) |
 | `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (8) |
 | `wheeler-mutations-mcp` | `wheeler.mcp_mutations:main` | Split server: add_*, link, unlink, delete, merge (13) |
@@ -670,16 +670,16 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ---
 
-## MCP Tools (43 total, 5 servers)
+## MCP Tools (44 total, 5 servers)
 
-As of v0.6.0 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
+As of v0.6.1 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
 
 | Server | Module | Tools | Scope |
 |--------|--------|-------|-------|
-| `wheeler` | `wheeler/mcp_server.py` | 43 | Legacy monolith, all tools in one process |
+| `wheeler` | `wheeler/mcp_server.py` | 44 | Legacy monolith, all tools in one process |
 | `wheeler_core` | `wheeler/mcp_core.py` | 12 | Reads + search + raw cypher + schema |
 | `wheeler_query` | `wheeler/mcp_query.py` | 8 | Read-only `query_*` tools |
-| `wheeler_mutations` | `wheeler/mcp_mutations.py` | 13 | Writes: add_*, link, unlink, delete, merge, set_tier |
+| `wheeler_mutations` | `wheeler/mcp_mutations.py` | 14 | Writes: add_*, link, unlink, delete, merge, set_tier, update_node |
 | `wheeler_ops` | `wheeler/mcp_ops.py` | 10 | Ops: staleness, citations, consistency, communities, contracts |
 
 Shared request logging, trace ID generation, and backend access live in `wheeler/mcp_shared.py` so all five servers emit a uniform log stream to `.wheeler/request_log.jsonl`.
@@ -695,10 +695,11 @@ Shared request logging, trace ID generation, and backend access live in `wheeler
 `query_papers`, `query_documents`, `query_notes`, `query_analyses`
 (legacy alias for `query_scripts`)
 
-### wheeler_mutations (13)
+### wheeler_mutations (14)
 `add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`,
 `add_document`, `add_note`, `add_analysis` (legacy alias for `add_script`),
-`link_nodes`, `unlink_nodes`, `delete_node`, `execute_merge`, `set_tier`
+`link_nodes`, `unlink_nodes`, `delete_node`, `execute_merge`, `set_tier`,
+`update_node`
 
 ### wheeler_ops (10)
 `detect_stale`, `hash_file`, `scan_dependencies`, `scan_workspace`,
@@ -834,7 +835,7 @@ wheeler/
 +-- task_log.py                  # Structured task logging for headless runs
 +-- log_summary.py               # Reconvene log summarizer
 +-- validate_output.py           # Post-hoc citation validation for headless output
-+-- mcp_server.py                # Legacy monolith MCP server (43 tools)
++-- mcp_server.py                # Legacy monolith MCP server (44 tools)
 +-- mcp_shared.py                # Shared helpers: trace IDs, @_logged, backend access
 +-- mcp_core.py                  # Split server: reads + search + cypher + schema (12 tools)
 +-- mcp_query.py                 # Split server: query_* read-only tools (8 tools)

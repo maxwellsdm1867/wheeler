@@ -22,7 +22,7 @@ mcp_server.py          <- everything
 - `models.py` -- Pydantic v2 models for all node types + prefix mappings. Finding has path, artifact_type, source fields.
 - `config.py` -- YAML config loader (`wheeler.yaml`), includes `knowledge_path` and `synthesis_path`
 - `provenance.py` -- Stability scoring, invalidation propagation (W3C PROV-DM), detect_and_propagate_stale
-- `mcp_server.py` -- FastMCP server, 34 tools. Entry point: `python -m wheeler.mcp_server`
+- `mcp_server.py` -- FastMCP server, 44 tools. Entry point: `python -m wheeler.mcp_server`
 - `workspace.py` -- File discovery + context formatting for system prompts
 - `depscanner.py` -- AST-based dependency scanner (imports, data files)
 - `request_log.py` -- Append-only JSONL request logging

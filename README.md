@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.6.0-blue" alt="v0.6.0">
+  <img src="https://img.shields.io/badge/v0.6.1-blue" alt="v0.6.1">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -217,6 +217,15 @@ You always know what's current and what needs re-verification.
 
 ---
 
+## What's New in v0.6.1
+
+**Bug fixes and new capabilities** (issues #9-16):
+- **Stale driver fix (#9)**: MCP servers no longer return zeros on first `graph_status` call. Root cause was a stale Neo4j driver singleton from the two-event-loop startup pattern.
+- **`update_node` tool (#16)**: update fields on existing nodes after creation. Full triple-write (graph + JSON + synthesis), field validation, change_log, WriteReceipt, and embedding updates. 44 tools total.
+- **`graph_context` topic filter (#10)**: optional `topic` parameter for filtered context injection (case-insensitive substring match).
+- **Parameter discoverability (#11-14)**: `link_nodes`/`unlink_nodes` `relationship` parameter now uses `Literal` type (JSON schema enum). `add_note` docstring updated. Priority scale direction clarified.
+- **Ingest data source discovery (#15)**: workspace scanner detects `.db`/`.sqlite`/`.sqlite3` files. New Phase 0 in `/wh:ingest` asks about primary data sources before code ingestion.
+
 ## What's New in v0.6.0
 
 **Infrastructure hardening** (6 distributed-systems patterns):
@@ -234,7 +243,7 @@ You always know what's current and what needs re-verification.
 - **Entity resolution**: `propose_merge` (read-only) + `execute_merge` (two-phase commit with relationship redirection). Per-relationship Cypher, no APOC.
 - **Retrieval quality metrics**: context precision + coverage gaps on ledger entries via keyword extraction.
 
-**Split MCP servers**: the monolithic `wheeler` server is now available as 4 focused servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`) plus the legacy monolith. 43 tools total.
+**Split MCP servers**: the monolithic `wheeler` server is now available as 4 focused servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`) plus the legacy monolith. 44 tools total.
 
 ---
 
@@ -324,20 +333,20 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (43 tools, split into 4 focused servers + legacy monolith)
+    ├── MCP Servers (44 tools, split into 4 focused servers + legacy monolith)
     │       ├── wheeler_core (12): health, status, context, show_node,
     │       │     search_findings, search_context, run_cypher, init_schema,
     │       │     index_node, graph_gaps, propose_merge, request_log_summary
     │       ├── wheeler_query (8): query_findings, query_hypotheses,
     │       │     query_open_questions, query_datasets, query_papers,
     │       │     query_documents, query_notes, query_analyses
-    │       ├── wheeler_mutations (13): add_*, link_nodes, unlink_nodes,
-    │       │     delete_node, execute_merge, set_tier
+    │       ├── wheeler_mutations (14): add_*, link_nodes, unlink_nodes,
+    │       │     delete_node, execute_merge, set_tier, update_node
     │       ├── wheeler_ops (10): detect_stale, hash_file, scan_dependencies,
     │       │     scan_workspace, extract_citations, validate_citations,
     │       │     compute_retrieval_quality, graph_consistency_check,
     │       │     detect_communities, validate_task_contract
-    │       ├── wheeler (legacy monolith, 43 tools): same surface, one server
+    │       ├── wheeler (legacy monolith, 44 tools): same surface, one server
     │       ├── neo4j (mcp-neo4j-cypher): raw Cypher access
     │       └── matlab: MATLAB execution (optional)
     │
@@ -365,10 +374,10 @@ wheeler/
 ├── write_receipt.py         # Per-layer write tracking + repair queue
 ├── communities.py           # BFS-based community detection
 ├── merge.py                 # Entity resolution: propose + execute merges
-├── mcp_server.py            # Legacy monolith: all 43 tools in one server
+├── mcp_server.py            # Legacy monolith: all 44 tools in one server
 ├── mcp_core.py              # Split server: health, context, search, raw cypher (12)
 ├── mcp_query.py             # Split server: query_* read-only tools (8)
-├── mcp_mutations.py         # Split server: add_*, link, delete, merge (13)
+├── mcp_mutations.py         # Split server: add_*, link, delete, merge, update (14)
 ├── mcp_ops.py               # Split server: staleness, citations, consistency (10)
 ├── mcp_shared.py            # Shared helpers: trace IDs, decorators, context
 ├── request_log.py           # Structured JSONL logging with trace IDs
@@ -397,7 +406,7 @@ wheeler/
 │   └── cli.py               # CLI: show, migrate, graph ops, citations
 └── workspace.py             # Project file scanner
 
-tests/                        # 838 tests
+tests/                        # 881 tests
 docs/                         # Research docs, project spec
 ```
 
@@ -405,7 +414,7 @@ docs/                         # Research docs, project spec
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v                 # unit + integration tests (838 tests)
+python -m pytest tests/ -v                 # unit + integration tests (881 tests)
 python -m pytest tests/e2e/ -v             # e2e tests (requires Neo4j)
 python tests/evaluation/eval_retrieval.py  # retrieval quality evaluation
 ```
