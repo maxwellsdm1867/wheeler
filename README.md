@@ -16,81 +16,49 @@
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
 </p>
 
-Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research: discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other. The graph serves two purposes: it provides agents with context about your project's structure and dependencies, and it makes every AI-produced result traceable back to the exact script, data, and parameters that produced it. No manual bookkeeping required.
+Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research: discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other, making every AI-produced result traceable back to the exact script, data, and parameters that produced it.
 
-Runs 100% locally on your machine. No API keys, no cloud services. Your data never leaves your machine. Powered by Claude Max subscription.
+Runs 100% locally. No API keys, no cloud services. Your data never leaves your machine.
 
-> Named after great physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
+> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
+
+---
+
+## Quick Start
+
+**New to Wheeler?** See the **[Getting Started Guide](docs/GETTING-STARTED.md)** for a complete walkthrough with Neo4j Desktop setup.
+
+**Already have Neo4j running?**
+
+```bash
+git clone https://github.com/maxwellsdm1867/wheeler.git
+cd wheeler
+bash bin/setup.sh                # creates venv, installs deps, inits schema
+```
+
+Then open Claude Code and start working:
+
+```bash
+cd ~/my-research-project
+claude
+/wh:init                         # set up project, create graph schema
+/wh:discuss                      # sharpen the question
+/wh:plan                         # structure the investigation
+```
+
+**Prerequisites:** Python 3.11+, Node.js, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), [Neo4j Desktop](https://neo4j.com/download/) (free)
 
 ---
 
 ## Why Wheeler
 
-Science requires reproducibility. As AI gets embedded in research workflows (data analysis, literature review, manuscript drafting), the gap between "AI helped me" and "here's the auditable chain of how this result was produced" becomes a credibility problem.
+Science requires reproducibility. As AI gets embedded in research workflows, the gap between "AI helped me" and "here's the auditable chain of how this result was produced" becomes a credibility problem.
 
 Wheeler solves this with two guarantees:
 
-**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full provenance chain. The agent focuses on science, infrastructure handles bookkeeping.
+**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provenance chain. The agent focuses on science; infrastructure handles bookkeeping.
 
 **Changes propagate.** When a script changes or data is updated, Wheeler flags every downstream finding as stale and reduces its stability score. You always know what to trust and what needs re-verification.
-
----
-
-## How It Works
-
-Wheeler wraps every AI action in [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provenance. The core primitive is the **provenance-completing tool call**:
-
-```python
-add_finding(
-    description="Calcium oscillation frequency scales with cell density",
-    confidence=0.85,
-    execution_kind="script",                    # auto-creates Execution activity
-    used_entities="D-abc123,S-def456",          # auto-links inputs
-    execution_description="cold exposure run"
-)
-```
-
-One call. Wheeler internally:
-1. Creates the Finding entity
-2. Creates an Execution activity node (what process produced this)
-3. Links Finding --WAS_GENERATED_BY--> Execution (output provenance)
-4. Links Execution --USED--> Dataset, Script (input provenance)
-5. Sets stability score (0.3 for LLM-generated, 0.9 for papers, 1.0 for primary data)
-6. Persists to both Neo4j and JSON file (dual-write, no single point of failure)
-
-The provenance chain is always complete because the agent never had to remember to create it.
-
-### Stability Scoring
-
-Every entity carries a stability score (0.0-1.0) encoding epistemic trust:
-
-| Type | Score | Meaning |
-|------|-------|---------|
-| Primary data (recordings) | 1.0 | Immutable source data |
-| Published papers | 0.9 | Peer-reviewed, unlikely to change |
-| Verified findings | 0.8 | Human-checked, reproducible |
-| Validated scripts | 0.7 | Tested code |
-| LLM-generated findings | 0.3 | Plausible but unverified |
-
-When an upstream entity changes, stability decays downstream: `new = source * (0.8 ^ hops)`. A script edit at stability 0.3 reduces a 2-hop-away document to 0.19. Everything downstream is flagged stale.
-
-### The Provenance Chain
-
-```text
-(:Paper {title: "Bhatt 2024"})
-  <-[:USED]- (:Execution {kind: "script"})
-(:Script {path: "scripts/spike_gen.py", hash: "a3f2..."})
-  <-[:USED]- (:Execution)
-(:Dataset {path: "data/cell_042.mat"})
-  <-[:USED]- (:Execution)
-
-(:Finding {description: "Ca freq scales with density"})
-  -[:WAS_GENERATED_BY]-> (:Execution)
-  -[:SUPPORTS]-> (:Hypothesis)
-  -[:APPEARS_IN]-> (:Document)
-```
-
-Every entity traces back through PROV relationships (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY) to its sources. Semantic relationships (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN) carry scientific meaning on top.
 
 ---
 
@@ -99,30 +67,23 @@ Every entity traces back through PROV relationships (USED, WAS_GENERATED_BY, WAS
 Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip stages, repeat them.
 
 ```text
- ┌─────────────────────────────────────────────────────┐
- │  TOGETHER          you + wheeler, thinking out loud  │
- │  discuss  plan  chat  pair  write  note  ask         │
- └────────────────────────┬────────────────────────────┘
-                          │ remaining work is grinding
-                          v
- ┌─────────────────────────────────────────────────────┐
- │  HANDOFF            propose independent tasks        │
- │  handoff            you approve, modify, or keep     │
- │                     talking                          │
- └────────────────────────┬────────────────────────────┘
-                          │
-                          v
- ┌─────────────────────────────────────────────────────┐
- │  INDEPENDENT        wheeler works alone              │
- │  wh queue "..."     logged, stops at decision points │
- └────────────────────────┬────────────────────────────┘
-                          │
-                          v
- ┌─────────────────────────────────────────────────────┐
- │  RECONVENE          results + flags + surprises      │
- │  reconvene          back to TOGETHER                 │
- └─────────────────────────────────────────────────────┘
+ TOGETHER         you + wheeler, thinking out loud
+ discuss  plan  chat  pair  write  note  ask
+                         |
+                         v  remaining work is grinding
+ HANDOFF          propose independent tasks
+ handoff          you approve, modify, or keep talking
+                         |
+                         v
+ INDEPENDENT      wheeler works alone
+ wh queue "..."   logged, stops at decision points
+                         |
+                         v
+ RECONVENE        results + flags + surprises
+ reconvene        back to TOGETHER
 ```
+
+### Commands
 
 | Command | What it does |
 |---------|-------------|
@@ -130,208 +91,106 @@ Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip 
 | `/wh:plan` | Structure tasks with waves, assignees, checkpoints |
 | `/wh:execute` | Run analyses, log findings to graph with provenance |
 | `/wh:write` | Draft text with strict citation enforcement |
-| `/wh:note` | Quick-capture an insight, observation, or idea |
+| `/wh:ingest` | Bootstrap graph from existing code, data, papers |
 | `/wh:add` | General-purpose ingest: text, DOI, file, URL |
+| `/wh:note` | Quick-capture an insight, observation, or idea |
 | `/wh:compile` | Compile graph into synthesis documents with citations |
+| `/wh:dream` | Consolidate: promote tiers, detect communities, link orphans |
 | `/wh:pair` | Live co-work: scientist drives, Wheeler assists |
-| `/wh:chat` | Quick discussion, no execution |
 | `/wh:ask` | Query the graph, trace provenance chains |
+| `/wh:status` | Show progress, suggest next action |
 | `/wh:handoff` | Propose tasks for independent execution |
 | `/wh:reconvene` | Review results from independent work |
-| `/wh:ingest` | Bootstrap graph from existing code, data, papers |
-| `/wh:dream` | Consolidate: promote tiers, detect communities, link orphans, flag stale |
+
+<details>
+<summary>More commands</summary>
+
+| Command | What it does |
+|---------|-------------|
+| `/wh:chat` | Quick discussion, no execution |
 | `/wh:triage` | Triage GitHub issues against planned work |
 | `/wh:report` | Generate work log from graph (time period) |
 | `/wh:close` | End-of-session provenance sweep |
 | `/wh:pause` / `/wh:resume` | Save and restore investigation state |
-| `/wh:status` | Show progress, suggest next action |
 | `/wh:update` | Check for Wheeler updates |
+| `/wh:dev-feedback` | File bugs from inside your session |
 
-**Wheeler never does your thinking.** Every task gets tagged: SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
+</details>
 
----
+### Headless mode
 
-## The Knowledge Graph
-
-Two kinds of files: **graph metadata** (JSON, the provenance index) and **research artifacts** (markdown, the actual writing).
-
-**Graph metadata** (`knowledge/*.json`). One file per entity, dual-written to Neo4j:
-
-```
-knowledge/
-  F-3a2b1c4d.json   # Finding: {description, confidence, stability: 0.3, ...}
-  S-2f4a7b8c.json   # Script: {path, hash, language, stability: 0.5, ...}
-  X-9c1d3e5f.json   # Execution: {kind: "script", agent_id: "wheeler", ...}
-  P-a4f20e91.json   # Paper: {title, authors, doi, stability: 0.9, ...}
-  D-7e8f9a0b.json   # Dataset: {path, data_type, stability: 1.0, ...}
-```
-
-**Research artifacts** (your actual writing, as natural files):
-
-```
-.notes/N-4e5f6a7b.md     # research note (markdown + YAML frontmatter)
-docs/spike-generation.md  # draft from /wh:write
-scripts/analyze_temp.py   # your analysis code
-data/cell_042.mat         # your data
-```
-
-The graph is the index. The files are the work. When you need connections ("what findings came from this dataset?"), ask the graph. When you need content, read the file.
-
-### 11 Entity Types
-
-| Prefix | Type | What it tracks |
-|--------|------|---------------|
-| F | Finding | A result or observation with confidence score |
-| H | Hypothesis | A proposed explanation (open/supported/rejected) |
-| Q | OpenQuestion | A knowledge gap with priority |
-| D | Dataset | A data file (path, type, hash) |
-| P | Paper | A literature reference (always tier=reference) |
-| S | Script | A code file (path, hash, language) |
-| X | Execution | An activity: what ran, when, what it consumed/produced |
-| W | Document | A draft or manuscript |
-| N | ResearchNote | A quick insight or observation |
-| PL | Plan | An investigation plan |
-| L | Ledger | A validation record |
-
-### 14 Relationship Types
-
-**W3C PROV standard (6)**, how things were made:
-- USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH
-
-**Wheeler semantic (8)**, what things mean to each other:
-- SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS
-
-### Citations
-
-In write mode, research claims are validated deterministically (regex + Cypher). Cite your data: `[F-3a2b]`. Mark interpretations. No citation needed for speculation or textbook knowledge.
-
-### Invalidation
-
-When a script file changes:
-1. `detect_stale` compares stored hashes against files on disk
-2. Changed scripts get stability reduced to 0.3
-3. All downstream entities (findings, documents) are flagged stale
-4. Stability decays with distance: `source_stability * (0.8 ^ hops)`
-
-You always know what's current and what needs re-verification.
-
----
-
-## What's New in v0.6.1
-
-**Bug fixes and new capabilities** (issues #9-16):
-- **Stale driver fix (#9)**: MCP servers no longer return zeros on first `graph_status` call. Root cause was a stale Neo4j driver singleton from the two-event-loop startup pattern.
-- **`update_node` tool (#16)**: update fields on existing nodes after creation. Full triple-write (graph + JSON + synthesis), field validation, change_log, WriteReceipt, and embedding updates. 44 tools total.
-- **`graph_context` topic filter (#10)**: optional `topic` parameter for filtered context injection (case-insensitive substring match).
-- **Parameter discoverability (#11-14)**: `link_nodes`/`unlink_nodes` `relationship` parameter now uses `Literal` type (JSON schema enum). `add_note` docstring updated. Priority scale direction clarified.
-- **Ingest data source discovery (#15)**: workspace scanner detects `.db`/`.sqlite`/`.sqlite3` files. New Phase 0 in `/wh:ingest` asks about primary data sources before code ingestion.
-
-## What's New in v0.6.0
-
-**Infrastructure hardening** (6 distributed-systems patterns):
-- **Circuit breaker** on Neo4j: fail fast in <1ms after 3 consecutive failures instead of 30s timeout. Auto-recovers via half-open probe after 60s.
-- **Consistency checker**: detects and repairs drift between graph, `knowledge/*.json`, and `synthesis/*.md`. New `graph_consistency_check` tool with dry-run and repair modes.
-- **Trace IDs**: every MCP call gets a unique `trace_id` for correlating multi-step operations (provenance-completing adds, triple-writes, link updates).
-- **Write receipts**: tracks which layers succeeded per triple-write. Incomplete writes queued to `.wheeler/repair_queue.jsonl`.
-- **Node change log**: field-level diffs on `set_tier` and invalidation propagation, stored on every node.
-- **Task contracts**: structured output specs (required nodes, links, citation pass rates) validated at reconvene via `validate_task_contract`.
-
-**GraphRAG enhancements** (5 retrieval upgrades):
-- **Graph-expanded local search**: new `search_context` tool seeds from RRF then expands via 1-hop (all rels) + 2-hop (PROV only). Returns provenance chains alongside results.
-- **Neo4j fulltext index**: denormalized `_search_text` property maintained via triple-write, fulltext as RRF channel 4.
-- **Community detection**: BFS-based connected components via `detect_communities`, used by `/wh:dream` Phase 3.25. No external deps.
-- **Entity resolution**: `propose_merge` (read-only) + `execute_merge` (two-phase commit with relationship redirection). Per-relationship Cypher, no APOC.
-- **Retrieval quality metrics**: context precision + coverage gaps on ledger entries via keyword extraction.
-
-**Split MCP servers**: the monolithic `wheeler` server is now available as 4 focused servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`) plus the legacy monolith. 44 tools total.
-
----
-
-## Setup
-
-**New to Wheeler?** Start with the **[Getting Started Guide](docs/GETTING-STARTED.md)**, which walks through Neo4j Desktop setup, Wheeler installation, and your first project step by step.
-
-**Prerequisites:** Python 3.11+, Node.js, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), Neo4j Desktop (or Docker)
-
-Everything runs locally. No cloud accounts, no API keys, no data leaves your machine.
-
-```bash
-git clone https://github.com/maxwellsdm1867/wheeler.git
-cd wheeler
-bash bin/setup.sh
-```
-
-Or manually:
-
-```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[test]"
-wheeler-tools graph init
-```
-
-**Graph backend** (Neo4j via Docker):
-
-```bash
-# Quick start
-docker compose up -d
-
-# Or manually
-docker run -d --name neo4j \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/research-graph \
-  neo4j:5
-```
-
-Browse your graph at http://localhost:7474.
-
-**Semantic search** (included by default):
-
-```bash
-pip install -e ".[search]"             # adds fastembed (~33MB model, local-only)
-```
-
-After setup, restart Claude Code and verify MCP servers with `/mcp`.
-
-## Getting Started
-
-For a complete walkthrough (Neo4j Desktop setup, configuration, first project), see **[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)**.
-
-Quick start if you already have Neo4j running:
-
-```bash
-cd ~/my-project && claude    # open Claude Code in your project
-/wh:init                     # set up paths, config, knowledge graph
-/wh:discuss                  # sharpen the question
-/wh:plan                     # structure the investigation
-```
-
-For headless/independent work:
+Wheeler can run tasks without you present:
 
 ```bash
 wh queue "search for papers on SRM models"   # sonnet, 10 turns, logged
 wh quick "check graph status"                 # haiku, 3 turns, fast
 wh dream                                      # graph consolidation
-wh status                                     # quick status check
 ```
+
+**Wheeler never does your thinking.** Every task gets tagged: SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
+
+---
+
+## How It Works
+
+### Provenance-completing tool calls
+
+The core primitive: one tool call creates a finding AND its full provenance chain.
+
+```python
+add_finding(
+    description="Calcium oscillation frequency scales with cell density",
+    confidence=0.85,
+    execution_kind="script",                    # auto-creates Execution activity
+    used_entities="D-abc123,S-def456",          # auto-links inputs
+)
+```
+
+Wheeler internally creates the Finding, an Execution activity node, links inputs (Dataset, Script) via USED, links the output via WAS_GENERATED_BY, sets a stability score, and dual-writes to Neo4j and JSON. The provenance chain is always complete because the agent never had to remember to create it.
+
+### Stability and invalidation
+
+Every entity carries a stability score (0.0-1.0) encoding epistemic trust: primary data = 1.0, published papers = 0.9, validated scripts = 0.7, LLM-generated findings = 0.3. When an upstream entity changes, stability decays downstream: `new = source * (0.8 ^ hops)`. Changed scripts propagate stale flags through the entire dependency chain.
+
+### The knowledge graph
+
+The graph is an index over files, not a document store. Each node stores an ID, type, tier, title, path, and timestamps. Full content lives in `knowledge/{id}.json`. Human-browsable rendering lives in `synthesis/{id}.md` (Obsidian-compatible with YAML frontmatter and `[[backlinks]]`). When you need connections, ask the graph. When you need content, read the file.
+
+**11 entity types:** Finding, Hypothesis, OpenQuestion, Dataset, Paper, Script, Execution, Document, ResearchNote, Plan, Ledger.
+
+**14 relationship types:** 6 W3C PROV standard (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH) + 8 Wheeler semantic (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS).
+
+**44 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module dependency map, PROV schema, MCP tool listing, hardening patterns, design decisions.
+
+---
+
+## What's New
+
+<details>
+<summary><b>v0.6.1</b> (2026-04-16) — Bug fixes, update_node, parameter discoverability</summary>
+
+- **Stale driver fix (#9)**: MCP servers no longer return zeros on first `graph_status` call.
+- **`update_node` tool (#16)**: update fields on existing nodes after creation. Full triple-write, field validation, change_log, embedding updates. 44 tools total.
+- **`graph_context` topic filter (#10)**: optional `topic` parameter for filtered context injection.
+- **Parameter discoverability (#11-14)**: `link_nodes` `relationship` parameter now uses `Literal` type (JSON schema enum). `add_note` docstring updated. Priority scale clarified.
+- **Ingest data source discovery (#15)**: workspace scanner detects `.db`/`.sqlite`/`.sqlite3`. Phase 0 in `/wh:ingest` asks about primary data sources.
+
+</details>
+
+<details>
+<summary><b>v0.6.0</b> (2026-04-08) — Infrastructure hardening, GraphRAG, split MCP servers</summary>
+
+- **Infrastructure hardening**: circuit breaker, consistency checker, trace IDs, write receipts, node change log, task contracts.
+- **GraphRAG enhancements**: graph-expanded local search (`search_context`), Neo4j fulltext index, community detection, entity resolution (`propose_merge` + `execute_merge`), retrieval quality metrics.
+- **Split MCP servers**: monolith available as 4 focused servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`).
+
+</details>
 
 ---
 
 ## Architecture
-
-```text
-┌─────────────────────────────────────────────────────┐
-│  ACTS          /wh:* slash commands                 │  What you DO
-│                bin/wh headless runner                │
-├─────────────────────────────────────────────────────┤
-│  FILE SYSTEM   .notes/*.md, docs/, scripts/         │  What you KNOW
-│                .plans/*.md (state)                   │  (real artifacts)
-├─────────────────────────────────────────────────────┤
-│  PROVENANCE    knowledge/*.json (dual-write)        │  What you can TRACE
-│  ENGINE        Neo4j: W3C PROV relationships         │
-│                Stability scores + invalidation       │
-│                Provenance-completing MCP tools        │
-└─────────────────────────────────────────────────────┘
-```
 
 ```text
 Claude Code (interactive)
@@ -339,82 +198,48 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (44 tools, split into 4 focused servers + legacy monolith)
-    │       ├── wheeler_core (12): health, status, context, show_node,
-    │       │     search_findings, search_context, run_cypher, init_schema,
-    │       │     index_node, graph_gaps, propose_merge, request_log_summary
-    │       ├── wheeler_query (8): query_findings, query_hypotheses,
-    │       │     query_open_questions, query_datasets, query_papers,
-    │       │     query_documents, query_notes, query_analyses
-    │       ├── wheeler_mutations (14): add_*, link_nodes, unlink_nodes,
-    │       │     delete_node, execute_merge, set_tier, update_node
-    │       ├── wheeler_ops (10): detect_stale, hash_file, scan_dependencies,
-    │       │     scan_workspace, extract_citations, validate_citations,
-    │       │     compute_retrieval_quality, graph_consistency_check,
-    │       │     detect_communities, validate_task_contract
-    │       ├── wheeler (legacy monolith, 44 tools): same surface, one server
-    │       ├── neo4j (mcp-neo4j-cypher): raw Cypher access
-    │       └── matlab: MATLAB execution (optional)
+    ├── MCP Servers (44 tools)
+    │       ├── wheeler_core (12): health, status, context, search, cypher
+    │       ├── wheeler_query (8): read-only query_* tools
+    │       ├── wheeler_mutations (14): add_*, link, delete, update, merge
+    │       ├── wheeler_ops (10): staleness, citations, consistency
+    │       └── wheeler (legacy monolith): same 44 tools, one server
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
 ```
 
-| When you're here | When you're away |
-| ---------------- | ---------------- |
-| Loose, creative, freeform | Structured, validated, logged |
-| Provenance auto-captured | Provenance mandatory |
-| You are quality control | System is quality control |
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
-
-## Code Structure
+<details>
+<summary>Code structure</summary>
 
 ```text
 wheeler/
-├── models.py                # Pydantic v2: 11 node types, prefix mappings, ChangeEntry
+├── models.py                # Pydantic v2: 11 node types, prefix mappings
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
 ├── consistency.py           # Cross-layer drift detection and repair
-├── contracts.py             # Task output contracts for handoff validation
-├── write_receipt.py         # Per-layer write tracking + repair queue
-├── communities.py           # BFS-based community detection
-├── merge.py                 # Entity resolution: propose + execute merges
-├── mcp_server.py            # Legacy monolith: all 44 tools in one server
-├── mcp_core.py              # Split server: health, context, search, raw cypher (12)
-├── mcp_query.py             # Split server: query_* read-only tools (8)
-├── mcp_mutations.py         # Split server: add_*, link, delete, merge, update (14)
-├── mcp_ops.py               # Split server: staleness, citations, consistency (10)
-├── mcp_shared.py            # Shared helpers: trace IDs, decorators, context
-├── request_log.py           # Structured JSONL logging with trace IDs
-├── knowledge/
-│   ├── store.py             # File I/O: read, write, list, delete (atomic)
-│   ├── render.py            # Markdown rendering for wh show + synthesis
-│   └── migrate.py           # Graph ↔ filesystem migration
-├── graph/
-│   ├── backend.py           # GraphBackend ABC + factory
-│   ├── neo4j_backend.py     # Neo4j backend (with project namespace isolation)
-│   ├── circuit_breaker.py   # Fail-fast on Neo4j outages (<1ms vs 30s timeout)
-│   ├── schema.py            # W3C PROV constraints, indexes, fulltext, ID gen
-│   ├── context.py           # Tier-separated context injection
-│   ├── provenance.py        # Script hashing, staleness detection
-│   ├── trace.py             # Provenance chain traversal
-│   └── migration_prov.py    # PROV schema migration tool
-├── search/
-│   ├── embeddings.py        # EmbeddingStore (fastembed + numpy)
-│   ├── backfill.py          # Batch embedding for existing nodes
-│   └── retrieval.py         # Multi-channel search with RRF fusion + local graph expansion
-├── validation/
-│   ├── citations.py         # Regex extraction + Cypher validation
-│   └── ledger.py            # Ledger nodes with retrieval quality metrics
-├── tools/
-│   ├── graph_tools/         # Provenance-completing mutations + queries (triple-write)
-│   └── cli.py               # CLI: show, migrate, graph ops, citations
+├── mcp_server.py            # Legacy monolith: all 44 tools
+├── mcp_core.py              # Split server: health, context, search (12)
+├── mcp_query.py             # Split server: query_* read-only (8)
+├── mcp_mutations.py         # Split server: add_*, link, delete, update (14)
+├── mcp_ops.py               # Split server: staleness, citations (10)
+├── mcp_shared.py            # Shared: trace IDs, decorators, config
+├── knowledge/               # File I/O: read, write, list, render, migrate
+├── graph/                   # Neo4j backend, circuit breaker, schema, context
+├── search/                  # Embeddings, RRF fusion, graph-expanded search
+├── validation/              # Citation validation, ledger quality metrics
+├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
 tests/                        # 881 tests
-docs/                         # Research docs, project spec
+docs/                         # Getting started, architecture, project spec
 ```
+
+</details>
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
+
+---
 
 ## Bug Reports
 
@@ -424,13 +249,7 @@ Hit a bug or friction point while using Wheeler? File it from inside your sessio
 /wh:dev-feedback
 ```
 
-This scans your conversation for Wheeler issues (MCP tool bugs, skill problems, workflow friction, data integrity issues), confirms with you, and files structured GitHub issues with reproduction steps, verbatim errors, and acceptance criteria. Designed so issues can be picked up by AI coding agents or human developers.
-
-You can also focus on a specific problem:
-
-```
-/wh:dev-feedback link_nodes keeps rejecting my relationship type
-```
+This scans your conversation for issues, confirms with you, and files structured GitHub issues with reproduction steps, verbatim errors, and acceptance criteria.
 
 Or file issues manually at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
@@ -438,12 +257,9 @@ Or file issues manually at [GitHub Issues](https://github.com/maxwellsdm1867/whe
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v                 # unit + integration tests (881 tests)
-python -m pytest tests/e2e/ -v             # e2e tests (requires Neo4j)
-python tests/evaluation/eval_retrieval.py  # retrieval quality evaluation
+python -m pytest tests/ -v                 # unit + integration (881 tests)
+python -m pytest tests/e2e/ -v             # e2e (requires Neo4j)
 ```
-
-Set `WHEELER_LOG_LEVEL=DEBUG` for verbose output.
 
 ## License
 
