@@ -10,9 +10,17 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
-Wheeler tracks how every research finding was produced: what script ran, what data it used, what papers informed the approach. It works as a set of slash commands inside [Claude Code](https://docs.anthropic.com/en/docs/claude-code), giving you a different tool for each stage of research (discuss, plan, execute, write). Every action is recorded in a knowledge graph that connects your papers, code, data, findings, and drafts with provenance chains, so any result can be traced back to exactly what produced it.
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
+  <img src="https://img.shields.io/badge/local%20only-no%20data%20leaves%20your%20machine-brightgreen" alt="Local Only">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
+</p>
+
+Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research: discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other, making every AI-produced result traceable back to the exact script, data, and parameters that produced it.
 
 Runs 100% locally. No API keys, no cloud services. Your data never leaves your machine.
+
+> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ---
 
