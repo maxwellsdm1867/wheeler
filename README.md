@@ -14,7 +14,7 @@ Wheeler is a thinking partner for scientists, built natively on Claude Code. It 
 
 Runs 100% locally. No API keys, no cloud services. Your data never leaves your machine.
 
-> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
+> Named after great physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ---
 
@@ -240,8 +240,6 @@ docs/                         # Getting started, architecture, project spec
 **Tests:** `python -m pytest tests/ -v` (881 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
-
-> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ## License
 
