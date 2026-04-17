@@ -10,17 +10,9 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
-<p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux">
-  <img src="https://img.shields.io/badge/local%20only-no%20data%20leaves%20your%20machine-brightgreen" alt="Local Only">
-  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome">
-</p>
-
-Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research: discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other, making every AI-produced result traceable back to the exact script, data, and parameters that produced it.
+Wheeler tracks how every research finding was produced: what script ran, what data it used, what papers informed the approach. It works as a set of slash commands inside [Claude Code](https://docs.anthropic.com/en/docs/claude-code), giving you a different tool for each stage of research (discuss, plan, execute, write). Every action is recorded in a knowledge graph that connects your papers, code, data, findings, and drafts with provenance chains, so any result can be traced back to exactly what produced it.
 
 Runs 100% locally. No API keys, no cloud services. Your data never leaves your machine.
-
-> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ---
 
@@ -56,7 +48,7 @@ Science requires reproducibility. As AI gets embedded in research workflows, the
 
 Wheeler solves this with two guarantees:
 
-**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provenance chain. The agent focuses on science; infrastructure handles bookkeeping.
+**Every result is traceable.** When Wheeler creates a finding, it automatically records what script ran, what data it consumed, what papers informed the approach, and when it happened. One tool call builds the full provenance chain. The agent focuses on science; infrastructure handles bookkeeping.
 
 **Changes propagate.** When a script changes or data is updated, Wheeler flags every downstream finding as stale and reduces its stability score. You always know what to trust and what needs re-verification.
 
@@ -135,7 +127,7 @@ wh dream                                      # graph consolidation
 
 ### Provenance-completing tool calls
 
-The core primitive: one tool call creates a finding AND its full provenance chain.
+The core primitive: one tool call creates a finding AND its full [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provenance chain. You never write this directly; slash commands handle it. But under the hood, this is what happens:
 
 ```python
 add_finding(
@@ -237,29 +229,17 @@ docs/                         # Getting started, architecture, project spec
 
 </details>
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full technical details.
-
 ---
 
-## Bug Reports
+## Contributing
 
-Hit a bug or friction point while using Wheeler? File it from inside your session:
+**Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-```
-/wh:dev-feedback
-```
+**Tests:** `python -m pytest tests/ -v` (881 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
-This scans your conversation for issues, confirms with you, and files structured GitHub issues with reproduction steps, verbatim errors, and acceptance criteria.
+**Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
-Or file issues manually at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
-
-## Development
-
-```bash
-source .venv/bin/activate
-python -m pytest tests/ -v                 # unit + integration (881 tests)
-python -m pytest tests/e2e/ -v             # e2e (requires Neo4j)
-```
+> Named after physicist John Archibald Wheeler, Niels Bohr's longtime collaborator. Wheeler and Bohr worked by talking. Bohr would pace, thinking out loud. Wheeler would push back, sharpen the question, sketch the math. The best ideas emerged from the conversation, not from either person alone. That's the model here.
 
 ## License
 
