@@ -292,6 +292,10 @@ After setup, restart Claude Code and verify MCP servers with `/mcp`.
 
 ## Getting Started
 
+For a complete walkthrough (Neo4j Desktop setup, configuration, first project), see **[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)**.
+
+Quick start if you already have Neo4j running:
+
 ```bash
 cd ~/my-project && claude    # open Claude Code in your project
 /wh:init                     # set up paths, config, knowledge graph
