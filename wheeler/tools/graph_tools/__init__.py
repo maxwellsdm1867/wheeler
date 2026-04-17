@@ -55,6 +55,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "unlink_nodes": mutations.unlink_nodes,
     "delete_node": mutations.delete_node,
     "set_tier": mutations.set_tier,
+    "update_node": mutations.update_node,
     # Queries
     "query_findings": queries.query_findings,
     "query_open_questions": queries.query_open_questions,
@@ -268,6 +269,29 @@ TOOL_DEFINITIONS = [
             "tier": {"type": "string", "description": "reference or generated"},
         },
         "required": ["node_id", "tier"],
+    },
+    {
+        "name": "update_node",
+        "description": (
+            "Update fields on an existing knowledge graph node. Only non-empty "
+            "fields are applied. The 'updated' timestamp is set automatically. "
+            "Use for correcting descriptions, changing status, adjusting "
+            "confidence, or updating any node field after creation."
+        ),
+        "parameters": {
+            "node_id": {"type": "string", "description": "The node ID to update (e.g., F-3a2b)"},
+            "description": {"type": "string", "description": "Updated description (Finding, Dataset)", "default": ""},
+            "statement": {"type": "string", "description": "Updated statement (Hypothesis)", "default": ""},
+            "question": {"type": "string", "description": "Updated question (OpenQuestion)", "default": ""},
+            "title": {"type": "string", "description": "Updated title (Paper, Document, ResearchNote)", "default": ""},
+            "content": {"type": "string", "description": "Updated content (ResearchNote)", "default": ""},
+            "confidence": {"type": "number", "description": "Confidence 0.0-1.0 (Finding)", "default": None},
+            "priority": {"type": "integer", "description": "Priority 1-10 (OpenQuestion)", "default": None},
+            "status": {"type": "string", "description": "Status (Hypothesis, Document, Execution)", "default": ""},
+            "tier": {"type": "string", "description": "reference or generated", "default": ""},
+            "path": {"type": "string", "description": "File path (Dataset, Script, Document)", "default": ""},
+        },
+        "required": ["node_id"],
     },
     {
         "name": "query_notes",
@@ -496,6 +520,71 @@ def _update_knowledge_tier(
         )
 
 
+def _update_knowledge_node(
+    args: dict, result_str: str, config: WheelerConfig
+) -> tuple[bool, bool]:
+    """Best-effort update: if a JSON file exists for the node, update its fields.
+
+    Returns (json_ok, synthesis_ok) indicating which layers succeeded.
+    """
+    json_ok = False
+    synthesis_ok = False
+    try:
+        parsed = json.loads(result_str)
+        if "error" in parsed:
+            return (json_ok, synthesis_ok)
+
+        node_id: str = parsed["node_id"]
+        changes: dict = parsed.get("changes", {})
+
+        if not changes:
+            return (True, True)  # nothing to update
+
+        from wheeler.knowledge.store import read_node, write_node
+
+        knowledge_dir = Path(config.knowledge_path)
+
+        try:
+            node = read_node(knowledge_dir, node_id)
+        except FileNotFoundError:
+            logger.debug("update_node: no knowledge file for %s, skipping", node_id)
+            return (json_ok, synthesis_ok)
+
+        # Apply field changes to the model
+        now = _now()
+        for field, change in changes.items():
+            new_val = change["new"]
+            if hasattr(node, field):
+                setattr(node, field, new_val)
+        node.updated = now
+
+        # Append change_log entry
+        from wheeler.models import ChangeEntry
+
+        change_log_entry = ChangeEntry(
+            timestamp=now,
+            action="fields_updated",
+            changes={k: [v["old"], v["new"]] for k, v in changes.items()},
+            actor=args.get("session_id", "system"),
+        )
+        node.change_log.append(change_log_entry)
+
+        write_node(knowledge_dir, node)
+        json_ok = True
+        logger.info("Update-write: %s fields updated in knowledge file", node_id)
+
+        # Re-render synthesis
+        synthesis_ok = _write_synthesis_file(node_id, node, config)
+
+    except Exception:
+        logger.error(
+            "Update-write failed for %s (best-effort, continuing)",
+            args.get("node_id", "?"),
+            exc_info=True,
+        )
+    return (json_ok, synthesis_ok)
+
+
 # --- Delete helpers ---
 
 
@@ -684,6 +773,7 @@ async def execute_tool(
     3. Synthesis markdown (synthesis/{node_id}.md)
 
     For ``set_tier``, updates both JSON and synthesis files.
+    For ``update_node``, updates graph, JSON, synthesis, and embedding.
     For ``link_nodes``, re-renders synthesis files for both endpoints.
     """
     handler = _TOOL_REGISTRY.get(tool_name)
@@ -702,7 +792,7 @@ async def execute_tool(
         from ._field_specs import validate_and_normalize
 
         field_warnings: dict[str, str] = {}
-        if tool_name in _MUTATION_TOOLS:
+        if tool_name in _MUTATION_TOOLS or tool_name == "update_node":
             field_errors, field_warnings = validate_and_normalize(tool_name, args)
             if field_errors:
                 logger.warning("execute_tool %s: validation failed: %s", tool_name, field_errors)
@@ -765,6 +855,51 @@ async def execute_tool(
                 pass  # best-effort, fulltext is advisory
         elif tool_name == "set_tier":
             _update_knowledge_tier(args, result, config)
+        elif tool_name == "update_node":
+            json_ok, synthesis_ok = _update_knowledge_node(args, result, config)
+            # Build receipt
+            try:
+                parsed = json.loads(result)
+                if "error" not in parsed:
+                    receipt = WriteReceipt(
+                        node_id=parsed.get("node_id", ""),
+                        label=parsed.get("label", ""),
+                        timestamp=_now(),
+                        graph=True,
+                        json=json_ok,
+                        synthesis=synthesis_ok,
+                    )
+                    _repair_queue.enqueue(receipt)
+            except Exception:
+                pass  # receipt tracking should never break the tool
+
+            # Update embedding if display text changed (best-effort)
+            try:
+                parsed_upd = json.loads(result)
+                upd_changes = parsed_upd.get("changes", {})
+                text_changed = any(
+                    f in upd_changes
+                    for f in ("description", "statement", "question", "title", "content")
+                )
+                if text_changed:
+                    from wheeler.search.embeddings import EmbeddingStore
+
+                    upd_node_id = parsed_upd.get("node_id", "")
+                    upd_label = parsed_upd.get("label", "")
+                    # Find the new text from the changes
+                    new_text = ""
+                    for f in ("description", "statement", "question", "title", "content"):
+                        if f in upd_changes:
+                            new_text = upd_changes[f]["new"]
+                            break
+                    if new_text and upd_node_id:
+                        store_path = config.search.store_path
+                        store = EmbeddingStore(store_path)
+                        store.load()
+                        store.add(upd_node_id, upd_label, new_text)
+                        store.save()
+            except (ImportError, Exception):
+                pass  # embedding update is best-effort
         elif tool_name == "link_nodes":
             parsed = json.loads(result)
             if parsed.get("status") == "linked":

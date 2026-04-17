@@ -28,6 +28,7 @@ class TestToolDefinitions:
             "link_nodes",
             "unlink_nodes",
             "delete_node",
+            "update_node",
             "query_findings",
             "query_open_questions",
             "query_hypotheses",
@@ -602,4 +603,4 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 25
+        assert len(TOOL_DEFINITIONS) == 26

@@ -25,6 +25,7 @@ _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "add_note": ("content",),
     "add_script": ("path", "language"),
     "add_execution": ("kind", "description"),
+    "update_node": ("node_id",),
 }
 
 # ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ def _check_confidence(value: object) -> tuple[object, str | None, str | None]:
 
 
 def _check_priority(value: object) -> tuple[object, str | None, str | None]:
-    """Validate priority is an int in [1, 10]. Coerces strings/floats."""
+    """Validate priority is an int in [1, 10] where 10 is highest. Coerces strings/floats."""
     try:
         ival = int(value)
     except (ValueError, TypeError):

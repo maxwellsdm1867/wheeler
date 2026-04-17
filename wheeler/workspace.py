@@ -17,7 +17,7 @@ _cached_summary: WorkspaceSummary | None = None
 _cache_key: str | None = None  # project_dir used for cache
 
 _SCRIPT_EXTENSIONS = {".py", ".m"}
-_DATA_EXTENSIONS = {".mat", ".h5", ".csv", ".hdf5"}
+_DATA_EXTENSIONS = {".mat", ".h5", ".csv", ".hdf5", ".db", ".sqlite", ".sqlite3"}
 
 
 @dataclass

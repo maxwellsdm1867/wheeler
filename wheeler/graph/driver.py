@@ -57,3 +57,15 @@ async def close_async_driver():
         await _async_driver.close()
         _async_driver = None
         _async_driver_uri = None
+
+
+def invalidate_async_driver():
+    """Discard the cached async driver without closing it.
+
+    Call after asyncio.run() returns to prevent reuse of a driver
+    bound to a now-closed event loop. The driver is not closed because
+    its event loop is already dead.
+    """
+    global _async_driver, _async_driver_uri
+    _async_driver = None
+    _async_driver_uri = None

@@ -18,6 +18,7 @@ import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastmcp import FastMCP
 
@@ -204,9 +205,14 @@ async def graph_status() -> dict:
 
 @mcp.tool()
 @_logged
-async def graph_context() -> str:
-    """Fetch size-limited context from the Wheeler knowledge graph (recent findings, open questions, hypotheses)."""
-    return await context.fetch_context(_config)
+async def graph_context(topic: str = "") -> str:
+    """Fetch size-limited context from the Wheeler knowledge graph (recent findings, open questions, hypotheses).
+
+    When topic is provided, filters results to those matching the topic
+    (case-insensitive substring match on descriptions/statements).
+    Leave empty to get all recent context.
+    """
+    return await context.fetch_context(_config, topic=topic)
 
 
 # --- Node read (filesystem) ---
@@ -381,8 +387,22 @@ async def add_question(
 
 @mcp.tool()
 @_logged
-async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
+async def link_nodes(
+    source_id: str,
+    target_id: str,
+    relationship: Literal[
+        "USED", "WAS_GENERATED_BY", "WAS_DERIVED_FROM", "WAS_INFORMED_BY",
+        "WAS_ATTRIBUTED_TO", "WAS_ASSOCIATED_WITH",
+        "SUPPORTS", "CONTRADICTS", "CITES", "APPEARS_IN",
+        "RELEVANT_TO", "AROSE_FROM", "DEPENDS_ON", "CONTAINS",
+    ],
+) -> dict:
     """Create a relationship between two Wheeler knowledge graph nodes.
+
+    Args:
+      source_id: ID of the source node (e.g. 'F-3a2b')
+      target_id: ID of the target node (e.g. 'D-1c4f')
+      relationship: the relationship type (NOT 'relation'). See valid types below.
 
     Valid relationship types (exactly one of):
       PROV: USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
@@ -405,9 +425,23 @@ async def link_nodes(source_id: str, target_id: str, relationship: str) -> dict:
 
 @mcp.tool()
 @_logged
-async def unlink_nodes(source_id: str, target_id: str, relationship: str) -> dict:
+async def unlink_nodes(
+    source_id: str,
+    target_id: str,
+    relationship: Literal[
+        "USED", "WAS_GENERATED_BY", "WAS_DERIVED_FROM", "WAS_INFORMED_BY",
+        "WAS_ATTRIBUTED_TO", "WAS_ASSOCIATED_WITH",
+        "SUPPORTS", "CONTRADICTS", "CITES", "APPEARS_IN",
+        "RELEVANT_TO", "AROSE_FROM", "DEPENDS_ON", "CONTAINS",
+    ],
+) -> dict:
     """Remove a specific relationship between two Wheeler knowledge graph nodes. Use for correcting
     wrong links created during ingest.
+
+    Args:
+      source_id: ID of the source node (e.g. 'F-3a2b')
+      target_id: ID of the target node (e.g. 'D-1c4f')
+      relationship: the relationship type (NOT 'relation'). See valid types below.
 
     This is a destructive operation: the relationship is permanently deleted.
     Both nodes remain in the graph. To re-render synthesis files for the
@@ -456,8 +490,8 @@ async def add_dataset(path: str, type: str, description: str) -> dict:
     """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID.
 
     Field constraints (enforced):
-      path: absolute file path (required). File MUST exist on disk.
-        Verify with ls or Read before calling. Relative paths are rejected.
+      path: file path (required). File MUST exist on disk.
+        Verify with ls or Read before calling. Relative paths are resolved to absolute.
       type: dataset format, e.g. 'mat', 'h5', 'csv' (required).
       description: what the dataset contains (required, non-empty).
     """
@@ -518,6 +552,47 @@ async def set_tier(node_id: str, tier: str) -> dict:
     result = await graph_tools.execute_tool(
         "set_tier", {"node_id": node_id, "tier": tier, "session_id": _SESSION_ID}, _config
     )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def update_node(
+    node_id: str,
+    description: str = "",
+    confidence: float | None = None,
+    statement: str = "",
+    status: str = "",
+    title: str = "",
+    content: str = "",
+    question: str = "",
+    priority: int | None = None,
+    path: str = "",
+    tier: str = "",
+) -> dict:
+    """Update fields on an existing Wheeler knowledge graph node. Only non-empty fields are applied.
+
+    Field constraints (enforced, same as creation):
+      confidence: float 0.0-1.0
+      priority: integer 1-10, where 10 is highest
+      tier: 'generated' or 'reference'
+      path: resolved to absolute if relative
+
+    Returns the node_id, updated fields, and a changes dict showing old vs new values.
+    Use for correcting descriptions, changing status, adjusting confidence,
+    or updating any node field after creation.
+    """
+    update_args: dict = {"node_id": node_id, "session_id": _SESSION_ID}
+    for field, val in [
+        ("description", description), ("confidence", confidence),
+        ("statement", statement), ("status", status), ("title", title),
+        ("content", content), ("question", question), ("priority", priority),
+        ("path", path), ("tier", tier),
+    ]:
+        if val is not None and val != "":
+            update_args[field] = val
+
+    result = await graph_tools.execute_tool("update_node", update_args, _config)
     return json.loads(result)
 
 
@@ -584,6 +659,11 @@ async def add_note(
     execution_description: str = "",
 ) -> dict:
     """Add a ResearchNote to the Wheeler knowledge graph to capture an insight or idea. Returns the new node ID.
+
+    Field constraints (enforced):
+      content: non-empty string (required). The note body, insight, or observation.
+      title: optional short title (defaults to auto-generated from content).
+      context: optional string describing where/why this note was captured.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
@@ -1259,7 +1339,10 @@ async def _verify_backend() -> None:
 def main():
     import asyncio
 
+    from wheeler.graph.driver import invalidate_async_driver
+
     asyncio.run(_verify_backend())
+    invalidate_async_driver()
     mcp.run(transport="stdio")
 
 

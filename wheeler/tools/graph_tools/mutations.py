@@ -461,3 +461,100 @@ async def set_tier(backend, args: dict) -> str:
         return json.dumps({"node_id": node_id, "tier": tier, "status": "updated"})
     logger.warning("set_tier: node %s not found", node_id)
     return json.dumps({"error": f"Node {node_id} not found"})
+
+
+async def update_node(backend, args: dict) -> str:
+    """Update fields on an existing knowledge graph node.
+
+    Required: node_id
+    Optional: any field appropriate for the node type (description,
+    confidence, statement, status, title, content, question, priority,
+    path, tier, etc.)
+
+    Only non-empty, non-None fields are applied. The 'updated' timestamp
+    is set automatically. Returns the node_id, label, list of updated
+    fields, and a changes dict showing old vs new values.
+    """
+    node_id = args["node_id"]
+
+    # Determine label from ID prefix
+    prefix = node_id.split("-", 1)[0]
+    label = PREFIX_TO_LABEL.get(prefix)
+    if not label:
+        return json.dumps({"error": f"Unknown node ID prefix: {node_id}"})
+
+    # Verify node exists
+    current = await backend.get_node(label, node_id)
+    if not current:
+        return json.dumps({"error": f"Node not found: {node_id}"})
+
+    # Extract fields to update (exclude internal/meta keys)
+    exclude_keys = {"node_id", "session_id", "_config"}
+    updates: dict = {}
+    for k, v in args.items():
+        if k in exclude_keys:
+            continue
+        if v is None or v == "":
+            continue
+        updates[k] = v
+
+    if not updates:
+        return json.dumps({"error": "No fields to update"})
+
+    # Add updated timestamp
+    now = _now()
+    updates["updated"] = now
+
+    # Build change record (old vs new for each changed field)
+    changes: dict[str, dict] = {}
+    for key, new_val in updates.items():
+        if key == "updated":
+            continue
+        old_val = current.get(key)
+        if old_val != new_val:
+            changes[key] = {"old": old_val, "new": new_val}
+
+    if not changes:
+        return json.dumps({
+            "node_id": node_id,
+            "label": label,
+            "updated_fields": [],
+            "changes": {},
+            "status": "no_changes",
+        })
+
+    # Update display_name if a primary content field changed
+    display_field_map = {
+        "description": lambda v: v[:40],
+        "statement": lambda v: v[:40],
+        "question": lambda v: v[:40],
+        "title": lambda v: v[:40],
+        "content": lambda v: v[:40],
+    }
+    for field, truncator in display_field_map.items():
+        if field in changes:
+            updates["display_name"] = truncator(updates[field])
+            break
+
+    # Update _search_text if a primary content field changed
+    for field in ("description", "statement", "question", "title", "content"):
+        if field in changes:
+            updates["_search_text"] = updates[field]
+            break
+
+    # Apply update to graph
+    updated = await backend.update_node(label, node_id, updates)
+    if not updated:
+        return json.dumps({"error": f"Failed to update node {node_id}"})
+
+    logger.info(
+        "Updated node %s (label=%s, fields=%s)",
+        node_id, label, list(changes.keys()),
+    )
+    return json.dumps({
+        "node_id": node_id,
+        "label": label,
+        "updated_fields": list(changes.keys()),
+        "changes": changes,
+        "status": "updated",
+    })

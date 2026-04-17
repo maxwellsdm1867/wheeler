@@ -26,7 +26,7 @@ def _project_filter(alias: str, project_tag: str) -> str:
     return f" AND {alias}._wheeler_project = $ptag"
 
 
-async def fetch_context(config: WheelerConfig) -> str:
+async def fetch_context(config: WheelerConfig, topic: str = "") -> str:
     """Pull size-limited graph context for prompt injection.
 
     Returns a formatted string with recent findings, open questions,
@@ -34,7 +34,11 @@ async def fetch_context(config: WheelerConfig) -> str:
     by tier (reference vs generated) so downstream agents can distinguish
     established knowledge from new work.
 
-    Queries run sequentially within one session — Neo4j sessions are not
+    When *topic* is non-empty, results are filtered to those containing
+    the topic string (case-insensitive substring match on the relevant
+    text field for each node type).
+
+    Queries run sequentially within one session -- Neo4j sessions are not
     safe for concurrent queries via asyncio.gather.
     """
     driver = get_async_driver(config)
@@ -49,48 +53,60 @@ async def fetch_context(config: WheelerConfig) -> str:
     pq = _project_filter("q", project_tag)
     ph = _project_filter("h", project_tag)
 
+    # Optional topic filter (case-insensitive substring match)
+    topic = topic.strip() if topic else ""
+    tf_findings = ""
+    tf_questions = ""
+    tf_hypotheses = ""
+    topic_params: dict = {}
+    if topic:
+        tf_findings = " AND toLower(f.description) CONTAINS toLower($topic)"
+        tf_questions = " AND toLower(q.question) CONTAINS toLower($topic)"
+        tf_hypotheses = " AND toLower(h.statement) CONTAINS toLower($topic)"
+        topic_params = {"topic": topic}
+
     try:
         async with driver.session(database=config.neo4j.database) as session:
             # Reference findings
             result = await session.run(
                 "MATCH (f:Finding) WHERE f.tier = 'reference'"
-                f"{pf} "
+                f"{pf}{tf_findings} "
                 "RETURN f.id AS id, f.description AS desc "
                 "ORDER BY f.date DESC LIMIT $limit",
                 limit=config.context_max_findings,
-                **extra,
+                **extra, **topic_params,
             )
             ref_findings = [r async for r in result]
 
             # Generated findings (includes null tier for backward compat)
             result = await session.run(
                 "MATCH (f:Finding) WHERE (f.tier IS NULL OR f.tier = 'generated')"
-                f"{pf} "
+                f"{pf}{tf_findings} "
                 "RETURN f.id AS id, f.description AS desc "
                 "ORDER BY f.date DESC LIMIT $limit",
                 limit=config.context_max_findings,
-                **extra,
+                **extra, **topic_params,
             )
             gen_findings = [r async for r in result]
 
             # Open questions
             result = await session.run(
                 "MATCH (q:OpenQuestion) WHERE true"
-                f"{pq} "
+                f"{pq}{tf_questions} "
                 "RETURN q.id AS id, q.question AS question "
                 "ORDER BY q.priority DESC LIMIT $limit",
                 limit=config.context_max_questions,
-                **extra,
+                **extra, **topic_params,
             )
             questions = [r async for r in result]
 
             # Active hypotheses
             result = await session.run(
                 "MATCH (h:Hypothesis) WHERE h.status = 'open'"
-                f"{ph} "
+                f"{ph}{tf_hypotheses} "
                 "RETURN h.id AS id, h.statement AS stmt LIMIT $limit",
                 limit=config.context_max_hypotheses,
-                **extra,
+                **extra, **topic_params,
             )
             hypotheses = [r async for r in result]
 
@@ -115,4 +131,7 @@ async def fetch_context(config: WheelerConfig) -> str:
     # TODO: Once graph nodes carry a `title` field, context injection can
     # use short titles from knowledge files instead of full descriptions,
     # keeping the context block compact while still being informative.
-    return "## Research Context (from knowledge graph)\n\n" + "\n\n".join(sections)
+    header = "## Research Context (from knowledge graph)"
+    if topic:
+        header += f" -- topic: {topic}"
+    return header + "\n\n" + "\n\n".join(sections)

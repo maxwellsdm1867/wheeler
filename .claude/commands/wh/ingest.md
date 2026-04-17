@@ -30,6 +30,22 @@ This distinction helps downstream agents separate established knowledge from new
 ## Your Job
 Seed the knowledge graph from what already exists. Three categories:
 
+### Phase 0: Primary Data Source Discovery
+
+Before ingesting code, identify the primary data sources in the workspace.
+
+1. Scan the workspace: `scan_workspace`
+2. Review the data files listed in the scan results
+3. Ask the scientist:
+   - Which data file(s) are the primary experimental data?
+   - Are there database files (.db, .sqlite) that contain structured results?
+   - Are any data files derived from others (e.g., processed versions of raw data)?
+4. Create Dataset nodes for each primary data source FIRST, with `tier: "reference"`
+5. Note parent-child relationships between datasets for the linking pass
+
+This ensures all downstream Script and Finding nodes can be properly linked
+to their data sources.
+
 ### 1. Code Ingestion
 Scan the codebase for analysis scripts and create properly described Script nodes.
 

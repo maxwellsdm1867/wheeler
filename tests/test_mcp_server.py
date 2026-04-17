@@ -60,13 +60,14 @@ class TestToolRegistration:
             "detect_communities",
             "propose_merge",
             "execute_merge",
+            "update_node",
         }
         assert expected == tool_names
 
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 43
+        assert len(tools) == 44
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):

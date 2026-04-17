@@ -118,7 +118,10 @@ async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
 def main():
     import asyncio
 
+    from wheeler.graph.driver import invalidate_async_driver
+
     asyncio.run(_verify_backend())
+    invalidate_async_driver()
     mcp.run(transport="stdio")
 
 

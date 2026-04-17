@@ -109,9 +109,14 @@ async def graph_status() -> dict:
 
 @mcp.tool()
 @_logged
-async def graph_context() -> str:
-    """Fetch size-limited context from the Wheeler knowledge graph (recent findings, open questions, hypotheses)."""
-    return await context.fetch_context(_config)
+async def graph_context(topic: str = "") -> str:
+    """Fetch size-limited context from the Wheeler knowledge graph (recent findings, open questions, hypotheses).
+
+    When topic is provided, filters results to those matching the topic
+    (case-insensitive substring match on descriptions/statements).
+    Leave empty to get all recent context.
+    """
+    return await context.fetch_context(_config, topic=topic)
 
 
 @mcp.tool()
@@ -356,7 +361,10 @@ async def request_log_summary() -> dict:
 def main():
     import asyncio
 
+    from wheeler.graph.driver import invalidate_async_driver
+
     asyncio.run(_verify_backend())
+    invalidate_async_driver()
     mcp.run(transport="stdio")
 
 
