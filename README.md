@@ -249,7 +249,9 @@ You always know what's current and what needs re-verification.
 
 ## Setup
 
-**Prerequisites:** Python 3.11+, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription)
+**New to Wheeler?** Start with the **[Getting Started Guide](docs/GETTING-STARTED.md)**, which walks through Neo4j Desktop setup, Wheeler installation, and your first project step by step.
+
+**Prerequisites:** Python 3.11+, Node.js, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), Neo4j Desktop (or Docker)
 
 Everything runs locally. No cloud accounts, no API keys, no data leaves your machine.
 

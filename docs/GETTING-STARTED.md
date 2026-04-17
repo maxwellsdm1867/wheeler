@@ -1,56 +1,44 @@
 # Getting Started with Wheeler
 
-This guide walks you through setting up Wheeler from scratch. Takes about 10 minutes.
+Wheeler is a research knowledge graph that turns Claude Code into a provenance-tracked co-scientist. It records how every result was produced (what script ran, what data it consumed, what papers informed the approach) so your AI-assisted research is reproducible and auditable.
+
+This guide walks you through setting up Wheeler from scratch.
+
+**What you'll have when done:** A running knowledge graph, Claude Code connected to Wheeler's 44 tools, and the ability to use `/wh:*` commands to discuss, plan, execute, and write up research with full provenance tracking.
 
 ## What you need
 
 - **macOS or Linux** (Windows via WSL works but is untested)
-- **Python 3.11+**
-- **Claude Code** with a Max subscription (no API keys needed)
-- **Neo4j** (we recommend Neo4j Desktop, instructions below)
+- **Python 3.11+** (check with `python3 --version`)
+- **Node.js** (for Claude Code; check with `node --version`)
+- **Claude Code** with a Max subscription (no API keys needed). Claude Code is Anthropic's terminal-based AI assistant.
+- **Neo4j Desktop** (free graph database with a visual browser; instructions below)
 
-## Step 1: Install Neo4j Desktop (recommended)
+If your Python version is below 3.11, install a newer one. On macOS: `brew install python@3.13`. Then use `python3.13` instead of `python3` in the commands below.
 
-Neo4j Desktop is the easiest way to run Neo4j locally. It gives you a GUI for managing databases, a built-in browser for visualizing your knowledge graph, and one-click start/stop.
+## Step 1: Install Neo4j Desktop
+
+Neo4j Desktop gives you a GUI for managing databases, a built-in browser for visualizing your knowledge graph, and one-click start/stop. It is the easiest way to run Neo4j locally.
 
 1. Download Neo4j Desktop from https://neo4j.com/download/ (free, requires registration)
-2. Install and open Neo4j Desktop
+2. Install and open it. On macOS, you may see a Gatekeeper warning ("cannot be opened because the developer cannot be verified"). Go to System Settings > Privacy & Security and click Allow.
 3. Create a new project (e.g., "Wheeler Research")
-4. Click **Add Database** > **Local DBMS**
+4. Click **Add** (or **Add Database**) > **Local DBMS**
    - Name: `wheeler` (or anything you like)
-   - Password: `research-graph` (Wheeler's default; change it in `wheeler.yaml` if you pick something else)
-   - Version: **5.x** (latest 5.x is fine)
-5. Click **Start** on the database
-6. Verify it's running: click **Open** > **Neo4j Browser**, you should see a query prompt
+   - Password: **`research-graph`** (Wheeler's default; change it in `wheeler.yaml` if you pick something else)
+   - Version: **5.x** (latest 5.x is fine). Do not use Neo4j 4.x.
+   - If asked about APOC plugins, skip them. Wheeler does not need APOC.
+5. Click **Start** on the database. Wait for the green "Running" indicator (may take 30-60 seconds).
+6. Verify it's running: click **Open** > **Neo4j Browser**. You should see a query prompt.
 
 Your connection details (these are the defaults Wheeler expects):
-- **URI**: `bolt://localhost:7687`
-- **Username**: `neo4j`
-- **Password**: `research-graph`
-- **Database**: `neo4j`
 
-### Alternative: Docker
-
-If you prefer Docker over Neo4j Desktop:
-
-```bash
-docker run -d --name wheeler-neo4j \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/research-graph \
-  neo4j:5-community
-```
-
-Browse at http://localhost:7474.
-
-### Alternative: One-line setup
-
-If Docker is installed and you just want everything done for you:
-
-```bash
-bash bin/setup.sh
-```
-
-This creates the venv, installs Wheeler, starts Neo4j in Docker, initializes the schema, and installs git hooks. Skip to Step 5 if you use this.
+| Setting | Value |
+|---------|-------|
+| URI | `bolt://localhost:7687` |
+| Username | `neo4j` |
+| Password | `research-graph` |
+| Database | `neo4j` |
 
 ## Step 2: Install Wheeler
 
@@ -59,10 +47,13 @@ git clone https://github.com/maxwellsdm1867/wheeler.git
 cd wheeler
 python3 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -e ".[test]"
 ```
 
-This installs Wheeler in editable mode with all dependencies, including fastembed for semantic search (downloads a 33MB model on first use, runs locally).
+This installs Wheeler with all dependencies. The `pip install -e` flag means changes to the source code take effect immediately (useful if you want to contribute). The install includes fastembed, which enables searching the knowledge graph by meaning, not just keywords. It downloads a 33MB model on first use (runs entirely locally).
+
+If `pip install` fails on Apple Silicon (M1/M2/M3), make sure you ran `pip install --upgrade pip` first. Older pip versions can fail when building native packages.
 
 ## Step 3: Configure Wheeler
 
@@ -72,7 +63,7 @@ Copy the example config:
 cp wheeler.yaml.example wheeler.yaml
 ```
 
-The defaults work out of the box if you used `research-graph` as the Neo4j password. If you chose a different password or port, edit `wheeler.yaml`:
+The defaults work out of the box if you used `research-graph` as the Neo4j password in Step 1. If you chose a different password, edit `wheeler.yaml`:
 
 ```yaml
 neo4j:
@@ -84,14 +75,16 @@ neo4j:
 
 ## Step 4: Initialize the graph schema
 
-With Neo4j running:
+Make sure Neo4j Desktop shows the database as "Running" (green dot), then:
 
 ```bash
-source .venv/bin/activate
+source .venv/bin/activate       # skip if already active
 wheeler-tools graph init
 ```
 
-This creates uniqueness constraints and indexes in Neo4j. Safe to run multiple times.
+This sets up the database structure Wheeler needs (uniqueness constraints and indexes). Safe to run multiple times.
+
+If you see "connection refused" or a timeout, Neo4j is not running. Go back to Neo4j Desktop and click Start on your database.
 
 Verify it worked:
 
@@ -99,46 +92,61 @@ Verify it worked:
 wheeler-tools graph status
 ```
 
-You should see node counts (all zeros if this is a fresh graph, which is expected).
+You should see node counts (all zeros on a fresh graph, which is expected).
 
 ## Step 5: Set up Claude Code
 
-Make sure Claude Code is installed:
+Install Claude Code if you don't have it:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
 
-Wheeler communicates with Claude Code through MCP (Model Context Protocol) servers. The `.mcp.json` file in the Wheeler repo configures these automatically. When you open Claude Code in the Wheeler directory, it picks up the MCP servers.
+(If `npm` is not found, install Node.js first: https://nodejs.org/ or `brew install node` on macOS.)
 
-Verify MCP servers are connected:
+Wheeler talks to Claude Code through MCP (Model Context Protocol), which lets Claude Code call Wheeler's graph tools directly. The `.mcp.json` file in the Wheeler repo configures this automatically.
+
+Verify everything is connected:
 
 ```bash
-cd /path/to/wheeler   # or your project directory
-claude                 # opens Claude Code
+cd /path/to/wheeler
+claude                          # opens Claude Code
 ```
 
-Inside Claude Code, type `/mcp` to check server status. You should see `wheeler_core`, `wheeler_query`, `wheeler_mutations`, and `wheeler_ops` listed as connected.
+Inside Claude Code, type `/mcp` to check server status. You should see Wheeler servers listed as connected. In the Wheeler repo directory, you'll see `wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`, `wheeler` (legacy), and `neo4j`.
 
-## Step 6: Install Wheeler in your project
+## Step 6: Install Wheeler in your research project
 
-To use Wheeler in your own research project (not the Wheeler repo itself):
+To use Wheeler in your own project (not the Wheeler repo itself), you need to register the tools globally so they're available from any directory.
+
+**In a terminal where the Wheeler venv is active:**
 
 ```bash
-# From the Wheeler repo
-source .venv/bin/activate
+cd /path/to/wheeler             # go to the Wheeler repo
+source .venv/bin/activate       # activate the venv
 wheeler install
 ```
 
-This copies the `/wh:*` slash commands to `~/.claude/` so they're available in any Claude Code session. It also sets up the MCP server configuration.
+This does two things:
+1. Copies the `/wh:*` slash commands to `~/.claude/` so they work in any Claude Code session
+2. Registers the `wheeler` MCP server in `~/.claude/settings.json` so Claude Code can reach the graph tools from any directory
 
-Then in your project directory:
+**Now restart Claude Code** (type `/exit`, then `claude` again). This is required for the new MCP servers to be picked up.
+
+**Then open your research project:**
 
 ```bash
 cd ~/my-research-project
-claude                    # opens Claude Code
-/wh:init                  # creates wheeler.yaml, knowledge/, synthesis/, .wheeler/
+claude
 ```
+
+Type `/mcp` to verify. You should see `wheeler` and `neo4j` listed. Then run:
+
+```
+/wh:init
+```
+
+This is an interactive setup wizard (takes 2-3 minutes). It creates `wheeler.yaml`, `knowledge/`, `synthesis/`, `.notes/`, `.plans/`, `.logs/`, and `.wheeler/` in your project, and initializes the graph schema.
 
 ## Step 7: Start using Wheeler
 
@@ -155,7 +163,7 @@ The basic workflow:
 
 | Command | What it does |
 |---------|-------------|
-| `/wh:init` | Set up a new project (creates config, directories, graph schema) |
+| `/wh:init` | Set up a new project (interactive wizard) |
 | `/wh:discuss` | Sharpen the question through structured discussion |
 | `/wh:plan` | Propose investigations, break work into tasks |
 | `/wh:execute` | Run tasks with full provenance tracking |
@@ -192,21 +200,21 @@ Wheeler creates the finding node, links it to the script via provenance, writes 
 
 ### Neo4j Browser (built into Neo4j Desktop)
 
-Click **Open** > **Neo4j Browser** in Neo4j Desktop. Useful queries:
+Click **Open** > **Neo4j Browser** in Neo4j Desktop. Useful queries (these will be empty until you start adding nodes):
 
 ```cypher
-// See everything
+// See everything in the graph
 MATCH (n) RETURN n LIMIT 50
 
-// All findings
-MATCH (f:Finding) RETURN f ORDER BY f.date DESC
+// All findings, most recently updated first
+MATCH (f:Finding) RETURN f ORDER BY f.updated DESC
 
-// Provenance chain for a specific finding
+// Provenance chain for a specific finding (replace F-xxxx with a real ID)
 MATCH path = (f:Finding {id: "F-xxxx"})-[*1..4]-(connected)
 RETURN path
 
-// What scripts produced what findings
-MATCH (s:Script)-[:WAS_GENERATED_BY]-(f:Finding)
+// What scripts produced what findings (traces through Execution nodes)
+MATCH (f:Finding)-[:WAS_GENERATED_BY]->(x:Execution)-[:USED]->(s:Script)
 RETURN s.id, s.path, f.id, f.description
 ```
 
@@ -221,9 +229,9 @@ wheeler show F-xxxx          # show a specific node
 wheeler graph status          # node counts
 ```
 
-## Headless mode (background tasks)
+## Running tasks in the background
 
-Wheeler can run tasks without you present:
+Wheeler can run tasks without you present, logging results and adding findings to the graph:
 
 ```bash
 wh queue "search for papers on retinal ganglion cell models"   # sonnet, 10 turns
@@ -231,17 +239,21 @@ wh quick "check graph health"                                   # haiku, 3 turns
 wh dream                                                        # graph consolidation
 ```
 
-Results are logged to `.logs/` and findings are added to the knowledge graph with full provenance.
+Results are logged to `.logs/` with full provenance.
 
 ## Troubleshooting
 
+### "command not found: wheeler-tools"
+
+You need to activate the virtual environment first: `source .venv/bin/activate` (from the Wheeler repo directory).
+
 ### "graph_status returns all zeros"
 
-Make sure Neo4j is running. In Neo4j Desktop, check the database shows "Running" status. If using Docker: `docker start wheeler-neo4j`.
+Make sure Neo4j is running. In Neo4j Desktop, check the database shows a green "Running" indicator.
 
 ### "MCP server not connected"
 
-Restart Claude Code (`/exit` then `claude` again). Check that `.mcp.json` exists in your working directory and points to the correct Python path.
+Restart Claude Code (`/exit` then `claude` again). If you're in the Wheeler repo, MCP servers are configured by `.mcp.json` in the repo. If you're in your own project after running `wheeler install`, servers are configured in `~/.claude/settings.json`.
 
 ### "knowledge/ directory does not exist"
 
@@ -250,6 +262,10 @@ Run `/wh:init` in your project to create the required directories.
 ### Neo4j connection refused
 
 Check that Neo4j is listening on port 7687. In Neo4j Desktop, click the database and check the connection details. Default is `bolt://localhost:7687`. If you changed the port, update `wheeler.yaml`.
+
+### Neo4j authentication failed
+
+The password in your `wheeler.yaml` doesn't match the one you set in Neo4j Desktop. Update the `password` field in `wheeler.yaml` to match.
 
 ### Semantic search not working
 
