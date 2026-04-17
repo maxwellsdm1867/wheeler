@@ -416,6 +416,24 @@ tests/                        # 881 tests
 docs/                         # Research docs, project spec
 ```
 
+## Bug Reports
+
+Hit a bug or friction point while using Wheeler? File it from inside your session:
+
+```
+/wh:dev-feedback
+```
+
+This scans your conversation for Wheeler issues (MCP tool bugs, skill problems, workflow friction, data integrity issues), confirms with you, and files structured GitHub issues with reproduction steps, verbatim errors, and acceptance criteria. Designed so issues can be picked up by AI coding agents or human developers.
+
+You can also focus on a specific problem:
+
+```
+/wh:dev-feedback link_nodes keeps rejecting my relationship type
+```
+
+Or file issues manually at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
+
 ## Development
 
 ```bash
