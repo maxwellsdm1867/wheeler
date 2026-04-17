@@ -54,9 +54,9 @@ Wheeler solves this with three guarantees:
 
 **Changes propagate.** When a script changes or data is updated, Wheeler flags every downstream finding as stale and reduces its stability score. You always know what to trust and what needs re-verification.
 
-**Knowledge compounds.** Because all components read from and write to the same graph, a new finding from data analysis becomes available as context for subsequent literature searches, experimental design, and manuscript preparation. The graph provides joint memory for the entire research project, not just an audit trail. Richer, project-specific context improves the quality of every agent output. Information is progressively disclosed and retrieved only when relevant, so agents get what they need without being overwhelmed.
+**Context is managed.** All components read from and write to the same graph, so a finding from data analysis immediately informs subsequent literature searches, experimental design, and manuscript preparation. Information is progressively disclosed and retrieved only when relevant.
 
-Wheeler's knowledge graph represents a new kind of scientific artifact that moves beyond the static nature of a traditional PDF. It functions as an executable map of discovery: any scientist can directly inherit, explore, and build upon the full experimental context of a project.
+**Research becomes a living artifact.** The knowledge graph moves beyond the static PDF. It is an executable map of discovery: any scientist can inherit the full experimental context of a project, explore how results connect, and build directly on top of prior work.
 
 ---
 
