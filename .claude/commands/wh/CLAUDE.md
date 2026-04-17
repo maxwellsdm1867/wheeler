@@ -48,6 +48,10 @@ YAML frontmatter controls tool access. The markdown body IS the system prompt.
 - `report`: Generate work log
 - `close`: End-of-session provenance sweep
 
+### Development
+- `triage`: Triage GitHub issues against planned work
+- `dev-feedback`: File Wheeler bugs/friction as structured GitHub issues
+
 ## Mode Enforcement
 
 Tool access is the primary enforcement mechanism:
