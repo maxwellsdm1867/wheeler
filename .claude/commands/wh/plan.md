@@ -55,6 +55,8 @@ graph_nodes: []
 success_criteria_met: "0/<N>"
 ---
 
+> To execute this plan, use `/wh:execute` so findings are tracked in the knowledge graph.
+
 # Investigation: <name>
 
 ## Objective
