@@ -198,7 +198,7 @@ This is an interactive setup wizard (takes 2-3 minutes). It creates `wheeler.yam
 The basic workflow:
 
 ```
-/wh:start                # not sure which command? start here
+/wh:start                # begin every session here
 /wh:discuss              # sharpen the research question
 /wh:plan                 # structure the investigation
 /wh:execute              # run analyses with full provenance

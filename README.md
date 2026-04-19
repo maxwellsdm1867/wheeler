@@ -36,8 +36,7 @@ Then open Claude Code and start working:
 cd ~/my-research-project
 claude
 /wh:init                         # set up project, create graph schema
-/wh:discuss                      # sharpen the question
-/wh:plan                         # structure the investigation
+/wh:start                        # begin each session here
 ```
 
 **Prerequisites:** Python 3.11+, Node.js, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), [Neo4j Desktop](https://neo4j.com/download/) (free)
