@@ -759,6 +759,61 @@ async def _get_backend(config: WheelerConfig):
     return _backend_instance
 
 
+def _diagnose_neo4j_error(exc: Exception) -> dict:
+    """Return user-friendly diagnosis fields for common Neo4j errors."""
+    try:
+        from neo4j.exceptions import (
+            AuthError,
+            ServiceUnavailable,
+            DatabaseUnavailable,
+        )
+        if isinstance(exc, AuthError):
+            return {
+                "diagnosis": "Neo4j authentication failed",
+                "cause": "The password in wheeler.yaml does not match the Neo4j database password.",
+                "fix": [
+                    "Open wheeler.yaml and check the neo4j.password field.",
+                    "In Neo4j Desktop: the password is what you set when creating the DBMS.",
+                    "If you forgot it: delete the DBMS in Neo4j Desktop and create a new one with password 'research-graph'.",
+                ],
+            }
+        if isinstance(exc, (ServiceUnavailable, DatabaseUnavailable)):
+            return {
+                "diagnosis": "Cannot connect to Neo4j",
+                "cause": "Neo4j is not running, or another process is using port 7687.",
+                "fix": [
+                    "Open Neo4j Desktop and click Start on your database (look for the green Running indicator).",
+                    "Check for port conflicts: run 'lsof -i :7687' in a terminal.",
+                    "If using Docker: run 'docker start wheeler-neo4j'.",
+                    "If using Homebrew: run 'brew services start neo4j'.",
+                ],
+            }
+    except ImportError:
+        pass
+    # Check by string matching as a fallback (e.g. wrapped exceptions)
+    msg = str(exc).lower()
+    if "unauthorized" in msg or "authentication" in msg:
+        return {
+            "diagnosis": "Neo4j authentication failed",
+            "cause": "The password in wheeler.yaml does not match the Neo4j database password.",
+            "fix": [
+                "Open wheeler.yaml and check the neo4j.password field.",
+                "In Neo4j Desktop: the password is what you set when creating the DBMS.",
+                "If you forgot it: delete the DBMS in Neo4j Desktop and create a new one with password 'research-graph'.",
+            ],
+        }
+    if "refused" in msg or "unavailable" in msg or "connection" in msg:
+        return {
+            "diagnosis": "Cannot connect to Neo4j",
+            "cause": "Neo4j is not running, or another process is using port 7687.",
+            "fix": [
+                "Open Neo4j Desktop and click Start on your database (look for the green Running indicator).",
+                "Check for port conflicts: run 'lsof -i :7687' in a terminal.",
+            ],
+        }
+    return {}
+
+
 async def execute_tool(
     tool_name: str, args: dict, config: WheelerConfig
 ) -> str:
@@ -920,4 +975,4 @@ async def execute_tool(
         return json.dumps({"error": str(exc), "circuit_open": True})
     except Exception as exc:
         logger.error("execute_tool %s failed: %s", tool_name, exc, exc_info=True)
-        return json.dumps({"error": f"{tool_name} failed: {exc}"})
+        return json.dumps({"error": f"{tool_name} failed: {exc}", **_diagnose_neo4j_error(exc)})

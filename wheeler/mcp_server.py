@@ -124,6 +124,53 @@ def _check_similar_nodes(text: str, label: str, exclude_id: str | None = None) -
         return []
 
 
+def _diagnose_health_error(error_msg: str) -> dict:
+    """Return structured diagnosis for common Neo4j connection errors.
+
+    Always includes 'remediation' as a string (backward-compatible).
+    Adds 'diagnosis', 'cause', and 'fix' fields for richer LLM context.
+    """
+    msg = error_msg.lower()
+    if "unauthorized" in msg or "authentication" in msg:
+        return {
+            "diagnosis": "Neo4j authentication failed",
+            "cause": "The password in wheeler.yaml does not match the Neo4j database password.",
+            "remediation": (
+                "Open wheeler.yaml and check the neo4j.password field matches "
+                "what you set in Neo4j Desktop. Wheeler's default password is "
+                "'research-graph'. If you forgot the password, delete the DBMS "
+                "in Neo4j Desktop and create a new one."
+            ),
+            "fix": [
+                "Open wheeler.yaml and check the neo4j.password field matches what you set in Neo4j Desktop.",
+                "Wheeler's default password is 'research-graph'.",
+                "If you forgot the password: delete the DBMS in Neo4j Desktop and create a new one.",
+            ],
+        }
+    if "refused" in msg or "unavailable" in msg or "connection" in msg or "failed to establish" in msg:
+        return {
+            "diagnosis": "Cannot connect to Neo4j",
+            "cause": "Neo4j is not running, or another process is using port 7687.",
+            "remediation": (
+                "Open Neo4j Desktop and click Start on your database (look for "
+                "the green Running indicator), or run: docker start wheeler-neo4j. "
+                "Check for port conflicts: lsof -i :7687"
+            ),
+            "fix": [
+                "Open Neo4j Desktop and click Start on your database (look for the green Running indicator).",
+                "If using Docker: docker start wheeler-neo4j",
+                "If using Homebrew: brew services start neo4j",
+                "Check for port conflicts: lsof -i :7687",
+            ],
+        }
+    return {
+        "remediation": (
+            "Open Neo4j Desktop and start the database, "
+            "or run: docker start wheeler-neo4j"
+        ),
+    }
+
+
 # --- Graph health & status ---
 
 
@@ -149,10 +196,7 @@ async def graph_health() -> dict:
             result["status"] = "offline"
             result["error"] = counts.get("_error", "Unknown error")
             result["blocking"] = True
-            result["remediation"] = (
-                "Open Neo4j Desktop and start the database, "
-                "or run: docker start wheeler-neo4j"
-            )
+            result.update(_diagnose_health_error(counts.get("_error", "")))
         else:
             node_counts = {k: v for k, v in counts.items()
                           if not k.startswith("_")}
@@ -164,10 +208,7 @@ async def graph_health() -> dict:
         result["status"] = "offline"
         result["error"] = str(exc)
         result["blocking"] = True
-        result["remediation"] = (
-            "Open Neo4j Desktop and start the database, "
-            "or run: docker start wheeler-neo4j"
-        )
+        result.update(_diagnose_health_error(str(exc)))
 
     # Check knowledge/ directory
     from pathlib import Path

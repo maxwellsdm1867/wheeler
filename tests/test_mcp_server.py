@@ -380,6 +380,65 @@ class TestGraphHealth:
         assert "remediation" in result
         assert "driver crashed" in result["error"]
 
+    @pytest.mark.asyncio
+    async def test_graph_health_auth_error_diagnosis(self):
+        """Auth errors get a specific diagnosis with password fix instructions."""
+        mock_counts = {"_status": "offline", "_error": "authentication failure. Unauthorized"}
+        with patch("wheeler.mcp_server.schema.get_status", new_callable=AsyncMock, return_value=mock_counts):
+            from wheeler.mcp_server import graph_health
+            result = await graph_health()
+        assert result["diagnosis"] == "Neo4j authentication failed"
+        assert "wheeler.yaml" in result["remediation"]
+        assert "research-graph" in result["remediation"]
+        assert isinstance(result["fix"], list)
+
+    @pytest.mark.asyncio
+    async def test_graph_health_connection_error_diagnosis(self):
+        """Connection refused errors get a specific diagnosis with start instructions."""
+        mock_counts = {"_status": "offline", "_error": "Connection refused"}
+        with patch("wheeler.mcp_server.schema.get_status", new_callable=AsyncMock, return_value=mock_counts):
+            from wheeler.mcp_server import graph_health
+            result = await graph_health()
+        assert result["diagnosis"] == "Cannot connect to Neo4j"
+        assert "Neo4j Desktop" in result["remediation"]
+        assert isinstance(result["fix"], list)
+
+
+class TestErrorDiagnosis:
+    """Test that execute_tool returns helpful error messages for Neo4j failures."""
+
+    @pytest.mark.asyncio
+    async def test_auth_error_includes_diagnosis(self):
+        """Auth errors from execute_tool include password fix instructions."""
+        from wheeler.tools.graph_tools import _diagnose_neo4j_error
+
+        # Simulate a Neo4j auth error via string matching fallback
+        class FakeAuthError(Exception):
+            pass
+
+        exc = FakeAuthError("authentication failure. Unauthorized")
+        result = _diagnose_neo4j_error(exc)
+        assert result["diagnosis"] == "Neo4j authentication failed"
+        assert "wheeler.yaml" in result["cause"]
+
+    @pytest.mark.asyncio
+    async def test_connection_error_includes_diagnosis(self):
+        """Connection errors from execute_tool include start instructions."""
+        from wheeler.tools.graph_tools import _diagnose_neo4j_error
+
+        exc = ConnectionError("Connection refused to localhost:7687")
+        result = _diagnose_neo4j_error(exc)
+        assert result["diagnosis"] == "Cannot connect to Neo4j"
+
+    @pytest.mark.asyncio
+    async def test_unknown_error_returns_empty(self):
+        """Unrecognized errors return empty dict (no misleading diagnosis)."""
+        from wheeler.tools.graph_tools import _diagnose_neo4j_error
+
+        exc = ValueError("something weird")
+        result = _diagnose_neo4j_error(exc)
+        assert result == {}
+
 
 class TestInitSchema:
     @pytest.mark.asyncio
