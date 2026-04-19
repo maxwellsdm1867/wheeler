@@ -680,6 +680,43 @@ async def add_note(
     return json.loads(result)
 
 
+@mcp.tool()
+@_logged
+async def add_execution(
+    kind: str,
+    description: str,
+    agent_id: str = "wheeler",
+    status: str = "completed",
+    session_id: str = "",
+    started_at: str = "",
+    ended_at: str = "",
+) -> dict:
+    """Add an Execution node to the Wheeler knowledge graph to record a run of a script, pipeline, or research activity.
+
+    Field constraints (enforced):
+      kind: execution type, e.g. 'script_run', 'discuss', 'write', 'pipeline' (required).
+      description: what the execution did (required).
+      status: 'completed', 'failed', or 'running' (default 'completed').
+
+    Use this to record provenance for research activities. Link inputs with
+    USED and outputs with WAS_GENERATED_BY.
+    """
+    result = await graph_tools.execute_tool(
+        "add_execution",
+        {
+            "kind": kind,
+            "description": description,
+            "agent_id": agent_id,
+            "status": status,
+            "session_id": session_id or _SESSION_ID,
+            "started_at": started_at,
+            "ended_at": ended_at,
+        },
+        _config,
+    )
+    return json.loads(result)
+
+
 # --- Graph queries ---
 
 
@@ -764,6 +801,18 @@ async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
     """Search Script nodes in the Wheeler knowledge graph by path or language (legacy alias for query_scripts)."""
     result = await graph_tools.execute_tool(
         "query_scripts", {"keyword": keyword, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def query_executions(keyword: str = "", kind: str = "", limit: int = 10) -> dict:
+    """Search Execution nodes in the Wheeler knowledge graph by kind or keyword."""
+    result = await graph_tools.execute_tool(
+        "query_executions",
+        {"keyword": keyword, "kind": kind, "limit": limit},
+        _config,
     )
     return json.loads(result)
 

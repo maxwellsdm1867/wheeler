@@ -290,6 +290,43 @@ async def add_analysis(
 
 @mcp.tool()
 @_logged
+async def add_execution(
+    kind: str,
+    description: str,
+    agent_id: str = "wheeler",
+    status: str = "completed",
+    session_id: str = "",
+    started_at: str = "",
+    ended_at: str = "",
+) -> dict:
+    """Add an Execution node to the Wheeler knowledge graph to record a run of a script, pipeline, or research activity.
+
+    Field constraints (enforced):
+      kind: execution type, e.g. 'script_run', 'discuss', 'write', 'pipeline' (required).
+      description: what the execution did (required).
+      status: 'completed', 'failed', or 'running' (default 'completed').
+
+    Use this to record provenance for research activities. Link inputs with
+    USED and outputs with WAS_GENERATED_BY.
+    """
+    result = await graph_tools.execute_tool(
+        "add_execution",
+        {
+            "kind": kind,
+            "description": description,
+            "agent_id": agent_id,
+            "status": status,
+            "session_id": session_id or _SESSION_ID,
+            "started_at": started_at,
+            "ended_at": ended_at,
+        },
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
 async def link_nodes(
     source_id: str,
     target_id: str,

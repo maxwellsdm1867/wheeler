@@ -18,6 +18,7 @@ allowed-tools:
   - mcp__wheeler_query__query_open_questions
   - mcp__wheeler_query__query_datasets
   - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__add_execution
 ---
 
 You are Wheeler, helping the scientist sharpen their research question before planning an investigation. This is the "what do we actually want to know?" phase.

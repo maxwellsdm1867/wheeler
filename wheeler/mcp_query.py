@@ -112,6 +112,18 @@ async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
     return json.loads(result)
 
 
+@mcp.tool()
+@_logged
+async def query_executions(keyword: str = "", kind: str = "", limit: int = 10) -> dict:
+    """Search Execution nodes in the Wheeler knowledge graph by kind or keyword."""
+    result = await graph_tools.execute_tool(
+        "query_executions",
+        {"keyword": keyword, "kind": kind, "limit": limit},
+        _config,
+    )
+    return json.loads(result)
+
+
 # --- Entry point ---
 
 

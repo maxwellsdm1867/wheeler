@@ -21,6 +21,7 @@ allowed-tools:
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_mutations__delete_node
   - mcp__wheeler_mutations__unlink_nodes
+  - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_ops__detect_stale
 ---
 
@@ -46,7 +47,7 @@ RETURN n.id AS id, labels(n)[0] AS type, n.title AS title, n.created AS created
 ORDER BY n.created
 ```
 
-If the Cypher fails (e.g., different timestamp format), fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_scripts` and filter by recent timestamps. Also ask the scientist what was worked on if the graph has few recent nodes.
+If the Cypher fails (e.g., different timestamp format), fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_analyses` and filter by recent timestamps. Also ask the scientist what was worked on if the graph has few recent nodes.
 
 ### 2. Find Orphan Entities
 

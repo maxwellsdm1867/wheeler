@@ -17,6 +17,7 @@ allowed-tools:
   - mcp__wheeler_mutations__add_document
   - mcp__wheeler_mutations__add_paper
   - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
 ---
