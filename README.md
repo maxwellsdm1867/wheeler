@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.6.1-blue" alt="v0.6.1">
+  <img src="https://img.shields.io/badge/v0.6.2-blue" alt="v0.6.2">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -85,6 +85,7 @@ Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip 
 
 | Command | What it does |
 |---------|-------------|
+| `/wh:start` | Route to the right command (or type your task) |
 | `/wh:discuss` | Sharpen the research question through structured dialogue |
 | `/wh:plan` | Structure tasks with waves, assignees, checkpoints |
 | `/wh:execute` | Run analyses, log findings to graph with provenance |
@@ -167,6 +168,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details>
+<summary><b>v0.6.2</b> (2026-04-18) — Auto-routing, /wh:start entry point</summary>
+
+- **Auto-routing**: 20 command descriptions rewritten with narrow triggers requiring explicit Wheeler/knowledge-graph vocabulary. Commands auto-fire only for unambiguous Wheeler actions, never for general coding.
+- **`/wh:start` router**: User-invoked entry point that analyzes your task and routes to the best `/wh:*` command. Accepts optional argument for immediate routing or asks interactively.
+- **Routing test suite**: 137 new tests covering tree sync, trigger patterns, domain anchoring, router structure, and false-positive resistance. Total: 1018 tests.
+
+</details>
+
+<details>
 <summary><b>v0.6.1</b> (2026-04-16) — Bug fixes, update_node, parameter discoverability</summary>
 
 - **Stale driver fix (#9)**: MCP servers no longer return zeros on first `graph_status` call.
@@ -193,6 +203,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ```text
 Claude Code (interactive)
     ├── /wh:* slash commands (.claude/commands/wh/*.md)
+    │       ├── /wh:start: intent router (invokes other commands)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
@@ -229,7 +240,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 881 tests
+tests/                        # 1018 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -241,7 +252,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (881 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1018 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 

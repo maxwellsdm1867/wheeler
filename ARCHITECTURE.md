@@ -62,6 +62,7 @@ Each act is a `.md` file in `.claude/commands/wh/` with YAML frontmatter control
 | `/wh:report` | Generate work log from graph | Read + Write + graph reads |
 | `/wh:triage` | Triage GitHub issues against planned work | Read + Write + Bash + graph reads |
 | `/wh:update` | Check for Wheeler updates | Read + Bash |
+| `/wh:start` | Route to best command by intent | Read + Glob + Grep + AskUserQuestion + Skill + graph reads |
 | `/wh:queue` | Background task execution | Everything |
 
 ### Why Slash Commands, Not Agent SDK
@@ -672,7 +673,7 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ## MCP Tools (44 total, 5 servers)
 
-As of v0.6.1 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
+As of v0.6.2 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
 
 | Server | Module | Tools | Scope |
 |--------|--------|-------|-------|
@@ -875,7 +876,7 @@ wheeler/
 |       +-- mutations.py         # add_*, link_nodes, unlink_nodes, delete_node, set_tier
 |       +-- queries.py           # query_*, graph_gaps
 
-.claude/commands/wh/*.md         # Slash commands (24 acts)
+.claude/commands/wh/*.md         # Slash commands (25 acts)
 bin/wh                           # Headless task runner
 wheeler.yaml                     # Project config
 .mcp.json                        # MCP server definitions (1 monolith + 4 split + neo4j)

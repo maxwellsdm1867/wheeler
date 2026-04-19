@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.6.1`. 881 tests, 44 MCP tools across 5 servers.
+Version is `0.6.2`. 1018 tests, 44 MCP tools across 5 servers.
 
 ## Commands
 
@@ -143,6 +143,8 @@ Six patterns you may see referenced across the code:
 
 Each `.claude/commands/wh/*.md` file is a Claude Code slash command. YAML frontmatter sets `allowed-tools` (which enforces per-mode tool access); the markdown body IS the system prompt. Nothing Python reads these files at runtime. Mode enforcement (CHAT read-only, WRITE strict citations, EXECUTE full access) is entirely in the frontmatter.
 
+`/wh:start` is a user-invoked router: it analyzes task intent and invokes the best `/wh:*` command via the Skill tool. Individual commands have narrow trigger descriptions requiring Wheeler/knowledge-graph vocabulary, so they auto-fire for unambiguous research actions but not for general coding.
+
 The **same command files exist twice**: in `.claude/commands/wh/` (what Claude Code actually loads from this repo) and in `wheeler/_data/commands/` (what the PyPI package ships to users via `wheeler install`). **Keep these two trees in sync.** Edits to one should be mirrored to the other; tests check both paths.
 
 ## Non-obvious constraints
@@ -163,4 +165,4 @@ The **same command files exist twice**: in `.claude/commands/wh/` (what Claude C
 
 If `.plans/STATE.md` exists, read it. Call `graph_context` for recent findings before substantial work.
 
-See `ARCHITECTURE.md` for the complete technical spec (779+ lines: module dependency map, MCP tool listing per server, PROV schema, hardening patterns, design decisions).
+See `ARCHITECTURE.md` for the complete technical spec (930+ lines: module dependency map, MCP tool listing per server, PROV schema, hardening patterns, design decisions).

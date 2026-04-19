@@ -153,11 +153,14 @@ This is an interactive setup wizard (takes 2-3 minutes). It creates `wheeler.yam
 The basic workflow:
 
 ```
+/wh:start                # not sure which command? start here
 /wh:discuss              # sharpen the research question
 /wh:plan                 # structure the investigation
 /wh:execute              # run analyses with full provenance
 /wh:write                # draft findings with strict citations
 ```
+
+You can also just describe your task and Wheeler will auto-route to the right command if your intent is unambiguous (e.g., "add this DOI to the knowledge graph" fires `/wh:add` directly).
 
 ### Quick orientation
 
