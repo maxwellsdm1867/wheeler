@@ -51,10 +51,9 @@ Scan the codebase for analysis scripts and create properly described Script node
 
 **For each key script (.m, .py):**
 1. Read the file to understand what it does
-2. Hash the file: `hash_file(path)`
-3. Create a Script node: `add_analysis(path, language, description)`
-   - Then `set_tier(script_id, "reference")` to mark it as existing code
-4. Describe the script in 1-2 sentences — what it computes, what its inputs/outputs are
+2. Register it: `ensure_artifact(path)` (auto-detects language, hashes, creates or updates)
+   - Then `set_tier(node_id, "reference")` to mark it as existing code
+3. Describe the script in 1-2 sentences -- what it computes, what its inputs/outputs are
 
 **Prioritize key scripts**, not every file. Focus on:
 - Core model implementations (e.g., SRM fitting, loss functions)

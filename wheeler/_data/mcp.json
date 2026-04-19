@@ -1,8 +1,23 @@
 {
   "mcpServers": {
-    "wheeler": {
+    "wheeler_core": {
       "type": "stdio",
-      "command": "wheeler-mcp",
+      "command": "wheeler-core-mcp",
+      "args": []
+    },
+    "wheeler_query": {
+      "type": "stdio",
+      "command": "wheeler-query-mcp",
+      "args": []
+    },
+    "wheeler_mutations": {
+      "type": "stdio",
+      "command": "wheeler-mutations-mcp",
+      "args": []
+    },
+    "wheeler_ops": {
+      "type": "stdio",
+      "command": "wheeler-ops-mcp",
       "args": []
     },
     "neo4j": {

@@ -34,6 +34,7 @@ _MUTATION_TOOLS = frozenset({
     "add_note",
     "add_script",
     "add_execution",
+    "add_plan",
     "add_ledger",
 })
 
@@ -50,7 +51,9 @@ _TOOL_REGISTRY: dict[str, object] = {
     "add_note": mutations.add_note,
     "add_script": mutations.add_script,
     "add_execution": mutations.add_execution,
+    "add_plan": mutations.add_plan,
     "add_ledger": mutations.add_ledger,
+    "ensure_artifact": mutations.ensure_artifact,
     "link_nodes": mutations.link_nodes,
     "unlink_nodes": mutations.unlink_nodes,
     "delete_node": mutations.delete_node,
@@ -327,6 +330,19 @@ TOOL_DEFINITIONS = [
         "required": ["path", "language"],
     },
     {
+        "name": "add_plan",
+        "description": (
+            "Add a Plan node to the knowledge graph. Use when registering "
+            "a research plan or investigation plan file. Returns the new node ID."
+        ),
+        "parameters": {
+            "title": {"type": "string", "description": "Plan title"},
+            "path": {"type": "string", "description": "File path to the plan document", "default": ""},
+            "status": {"type": "string", "description": "Plan status: draft or final", "default": "draft"},
+        },
+        "required": ["title"],
+    },
+    {
         "name": "add_execution",
         "description": (
             "Add an Execution node to the knowledge graph. Use when recording "
@@ -361,6 +377,25 @@ TOOL_DEFINITIONS = [
             "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
         },
         "required": [],
+    },
+    {
+        "name": "ensure_artifact",
+        "description": (
+            "Register a file in the knowledge graph, or update its hash if already registered. "
+            "Preferred way to track any artifact (script, dataset, figure, plan, document). "
+            "Idempotent: safe to call repeatedly on unchanged files."
+        ),
+        "parameters": {
+            "path": {"type": "string", "description": "File path (required, must exist on disk)"},
+            "description": {"type": "string", "description": "Description of the artifact", "default": ""},
+            "artifact_type": {"type": "string", "description": "Override auto-detection: script, dataset, document, plan, finding", "default": ""},
+            "language": {"type": "string", "description": "For Script only. Defaults to extension-derived value.", "default": ""},
+            "data_type": {"type": "string", "description": "For Dataset only. Defaults to extension.", "default": ""},
+            "title": {"type": "string", "description": "For Document/Plan. Defaults to filename.", "default": ""},
+            "confidence": {"type": "number", "description": "For Finding only. 0.0-1.0, default 0.5.", "default": 0.0},
+            "status": {"type": "string", "description": "For Plan/Document. draft (default) or final.", "default": ""},
+        },
+        "required": ["path"],
     },
     {
         "name": "search_findings",
@@ -838,6 +873,20 @@ async def execute_tool(
     try:
         logger.debug("execute_tool: %s", tool_name)
         backend = await _get_backend(config)
+
+        # ensure_artifact handles its own dispatch (calls execute_tool internally)
+        if tool_name == "ensure_artifact":
+            from ._field_specs import validate_and_normalize
+
+            field_errors, _ = validate_and_normalize(tool_name, args)
+            if field_errors:
+                return json.dumps({
+                    "error": "validation_failed",
+                    "message": f"ensure_artifact was NOT executed. {len(field_errors)} field(s) failed validation.",
+                    "fields": field_errors,
+                })
+            args["_config"] = config
+            return await handler(backend, args)
 
         # Inject config for query tools so they can read knowledge files
         if tool_name.startswith("query_") or tool_name == "graph_gaps":

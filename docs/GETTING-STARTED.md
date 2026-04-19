@@ -174,7 +174,7 @@ wheeler install
 
 This does two things:
 1. Copies the `/wh:*` slash commands to `~/.claude/` so they work in any Claude Code session
-2. Registers the `wheeler` MCP server in `~/.claude/settings.json` so Claude Code can reach the graph tools from any directory
+2. Registers the four Wheeler MCP servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`) in `~/.claude/settings.json` so Claude Code can reach the graph tools from any directory
 
 **Now restart Claude Code** (type `/exit`, then `claude` again). This is required for the new MCP servers to be picked up.
 
@@ -185,7 +185,7 @@ cd ~/my-research-project
 claude
 ```
 
-Type `/mcp` to verify. You should see `wheeler` and `neo4j` listed. Then run:
+Type `/mcp` to verify. You should see `wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`, and `neo4j` listed. Then run:
 
 ```
 /wh:init

@@ -25,7 +25,9 @@ _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "add_note": ("content",),
     "add_script": ("path", "language"),
     "add_execution": ("kind", "description"),
+    "add_plan": ("title",),
     "update_node": ("node_id",),
+    "ensure_artifact": ("path",),
 }
 
 # ---------------------------------------------------------------------------
@@ -35,6 +37,7 @@ _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 _STATUS_ENUMS: dict[str, tuple[str, ...]] = {
     "add_hypothesis": ("open", "supported", "rejected"),
     "add_document": ("draft", "revision", "final"),
+    "add_plan": ("draft", "final"),
     "add_execution": ("completed", "failed", "running"),
 }
 
@@ -95,7 +98,7 @@ def _check_year(value: object) -> tuple[object, str | None, str | None]:
 # Tools where path must point to an existing file (the artifact is the input).
 # For other tools (add_finding, add_document), path may reference a file
 # that will be created later, so missing path is only a warning.
-_PATH_MUST_EXIST: frozenset[str] = frozenset({"add_dataset", "add_script"})
+_PATH_MUST_EXIST: frozenset[str] = frozenset({"add_dataset", "add_script", "ensure_artifact"})
 
 
 def _check_path(

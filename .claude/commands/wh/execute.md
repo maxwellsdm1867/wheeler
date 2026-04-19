@@ -56,12 +56,11 @@ Every execution must record full provenance using Script + Execution nodes.
 ### Provenance Protocol (mandatory)
 
 **When running a script:**
-1. Check if Script node exists for this file: `query_analyses` by path
-2. If not, create one: `add_analysis` with path and `hash_file` result
-3. Create Execution node: `add_execution` with kind="script", description of what's being done
-4. Link: `link_nodes(execution_id, script_id, "USED")`
-5. Link: `link_nodes(execution_id, dataset_id, "USED")` for each input dataset
-6. After analysis produces results, for each Finding/Dataset created:
+1. Register the script: `ensure_artifact(path)`. Returns node_id whether new or existing.
+2. Create Execution node: `add_execution` with kind="script", description of what's being done
+3. Link: `link_nodes(execution_id, script_id, "USED")`
+4. Link: `link_nodes(execution_id, dataset_id, "USED")` for each input dataset
+5. After analysis produces results, for each Finding/Dataset created:
    `link_nodes(finding_id, execution_id, "WAS_GENERATED_BY")`
 
 **When discussion produces insights (findings, hypotheses, questions):**

@@ -82,20 +82,17 @@ Route by extension:
 
 ### Scripts (.py, .m, .r, .jl)
 1. Read the file to get a description (first docstring or comment block).
-2. Hash it: `Bash` with `shasum -a 256 "$path"`.
-3. Call `add_analysis(path, language, description)`. Set the hash in the description or metadata.
-4. Mark tier as `generated` (default) unless the scientist says otherwise.
+2. Call `ensure_artifact(path, description=...)`. It auto-detects language and hashes.
+3. Mark tier as `generated` (default) unless the scientist says otherwise.
 
 ### Data files (.mat, .h5, .csv, .npy, .parquet)
-1. Call `add_dataset(path, type, description)`.
-   - `type`: the file extension without the dot (e.g., "csv", "mat")
-   - `description`: infer from filename. If ambiguous, ask: "What's in this dataset?"
-2. Set path field.
+1. Call `ensure_artifact(path, description=...)`.
+   - It auto-detects the data type from the extension.
+   - If description is ambiguous, ask: "What's in this dataset?"
 
 ### Images (.png, .jpg, .svg, .tif)
 1. Ask via `AskUserQuestion`: "What does this figure show?" (one question, short answer expected)
-2. Call `add_finding` with the description. Set `artifact_type: "figure"` in the description.
-3. Set the `path` field.
+2. Call `ensure_artifact(path, description=...)`. It creates a Finding with artifact_type=figure.
 
 ### Markdown (.md)
 1. Read the file. Parse YAML frontmatter if present.

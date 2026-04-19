@@ -47,10 +47,13 @@ def fake_data(tmp_path):
     (hooks / "wheeler-check-update.js").write_text("// update hook")
     (hooks / "wheeler-statusline.js").write_text("// statusline hook")
 
-    # MCP template
+    # MCP template (split servers, matches wheeler/_data/mcp.json)
     (data / "mcp.json").write_text(json.dumps({
         "mcpServers": {
-            "wheeler": {"type": "stdio", "command": "wheeler-mcp", "args": []},
+            "wheeler_core": {"type": "stdio", "command": "wheeler-core-mcp", "args": []},
+            "wheeler_query": {"type": "stdio", "command": "wheeler-query-mcp", "args": []},
+            "wheeler_mutations": {"type": "stdio", "command": "wheeler-mutations-mcp", "args": []},
+            "wheeler_ops": {"type": "stdio", "command": "wheeler-ops-mcp", "args": []},
             "neo4j": {"type": "stdio", "command": "uvx", "args": ["mcp-neo4j-cypher@latest"]},
         }
     }))
@@ -125,24 +128,35 @@ def test_uninstall_no_manifest(fake_home):
 # ---------------------------------------------------------------------------
 
 
+def _which_split_servers(cmd):
+    """Mock shutil.which that resolves the four split server console scripts."""
+    mapping = {
+        "wheeler-core-mcp": "/usr/local/bin/wheeler-core-mcp",
+        "wheeler-query-mcp": "/usr/local/bin/wheeler-query-mcp",
+        "wheeler-mutations-mcp": "/usr/local/bin/wheeler-mutations-mcp",
+        "wheeler-ops-mcp": "/usr/local/bin/wheeler-ops-mcp",
+    }
+    return mapping.get(cmd)
+
+
 def test_install_registers_mcp_servers(fake_home, fake_data, monkeypatch):
-    """Install should add wheeler to ~/.claude/settings.json mcpServers (neo4j no longer default)."""
+    """Install should add four split servers to ~/.claude/settings.json mcpServers."""
     monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
-    # Provide a wheeler-mcp on PATH
-    monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
+    monkeypatch.setattr(installer.shutil, "which", _which_split_servers)
 
     installer.install()
 
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
-    assert "wheeler" in settings["mcpServers"]
-    assert settings["mcpServers"]["wheeler"]["command"] == "/usr/local/bin/wheeler-mcp"
+    for key in ("wheeler_core", "wheeler_query", "wheeler_mutations", "wheeler_ops"):
+        assert key in settings["mcpServers"], f"{key} not registered"
+    assert settings["mcpServers"]["wheeler_core"]["command"] == "/usr/local/bin/wheeler-core-mcp"
     assert "neo4j" in settings["mcpServers"]
 
 
 def test_install_preserves_existing_mcp_servers(fake_home, fake_data, monkeypatch):
     """Install should not overwrite user-customized neo4j config."""
     monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
-    monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
+    monkeypatch.setattr(installer.shutil, "which", _which_split_servers)
 
     settings_path = fake_home / ".claude" / "settings.json"
     settings_path.write_text(json.dumps({
@@ -156,21 +170,60 @@ def test_install_preserves_existing_mcp_servers(fake_home, fake_data, monkeypatc
     settings = json.loads(settings_path.read_text())
     # Neo4j should keep custom config
     assert settings["mcpServers"]["neo4j"]["command"] == "custom-neo4j"
-    # Wheeler should be added
+    # Split servers should be added
+    assert "wheeler_core" in settings["mcpServers"]
+
+
+def test_install_removes_legacy_wheeler(fake_home, fake_data, monkeypatch):
+    """Install should remove the legacy 'wheeler' monolith entry."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+    monkeypatch.setattr(installer.shutil, "which", _which_split_servers)
+
+    settings_path = fake_home / ".claude" / "settings.json"
+    settings_path.write_text(json.dumps({
+        "mcpServers": {
+            "wheeler": {"type": "stdio", "command": "wheeler-mcp", "args": []},
+            "neo4j": {"type": "stdio", "command": "uvx", "args": ["mcp-neo4j-cypher@latest"]},
+        }
+    }))
+
+    installer.install()
+
+    settings = json.loads(settings_path.read_text())
+    assert "wheeler" not in settings["mcpServers"], "Legacy 'wheeler' key should be removed"
+    assert "wheeler_core" in settings["mcpServers"]
+
+
+def test_install_preserves_custom_wheeler_entry(fake_home, fake_data, monkeypatch):
+    """Install should not remove a user-customized 'wheeler' entry with a non-monolith command."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+    monkeypatch.setattr(installer.shutil, "which", _which_split_servers)
+
+    settings_path = fake_home / ".claude" / "settings.json"
+    settings_path.write_text(json.dumps({
+        "mcpServers": {
+            "wheeler": {"type": "stdio", "command": "/custom/path/my-tool", "args": []},
+        }
+    }))
+
+    installer.install()
+
+    settings = json.loads(settings_path.read_text())
+    # Custom wheeler entry should be preserved (command is not wheeler-mcp)
     assert "wheeler" in settings["mcpServers"]
 
 
 def test_uninstall_removes_mcp_servers(fake_home, fake_data, monkeypatch):
-    """Uninstall should remove wheeler and neo4j from mcpServers."""
+    """Uninstall should remove all wheeler and neo4j entries from mcpServers."""
     monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
-    monkeypatch.setattr(installer.shutil, "which", lambda cmd: "/usr/local/bin/wheeler-mcp" if cmd == "wheeler-mcp" else None)
+    monkeypatch.setattr(installer.shutil, "which", _which_split_servers)
 
     installer.install()
     installer.uninstall()
 
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
-    assert "wheeler" not in settings.get("mcpServers", {})
-    assert "neo4j" not in settings.get("mcpServers", {})
+    for key in ("wheeler", "wheeler_core", "wheeler_query", "wheeler_mutations", "wheeler_ops", "neo4j"):
+        assert key not in settings.get("mcpServers", {}), f"{key} should be removed"
 
 
 # ---------------------------------------------------------------------------

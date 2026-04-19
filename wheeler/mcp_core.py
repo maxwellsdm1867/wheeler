@@ -25,7 +25,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_core",
-    instructions="Wheeler core graph tools: health checks, status, context, gaps, node reads, raw cypher, schema init, semantic search. Use for reading and querying the research knowledge graph.",
+    instructions="Graph infrastructure and semantic search: health checks, status, context, gaps, node reads, raw Cypher, schema init, search_findings and search_context (meaning-based, fuses semantic + keyword + fulltext + recency). For typed keyword listings of a specific node type, use wheeler_query. For creating or modifying nodes, use wheeler_mutations.",
 )
 
 

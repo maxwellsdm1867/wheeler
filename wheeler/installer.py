@@ -200,17 +200,24 @@ def _register_mcp_servers() -> None:
     else:
         template_servers = {}
 
-    # Wheeler MCP — only set on first install, don't overwrite existing
-    wheeler_abs = shutil.which("wheeler-mcp")
-    if wheeler_abs and "wheeler" not in servers:
-        servers["wheeler"] = {
-            "type": "stdio",
-            "command": wheeler_abs,
-            "args": [],
-        }
-    # Don't update existing wheeler path — the user may have pointed
-    # it at a specific venv (e.g. user-test vs dev) and `which` could
-    # resolve to the wrong one if multiple venvs are on PATH.
+    # One-time migration: remove legacy monolith "wheeler" key
+    if "wheeler" in servers:
+        cmd = servers["wheeler"].get("command", "")
+        basename = Path(cmd).name if cmd else ""
+        if basename == "wheeler-mcp":
+            del servers["wheeler"]
+            logger.info("Removed legacy 'wheeler' monolith MCP entry")
+
+    # Register split servers from template (don't overwrite user-set entries)
+    for key, entry in template_servers.items():
+        if key == "neo4j":
+            continue  # handled separately below
+        if key in servers:
+            continue  # respect existing user config
+        cmd_name = entry.get("command", "")
+        resolved = shutil.which(cmd_name)
+        if resolved:
+            servers[key] = {**entry, "command": resolved}
 
     # Neo4j — add from template if not already configured
     if "neo4j" not in servers and "neo4j" in template_servers:
@@ -231,7 +238,7 @@ def _deregister_mcp_servers() -> None:
 
     servers = settings.get("mcpServers", {})
     changed = False
-    for name in ("wheeler", "neo4j"):
+    for name in ("wheeler", "wheeler_core", "wheeler_query", "wheeler_mutations", "wheeler_ops", "neo4j"):
         if name in servers:
             del servers[name]
             changed = True

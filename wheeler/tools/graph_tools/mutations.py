@@ -16,6 +16,7 @@ import logging
 import os
 
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS, PREFIX_TO_LABEL, generate_node_id
+from wheeler.graph import provenance as graph_provenance
 from wheeler.provenance import default_stability
 
 from ._common import _now
@@ -132,6 +133,7 @@ async def add_finding(backend, args: dict) -> str:
         "path": args.get("path", ""),
         "artifact_type": args.get("artifact_type", ""),
         "source": args.get("source", ""),
+        "hash": args.get("hash", ""),
         "date": _now(),
         "tier": args.get("tier", "generated"),
         "stability": default_stability("Finding", args.get("tier", "generated")),
@@ -199,6 +201,7 @@ async def add_dataset(backend, args: dict) -> str:
         "path": path,
         "type": args["type"],
         "description": args["description"],
+        "hash": args.get("hash", ""),
         "date_added": _now(),
         "tier": args.get("tier", "generated"),
         "stability": default_stability("Dataset", args.get("tier", "generated")),
@@ -249,6 +252,7 @@ async def add_document(backend, args: dict) -> str:
         "path": path,
         "section": args.get("section", ""),
         "status": args.get("status", "draft"),
+        "hash": args.get("hash", ""),
         "date": now,
         "updated": now,
         "tier": args.get("tier", "generated"),
@@ -307,6 +311,33 @@ async def add_script(backend, args: dict) -> str:
     return json.dumps({"node_id": node_id, "label": "Script", "status": "created"})
 
 
+async def add_plan(backend, args: dict) -> str:
+    node_id = generate_node_id("PL")
+    now = _now()
+    title = args["title"]
+    path = args.get("path", "")
+    display_name = title[:40] if title else os.path.basename(path) if path else ""
+    await backend.create_node("Plan", {
+        "id": node_id,
+        "title": title,
+        "path": path,
+        "status": args.get("status", "draft"),
+        "hash": args.get("hash", ""),
+        "date": now,
+        "updated": now,
+        "tier": args.get("tier", "generated"),
+        "stability": default_stability("Plan", args.get("tier", "generated")),
+        "session_id": args.get("session_id", ""),
+        "display_name": display_name,
+    })
+    logger.info("Created Plan %s: %s", node_id, title[:60])
+    result = {"node_id": node_id, "label": "Plan", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "Plan", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
+
+
 async def add_execution(backend, args: dict) -> str:
     node_id = generate_node_id("X")
     now = _now()
@@ -349,6 +380,261 @@ async def add_ledger(backend, args: dict) -> str:
     })
     logger.info("Created Ledger %s (mode=%s)", node_id, args.get("mode", ""))
     return json.dumps({"node_id": node_id, "label": "Ledger", "status": "created"})
+
+
+# ---------------------------------------------------------------------------
+# ensure_artifact: find-or-create by path
+# ---------------------------------------------------------------------------
+
+_EXT_TO_TYPE: dict[str, tuple[str, str]] = {
+    ".py": ("Script", "python"), ".m": ("Script", "matlab"),
+    ".r": ("Script", "r"), ".R": ("Script", "r"),
+    ".jl": ("Script", "julia"), ".sh": ("Script", "bash"),
+    ".mat": ("Dataset", "mat"), ".h5": ("Dataset", "h5"),
+    ".hdf5": ("Dataset", "hdf5"), ".csv": ("Dataset", "csv"),
+    ".npy": ("Dataset", "npy"), ".parquet": ("Dataset", "parquet"),
+    ".md": ("Document", "markdown"), ".tex": ("Document", "latex"),
+    ".pdf": ("Document", "pdf"),
+    ".png": ("Finding", "figure"), ".jpg": ("Finding", "figure"),
+    ".svg": ("Finding", "figure"), ".tif": ("Finding", "figure"),
+}
+
+
+def _detect_artifact_type(
+    path: str, override: str,
+) -> tuple[str, str]:
+    """Return (label, secondary_field_value) for a file path.
+
+    Args:
+        path: Absolute file path.
+        override: User-supplied artifact_type ('script', 'dataset', etc.).
+
+    Returns:
+        (label, secondary) where secondary is language/data_type/etc.
+    """
+    from pathlib import Path as P
+
+    override_map = {
+        "script": "Script", "dataset": "Dataset", "document": "Document",
+        "plan": "Plan", "finding": "Finding",
+    }
+    if override:
+        label = override_map.get(override.lower(), "Document")
+        ext = P(path).suffix.lower()
+        _, secondary = _EXT_TO_TYPE.get(ext, ("Document", ""))
+        return label, secondary
+
+    p = P(path)
+    ext = p.suffix.lower()
+
+    # .plans/*.md -> Plan
+    if ext == ".md" and ".plans" in p.parts:
+        return "Plan", "markdown"
+
+    label, secondary = _EXT_TO_TYPE.get(ext, ("Document", ""))
+    return label, secondary
+
+
+def _build_delegated_args(
+    label: str, secondary: str, path: str, args: dict, file_hash: str,
+) -> tuple[str, dict]:
+    """Build args dict for the delegated add_* handler.
+
+    Returns (tool_name, handler_args). Applies required-field defaults
+    and tracks which fields were defaulted.
+    """
+    from pathlib import Path as P
+
+    filename = P(path).name
+    stem = P(path).stem
+    defaulted: list[str] = []
+
+    common = {
+        "path": path,
+        "hash": file_hash,
+        "session_id": args.get("session_id", ""),
+        "tier": args.get("tier", "generated"),
+    }
+
+    if label == "Script":
+        lang = args.get("language") or secondary
+        if not args.get("language") and secondary:
+            defaulted.append("language")
+        return "add_script", {**common, "language": lang, "_defaulted": defaulted}
+
+    if label == "Dataset":
+        dtype = args.get("data_type") or secondary
+        if not args.get("data_type") and secondary:
+            defaulted.append("data_type")
+        desc = args.get("description") or filename
+        if not args.get("description"):
+            defaulted.append("description")
+        # add_dataset expects "type" not "data_type"
+        return "add_dataset", {
+            **common, "type": dtype, "description": desc,
+            "_defaulted": defaulted,
+        }
+
+    if label == "Plan":
+        title = args.get("title") or stem
+        if not args.get("title"):
+            defaulted.append("title")
+        status = args.get("status") or "draft"
+        if not args.get("status"):
+            defaulted.append("status")
+        return "add_plan", {
+            **common, "title": title, "status": status,
+            "_defaulted": defaulted,
+        }
+
+    if label == "Finding":
+        desc = args.get("description") or filename
+        if not args.get("description"):
+            defaulted.append("description")
+        conf = args.get("confidence")
+        if conf is None or conf == 0.0:
+            conf = 0.5
+            defaulted.append("confidence")
+        return "add_finding", {
+            "path": path, "description": desc, "confidence": conf,
+            "artifact_type": args.get("artifact_type") or "figure",
+            "session_id": args.get("session_id", ""),
+            "tier": args.get("tier", "generated"),
+            "_defaulted": defaulted,
+        }
+
+    # Default: Document
+    title = args.get("title") or stem
+    if not args.get("title"):
+        defaulted.append("title")
+    status = args.get("status") or "draft"
+    if not args.get("status"):
+        defaulted.append("status")
+    return "add_document", {
+        **common, "title": title, "status": status,
+        "_defaulted": defaulted,
+    }
+
+
+async def ensure_artifact(backend, args: dict) -> str:
+    """Find-or-create a graph node for a file artifact, keyed on path.
+
+    Returns JSON with node_id, label, action (created/unchanged/updated),
+    path, hash, and optional defaulted_fields / stale_downstream.
+    """
+    path = args["path"]  # already resolved to absolute by _field_specs
+    file_hash = graph_provenance.hash_file(path)
+    detected_label, secondary = _detect_artifact_type(
+        path, args.get("artifact_type", ""),
+    )
+
+    # Multi-label lookup: find any artifact node at this path
+    artifact_labels = ["Script", "Dataset", "Document", "Plan", "Finding"]
+    or_clause = " OR ".join(f"n:{lbl}" for lbl in artifact_labels)
+    records = await backend.run_cypher(
+        f"MATCH (n) WHERE n.path = $path AND ({or_clause}) "
+        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2",
+        {"path": path},
+    )
+
+    if not records:
+        # Create new node
+        tool_name, handler_args = _build_delegated_args(
+            detected_label, secondary, path, args, file_hash,
+        )
+        defaulted = handler_args.pop("_defaulted", [])
+        handler = _TOOL_REGISTRY_LOOKUP.get(tool_name)
+        if handler is None:
+            return json.dumps({"error": f"No handler for {tool_name}"})
+
+        # Delegate to the add_* handler (full create with triple-write via execute_tool)
+        from wheeler.config import load_config
+        from . import execute_tool as _execute_tool
+
+        result_str = await _execute_tool(tool_name, handler_args, args.get("_config") or load_config())
+        parsed = json.loads(result_str)
+        if "error" in parsed:
+            return result_str
+        parsed["action"] = "created"
+        parsed["path"] = path
+        parsed["hash"] = file_hash
+        if defaulted:
+            parsed["defaulted_fields"] = defaulted
+        return json.dumps(parsed)
+
+    existing = records[0]
+    existing_label = existing["label"]
+    existing_id = existing["id"]
+    existing_hash = existing.get("hash", "")
+
+    # Label collision check: any label mismatch is an error
+    if detected_label != existing_label:
+        return json.dumps({
+            "error": "label_mismatch",
+            "node_id": existing_id,
+            "existing_label": existing_label,
+            "detected_label": detected_label,
+            "path": path,
+            "fix": "Use update_node or delete_node to reconcile before calling ensure_artifact.",
+        })
+
+    # Hash unchanged
+    if existing_hash == file_hash:
+        return json.dumps({
+            "node_id": existing_id,
+            "label": existing_label,
+            "action": "unchanged",
+            "path": path,
+            "hash": file_hash,
+        })
+
+    # Hash changed: delegate to update_node handler for triple-write
+    from wheeler.config import load_config
+    from . import execute_tool as _execute_tool
+
+    config = args.get("_config") or load_config()
+    update_result_str = await _execute_tool(
+        "update_node",
+        {"node_id": existing_id, "hash": file_hash, "session_id": args.get("session_id", "")},
+        config,
+    )
+    update_parsed = json.loads(update_result_str)
+    if "error" in update_parsed:
+        return update_result_str
+
+    # Propagate invalidation
+    stale_count = 0
+    try:
+        from wheeler.provenance import propagate_invalidation
+        stale_nodes = await propagate_invalidation(config, existing_id)
+        stale_count = len(stale_nodes)
+    except Exception:
+        logger.error("ensure_artifact: propagate_invalidation failed for %s", existing_id, exc_info=True)
+
+    return json.dumps({
+        "node_id": existing_id,
+        "label": existing_label,
+        "action": "updated",
+        "path": path,
+        "hash": file_hash,
+        "previous_hash": existing_hash or "",
+        "stale_downstream": stale_count,
+    })
+
+
+# Need a separate lookup dict to avoid circular import with execute_tool
+_TOOL_REGISTRY_LOOKUP = {
+    "add_finding": add_finding,
+    "add_script": add_script,
+    "add_dataset": add_dataset,
+    "add_document": add_document,
+    "add_plan": add_plan,
+}
+
+
+# ---------------------------------------------------------------------------
+# Relationship tools
+# ---------------------------------------------------------------------------
 
 
 async def link_nodes(backend, args: dict) -> str:

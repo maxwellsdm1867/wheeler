@@ -23,7 +23,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_ops",
-    instructions="Wheeler ops tools: provenance staleness detection, dependency scanning, file hashing, workspace scanning, citation extraction and validation. Use for operational and validation tasks on the research knowledge graph.",
+    instructions="Provenance and file ops: hash_file, scan_workspace, scan_dependencies, detect_stale, citation extraction and validation, graph_consistency_check. For registering a file node, use wheeler_mutations.ensure_artifact (it calls hash_file internally and writes the graph node).",
 )
 
 
@@ -49,7 +49,7 @@ async def detect_stale() -> list[dict]:
 @mcp.tool()
 @_logged
 async def hash_file(path: str) -> dict:
-    """Compute SHA-256 hash of a file for Wheeler research provenance tracking."""
+    """Compute SHA-256 hash of a file for Wheeler research provenance tracking. Most callers should use ensure_artifact instead, which hashes + registers in one call."""
     sha = provenance.hash_file(path)
     return {"path": path, "sha256": sha}
 

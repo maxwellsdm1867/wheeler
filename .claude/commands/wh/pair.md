@@ -62,9 +62,9 @@ Only commit to the graph when the scientist explicitly says something is a findi
 
 When they do:
 1. `add_finding` with description and confidence
-2. `hash_file` on the script that produced it
-3. `link_nodes` to connect finding → dataset, finding → analysis
-4. Append to session file: `**→ Finding logged: [F-xxxx]**`
+2. `ensure_artifact(script_path)` to register the script that produced it
+3. `link_nodes` to connect finding -> dataset, finding -> script
+4. Append to session file: `**-> Finding logged: [F-xxxx]**`
 
 Do NOT automatically add findings, hypotheses, or questions to the graph during pair work. The session file IS the scratch paper.
 

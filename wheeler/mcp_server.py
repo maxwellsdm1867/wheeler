@@ -428,6 +428,64 @@ async def add_question(
 
 @mcp.tool()
 @_logged
+async def ensure_artifact(
+    path: str,
+    description: str = "",
+    artifact_type: str = "",
+    language: str = "",
+    data_type: str = "",
+    title: str = "",
+    confidence: float = 0.0,
+    status: str = "",
+) -> dict:
+    """Register a file in the Wheeler knowledge graph, or update its hash if already registered.
+
+    PREFERRED way to track any artifact (script, dataset, figure, plan, document).
+    Call this after writing, reading, or modifying a file. Safe to call
+    repeatedly: it is idempotent on unchanged files.
+
+    Auto-detects node type from extension:
+      .py .m .r .jl .sh         -> Script
+      .mat .h5 .hdf5 .csv .npy  -> Dataset
+      .md .tex .pdf             -> Document  (or Plan if path is under .plans/)
+      .png .jpg .svg .tif       -> Finding (artifact_type=figure)
+      Unknown extension          -> Document
+
+    Returns: {node_id, label, action, path, hash, ...}
+      action = "created"   -> new node created, use node_id for link_nodes
+      action = "unchanged" -> file hash matches stored hash, no write
+      action = "updated"   -> file changed on disk; hash updated and
+                              downstream dependents marked stale.
+                              Includes previous_hash and stale_downstream count.
+
+    Use instead of add_script, add_dataset, add_document, add_plan, or the
+    three-step "hash_file + query_* + add_*" pattern.
+    """
+    ea_args: dict = {
+        "path": path,
+        "session_id": _SESSION_ID,
+    }
+    if description:
+        ea_args["description"] = description
+    if artifact_type:
+        ea_args["artifact_type"] = artifact_type
+    if language:
+        ea_args["language"] = language
+    if data_type:
+        ea_args["data_type"] = data_type
+    if title:
+        ea_args["title"] = title
+    if confidence != 0.0:
+        ea_args["confidence"] = confidence
+    if status:
+        ea_args["status"] = status
+
+    result = await graph_tools.execute_tool("ensure_artifact", ea_args, _config)
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
 async def link_nodes(
     source_id: str,
     target_id: str,
@@ -528,7 +586,7 @@ async def delete_node(node_id: str) -> dict:
 @mcp.tool()
 @_logged
 async def add_dataset(path: str, type: str, description: str) -> dict:
-    """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID.
+    """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID. For find-or-create by path, prefer ensure_artifact.
 
     Field constraints (enforced):
       path: file path (required). File MUST exist on disk.
@@ -555,7 +613,7 @@ async def add_analysis(
     output_path: str = "",
     output_hash: str = "",
 ) -> dict:
-    """Add a Script node to the Wheeler knowledge graph to track a code file with provenance (legacy alias).
+    """Add a Script node to the Wheeler knowledge graph to track a code file with provenance (legacy alias). For find-or-create by path, prefer ensure_artifact.
 
     Field constraints (enforced):
       script_path: absolute file path (required). File MUST exist on disk.
@@ -666,7 +724,7 @@ async def add_document(
     used_entities: str = "",
     execution_description: str = "",
 ) -> dict:
-    """Add a Document to the Wheeler knowledge graph. Returns the new node ID.
+    """Add a Document to the Wheeler knowledge graph. Returns the new node ID. For find-or-create by path, prefer ensure_artifact.
 
     Field constraints (enforced):
       title: non-empty string (required).
@@ -712,6 +770,38 @@ async def add_note(
     result = await graph_tools.execute_tool(
         "add_note",
         {"content": content, "title": title, "context": context,
+         "session_id": _SESSION_ID,
+         "execution_kind": execution_kind,
+         "used_entities": used_entities,
+         "execution_description": execution_description},
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def add_plan(
+    title: str,
+    path: str = "",
+    status: str = "draft",
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
+) -> dict:
+    """Add a Plan node to the Wheeler knowledge graph. Returns the new node ID.
+
+    Field constraints (enforced):
+      title: non-empty string (required).
+      path: file path to the plan document (optional).
+      status: 'draft' (default) or 'final'. Other values rejected.
+
+    Provenance-completing: set execution_kind to auto-create an Execution
+    and link provenance. Pass used_entities as comma-separated node IDs.
+    """
+    result = await graph_tools.execute_tool(
+        "add_plan",
+        {"title": title, "path": path, "status": status,
          "session_id": _SESSION_ID,
          "execution_kind": execution_kind,
          "used_entities": used_entities,
@@ -1206,7 +1296,7 @@ async def detect_stale() -> list[dict]:
 @mcp.tool()
 @_logged
 async def hash_file(path: str) -> dict:
-    """Compute SHA-256 hash of a file for Wheeler research provenance tracking."""
+    """Compute SHA-256 hash of a file for Wheeler research provenance tracking. Most callers should use ensure_artifact instead, which hashes + registers in one call."""
     sha = provenance.hash_file(path)
     return {"path": path, "sha256": sha}
 

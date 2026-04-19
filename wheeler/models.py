@@ -52,6 +52,7 @@ class FindingModel(NodeBase):
     path: str = ""  # optional: path to artifact (figure, table, CSV)
     artifact_type: str = ""  # figure, table, number, csv, etc.
     source: str = ""  # who/what produced this (e.g., collaborator name, paper ID)
+    hash: str = ""
 
 
 class HypothesisModel(NodeBase):
@@ -71,6 +72,7 @@ class DatasetModel(NodeBase):
     path: str = ""
     data_type: str = ""
     description: str = ""
+    hash: str = ""
 
 
 class PaperModel(NodeBase):
@@ -87,6 +89,7 @@ class DocumentModel(NodeBase):
     path: str = ""
     section: str = ""
     status: str = "draft"
+    hash: str = ""
 
 
 class ScriptModel(NodeBase):
@@ -109,7 +112,10 @@ class ExecutionModel(NodeBase):
 
 class PlanModel(NodeBase):
     type: Literal["Plan"] = "Plan"
+    title: str = ""
+    path: str = ""
     status: str = ""
+    hash: str = ""
 
 
 class ResearchNoteModel(NodeBase):
@@ -231,6 +237,8 @@ def title_for_node(node: NodeBase) -> str:
         return node.description[:100]
     if isinstance(node, ScriptModel):
         return f"Script: {node.path}"[:100]
+    if isinstance(node, PlanModel):
+        return (node.title[:100] if node.title else f"Plan ({node.status})")
     if isinstance(node, ExecutionModel):
         return (node.description[:100] if node.description else f"Execution ({node.kind})")
     if isinstance(node, ResearchNoteModel):

@@ -20,7 +20,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_query",
-    instructions="Wheeler query tools: search and list knowledge graph nodes by type (findings, hypotheses, questions, datasets, papers, documents, notes, analyses). Read-only graph queries for research exploration.",
+    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_notes, query_scripts, query_executions, graph_gaps. Returns lists of one node type. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
 )
 
 
