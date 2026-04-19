@@ -233,6 +233,83 @@ def _enrich_node(node_id: str, knowledge_path: Path) -> dict:
         return {"id": node_id}
 
 
+def _summarize_node(node_id: str, knowledge_path: Path) -> dict:
+    """Load a short summary of a node for glanceable related-node context.
+
+    Returns ``id``, ``type``, ``tier``, ``tags``, ``stale``, plus the
+    type-specific gist fields (e.g. ``description`` for Finding,
+    ``title`` for Paper).  Falls back to ``{"id": node_id}`` on error.
+    """
+    try:
+        from wheeler.knowledge.store import read_node
+
+        model = read_node(knowledge_path, node_id)
+        data = model.model_dump()
+    except Exception:
+        return {"id": node_id}
+
+    summary: dict = {
+        "id": data["id"],
+        "type": data.get("type", ""),
+        "tier": data.get("tier", ""),
+    }
+    if data.get("tags"):
+        summary["tags"] = data["tags"]
+    if data.get("stale"):
+        summary["stale"] = True
+
+    # One-sentence human-readable summary for LLM context
+    summary["summary"] = _one_line_summary(data)
+
+    return summary
+
+
+def _one_line_summary(data: dict) -> str:
+    """Build a one-sentence summary from type-specific fields."""
+    t = data.get("type", "")
+    if t == "Finding":
+        desc = data.get("description", "")
+        conf = data.get("confidence", 0)
+        if desc:
+            s = desc[:200]
+            return f"{s} (confidence: {conf})" if conf else s
+    elif t == "Hypothesis":
+        stmt = data.get("statement", "")
+        status = data.get("status", "open")
+        if stmt:
+            return f"{stmt[:200]} [{status}]"
+    elif t == "OpenQuestion":
+        q = data.get("question", "")
+        if q:
+            return q[:200]
+    elif t == "Paper":
+        title = data.get("title", "")
+        authors = data.get("authors", "")
+        year = data.get("year", 0)
+        parts = [p for p in [title, authors, str(year) if year else ""] if p]
+        if parts:
+            return ", ".join(parts)
+    elif t == "Dataset":
+        desc = data.get("description", "")
+        path = data.get("path", "")
+        return desc[:200] if desc else path
+    elif t == "Script":
+        path = data.get("path", "")
+        lang = data.get("language", "")
+        return f"{path} ({lang})" if lang else path
+    elif t == "Execution":
+        desc = data.get("description", "")
+        kind = data.get("kind", "")
+        return desc[:200] if desc else kind
+    elif t == "Document":
+        title = data.get("title", "")
+        return title[:200] if title else data.get("path", "")
+    elif t == "ResearchNote":
+        title = data.get("title", "")
+        return title[:200] if title else ""
+    return data.get("id", "")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -361,6 +438,25 @@ async def expand_search_results(
             node["relevance_score"] = 0.5 / hops
     unique_related.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
 
+    # Enrich related nodes with glanceable summary from knowledge JSON
+    knowledge_path = Path(config.knowledge_path)
+    clean_related: list[dict] = []
+    for node in unique_related:
+        summary = _summarize_node(node["node_id"], knowledge_path)
+        entry: dict = {
+            "id": node["node_id"],
+            "type": summary.get("type", node.get("label", "")),
+            "relationship": node["relationship"],
+            "summary": summary.get("summary", ""),
+        }
+        if summary.get("tier"):
+            entry["tier"] = summary["tier"]
+        if summary.get("tags"):
+            entry["tags"] = summary["tags"]
+        if summary.get("stale"):
+            entry["stale"] = True
+        clean_related.append(entry)
+
     # Deduplicate relationships
     unique_rels: list[dict] = []
     rel_seen: set[tuple[str, str, str]] = set()
@@ -370,18 +466,19 @@ async def expand_search_results(
             rel_seen.add(key)
             unique_rels.append(r)
 
+    # Build clean seed nodes: summary + score, no internal fields
+    clean_seeds: list[dict] = []
+    for s in seeds:
+        node_id = s.get("id", "")
+        seed_summary = _summarize_node(node_id, knowledge_path)
+        entry = {**seed_summary, "score": s.get("rrf_score", 0)}
+        clean_seeds.append(entry)
+
     return {
-        "seed_nodes": [
-            {
-                "id": s.get("id"),
-                "label": s.get("type", ""),
-                "score": s.get("rrf_score", 0),
-            }
-            for s in seeds
-        ],
-        "related_nodes": unique_related,
+        "seed_nodes": clean_seeds,
+        "related_nodes": clean_related,
         "relationships": unique_rels,
-        "total_related": len(unique_related),
+        "total_related": len(clean_related),
     }
 
 

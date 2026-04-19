@@ -25,8 +25,9 @@ Every factual claim about our research MUST cite a knowledge graph node using [N
 ## Setup
 
 1. **Establish context**: Ask what script, dataset, and question we're working on (if not provided via $ARGUMENTS).
-2. **Check for existing session**: Look in `.wheeler/sessions/` for today's sessions on this topic. If one exists, offer to continue or start fresh.
-3. **Create session file**: Write `.wheeler/sessions/YYYY-MM-DD-{topic}.md` with header:
+2. **Load graph context**: Call `search_context` with the topic to surface relevant findings and prior analyses. Briefly note what the graph knows so the session starts informed.
+3. **Check for existing session**: Look in `.wheeler/sessions/` for today's sessions on this topic. If one exists, offer to continue or start fresh.
+4. **Create session file**: Write `.wheeler/sessions/YYYY-MM-DD-{topic}.md` with header:
 
 ```markdown
 # Session: {topic}

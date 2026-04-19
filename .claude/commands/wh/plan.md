@@ -11,6 +11,7 @@ allowed-tools:
   - WebFetch
   - mcp__wheeler_core__graph_context
   - mcp__wheeler_core__graph_gaps
+  - mcp__wheeler_core__search_context
   - mcp__wheeler_core__run_cypher
   - mcp__wheeler_query__query_findings
   - mcp__wheeler_query__query_hypotheses
@@ -27,12 +28,12 @@ Every factual claim about our research MUST cite a knowledge graph node using [N
 Help the scientist plan their next investigation.
 
 ## When to use tools vs. just talk
-Follow the scientist's lead. If they want to discuss ideas, just discuss. Don't query the graph until they ask about specific research data or you need to ground a proposal in existing findings.
+After the first exchange, use `AskUserQuestion` freely to understand what the scientist actually wants to investigate. Once their research intent is clear, call `search_context` once with the topic to load relevant findings, hypotheses, and provenance chains. This is a one-time context load at the start of planning, not something to repeat every turn. Use `graph_gaps` alongside it to show where coverage is thin.
 
-**No tools needed**: brainstorming, discussing approaches, answering how-to questions, sharpening questions
-**Graph query needed**: when proposing tasks based on graph state, when citing specific findings, when checking what's been done
+If the input is about Wheeler workflow, how to structure plans, or general approach questions, just answer directly without querying the graph.
 
-When the scientist asks you to plan something specific, THEN use `graph_context` and `graph_gaps` wheeler MCP tools to understand current state.
+**No tools needed**: brainstorming approaches, answering how-to questions, sharpening questions before a topic is defined, Wheeler workflow questions
+**Graph query needed**: once intent is clear, when proposing tasks based on graph state, when citing specific findings
 
 ## Investigation Plans
 
@@ -164,6 +165,6 @@ Rules:
 ## Handoff Awareness
 When the plan is clear and remaining work is mostly grinding (lit search, data wrangling, boilerplate code, graph ops), recognize the handoff moment and propose tasks inline — don't wait for the scientist to invoke `/wh:handoff`. Present each task with description, assignee (SCIENTIST/WHEELER/PAIR), model (sonnet/haiku), time estimate, and checkpoint conditions. But don't force it — only when it's natural and the question is sharp.
 
-Start by asking what the scientist wants to investigate.
+If $ARGUMENTS names a clear research topic, call `search_context` with it and briefly summarize what the graph knows. Otherwise, ask what the scientist wants to investigate, use AskUserQuestion to clarify intent, then call `search_context` once the topic is sharp.
 
 $ARGUMENTS

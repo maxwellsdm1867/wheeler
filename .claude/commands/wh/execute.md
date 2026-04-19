@@ -31,22 +31,24 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format. All
 ### If a plan file exists
 Check `.plans/` for an approved investigation plan. If one exists:
 1. Read the plan file — it has objectives, tasks, dependencies, success criteria
-2. Update plan frontmatter `status` to `in-progress` and `updated` timestamp. Update `.plans/STATE.md` frontmatter: set `status: in-progress`, `updated` timestamp.
-3. Execute WHEELER-assigned tasks in dependency order
-4. Skip SCIENTIST and PAIR tasks — flag them as needing the scientist
-5. After each task, update the plan file (mark task done, note results)
-6. When all WHEELER tasks complete, check success criteria
-7. Update plan status to `completed` or flag what remains
+2. Call `search_context` with the plan's objective to load what the graph already knows about this topic
+3. Update plan frontmatter `status` to `in-progress` and `updated` timestamp. Update `.plans/STATE.md` frontmatter: set `status: in-progress`, `updated` timestamp.
+4. Execute WHEELER-assigned tasks in dependency order
+5. Skip SCIENTIST and PAIR tasks — flag them as needing the scientist
+6. After each task, update the plan file (mark task done, note results)
+7. When all WHEELER tasks complete, check success criteria
+8. Update plan status to `completed` or flag what remains
 
 ### Standard execution (no plan file)
 For each task:
-1. Call `scan_workspace` wheeler MCP tool to discover available files
-2. State what you're about to do
-3. Execute the analysis (MATLAB via MCP or Python)
-4. Capture all outputs, figures, and results
-5. Use `add_finding`, `add_dataset`, `link_nodes`, `hash_file` wheeler MCP tools for graph provenance
-6. Display anchor figures for any Dataset or Script referenced
-7. Report results and flag anything unexpected
+1. Call `search_context` with the task description to check what the graph already knows
+2. Call `scan_workspace` wheeler MCP tool to discover available files
+3. State what you're about to do
+4. Execute the analysis (MATLAB via MCP or Python)
+5. Capture all outputs, figures, and results
+6. Use `add_finding`, `add_dataset`, `link_nodes`, `hash_file` wheeler MCP tools for graph provenance
+7. Display anchor figures for any Dataset or Script referenced
+8. Report results and flag anything unexpected
 
 ## Provenance
 Every execution must record full provenance using Script + Execution nodes.

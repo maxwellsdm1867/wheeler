@@ -99,10 +99,9 @@ class TestExpandSingleSeedOneHop:
         assert result["total_related"] == 1
         related = result["related_nodes"]
         assert len(related) == 1
-        assert related[0]["node_id"] == "H-001"
-        assert related[0]["label"] == "Hypothesis"
+        assert related[0]["id"] == "H-001"
+        assert related[0]["type"] == "Hypothesis"
         assert related[0]["relationship"] == "SUPPORTS"
-        assert related[0]["hops"] == 1
 
         # Should have one relationship edge
         rels = result["relationships"]
@@ -134,7 +133,7 @@ class TestExpandDeduplicatesRelated:
             result = await expand_search_results(seeds, config)
 
         # H-001 should appear only once
-        related_ids = [r["node_id"] for r in result["related_nodes"]]
+        related_ids = [r["id"] for r in result["related_nodes"]]
         assert related_ids.count("H-001") == 1
         assert result["total_related"] == 1
 
@@ -161,14 +160,14 @@ class TestExpandExcludesSeedsFromRelated:
         ):
             result = await expand_search_results(seeds, config)
 
-        related_ids = [r["node_id"] for r in result["related_nodes"]]
+        related_ids = [r["id"] for r in result["related_nodes"]]
         assert "F-001" not in related_ids
         assert "F-002" not in related_ids
         assert "H-001" in related_ids
 
 
 class TestExpandRanksProvHigher:
-    """PROV relationships score higher than semantic ones."""
+    """PROV relationships are ordered before semantic ones."""
 
     @pytest.mark.asyncio
     async def test_prov_outranks_semantic(self) -> None:
@@ -192,15 +191,11 @@ class TestExpandRanksProvHigher:
         related = result["related_nodes"]
         assert len(related) == 3
 
-        # PROV (WAS_GENERATED_BY) should be first (score 1.0)
-        # Semantic (SUPPORTS) second (score 0.8)
-        # Other (RELEVANT_TO) third (score 0.5)
-        assert related[0]["node_id"] == "X-001"
-        assert related[0]["relevance_score"] == 1.0
-        assert related[1]["node_id"] == "H-001"
-        assert related[1]["relevance_score"] == 0.8
-        assert related[2]["node_id"] == "N-001"
-        assert related[2]["relevance_score"] == 0.5
+        # PROV (WAS_GENERATED_BY) should be first, semantic (SUPPORTS) second,
+        # other (RELEVANT_TO) third
+        assert related[0]["id"] == "X-001"
+        assert related[1]["id"] == "H-001"
+        assert related[2]["id"] == "N-001"
 
 
 class TestExpandTwoHopProv:
@@ -227,19 +222,13 @@ class TestExpandTwoHopProv:
             )
 
         related = result["related_nodes"]
-        related_ids = [r["node_id"] for r in related]
+        related_ids = [r["id"] for r in related]
         assert "X-001" in related_ids
         assert "S-001" in related_ids
 
-        # Find the 2-hop node
-        s_node = next(r for r in related if r["node_id"] == "S-001")
-        assert s_node["hops"] == 2
-        assert s_node["via"] == "X-001"
+        # Both should have their relationship preserved
+        s_node = next(r for r in related if r["id"] == "S-001")
         assert s_node["relationship"] == "USED"
-
-        # PROV at 1-hop (score 1.0) should outrank PROV at 2-hop (score 0.5)
-        x_node = next(r for r in related if r["node_id"] == "X-001")
-        assert x_node["relevance_score"] > s_node["relevance_score"]
 
 
 class TestExpandHandlesBackendError:
@@ -261,8 +250,10 @@ class TestExpandHandlesBackendError:
                 [_make_seed("F-001")], config,
             )
 
-        # Should not crash, returns empty expansion
-        assert result["seed_nodes"] == [{"id": "F-001", "label": "Finding", "score": 0.01}]
+        # Should not crash, seed passed through with summary fallback
+        assert len(result["seed_nodes"]) == 1
+        assert result["seed_nodes"][0]["id"] == "F-001"
+        assert result["seed_nodes"][0]["score"] == 0.01
         assert result["related_nodes"] == []
         assert result["relationships"] == []
         assert result["total_related"] == 0
@@ -292,4 +283,4 @@ class TestExpandSkipsInvalidIds:
 
         # Only F-001 should have been expanded (ZZ prefix is unknown)
         assert result["total_related"] == 1
-        assert result["related_nodes"][0]["node_id"] == "H-001"
+        assert result["related_nodes"][0]["id"] == "H-001"
