@@ -138,7 +138,7 @@ The core primitive: one tool call creates a finding AND its full [W3C PROV-DM](h
 
 ```python
 add_finding(
-    description="Calcium oscillation frequency scales with cell density",
+    description="Midget and parasol cells have similar clusters of fitted SRM parameters",
     confidence=0.85,
     execution_kind="script",                    # auto-creates Execution activity
     used_entities="D-abc123,S-def456",          # auto-links inputs
