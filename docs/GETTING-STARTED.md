@@ -18,20 +18,58 @@ If your Python version is below 3.11, install a newer one. On macOS: `brew insta
 
 ## Step 1: Install Neo4j Desktop
 
-Neo4j Desktop gives you a GUI for managing databases, a built-in browser for visualizing your knowledge graph, and one-click start/stop. It is the easiest way to run Neo4j locally.
+Neo4j Desktop bundles the database, a JVM, and a visual browser into a single app. No separate Java install needed. It is the easiest way to run Neo4j locally.
 
-1. Download Neo4j Desktop from https://neo4j.com/download/ (free, requires registration)
-2. Install and open it. On macOS, you may see a Gatekeeper warning ("cannot be opened because the developer cannot be verified"). Go to System Settings > Privacy & Security and click Allow.
-3. Create a new project (e.g., "Wheeler Research")
-4. Click **Add** (or **Add Database**) > **Local DBMS**
-   - Name: `wheeler` (or anything you like)
-   - Password: **`research-graph`** (Wheeler's default; change it in `wheeler.yaml` if you pick something else)
-   - Version: **5.x** (latest 5.x is fine). Do not use Neo4j 4.x.
-   - If asked about APOC plugins, skip them. Wheeler does not need APOC.
-5. Click **Start** on the database. Wait for the green "Running" indicator (may take 30-60 seconds).
-6. Verify it's running: click **Open** > **Neo4j Browser**. You should see a query prompt.
+### Important: check for existing Neo4j installations first
 
-Your connection details (these are the defaults Wheeler expects):
+Neo4j Desktop, Homebrew `neo4j`, and Docker containers all compete for the same two ports: **7474** (HTTP browser) and **7687** (Bolt protocol, what Wheeler connects to). Only one process can bind each port. If another Neo4j is already running, Desktop will fail to start with a "port already in use" error.
+
+Check before you install:
+
+```bash
+# See if anything is already on Neo4j's ports
+lsof -i :7474
+lsof -i :7687
+
+# Check for a Homebrew Neo4j service
+brew services list 2>/dev/null | grep neo4j
+
+# Check for a Docker Neo4j container
+docker ps 2>/dev/null | grep neo4j
+```
+
+If you find an existing installation:
+- **Homebrew**: stop it with `brew services stop neo4j`. You can use it instead of Desktop if you prefer, but Desktop is easier for first-time users.
+- **Docker**: stop it with `docker stop <container-name>`. Same as above.
+- **Another Neo4j Desktop DBMS**: only one DBMS can run at a time in Desktop. Stop the other one first.
+
+You only need one of these. Desktop is recommended because it gives you a visual browser for exploring your graph.
+
+### Install and configure
+
+1. **Download** Neo4j Desktop from https://neo4j.com/download/ (free, requires registration with an email address).
+
+2. **Install and open it.**
+   - **macOS Gatekeeper warning**: you will likely see "Neo4j Desktop cannot be opened because the developer cannot be verified." This is normal. Go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway**. (Or right-click the app > Open.)
+   - **First launch is slow** (30-60 seconds) as it unpacks bundled components. This is a one-time cost.
+   - **Apple Silicon (M1/M2/M3/M4)**: Desktop 1.5+ includes a native ARM build. No Rosetta needed.
+
+3. **Create a project.** When Desktop opens, you see the main screen. Click **New** (or **New Project**) in the left sidebar. Name it something like "Wheeler Research". A project is just a folder for organizing databases; it does not create a database yet.
+
+4. **Create a database (DBMS).** Inside your new project, click the **Add** button (blue button, top-right of the project panel) > **Local DBMS**.
+   - **Name**: `wheeler` (or anything you like)
+   - **Password**: **`research-graph`** (this is Wheeler's default; if you pick something else, you will update `wheeler.yaml` in Step 3)
+   - **Version**: select the latest **5.x**. Do not use Neo4j 4.x.
+   - If asked about plugins (APOC, Graph Data Science), skip them. Wheeler does not need any plugins.
+   - Click **Create**. This takes a few seconds.
+
+5. **Start the database.** Your new DBMS appears in the project panel in a **Stopped** state (it does not start automatically). Click the **Start** button. Wait for the status to change to a green **Running** indicator. This can take 30-60 seconds on the first start.
+
+6. **Verify it works.** Once running, click **Open** > **Neo4j Browser**. A browser window opens with a query prompt (`neo4j$`). Type `:server status` and press Enter. You should see connection details confirming the database is active.
+
+### Connection details
+
+These are the defaults Wheeler expects. You will enter them in `wheeler.yaml` in Step 3:
 
 | Setting | Value |
 |---------|-------|
@@ -39,6 +77,13 @@ Your connection details (these are the defaults Wheeler expects):
 | Username | `neo4j` |
 | Password | `research-graph` |
 | Database | `neo4j` |
+
+### A note on Neo4j Desktop concepts
+
+- A **Project** is just a folder for grouping databases. It does not run anything.
+- A **DBMS** (inside a project) is the actual database instance. This is what you start and stop.
+- You can have multiple DBMSs in a project, but only one can run at a time (Community Edition limitation).
+- Neo4j Desktop is different from Neo4j Community Server (a standalone install you manage yourself) and Neo4j Aura (a cloud-hosted service). Wheeler works with all three, but Desktop is the simplest for local use.
 
 ## Step 2: Install Wheeler
 
@@ -264,11 +309,41 @@ Run `/wh:init` in your project to create the required directories.
 
 ### Neo4j connection refused
 
-Check that Neo4j is listening on port 7687. In Neo4j Desktop, click the database and check the connection details. Default is `bolt://localhost:7687`. If you changed the port, update `wheeler.yaml`.
+Check that Neo4j is listening on port 7687:
+
+```bash
+lsof -i :7687
+```
+
+If nothing shows up, the database is not running. Open Neo4j Desktop and click Start on your DBMS.
+
+If something other than Neo4j Desktop is on the port (Homebrew `neo4j`, a Docker container), you have a conflict. Stop the other process first:
+
+```bash
+brew services stop neo4j        # if Homebrew
+docker stop <container-name>    # if Docker
+```
+
+If you changed the port in Desktop (DBMS Settings > `server.bolt.listen_address`), update `wheeler.yaml` to match.
 
 ### Neo4j authentication failed
 
-The password in your `wheeler.yaml` doesn't match the one you set in Neo4j Desktop. Update the `password` field in `wheeler.yaml` to match.
+The password in `wheeler.yaml` does not match the one you set when creating the DBMS in Neo4j Desktop.
+
+**To fix**: update the `password` field in `wheeler.yaml`.
+
+**If you forgot the password**: the simplest fix is to delete the DBMS in Neo4j Desktop and create a new one. Alternatively, find the DBMS folder (click "..." on the DBMS > "Open folder"), delete `data/dbms/auth`, and restart. The next connection will prompt for a new password.
+
+Note: Neo4j Desktop sets the password you chose at creation time. There is no "neo4j/neo4j" forced-change flow (that is a Neo4j Community Server behavior, not Desktop).
+
+### Neo4j DBMS won't start
+
+Common causes:
+
+- **Port conflict**: another Neo4j installation (Homebrew, Docker, another Desktop DBMS) is already running on ports 7474/7687. Check with `lsof -i :7474` and `lsof -i :7687`.
+- **Corrupted after crash**: if your machine lost power or Desktop was force-quit, the database store may be corrupted. Check logs: click "..." on the DBMS > "Open folder" > `logs/neo4j.log`. If the log mentions store corruption, the fastest fix is to delete and recreate the DBMS (Wheeler's graph can be rebuilt with `/wh:ingest`).
+- **Stale lock file**: a `store_lock` file in the data directory can persist after a crash. Delete it and restart the DBMS.
+- **Disk space**: Neo4j needs several hundred MB free for transaction logs. A full disk produces opaque Java errors.
 
 ### Semantic search not working
 
