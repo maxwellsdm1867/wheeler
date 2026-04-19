@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.6.2-blue" alt="v0.6.2">
+  <img src="https://img.shields.io/badge/v0.6.3-blue" alt="v0.6.3">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -158,13 +158,23 @@ The graph is an index over files, not a document store. Each node stores an ID, 
 
 **14 relationship types:** 6 W3C PROV standard (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH) + 8 Wheeler semantic (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS).
 
-**44 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
+**46 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module dependency map, PROV schema, MCP tool listing, hardening patterns, design decisions.
 
 ---
 
 ## What's New
+
+<details>
+<summary><b>v0.6.3</b> (2026-04-19) — Proactive context, cleaner search results</summary>
+
+- **Proactive graph context**: Research acts (plan, execute, pair, chat) now call `search_context` automatically when the input is about research topics, returning clean summarized results instead of raw model dumps.
+- **Neo4j connection diagnostics**: Helpful error messages when Neo4j Desktop isn't running, auth fails, or the database is unreachable.
+- **Execution tracking**: `add_execution` and `query_executions` MCP tools wired up across all five servers. 46 tools total.
+- **`/wh:bump` skill**: Version bump workflow that updates version strings, doc counts, and changelog in one command.
+
+</details>
 
 <details>
 <summary><b>v0.6.2</b> (2026-04-18) — Auto-routing, /wh:start entry point</summary>
@@ -206,12 +216,12 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (44 tools)
+    ├── MCP Servers (46 tools)
     │       ├── wheeler_core (12): health, status, context, search, cypher
-    │       ├── wheeler_query (8): read-only query_* tools
-    │       ├── wheeler_mutations (14): add_*, link, delete, update, merge
+    │       ├── wheeler_query (9): read-only query_* tools
+    │       ├── wheeler_mutations (15): add_*, link, delete, update, merge
     │       ├── wheeler_ops (10): staleness, citations, consistency
-    │       └── wheeler (legacy monolith): same 44 tools, one server
+    │       └── wheeler (legacy monolith): same 46 tools, one server
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -226,10 +236,10 @@ wheeler/
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
 ├── consistency.py           # Cross-layer drift detection and repair
-├── mcp_server.py            # Legacy monolith: all 44 tools
+├── mcp_server.py            # Legacy monolith: all 46 tools
 ├── mcp_core.py              # Split server: health, context, search (12)
-├── mcp_query.py             # Split server: query_* read-only (8)
-├── mcp_mutations.py         # Split server: add_*, link, delete, update (14)
+├── mcp_query.py             # Split server: query_* read-only (9)
+├── mcp_mutations.py         # Split server: add_*, link, delete, update (15)
 ├── mcp_ops.py               # Split server: staleness, citations (10)
 ├── mcp_shared.py            # Shared: trace IDs, decorators, config
 ├── knowledge/               # File I/O: read, write, list, render, migrate
@@ -239,7 +249,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1018 tests
+tests/                        # 1023 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -251,7 +261,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1018 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1023 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
