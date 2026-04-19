@@ -1,6 +1,6 @@
 ---
 name: wh:execute
-description: Execute approved research tasks with full provenance
+description: Use only when the user asks to run or execute a Wheeler plan that already exists in .plans/
 argument-hint: "[task description]"
 allowed-tools:
   - Read

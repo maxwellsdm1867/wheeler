@@ -1,6 +1,6 @@
 ---
 name: wh:reconvene
-description: Review results from independent background tasks
+description: Use when returning to a Wheeler session after background Wheeler workers have completed, to review results
 argument-hint: "[--archive]"
 allowed-tools:
   - Read

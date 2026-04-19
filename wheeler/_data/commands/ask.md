@@ -1,6 +1,6 @@
 ---
 name: wh:ask
-description: Ask about the knowledge graph — query nodes, trace provenance, explore context
+description: Use when the user queries the Wheeler knowledge graph for node lookups, provenance traces, or connections
 argument-hint: "<question about the graph>"
 allowed-tools:
   - Read

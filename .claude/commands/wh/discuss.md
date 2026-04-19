@@ -1,6 +1,6 @@
 ---
 name: wh:discuss
-description: Sharpen the question through structured discussion before planning
+description: Use when the user wants to sharpen a research question with Wheeler before drafting a .plans/ investigation
 argument-hint: "[topic]"
 allowed-tools:
   - Read

@@ -1,6 +1,6 @@
 ---
 name: wh:close
-description: End-of-session provenance sweep — find orphans, suggest links
+description: Use when ending a Wheeler research session to sweep the knowledge graph for orphan nodes and verify provenance
 argument-hint: ""
 allowed-tools:
   - Read

@@ -1,6 +1,6 @@
 ---
 name: wh:write
-description: Draft scientific text with strict citation enforcement
+description: Use when the user wants to draft scientific text with Wheeler citation enforcement from knowledge-graph findings
 argument-hint: "[section type]"
 allowed-tools:
   - Read

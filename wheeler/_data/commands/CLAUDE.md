@@ -47,6 +47,7 @@ YAML frontmatter controls tool access. The markdown body IS the system prompt.
 - `handoff`/`reconvene`/`queue`: Independent work pipeline
 - `report`: Generate work log
 - `close`: End-of-session provenance sweep
+- `start`: User-invoked router. Asks for task intent (or takes $ARGUMENTS) and invokes the best /wh:* command.
 
 ### Development
 - `triage`: Triage GitHub issues against planned work

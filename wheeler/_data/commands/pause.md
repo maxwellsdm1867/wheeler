@@ -1,6 +1,6 @@
 ---
 name: wh:pause
-description: Capture investigation state for resuming later
+description: Use when the user is stopping a Wheeler investigation and needs to save state in STATE.md for later
 argument-hint: ""
 allowed-tools:
   - Read

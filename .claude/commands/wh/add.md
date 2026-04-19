@@ -1,6 +1,6 @@
 ---
 name: wh:add
-description: Add anything to the knowledge graph: findings, papers, datasets, notes, figures
+description: Use when the user provides a DOI, paper, dataset, or file path to record in the Wheeler knowledge graph
 argument-hint: "[text, DOI, or file path]"
 allowed-tools:
   - Read

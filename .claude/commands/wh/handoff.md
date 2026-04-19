@@ -1,6 +1,6 @@
 ---
 name: wh:handoff
-description: Propose tasks for independent background execution
+description: Use when Wheeler research tasks should be queued for background execution by Wheeler workers
 argument-hint: ""
 allowed-tools:
   - Read

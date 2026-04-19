@@ -1,6 +1,6 @@
 ---
 name: wh:dream
-description: Consolidate the knowledge graph:promote tiers, link orphans, flag duplicates, detect staleness
+description: Use when the Wheeler knowledge graph needs consolidation (tier promotion, orphan linking, staleness detection)
 argument-hint: "[--report-only]"
 allowed-tools:
   - Read

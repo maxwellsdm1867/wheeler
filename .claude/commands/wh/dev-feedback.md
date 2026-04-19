@@ -1,6 +1,6 @@
 ---
 name: wh:dev-feedback
-description: Capture Wheeler development feedback as GitHub issues
+description: Use when the user wants to file a Wheeler bug or usability issue as a GitHub issue about Wheeler itself
 argument-hint: "[topic or issue description]"
 allowed-tools:
   - Read

@@ -1,6 +1,6 @@
 ---
 name: wh:compile
-description: Compile knowledge graph into readable synthesis documents
+description: Use when the user wants to compile a Wheeler synthesis document or evidence map from the knowledge graph
 argument-hint: "[topic | status | evidence H-xxxx]"
 allowed-tools:
   - Read

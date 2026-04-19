@@ -1,6 +1,6 @@
 ---
 name: wh:status
-description: Show investigation progress and route to next action
+description: Use when the user asks about Wheeler investigation progress in .plans/ or what research task to tackle next
 argument-hint: ""
 allowed-tools:
   - Read

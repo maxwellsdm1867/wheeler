@@ -1,6 +1,6 @@
 ---
 name: wh:note
-description: Capture a research note — an insight, observation, or idea
+description: Use when the user wants to capture a research insight as a Wheeler knowledge-graph note
 argument-hint: "[note text]"
 allowed-tools:
   - Read

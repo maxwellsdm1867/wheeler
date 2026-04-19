@@ -1,6 +1,6 @@
 ---
 name: wh:plan
-description: Planning mode — sharpen questions, propose investigations
+description: Use when the user wants to structure a Wheeler research investigation in .plans/ from a sharpened question
 argument-hint: "[topic]"
 allowed-tools:
   - Read

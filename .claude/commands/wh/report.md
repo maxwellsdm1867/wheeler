@@ -1,6 +1,6 @@
 ---
 name: wh:report
-description: Generate a work log from the knowledge graph — what was found, written, and planned in a time period
+description: Use when the user wants a work-log summary of recent Wheeler research activity over a time period
 argument-hint: "[today | week | since YYYY-MM-DD]"
 allowed-tools:
   - Read

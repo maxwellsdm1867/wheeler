@@ -22,6 +22,7 @@ EXPECTED_COMMANDS = [
     "reconvene",
     "report",
     "resume",
+    "start",
     "status",
     "write",
 ]

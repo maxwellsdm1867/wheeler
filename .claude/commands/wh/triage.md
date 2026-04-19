@@ -1,6 +1,6 @@
 ---
 name: wh:triage
-description: Triage GitHub issues against planned work in .plans/ docs. Produces a prioritized report with critic and verifier review.
+description: Use when the user wants to triage GitHub issues against Wheeler research plans in .plans/
 argument-hint: "[--label bug] [--refresh] [--quick]"
 allowed-tools:
   - Read

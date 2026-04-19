@@ -1,6 +1,6 @@
 ---
 name: wh:pair
-description: Live analysis co-work — scientist drives, Wheeler assists
+description: Use when the user wants interactive live analysis co-work with Wheeler, scientist driving
 argument-hint: "[script or topic]"
 allowed-tools:
   - Read

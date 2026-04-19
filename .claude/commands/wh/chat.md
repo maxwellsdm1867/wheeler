@@ -1,6 +1,6 @@
 ---
 name: wh:chat
-description: Casual discussion — no execution, just reasoning
+description: Use for casual discussion with Wheeler that reads the knowledge graph but does not modify it
 argument-hint: "[topic]"
 allowed-tools:
   - Read

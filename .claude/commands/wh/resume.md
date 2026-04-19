@@ -1,6 +1,6 @@
 ---
 name: wh:resume
-description: Restore context from a previous session and route to next action
+description: Use when starting a new session and restoring Wheeler context from STATE.md or .plans/.continue-here.md
 argument-hint: ""
 allowed-tools:
   - Read
