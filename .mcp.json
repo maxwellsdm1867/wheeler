@@ -13,14 +13,6 @@
         "NEO4J_DATABASE": "neo4j"
       }
     },
-    "wheeler": {
-      "type": "stdio",
-      "command": ".venv/bin/python",
-      "args": [
-        "-m",
-        "wheeler.mcp_server"
-      ]
-    },
     "wheeler_core": {
       "type": "stdio",
       "command": ".venv/bin/python",
