@@ -658,9 +658,9 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 | Entry Point | Module | Purpose |
 |-------------|--------|---------|
-| `wheeler-mcp` | `wheeler.mcp_server:main` | Legacy monolith MCP server (46 tools, stdio transport) |
+| `wheeler-mcp` | `wheeler.mcp_server:main` | Legacy monolith MCP server (49 tools, stdio transport) |
 | `wheeler-core-mcp` | `wheeler.mcp_core:main` | Split server: reads + search + cypher + schema (12) |
-| `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (8) |
+| `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (10) |
 | `wheeler-mutations-mcp` | `wheeler.mcp_mutations:main` | Split server: add_*, link, unlink, delete, merge (13) |
 | `wheeler-ops-mcp` | `wheeler.mcp_ops:main` | Split server: staleness, citations, consistency, ops (10) |
 | `wheeler` | `wheeler.tools.cli:app` | Typer CLI (show, graph, validate, install) |
@@ -671,9 +671,9 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ---
 
-## MCP Tools (46 total, 5 servers)
+## MCP Tools (49 total, 5 servers)
 
-As of v0.6.3 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
+As of v0.7.0 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
 
 | Server | Module | Tools | Scope |
 |--------|--------|-------|-------|
@@ -836,7 +836,7 @@ wheeler/
 +-- task_log.py                  # Structured task logging for headless runs
 +-- log_summary.py               # Reconvene log summarizer
 +-- validate_output.py           # Post-hoc citation validation for headless output
-+-- mcp_server.py                # Legacy monolith MCP server (46 tools)
++-- mcp_server.py                # Legacy monolith MCP server (49 tools)
 +-- mcp_shared.py                # Shared helpers: trace IDs, @_logged, backend access
 +-- mcp_core.py                  # Split server: reads + search + cypher + schema (12 tools)
 +-- mcp_query.py                 # Split server: query_* read-only tools (9 tools)

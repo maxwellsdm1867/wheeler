@@ -4,7 +4,7 @@ Wheeler is a research knowledge graph that turns Claude Code into a provenance-t
 
 This guide walks you through setting up Wheeler from scratch.
 
-**What you'll have when done:** A running knowledge graph, Claude Code connected to Wheeler's 46 tools, and the ability to use `/wh:*` commands to discuss, plan, execute, and write up research with full provenance tracking.
+**What you'll have when done:** A running knowledge graph, Claude Code connected to Wheeler's 49 tools, and the ability to use `/wh:*` commands to discuss, plan, execute, and write up research with full provenance tracking.
 
 ## What you need
 

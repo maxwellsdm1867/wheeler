@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.6.3-blue" alt="v0.6.3">
+  <img src="https://img.shields.io/badge/v0.7.0-blue" alt="v0.7.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -167,6 +167,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details>
+<summary><b>v0.7.0</b> (2026-04-20) — Graph-as-source-of-truth enforcement</summary>
+
+- **Graph-first plan lifecycle**: Every `/wh:*` act now queries the graph first for plan identity, status, and session state. Filesystem files (STATE.md, .continue-here.md) become rendered views, not authoritative sources.
+- **`query_plans` tool**: New MCP tool to search Plan nodes by keyword and status (draft/approved/in-progress/completed), available on all servers. 49 tools total.
+- **Read-before-mutate hooks**: Claude Code PreToolUse hook blocks file-bearing mutations unless the file was Read or Written first in the session, enforcing grounded provenance.
+- **Process provenance**: Pause, handoff, and close events are recorded as Execution nodes in the graph, making the research process itself auditable.
+- **Session continuation notes**: `/wh:pause` writes continuation context as graph-backed ResearchNote nodes linked to the active plan, not just a flat file.
+
+</details>
+
+<details>
 <summary><b>v0.6.3</b> (2026-04-19) — Proactive context, cleaner search results</summary>
 
 - **Proactive graph context**: Research acts (plan, execute, pair, chat) now call `search_context` automatically when the input is about research topics, returning clean summarized results instead of raw model dumps.
@@ -216,12 +227,12 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (46 tools)
+    ├── MCP Servers (49 tools)
     │       ├── wheeler_core (12): health, status, context, search, cypher
-    │       ├── wheeler_query (9): read-only query_* tools
-    │       ├── wheeler_mutations (15): add_*, link, delete, update, merge
+    │       ├── wheeler_query (10): read-only query_* tools
+    │       ├── wheeler_mutations (17): add_*, link, delete, update, merge
     │       ├── wheeler_ops (10): staleness, citations, consistency
-    │       └── wheeler (legacy monolith): same 46 tools, one server
+    │       └── wheeler (legacy monolith): same 49 tools, one server
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -236,9 +247,9 @@ wheeler/
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
 ├── consistency.py           # Cross-layer drift detection and repair
-├── mcp_server.py            # Legacy monolith: all 46 tools
+├── mcp_server.py            # Legacy monolith: all 49 tools
 ├── mcp_core.py              # Split server: health, context, search (12)
-├── mcp_query.py             # Split server: query_* read-only (9)
+├── mcp_query.py             # Split server: query_* read-only (10)
 ├── mcp_mutations.py         # Split server: add_*, link, delete, update (15)
 ├── mcp_ops.py               # Split server: staleness, citations (10)
 ├── mcp_shared.py            # Shared: trace IDs, decorators, config

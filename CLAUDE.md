@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.6.4`. 1111 tests, 48 MCP tools across 5 servers.
+Version is `0.7.0`. 1276 tests, 49 MCP tools across 5 servers.
 
 ## Commands
 
@@ -37,9 +37,9 @@ wh quick "prompt"   # haiku, 3 turns, one-shot
 wh dream            # graph consolidation (promotes tiers, detects communities, flags stale)
 
 # MCP servers (launched by Claude Code via .mcp.json — not typically invoked by hand)
-python -m wheeler.mcp_server       # legacy monolith (46 tools in one process)
+python -m wheeler.mcp_server       # legacy monolith (49 tools in one process)
 python -m wheeler.mcp_core         # split: health/context/search/cypher/schema (12)
-python -m wheeler.mcp_query        # split: read-only query_* (8)
+python -m wheeler.mcp_query        # split: read-only query_* (10)
 python -m wheeler.mcp_mutations    # split: add_*, link, unlink, delete, merge, update (14)
 python -m wheeler.mcp_ops          # split: staleness, citations, consistency, ops (10)
 ```
@@ -106,7 +106,7 @@ See `ARCHITECTURE.md` for the full per-module dependency map.
 
 The same underlying implementation in `wheeler/tools/graph_tools/` is exposed through:
 
-- `mcp_server.py` (the legacy monolith, all 46 tools in one process)
+- `mcp_server.py` (the legacy monolith, all 49 tools in one process)
 - `mcp_core.py`, `mcp_query.py`, `mcp_mutations.py`, `mcp_ops.py` (4 split servers)
 
 All five share `mcp_shared.py` for trace ID generation, the `@_logged` decorator, config loading, and backend access. **When you add or change a tool, the authoritative implementation goes in `tools/graph_tools/`**, not in any `mcp_*.py` file. The server files are thin FastMCP wrappers that call `execute_tool()`. If a new tool needs to appear in the split-server surface, add it to both `mcp_server.py` (monolith) and the appropriate `mcp_*.py` split file.
