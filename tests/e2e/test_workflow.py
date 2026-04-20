@@ -465,17 +465,21 @@ class TestDocumentCreation:
 
 class TestFullProvenanceChain:
     @pytest.mark.asyncio
-    async def test_document_to_dataset_chain(self, e2e_config):
+    async def test_document_to_dataset_chain(self, e2e_config, sandbox):
         """Build and query the full chain: Document ← Finding → Execution → Dataset."""
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
 
+        # Create real data file for path validation
+        data_file = sandbox / "data" / "e2e_chain_test.mat"
+        data_file.write_bytes(b"fake mat data")
+
         # Build the chain bottom-up
         dataset = json.loads(await execute_tool(
             "add_dataset",
-            {"path": "data/e2e_chain_test.mat", "type": "mat",
+            {"path": str(data_file), "type": "mat",
              "description": "E2E chain test data"},
             e2e_config,
         ))

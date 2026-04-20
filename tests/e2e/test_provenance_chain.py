@@ -65,7 +65,7 @@ class TestSimpleChainE2E:
     """Script changes, finding should lose stability in real Neo4j."""
 
     @pytest.mark.asyncio
-    async def test_script_change_propagates_to_finding(self, e2e_config):
+    async def test_script_change_propagates_to_finding(self, e2e_config, sandbox):
         """Build Script -> Execution -> Finding, then invalidate the script.
 
         After propagation:
@@ -79,10 +79,14 @@ class TestSimpleChainE2E:
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
 
+        # Create real file for path validation
+        script_file = sandbox / "scripts" / "provchain_fit.py"
+        script_file.write_text("# e2e provchain test\n")
+
         # Build the chain using real tools
         script = json.loads(await execute_tool(
             "add_script",
-            {"path": "/e2e/provchain/fit.py", "language": "python",
+            {"path": str(script_file), "language": "python",
              "hash": "e2e_hash_original"},
             e2e_config,
         ))
@@ -137,7 +141,7 @@ class TestBranchingChainE2E:
     """One script change affects all downstream findings."""
 
     @pytest.mark.asyncio
-    async def test_one_script_three_findings(self, e2e_config):
+    async def test_one_script_three_findings(self, e2e_config, sandbox):
         from wheeler.graph.driver import get_async_driver
         from wheeler.provenance import propagate_invalidation
         from wheeler.tools.graph_tools import execute_tool
@@ -145,10 +149,14 @@ class TestBranchingChainE2E:
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
 
+        # Create real file for path validation
+        script_file = sandbox / "scripts" / "branch_pop.py"
+        script_file.write_text("# e2e branch test\n")
+
         # One script
         script = json.loads(await execute_tool(
             "add_script",
-            {"path": "/e2e/branch/pop.py", "language": "python",
+            {"path": str(script_file), "language": "python",
              "hash": "branch_hash_001"},
             e2e_config,
         ))
@@ -198,7 +206,7 @@ class TestDeepChainE2E:
     """Multi-hop propagation through a real research workflow."""
 
     @pytest.mark.asyncio
-    async def test_four_layer_cascade(self, e2e_config):
+    async def test_four_layer_cascade(self, e2e_config, sandbox):
         """Script -> Finding (2 hops) -> Hypothesis (4 hops) -> Document doesn't chain further."""
         from wheeler.graph.driver import get_async_driver
         from wheeler.provenance import propagate_invalidation
@@ -208,10 +216,14 @@ class TestDeepChainE2E:
         db = e2e_config.neo4j.database
         tag_ids = []
 
+        # Create real file for path validation
+        script_file = sandbox / "scripts" / "deep_analysis.py"
+        script_file.write_text("# e2e deep chain test\n")
+
         # Layer 1: Script
         script = json.loads(await execute_tool(
             "add_script",
-            {"path": "/e2e/deep/analysis.py", "language": "python",
+            {"path": str(script_file), "language": "python",
              "hash": "deep_hash_001"},
             e2e_config,
         ))
@@ -286,7 +298,7 @@ class TestClearStaleE2E:
     """After fixing a script, clear its stale flag and verify."""
 
     @pytest.mark.asyncio
-    async def test_clear_stale_restores_stability(self, e2e_config):
+    async def test_clear_stale_restores_stability(self, e2e_config, sandbox):
         from wheeler.graph.driver import get_async_driver
         from wheeler.provenance import propagate_invalidation, clear_stale
         from wheeler.tools.graph_tools import execute_tool
@@ -294,10 +306,14 @@ class TestClearStaleE2E:
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
 
+        # Create real file for path validation
+        script_file = sandbox / "scripts" / "clear_fix.py"
+        script_file.write_text("# e2e clear stale test\n")
+
         # Build chain
         script = json.loads(await execute_tool(
             "add_script",
-            {"path": "/e2e/clear/fix.py", "language": "python",
+            {"path": str(script_file), "language": "python",
              "hash": "clear_hash_001"},
             e2e_config,
         ))
@@ -561,9 +577,13 @@ class TestBugDiscoveryE2E:
         ))
         tag_ids.append(script["node_id"])
 
+        # Create real data file for path validation
+        data_file = sandbox / "data" / "e2e_bug_recordings.mat"
+        data_file.write_bytes(b"fake mat data")
+
         dataset = json.loads(await execute_tool(
             "add_dataset",
-            {"path": "/data/recordings.mat", "type": "mat",
+            {"path": str(data_file), "type": "mat",
              "description": "E2E bug: recordings"},
             e2e_config,
         ))
