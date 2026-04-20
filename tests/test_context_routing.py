@@ -585,3 +585,236 @@ class TestResearchScenarioToolAccess:
         assert _has_tool("status", "mcp__wheeler_core__graph_status")
         assert _has_tool("status", "mcp__wheeler_core__graph_gaps")
         assert _has_tool("status", "mcp__wheeler_ops__detect_stale")
+
+
+# ===================================================================
+# 8. Graph-as-source-of-truth enforcement (v0.7.0)
+#
+# Every act that reads plan state must query the graph first via
+# query_plans, not scan .plans/ as the primary lookup. Filesystem
+# fallback is allowed only as a secondary on-ramp for unregistered
+# plans. Status transitions must go through update_node, not just
+# file frontmatter edits.
+# ===================================================================
+
+
+class TestGraphFirstToolAccess:
+    """Acts that reference plans must have query_plans in allowed-tools."""
+
+    # Acts that need to discover plans by status
+    @pytest.mark.parametrize("cmd", [
+        "execute", "handoff", "reconvene", "resume", "status", "compile", "report",
+    ])
+    def test_plan_querying_acts_have_query_plans(self, cmd):
+        assert _has_tool(cmd, "mcp__wheeler_query__query_plans"), (
+            f"{cmd}.md must have query_plans for graph-first plan lookup"
+        )
+
+    # Acts that need to transition plan status
+    @pytest.mark.parametrize("cmd", ["execute", "handoff"])
+    def test_execution_acts_have_update_node(self, cmd):
+        assert _has_tool(cmd, "mcp__wheeler_mutations__update_node"), (
+            f"{cmd}.md must have update_node for graph-authoritative status transitions"
+        )
+
+    def test_plan_act_has_ensure_artifact(self):
+        """/wh:plan must have ensure_artifact for mandatory graph registration."""
+        assert _has_tool("plan", "mcp__wheeler_mutations__ensure_artifact")
+
+    def test_plan_act_has_query_plans(self):
+        """/wh:plan must have query_plans for dedup check before writing."""
+        assert _has_tool("plan", "mcp__wheeler_query__query_plans")
+
+
+class TestGraphFirstPromptText:
+    """The body text of acts must instruct graph-first, not filesystem-first."""
+
+    def test_execute_queries_graph_before_glob(self):
+        """execute.md must call query_plans before falling back to Glob."""
+        body = _body("execute")
+        graph_pos = body.find("query_plans")
+        glob_pos = body.find("Glob")
+        assert graph_pos != -1, "execute.md must reference query_plans"
+        assert graph_pos < glob_pos, (
+            "execute.md must call query_plans BEFORE falling back to Glob"
+        )
+
+    def test_execute_calls_query_plans_for_approved_and_in_progress(self):
+        """execute.md must query for both approved and in-progress plans."""
+        body = _body("execute")
+        assert 'query_plans(status="approved")' in body
+        assert 'query_plans(status="in-progress")' in body
+
+    def test_execute_update_node_for_status_transitions(self):
+        """execute.md must use update_node for plan status changes."""
+        body = _body("execute")
+        assert "update_node" in body
+        assert 'status="in-progress"' in body or "in-progress" in body
+
+    def test_resume_queries_graph_first(self):
+        """resume.md step 0 must be query_plans, not STATE.md read."""
+        body = _body("resume")
+        # Step 0 should mention query_plans
+        step0_match = re.search(r"## Step 0.*?\n(.*?)(?=\n## Step|\Z)", body, re.DOTALL)
+        assert step0_match, "resume.md must have a Step 0"
+        step0_text = step0_match.group(1)
+        assert "query_plans" in step0_text, (
+            "resume.md Step 0 must use query_plans as the primary lookup"
+        )
+
+    def test_resume_state_md_is_fallback_not_primary(self):
+        """resume.md must treat STATE.md as fallback, not the authoritative source."""
+        body = _body("resume")
+        assert "Fall back" in body or "fall back" in body, (
+            "resume.md must mark STATE.md as a fallback, not the primary source"
+        )
+
+    def test_status_queries_graph_first(self):
+        """status.md must call query_plans before scanning .plans/."""
+        body = _body("status")
+        assert "query_plans" in body, "status.md must reference query_plans"
+
+    def test_status_graph_wins_over_state_md(self):
+        """status.md must declare graph as authoritative over STATE.md."""
+        body = _body("status")
+        assert "graph wins" in body.lower() or "graph is authoritative" in body.lower() or "graph disagree" in body.lower(), (
+            "status.md must declare graph wins when it disagrees with STATE.md"
+        )
+
+    def test_reconvene_queries_graph_first(self):
+        """reconvene.md step 0 must use query_plans."""
+        body = _body("reconvene")
+        step0_match = re.search(r"### Step 0.*?\n(.*?)(?=\n### Step|\Z)", body, re.DOTALL)
+        assert step0_match, "reconvene.md must have a Step 0"
+        step0_text = step0_match.group(1)
+        assert "query_plans" in step0_text, (
+            "reconvene.md Step 0 must use query_plans"
+        )
+
+    def test_handoff_queries_graph_not_filesystem(self):
+        """handoff.md must call query_plans, not check .plans/ directly."""
+        body = _body("handoff")
+        assert "query_plans" in body, "handoff.md must reference query_plans"
+        # Should NOT have "Check .plans/" as the primary instruction
+        assert "Check `.plans/`" not in body, (
+            "handoff.md should not scan .plans/ as primary plan lookup"
+        )
+
+    def test_plan_has_graph_registration_section(self):
+        """plan.md must have a mandatory graph registration section."""
+        body = _body("plan")
+        assert "Graph registration" in body, (
+            "plan.md must have a 'Graph registration' section"
+        )
+        assert "mandatory" in body.lower() or "MUST" in body, (
+            "plan.md graph registration must be described as mandatory"
+        )
+
+    def test_plan_frontmatter_includes_graph_node(self):
+        """plan.md template frontmatter must include graph_node field."""
+        body = _body("plan")
+        assert "graph_node:" in body, (
+            "plan.md plan template must include graph_node: field"
+        )
+
+
+class TestGraphNativeSessionState:
+    """Pause/resume use graph-native session state, not just files."""
+
+    def test_pause_has_add_note(self):
+        """/wh:pause must have add_note for continuation context."""
+        assert _has_tool("pause", "mcp__wheeler_mutations__add_note")
+
+    def test_pause_has_add_execution(self):
+        """/wh:pause must have add_execution for process provenance."""
+        assert _has_tool("pause", "mcp__wheeler_mutations__add_execution")
+
+    def test_pause_has_link_nodes(self):
+        """/wh:pause must have link_nodes to connect notes/executions to plans."""
+        assert _has_tool("pause", "mcp__wheeler_mutations__link_nodes")
+
+    def test_pause_has_query_plans(self):
+        """/wh:pause must find active plan via graph query."""
+        assert _has_tool("pause", "mcp__wheeler_query__query_plans")
+
+    def test_pause_body_creates_graph_note(self):
+        """pause.md must instruct creating a graph note for continuation."""
+        body = _body("pause")
+        assert "add_note" in body, "pause.md must instruct add_note for continuation"
+        assert "session-continuation" in body, (
+            "pause.md must use session-continuation context pattern"
+        )
+
+    def test_pause_body_creates_execution_node(self):
+        """pause.md must record the pause as an Execution node."""
+        body = _body("pause")
+        assert "add_execution" in body
+        assert "pause" in body.lower()
+
+    def test_resume_has_query_notes(self):
+        """/wh:resume must have query_notes to find continuation context."""
+        assert _has_tool("resume", "mcp__wheeler_query__query_notes")
+
+    def test_resume_body_queries_continuation_notes(self):
+        """resume.md must look for session-continuation notes."""
+        body = _body("resume")
+        assert "query_notes" in body or "session-continuation" in body, (
+            "resume.md must look for continuation notes from the graph"
+        )
+
+
+class TestProcessProvenance:
+    """Close and handoff record process events in the graph."""
+
+    def test_close_has_consistency_check(self):
+        """/wh:close must have graph_consistency_check for drift detection."""
+        assert _has_tool("close", "mcp__wheeler_ops__graph_consistency_check")
+
+    def test_close_body_runs_consistency_check(self):
+        """close.md body must instruct running graph_consistency_check."""
+        body = _body("close")
+        assert "graph_consistency_check" in body or "consistency" in body.lower()
+
+    def test_handoff_has_add_execution(self):
+        """/wh:handoff must have add_execution for handoff provenance."""
+        assert _has_tool("handoff", "mcp__wheeler_mutations__add_execution")
+
+    def test_handoff_has_link_nodes(self):
+        """/wh:handoff must have link_nodes to connect executions to plans."""
+        assert _has_tool("handoff", "mcp__wheeler_mutations__link_nodes")
+
+    def test_handoff_body_creates_execution_nodes(self):
+        """handoff.md must instruct creating Execution nodes for handoff waves."""
+        body = _body("handoff")
+        assert "add_execution" in body
+        assert "WAS_INFORMED_BY" in body
+
+
+class TestGraphFirstReporting:
+    """Compile and report use graph queries, not filesystem reads."""
+
+    def test_compile_has_query_plans(self):
+        assert _has_tool("compile", "mcp__wheeler_query__query_plans")
+
+    def test_compile_has_query_executions(self):
+        assert _has_tool("compile", "mcp__wheeler_query__query_executions")
+
+    def test_compile_body_queries_plans(self):
+        """compile.md status mode must call query_plans for plan status."""
+        body = _body("compile")
+        assert "query_plans" in body
+
+    def test_report_has_query_plans(self):
+        assert _has_tool("report", "mcp__wheeler_query__query_plans")
+
+    def test_report_body_queries_plans(self):
+        """report.md must use query_plans for investigation state."""
+        body = _body("report")
+        assert "query_plans" in body
+
+    def test_report_references_change_log(self):
+        """report.md must reference change_log for status transition history."""
+        body = _body("report")
+        assert "change_log" in body, (
+            "report.md must use change_log field for plan status transitions"
+        )

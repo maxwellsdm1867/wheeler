@@ -22,6 +22,19 @@ python -m pytest tests/test_merge.py -v                      # one file
 python -m pytest tests/test_merge.py::TestExecuteMerge -v    # one class
 python -m pytest tests/ -k "consistency"                     # by keyword
 python -m pytest tests/e2e/ -v                               # e2e, needs running Neo4j
+python -m pytest tests/e2e/test_graph_first_acts.py -v       # graph-first act workflows
+python -m pytest tests/e2e/test_plan_lifecycle.py -v         # plan lifecycle + triple-write
+
+# E2E test philosophy: simulate the actual act workflow against live Neo4j.
+# Each test walks through the exact tool-call sequence an act prescribes:
+#   1. WRITE to graph (add_plan, ensure_artifact, add_finding, link_nodes)
+#   2. READ back via the same query the act uses (query_plans, query_notes)
+#   3. Verify graph state with direct Cypher (status, relationships, properties)
+#   4. Verify triple-write artifacts on disk (knowledge/*.json, synthesis/*.md)
+# This catches drift between what the act prompt says and what the graph
+# actually stores. If an act says "call query_plans(status=approved)" but
+# the query returns nothing because the status enum changed, the e2e test
+# fails. Unit tests with FakeBackend can't catch that.
 
 # Lint + type check (run by pre-commit hook)
 .venv/bin/ruff check wheeler/
