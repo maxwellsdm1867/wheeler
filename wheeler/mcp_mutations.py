@@ -246,27 +246,13 @@ async def add_note(
     return json.loads(result)
 
 
-@mcp.tool()
-@_logged
-async def add_analysis(
+async def _add_script_impl(
     script_path: str,
     language: str,
     script_hash: str = "",
     language_version: str = "",
-    parameters: str = "",
-    output_path: str = "",
-    output_hash: str = "",
 ) -> dict:
-    """Add a Script node to the Wheeler knowledge graph to track a code file with provenance (legacy alias). For find-or-create by path, prefer ensure_artifact.
-
-    Field constraints (enforced):
-      script_path: absolute file path (required). File MUST exist on disk.
-        Verify with ls or Read before calling.
-      language: programming language, e.g. 'python', 'matlab' (required).
-
-    If script_hash is empty, Wheeler will compute it from the file.
-    Use this when registering scripts or during /wh:ingest.
-    """
+    """Shared implementation for add_script and add_analysis."""
     # Auto-compute hash if not provided
     if not script_hash:
         from pathlib import Path as P
@@ -286,6 +272,47 @@ async def add_analysis(
         _config,
     )
     return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def add_script(
+    script_path: str,
+    language: str,
+    script_hash: str = "",
+    language_version: str = "",
+) -> dict:
+    """Register a code/script file in the Wheeler knowledge graph. Creates an S- (Script) node with language and hash metadata. For find-or-create by path, prefer ensure_artifact.
+
+    Field constraints (enforced):
+      script_path: absolute file path (required). File MUST exist on disk.
+        Verify with ls or Read before calling.
+      language: programming language, e.g. 'python', 'matlab', 'r', 'julia', 'bash' (required).
+
+    If script_hash is empty, Wheeler will compute it from the file.
+    Use this when registering scripts or during /wh:ingest.
+    """
+    return await _add_script_impl(script_path, language, script_hash, language_version)
+
+
+@mcp.tool()
+@_logged
+async def add_analysis(
+    script_path: str,
+    language: str,
+    script_hash: str = "",
+    language_version: str = "",
+    parameters: str = "",
+    output_path: str = "",
+    output_hash: str = "",
+) -> dict:
+    """Register a code/script file (backward-compatible alias for add_script). Creates an S- (Script) node. Prefer add_script or ensure_artifact for new code.
+
+    Field constraints (enforced):
+      script_path: absolute file path (required). File MUST exist on disk.
+      language: programming language, e.g. 'python', 'matlab' (required).
+    """
+    return await _add_script_impl(script_path, language, script_hash, language_version)
 
 
 @mcp.tool()

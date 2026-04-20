@@ -241,10 +241,21 @@ async def add_paper(backend, args: dict) -> str:
 
 
 async def add_document(backend, args: dict) -> str:
+    path = args["path"]
+    # Guard: reject code files that should be Script nodes
+    _code_exts = {".py", ".m", ".r", ".jl", ".sh"}
+    ext = os.path.splitext(path)[1].lower()
+    if ext in _code_exts:
+        return json.dumps({
+            "error": f"File '{os.path.basename(path)}' has extension '{ext}' which "
+            f"is a code file. Use add_script or ensure_artifact instead of "
+            f"add_document to register it as a Script (S-) node.",
+            "suggestion": "add_script",
+        })
+
     node_id = generate_node_id("W")
     now = _now()
     title = args["title"]
-    path = args["path"]
     display_name = title[:40] if title else os.path.basename(path) if path else ""
     await backend.create_node("Document", {
         "id": node_id,

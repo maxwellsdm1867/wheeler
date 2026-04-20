@@ -51,6 +51,7 @@ class TestToolRegistration:
             "show_node",
             "add_note",
             "query_notes",
+            "add_script",
             "query_analyses",
             "query_executions",
             "add_execution",
@@ -72,7 +73,7 @@ class TestToolRegistration:
     @pytest.mark.asyncio
     async def test_tool_count(self):
         tools = await mcp.list_tools()
-        assert len(tools) == 49
+        assert len(tools) == 50
 
     @pytest.mark.asyncio
     async def test_all_tools_have_descriptions(self):

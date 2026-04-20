@@ -149,6 +149,19 @@ For quick plans that don't need a file, output inline:
 - **Tasks**: Each tagged with assignee, type, model, depends_on
 - **Rationale**: Why this approach, what alternatives were considered
 
+## Node Type Reference (for task descriptions)
+
+When planning tasks that register files in the graph, use the correct node type:
+
+| Extension | Node Type | Tool | Prefix |
+|---|---|---|---|
+| .py, .m, .r, .jl, .sh | Script | `add_script` or `ensure_artifact` | S- |
+| .mat, .h5, .csv, .npy, .parquet | Dataset | `add_dataset` or `ensure_artifact` | D- |
+| .md, .tex, .pdf | Document | `add_document` or `ensure_artifact` | W- |
+| .png, .jpg, .svg, .tif | Finding (figure) | `ensure_artifact` | F- |
+
+Never say "register as Document nodes" for code files. Use "register as Script nodes via `ensure_artifact`" or "register as Script nodes via `add_script`".
+
 ## Rules
 - Do NOT execute code. Propose only. Wait for scientist approval.
 - Never try to do the scientist's thinking — route conceptual and interpretive tasks to them.

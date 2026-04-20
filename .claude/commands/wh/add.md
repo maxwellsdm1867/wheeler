@@ -16,6 +16,7 @@ allowed-tools:
   - mcp__wheeler_mutations__add_paper
   - mcp__wheeler_mutations__add_dataset
   - mcp__wheeler_mutations__add_document
+  - mcp__wheeler_mutations__add_script
   - mcp__wheeler_mutations__add_analysis
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_mutations__set_tier
