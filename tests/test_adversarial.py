@@ -515,6 +515,19 @@ class TestFieldValidation:
         )
         assert "status" in errors
 
+    def test_plan_valid_statuses(self):
+        for status in ("draft", "approved", "in-progress", "completed"):
+            errors, _ = validate_and_normalize(
+                "add_plan", {"title": "test plan", "status": status}
+            )
+            assert not errors, f"status '{status}' should be valid"
+
+    def test_plan_invalid_status(self):
+        errors, _ = validate_and_normalize(
+            "add_plan", {"title": "test plan", "status": "final"}
+        )
+        assert "status" in errors
+
     def test_status_absent_ok(self):
         """Status absent is fine (handler defaults to 'open')."""
         errors, _ = validate_and_normalize(
@@ -679,6 +692,41 @@ class TestAdversarialQueries:
             "limit": 5,
         }))
         assert "documents" in result
+
+    async def test_query_plans(self):
+        from wheeler.tools.graph_tools.queries import query_plans
+
+        backend = FakeBackend()
+        result = json.loads(await query_plans(backend, {
+            "keyword": "",
+            "status": "",
+            "limit": 10,
+        }))
+        assert "plans" in result
+        assert "count" in result
+        assert result["count"] == 0
+
+    async def test_query_plans_with_status_filter(self):
+        from wheeler.tools.graph_tools.queries import query_plans
+
+        backend = FakeBackend()
+        result = json.loads(await query_plans(backend, {
+            "keyword": "",
+            "status": "approved",
+            "limit": 5,
+        }))
+        assert "plans" in result
+
+    async def test_query_plans_with_keyword_and_status(self):
+        from wheeler.tools.graph_tools.queries import query_plans
+
+        backend = FakeBackend()
+        result = json.loads(await query_plans(backend, {
+            "keyword": "calcium",
+            "status": "in-progress",
+            "limit": 5,
+        }))
+        assert "plans" in result
 
     async def test_graph_gaps_with_empty_graph(self):
         from wheeler.tools.graph_tools.queries import graph_gaps

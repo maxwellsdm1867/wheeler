@@ -23,6 +23,7 @@ allowed-tools:
   - mcp__wheeler_mutations__unlink_nodes
   - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_ops__detect_stale
+  - mcp__wheeler_ops__graph_consistency_check
 ---
 
 ## Connectivity Check
@@ -123,5 +124,8 @@ Also run `detect_stale` to flag any staleness issues before closing.
 - **Group related orphans.** Multiple findings from one analysis = one Execution.
 - **Be concise.** This is a housekeeping step, not a deep discussion.
 - **If the graph is empty or has no orphans**, say so and suggest the scientist is done.
+
+### Final: Triple-write consistency check
+As the last step, call `graph_consistency_check(repair=False)` to detect any drift between the graph, knowledge JSON files, and synthesis markdown. Report any inconsistencies found. This catches triple-write breaks that accumulated during the session.
 
 $ARGUMENTS

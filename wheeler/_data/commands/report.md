@@ -18,6 +18,7 @@ allowed-tools:
   - mcp__wheeler_query__query_documents
   - mcp__wheeler_query__query_datasets
   - mcp__wheeler_ops__detect_stale
+  - mcp__wheeler_query__query_plans
 ---
 
 ## Connectivity Check
@@ -95,12 +96,11 @@ RETURN a.id AS from_id, type(r) AS rel, b.id AS to_id
 LIMIT 50
 ```
 
-## Step 3: Check Investigation State
+## Step 3: Check Investigation State (graph-first)
 
-- Read `.plans/STATE.md` if it exists — what investigation is active?
-- Read any `.plans/*-SUMMARY.md` files modified in the time window
-- Check `.plans/*-VERIFICATION.md` for completed verifications
-- Check `.logs/` for headless task results in the time window
+- Call `query_plans()` to get all plans. For each plan with `updated` in the time window, include its status transitions. The `change_log` field on each plan node (available in `knowledge/PL-xxxx.json`) records status transitions with timestamps, so you can show "draft -> approved -> in-progress" progressions.
+- Fall back to `.plans/STATE.md` and `*-SUMMARY.md` only if the graph returns no plans.
+- Check `.logs/` for headless task results in the time window.
 
 ## Step 4: Generate Report
 

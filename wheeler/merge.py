@@ -94,10 +94,9 @@ async def execute_merge(
     Phase 2: Commit (redirect relationships, delete merge_from, atomic file ops)
     """
     from wheeler.tools.graph_tools import _get_backend
-    from wheeler.knowledge.store import read_node, write_node
+    from wheeler.knowledge.store import read_node
     from wheeler.knowledge.store import delete_node as delete_knowledge_file
     from wheeler.knowledge.render import render_synthesis
-    from wheeler.knowledge.store import write_synthesis
     from wheeler.models import ChangeEntry
 
     backend = await _get_backend(config)

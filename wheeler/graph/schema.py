@@ -11,7 +11,7 @@ from wheeler.graph.circuit_breaker import CircuitOpenError
 logger = logging.getLogger(__name__)
 
 
-from wheeler.models import LABEL_TO_PREFIX, NODE_LABELS, PREFIX_TO_LABEL  # noqa: E402
+from wheeler.models import LABEL_TO_PREFIX, NODE_LABELS, PREFIX_TO_LABEL  # noqa: F401, E402
 
 
 def generate_node_id(prefix: str) -> str:

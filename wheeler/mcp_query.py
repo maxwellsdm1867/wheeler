@@ -20,7 +20,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_query",
-    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_notes, query_scripts, query_executions, graph_gaps. Returns lists of one node type. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
+    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_plans, query_notes, query_scripts, query_executions, graph_gaps. Returns lists of one node type. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
 )
 
 
@@ -88,6 +88,20 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
     """
     result = await graph_tools.execute_tool(
         "query_documents", {"keyword": keyword, "status": status, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def query_plans(keyword: str = "", status: str = "", limit: int = 10) -> dict:
+    """Search Plan nodes in the Wheeler knowledge graph by keyword and/or status.
+
+    Returns plans registered as graph nodes (research investigations).
+    Filter by status: draft, approved, in-progress, completed, or empty for all.
+    """
+    result = await graph_tools.execute_tool(
+        "query_plans", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
     return json.loads(result)
 

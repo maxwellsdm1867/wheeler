@@ -37,7 +37,7 @@ _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 _STATUS_ENUMS: dict[str, tuple[str, ...]] = {
     "add_hypothesis": ("open", "supported", "rejected"),
     "add_document": ("draft", "revision", "final"),
-    "add_plan": ("draft", "final"),
+    "add_plan": ("draft", "approved", "in-progress", "completed"),
     "add_execution": ("completed", "failed", "running"),
 }
 

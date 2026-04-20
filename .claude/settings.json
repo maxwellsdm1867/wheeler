@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^(Read|Write)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m wheeler.hooks.track_file_access"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__wheeler_mutations__(ensure_artifact|add_plan|add_document|add_script|add_dataset|update_node)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m wheeler.hooks.read_before_mutate"
+          }
+        ]
+      }
+    ]
+  }
+}

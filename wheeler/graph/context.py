@@ -12,7 +12,7 @@ import logging
 from wheeler.config import WheelerConfig
 
 logger = logging.getLogger(__name__)
-from wheeler.graph.driver import get_async_driver
+from wheeler.graph.driver import get_async_driver  # noqa: E402
 
 
 def _project_filter(alias: str, project_tag: str) -> str:

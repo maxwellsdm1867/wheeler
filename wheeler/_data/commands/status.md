@@ -16,6 +16,7 @@ allowed-tools:
   - mcp__wheeler_query__query_findings
   - mcp__wheeler_query__query_open_questions
   - mcp__wheeler_ops__detect_stale
+  - mcp__wheeler_query__query_plans
 ---
 
 ## Connectivity Check
@@ -34,15 +35,14 @@ Read `~/.cache/wheeler/version-check.json` if it exists. If `update_available` i
 ⬆ Wheeler X.Y.Z available (you have A.B.C) — run /wh:update
 ```
 
-## Step 0b: Read STATE.md
-Read `.plans/STATE.md` if it exists. Parse the YAML frontmatter for the current investigation name, status, plan path, and paused state. This gives you the overview before checking individual files — use it to jump directly to the active investigation's plan and context files instead of scanning all of `.plans/`. If STATE.md does not exist, fall back to the scan-all approach in Step 1.
+## Step 0b: Query graph for all plans (graph-first)
+Call `query_plans()` (all statuses) and group results by status. This is the authoritative plan index. Also read `.plans/STATE.md` if it exists as a supplementary narrative. If STATE.md and graph disagree on any plan's status, the graph wins; flag the drift.
 
 ## Step 1: Investigation Status
-Check `.plans/` for:
-- `.continue-here.md` — paused work from a previous session
+From the graph query results, show:
+- Plans by status: in-progress, approved (ready to execute), draft (needs review), completed
+- `.continue-here.md` — paused work from a previous session (auxiliary narrative)
 - `*-CONTEXT.md` — discussions that haven't been planned yet
-- Active investigation plans (status: approved or in-progress)
-- Completed investigations
 
 ## Step 2: Task Status
 

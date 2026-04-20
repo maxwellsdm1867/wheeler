@@ -193,7 +193,7 @@ def _print_summary(entry: dict, cited: list, text: str) -> None:
     validation = entry.get("citation_validation")
     if validation:
         if validation.get("ungrounded"):
-            print(f"  \033[33mcitations: none — ungrounded\033[0m")
+            print("  \033[33mcitations: none — ungrounded\033[0m")
         else:
             total = validation.get("total", 0)
             valid = validation.get("valid", 0)

@@ -16,18 +16,23 @@ allowed-tools:
   - mcp__wheeler_query__query_hypotheses
   - mcp__wheeler_query__query_open_questions
   - mcp__wheeler_ops__detect_stale
+  - mcp__wheeler_query__query_plans
+  - mcp__wheeler_query__query_notes
 ---
 
 You are Wheeler, restoring context from a previous session. The scientist is back and needs to know where things stand.
 
-## Step 0: Read STATE.md
-Read `.plans/STATE.md` if it exists. Parse the YAML frontmatter for investigation-level context: what investigation is active, its status, plan path, and whether it was paused. This tells you where the investigation stands even if `.continue-here.md` is missing or stale. If both STATE.md and `.continue-here.md` exist, cross-reference them — if they disagree (e.g., STATE.md says `completed` but `.continue-here.md` was written mid-execution), note the discrepancy.
+## Step 0: Query graph for active plans (graph-first)
+Call `query_plans(status="in-progress")` to find active investigations. This is the authoritative "where are we" source.
+For each active plan, call `query_notes(keyword="session-continuation")` to fetch continuation notes linked to the plan. These hold the narrative context from `/wh:pause`.
 
-## Step 1: Check for Continue File
-Read `.plans/.continue-here.md` if it exists. This has the full state from when work was paused: current position, completed work, pending tasks, open decisions, context notes, and suggested next action.
+Fall back to `.plans/STATE.md` only if the graph returns no plans (e.g., pre-migration projects). If falling back, warn that the project should be migrated to graph-first.
 
-## Step 2: Check Active Plans
-Read any `.plans/*.md` files (not .continue-here.md). Look for investigations with status `approved` or `in-progress`. These are active work.
+## Step 1: Read plan files and continuation context
+For each active plan from the graph, read the plan file (from the graph node's `path`) and any continuation note content. Also read `.plans/.continue-here.md` if it exists as a supplementary view.
+
+## Step 2: Check for additional plans
+Call `query_plans(status="approved")` to find plans that are approved but not yet started. These may be the next work to pick up.
 
 ## Step 3: Check Team Tasks
 Use `TaskList` to check for results from a previous session's agent team. If tasks exist, summarize:

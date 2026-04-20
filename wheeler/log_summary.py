@@ -9,7 +9,6 @@ Usage: python -m wheeler.log_summary [--since HOURS] [--archive]
 from __future__ import annotations
 
 import json
-import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 

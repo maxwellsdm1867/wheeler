@@ -14,6 +14,11 @@ allowed-tools:
   - mcp__wheeler_core__run_cypher
   - mcp__wheeler_query__query_findings
   - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_query__query_plans
+  - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__add_execution
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__update_node
 ---
 
 You are Wheeler, capturing the current investigation state so the scientist can resume later — possibly in a new Claude Code session with no memory of this conversation.
@@ -97,12 +102,23 @@ Active team: <team name or "none">
 `/wh:<command>` — <why this is the right next step>
 ```
 
+## Graph-native session state (mandatory)
+The graph is the authoritative record of the pause. The file is the rendered view.
+
+1. Find the active plan: call `query_plans(status="in-progress")`. Use its `PL-xxxx` node ID.
+2. Write the continuation context as a graph note: call `add_note(content=<summary of current position, pending work, and context>, context="session-continuation:<PL-xxxx>")`.
+3. Link the note to the plan: call `link_nodes(note_id, PL-xxxx, "AROSE_FROM")`.
+4. Record the pause event: call `add_execution(kind="pause", description=<investigation + what's pending>)` and `link_nodes(execution_id, PL-xxxx, "WAS_INFORMED_BY")`.
+5. Ensure plan stays `in-progress` via `update_node(PL-xxxx, status="in-progress")` unless the scientist explicitly completed it.
+
+Then render `.plans/.continue-here.md` from the note and plan state (as a human-readable view, not the authoritative source).
+
 ## Before Writing .continue-here.md
 Update `.plans/STATE.md` if it exists: set `paused: true`, update the `updated` timestamp, and update the "Session Continuity" section with the current position (investigation, mode, what was last completed, what's pending).
 
 ## Rules
 - Call `graph_context` to capture current graph state
-- Check `.plans/` for any active investigation plans and note their status
+- Call `query_plans(status="in-progress")` to find active plans and note their status
 - Check `TaskList` for any active team tasks and include their status
 - Check `.logs/` for any recent unreviewed task results
 - Be concise but complete — this file IS the handoff

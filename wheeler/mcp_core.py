@@ -11,7 +11,6 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
-from wheeler.config import WheelerConfig
 from wheeler.graph import context, schema
 from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
@@ -248,7 +247,7 @@ async def run_cypher(query: str) -> dict:
     upper = query.strip().upper()
     for keyword in ("CREATE ", "DELETE ", "DETACH ", "SET ", "REMOVE ", "MERGE ", "DROP "):
         if keyword in upper:
-            return {"error": f"Write operations not allowed via run_cypher. Use Wheeler's mutation tools (add_finding, link_nodes, etc.) instead."}
+            return {"error": "Write operations not allowed via run_cypher. Use Wheeler's mutation tools (add_finding, link_nodes, etc.) instead."}
 
     try:
         backend = await graph_tools._get_backend(_config)

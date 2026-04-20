@@ -570,7 +570,7 @@ def cmd_update(
     if detected == "editable":
         # Editable installs always pull — commits may have new
         # commands/tools without a version bump.
-        console.print(f"Install source: [cyan]editable[/cyan]")
+        console.print("Install source: [cyan]editable[/cyan]")
         if latest and update_available:
             console.print(f"New version available: [bold]{latest}[/bold]")
         else:

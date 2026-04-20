@@ -794,7 +794,7 @@ async def add_plan(
     Field constraints (enforced):
       title: non-empty string (required).
       path: file path to the plan document (optional).
-      status: 'draft' (default) or 'final'. Other values rejected.
+      status: 'draft' (default), 'approved', 'in-progress', or 'completed'.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.
@@ -922,6 +922,20 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
     """
     result = await graph_tools.execute_tool(
         "query_documents", {"keyword": keyword, "status": status, "limit": limit}, _config
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def query_plans(keyword: str = "", status: str = "", limit: int = 10) -> dict:
+    """Search Plan nodes in the Wheeler knowledge graph by keyword and/or status.
+
+    Returns plans registered as graph nodes (research investigations).
+    Filter by status: draft, approved, in-progress, completed, or empty for all.
+    """
+    result = await graph_tools.execute_tool(
+        "query_plans", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
     return json.loads(result)
 
@@ -1403,7 +1417,7 @@ async def run_cypher(query: str) -> dict:
     upper = query.strip().upper()
     for keyword in ("CREATE ", "DELETE ", "DETACH ", "SET ", "REMOVE ", "MERGE ", "DROP "):
         if keyword in upper:
-            return {"error": f"Write operations not allowed via run_cypher. Use Wheeler's mutation tools (add_finding, link_nodes, etc.) instead."}
+            return {"error": "Write operations not allowed via run_cypher. Use Wheeler's mutation tools (add_finding, link_nodes, etc.) instead."}
 
     try:
         backend = await graph_tools._get_backend(_config)

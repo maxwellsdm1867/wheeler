@@ -303,7 +303,7 @@ async def add_plan(
     Field constraints (enforced):
       title: non-empty string (required).
       path: file path to the plan document (optional).
-      status: 'draft' (default) or 'final'. Other values rejected.
+      status: 'draft' (default), 'approved', 'in-progress', or 'completed'.
 
     Provenance-completing: set execution_kind to auto-create an Execution
     and link provenance. Pass used_entities as comma-separated node IDs.

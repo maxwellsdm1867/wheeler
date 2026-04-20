@@ -7,7 +7,6 @@ session ID, embedding store access, and similarity checking.
 from __future__ import annotations
 
 import functools
-import json
 import secrets
 import time
 from datetime import datetime, timezone

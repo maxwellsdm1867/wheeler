@@ -24,6 +24,8 @@ allowed-tools:
   - mcp__wheeler_mutations__add_document
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_ops__validate_citations
+  - mcp__wheeler_query__query_plans
+  - mcp__wheeler_query__query_executions
 ---
 
 ## Connectivity Check
@@ -184,6 +186,10 @@ Input: `/wh:compile status`
    RETURN f.id, f.description, f.confidence, f.tier, f.date
    ORDER BY f.date DESC LIMIT 30
    ```
+
+### Step 1b: Query Plans (graph-first)
+
+Call `query_plans()` (all statuses) to get all registered plans. Group by status (in-progress, approved, draft, completed). For each in-progress or approved plan, also call `query_executions(kind="handoff")` to see active handoffs. This replaces reading `.plans/STATE.md` and `*-SUMMARY.md` files for the status overview.
 
 ### Step 2: Query Hypotheses with Evidence
 

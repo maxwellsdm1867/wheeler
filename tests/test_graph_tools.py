@@ -47,6 +47,7 @@ class TestToolDefinitions:
             "set_tier",
             "search_findings",
             "index_node",
+            "query_plans",
         }
         assert expected == names
 
@@ -605,4 +606,4 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 28
+        assert len(TOOL_DEFINITIONS) == 29

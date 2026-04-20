@@ -28,19 +28,32 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format. All
 
 ## Execution Protocol
 
-### If a plan file exists
-Check `.plans/` for an approved investigation plan. If one exists:
-1. Read the plan file — it has objectives, tasks, dependencies, success criteria
+### Step 1: Plan check (mandatory, graph-first)
+Before executing anything, query the knowledge graph for registered plans:
+1. Call `query_plans(status="approved")` and `query_plans(status="in-progress")`.
+2. If the graph returns plans: list them (PL-xxxx, title, status, path) and ask which one to run.
+3. If the graph returns nothing, check the filesystem as an on-ramp for unregistered plans:
+   - `Glob` for `.plans/*.md` (excluding STATE.md, *-SUMMARY.md, *-VERIFICATION.md, *-CONTEXT.md, DREAM-REPORT.md, ISSUE-ANALYSIS.md, TRIAGE-*.md)
+   - If unregistered files found: say "Found N plan files in `.plans/` not registered in the knowledge graph. Register them now?" On scientist confirmation, call `ensure_artifact(path=<absolute>, artifact_type="plan")` on each. Parse each file's frontmatter `status` field and pass it through. On `action="created"`, write the returned `PL-xxxx` back into the plan file's `graph_node:` frontmatter. Re-run `query_plans` and proceed with the normal flow.
+   - If no files either: "No investigation plans found. Recommend `/wh:plan` to structure the work first. Proceed without a plan?"
+
+**The gate stays hard.** No graph node means no execution. The on-ramp is one scientist confirmation, not a silent fallback. Planless execution still requires an explicit Plan node created on the fly via `ensure_artifact` (after the scientist writes a minimal plan file) so the run is traceable.
+
+**Do not proceed until the scientist confirms the path.**
+
+### Step 2a: Plan-based execution
+When running from a registered plan (PL-xxxx):
+1. Read the plan file (from graph node's `path`): objectives, tasks, dependencies, success criteria
 2. Call `search_context` with the plan's objective to load what the graph already knows about this topic
-3. Update plan frontmatter `status` to `in-progress` and `updated` timestamp. Update `.plans/STATE.md` frontmatter: set `status: in-progress`, `updated` timestamp.
+3. Call `update_node(node_id=PL-xxxx, status="in-progress")` (graph is authoritative). Then update plan file frontmatter `status` to `in-progress` and `updated` timestamp. Update `.plans/STATE.md` frontmatter: set `status: in-progress`, `updated` timestamp.
 4. Execute WHEELER-assigned tasks in dependency order
-5. Skip SCIENTIST and PAIR tasks — flag them as needing the scientist
+5. Skip SCIENTIST and PAIR tasks: flag them as needing the scientist
 6. After each task, update the plan file (mark task done, note results)
 7. When all WHEELER tasks complete, check success criteria
-8. Update plan status to `completed` or flag what remains
+8. Call `update_node(node_id=PL-xxxx, status="completed")` (or leave as in-progress if gaps remain). Update plan file frontmatter to mirror.
 
-### Standard execution (no plan file)
-For each task:
+### Step 2b: Planless execution (scientist confirmed)
+Only after the scientist explicitly agrees to proceed without a plan:
 1. Call `search_context` with the task description to check what the graph already knows
 2. Call `scan_workspace` wheeler MCP tool to discover available files
 3. State what you're about to do
@@ -194,6 +207,6 @@ Evidence: <[NODE_ID] citations, or description of gap>
 wheeler_setup(epicTreeGUI_root) -> wheeler_list_data(data_dir) -> wheeler_load_data(filepath, {splitters}) -> wheeler_tree_info(var_name, node_path) -> wheeler_get_responses(var_name, node_path, stream) -> wheeler_run_analysis(var_name, node_path, type)
 ```
 
-What task are we executing? Show me the plan or describe what needs to run.
+Querying the knowledge graph for registered plans now.
 
 $ARGUMENTS

@@ -136,17 +136,23 @@ class TestPlanAutoContext:
                 f"plan.md must include {tool} for inspecting prior knowledge"
             )
 
-    def test_plan_has_no_mutation_tools(self):
-        """Plan mode should not allow direct graph mutations (propose only).
+    def test_plan_has_limited_mutation_tools(self):
+        """Plan mode allows ensure_artifact and update_node for graph registration.
 
-        Exception: plan can suggest graph captures but should not execute
-        them without the mutations server.
+        Plan mode needs to register plans as graph nodes and update their
+        status on scientist approval. Other mutations (add_finding, etc.)
+        are not allowed.
         """
         tools = _allowed_tools("plan")
         mutation_tools = [t for t in tools if "wheeler_mutations" in t]
-        assert not mutation_tools, (
-            f"plan.md should not have mutation tools (propose only): {mutation_tools}"
-        )
+        allowed_plan_mutations = {
+            "mcp__wheeler_mutations__ensure_artifact",
+            "mcp__wheeler_mutations__update_node",
+        }
+        for t in mutation_tools:
+            assert t in allowed_plan_mutations, (
+                f"plan.md has unexpected mutation tool: {t}"
+            )
 
 
 # ===================================================================
@@ -462,7 +468,7 @@ class TestResearchScenarioToolAccess:
     and MCP tools form a complete chain from intent to graph operation."""
 
     def test_plan_investigation_chain(self):
-        """Planning an investigation: need context, gaps, query, but no mutations."""
+        """Planning an investigation: need context, gaps, query, and limited mutations for graph registration."""
         tools = _allowed_tools("plan")
         # Must be able to load context
         assert _has_tool("plan", "mcp__wheeler_core__search_context")
@@ -470,11 +476,13 @@ class TestResearchScenarioToolAccess:
         # Must be able to query existing knowledge
         assert _has_tool("plan", "mcp__wheeler_query__query_findings")
         assert _has_tool("plan", "mcp__wheeler_query__query_hypotheses")
+        # Must be able to query plans for dedup
+        assert _has_tool("plan", "mcp__wheeler_query__query_plans")
         # Must be able to write plan files
         assert "Write" in tools
-        # Must NOT have mutation tools (plan proposes, doesn't execute)
-        mutation_count = sum(1 for t in tools if "wheeler_mutations" in t)
-        assert mutation_count == 0, "Plan should not have mutation tools"
+        # Must have ensure_artifact and update_node for graph registration
+        assert _has_tool("plan", "mcp__wheeler_mutations__ensure_artifact")
+        assert _has_tool("plan", "mcp__wheeler_mutations__update_node")
 
     def test_execute_investigation_chain(self):
         """Executing an investigation: need full access to all servers."""

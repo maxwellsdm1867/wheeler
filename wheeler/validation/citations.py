@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from wheeler.config import WheelerConfig
 
 logger = logging.getLogger(__name__)
-from wheeler.graph.schema import NODE_LABELS, PREFIX_TO_LABEL
+from wheeler.graph.schema import NODE_LABELS, PREFIX_TO_LABEL  # noqa: E402
 
 # Matches [F-3a2b], [PL-0012abcd], etc.
 CITATION_PATTERN = re.compile(

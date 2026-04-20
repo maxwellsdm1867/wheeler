@@ -24,6 +24,7 @@ allowed-tools:
   - mcp__wheeler_ops__detect_stale
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
+  - mcp__wheeler_query__query_plans
 ---
 
 ## Connectivity Check
@@ -40,8 +41,8 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format.
 ## Your Job
 Read what happened while the scientist was away and present a synthesis.
 
-### Step 0: Check Investigation Plans
-Read any `.plans/*.md` files with status `in-progress`. These show what was planned, what's done, and what's still pending. This gives structure to the reconvene — you're not just reading logs, you're checking progress against a plan.
+### Step 0: Check Investigation Plans (graph-first)
+Call `query_plans(status="in-progress")` to find active plans. Read each plan file (from the graph node's `path`) to see what was planned, what's done, and what's still pending. This gives structure to the reconvene. Fall back to `.plans/*.md` glob only if the graph is empty (pre-migration projects).
 
 ### Step 1: Check Team Tasks
 Use `TaskList` to check for completed, flagged, or in-progress tasks from an active agent team. For each completed task, use `TaskGet` to read the full results. This is the primary source of independent work results.

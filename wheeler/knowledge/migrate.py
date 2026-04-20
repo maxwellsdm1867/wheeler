@@ -8,7 +8,7 @@ from pathlib import Path
 
 from wheeler.graph.backend import GraphBackend
 from wheeler.models import (
-    LABEL_TO_PREFIX, NODE_LABELS, NodeBase, model_for_label, title_for_node
+    NODE_LABELS, NodeBase, model_for_label, title_for_node
 )
 from wheeler.knowledge.store import write_node, node_exists
 
@@ -42,8 +42,6 @@ async def migrate(
 
     for label in NODE_LABELS:
         nodes = await backend.query_nodes(label, limit=10000)
-        prefix = LABEL_TO_PREFIX.get(label, "?")
-
         for node_data in nodes:
             node_id = node_data.get("id", "")
             if not node_id:

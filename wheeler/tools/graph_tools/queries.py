@@ -400,6 +400,92 @@ async def query_documents(backend, args: dict) -> str:
     return json.dumps({"documents": documents, "count": len(documents)})
 
 
+async def query_plans(backend, args: dict) -> str:
+    """Query Plan nodes, optionally filtered by keyword and/or status."""
+    ctx = _extract_context(args)
+    keyword = args.get("keyword", "")
+    status = args.get("status", "")
+    limit = int(args.get("limit", 10))
+
+    # Alias pl:Plan (not p:Plan, to avoid collision with p:Paper in query_papers)
+    if keyword and status:
+        pw = _project_where("pl", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (pl:Plan) WHERE pl.status = $status "
+            "AND (toLower(pl.title) CONTAINS toLower($kw) "
+            "OR toLower(pl.path) CONTAINS toLower($kw))"
+            f"{pw} "
+            "RETURN pl.id AS id, pl.title AS title, pl.path AS path, "
+            "pl.status AS status, pl.hash AS hash, pl.date AS date, "
+            "pl.updated AS updated, pl.tier AS tier "
+            "ORDER BY pl.updated DESC LIMIT $limit",
+            _inject_ptag({"kw": keyword, "status": status, "limit": limit}, ctx.project_tag),
+        )
+    elif keyword:
+        pw = _project_where("pl", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (pl:Plan) "
+            "WHERE (toLower(pl.title) CONTAINS toLower($kw) "
+            "OR toLower(pl.path) CONTAINS toLower($kw))"
+            f"{pw} "
+            "RETURN pl.id AS id, pl.title AS title, pl.path AS path, "
+            "pl.status AS status, pl.hash AS hash, pl.date AS date, "
+            "pl.updated AS updated, pl.tier AS tier "
+            "ORDER BY pl.updated DESC LIMIT $limit",
+            _inject_ptag({"kw": keyword, "limit": limit}, ctx.project_tag),
+        )
+    elif status:
+        pw = _project_where("pl", ctx.project_tag, has_existing_where=True)
+        records = await backend.run_cypher(
+            "MATCH (pl:Plan) WHERE pl.status = $status"
+            f"{pw} "
+            "RETURN pl.id AS id, pl.title AS title, pl.path AS path, "
+            "pl.status AS status, pl.hash AS hash, pl.date AS date, "
+            "pl.updated AS updated, pl.tier AS tier "
+            "ORDER BY pl.updated DESC LIMIT $limit",
+            _inject_ptag({"status": status, "limit": limit}, ctx.project_tag),
+        )
+    else:
+        records = await backend.run_cypher(
+            "MATCH (pl:Plan)"
+            f"{_project_where('pl', ctx.project_tag, has_existing_where=False)} "
+            "RETURN pl.id AS id, pl.title AS title, pl.path AS path, "
+            "pl.status AS status, pl.hash AS hash, pl.date AS date, "
+            "pl.updated AS updated, pl.tier AS tier "
+            "ORDER BY pl.updated DESC LIMIT $limit",
+            _inject_ptag({"limit": limit}, ctx.project_tag),
+        )
+
+    plans = []
+    for r in records:
+        node_id = r["id"]
+        model = _read_knowledge_node(ctx.knowledge_path, node_id)
+        if model is not None:
+            plans.append({
+                "id": model.id,
+                "title": model.title,
+                "path": model.path,
+                "status": model.status,
+                "hash": getattr(model, "hash", ""),
+                "date": model.created,
+                "updated": model.updated,
+                "tier": model.tier,
+            })
+        else:
+            plans.append({
+                "id": node_id,
+                "title": r["title"],
+                "path": r["path"],
+                "status": r["status"],
+                "hash": r["hash"],
+                "date": r["date"],
+                "updated": r["updated"],
+                "tier": r.get("tier", "generated"),
+            })
+
+    return json.dumps({"plans": plans, "count": len(plans)})
+
+
 async def query_notes(backend, args: dict) -> str:
     ctx = _extract_context(args)
 

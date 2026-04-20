@@ -11,8 +11,8 @@ from pathlib import Path
 from wheeler.config import WheelerConfig
 
 logger = logging.getLogger(__name__)
-from wheeler.graph.driver import get_async_driver
-from wheeler.graph.schema import generate_node_id
+from wheeler.graph.driver import get_async_driver  # noqa: E402
+from wheeler.graph.schema import generate_node_id  # noqa: E402
 
 
 def hash_file(path: str | Path) -> str:

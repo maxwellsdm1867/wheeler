@@ -66,6 +66,7 @@ _TOOL_REGISTRY: dict[str, object] = {
     "query_datasets": queries.query_datasets,
     "query_papers": queries.query_papers,
     "query_documents": queries.query_documents,
+    "query_plans": queries.query_plans,
     "query_notes": queries.query_notes,
     "query_scripts": queries.query_scripts,
     "query_executions": queries.query_executions,
@@ -316,6 +317,16 @@ TOOL_DEFINITIONS = [
         "required": [],
     },
     {
+        "name": "query_plans",
+        "description": "Search Plan nodes in the knowledge graph by keyword and/or status.",
+        "parameters": {
+            "keyword": {"type": "string", "description": "Optional keyword to filter by title or path", "default": ""},
+            "status": {"type": "string", "description": "Filter by status (draft, approved, in-progress, completed), or empty for all", "default": ""},
+            "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+        },
+        "required": [],
+    },
+    {
         "name": "add_script",
         "description": (
             "Add a Script node to the knowledge graph. Use when registering "
@@ -338,7 +349,7 @@ TOOL_DEFINITIONS = [
         "parameters": {
             "title": {"type": "string", "description": "Plan title"},
             "path": {"type": "string", "description": "File path to the plan document", "default": ""},
-            "status": {"type": "string", "description": "Plan status: draft or final", "default": "draft"},
+            "status": {"type": "string", "description": "Plan status: draft, approved, in-progress, or completed", "default": "draft"},
         },
         "required": ["title"],
     },
@@ -393,7 +404,7 @@ TOOL_DEFINITIONS = [
             "data_type": {"type": "string", "description": "For Dataset only. Defaults to extension.", "default": ""},
             "title": {"type": "string", "description": "For Document/Plan. Defaults to filename.", "default": ""},
             "confidence": {"type": "number", "description": "For Finding only. 0.0-1.0, default 0.5.", "default": 0.0},
-            "status": {"type": "string", "description": "For Plan/Document. draft (default) or final.", "default": ""},
+            "status": {"type": "string", "description": "For Plan: draft, approved, in-progress, or completed. For Document: draft, revision, or final.", "default": ""},
         },
         "required": ["path"],
     },
@@ -673,7 +684,7 @@ def _delete_knowledge_and_synthesis(
 
 def _write_synthesis_file(
     node_id: str,
-    model: "NodeBase",
+    model: object,
     config: WheelerConfig,
     relationships: list[dict] | None = None,
 ) -> bool:
@@ -712,7 +723,6 @@ async def _update_synthesis_for_link(
         knowledge_dir = Path(config.knowledge_path)
         src_id: str = args["source_id"]
         tgt_id: str = args["target_id"]
-        rel_type: str = args["relationship"]
 
         for node_id in (src_id, tgt_id):
             try:

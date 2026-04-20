@@ -97,7 +97,7 @@ async def validate_log(log_path: str) -> None:
 
     # Print summary to terminal
     if validation.get("ungrounded"):
-        print(f"  \033[33mcitations: none — ungrounded\033[0m")
+        print("  \033[33mcitations: none — ungrounded\033[0m")
     else:
         parts = []
         for r in (results if cited else []):
