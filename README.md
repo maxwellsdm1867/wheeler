@@ -276,6 +276,13 @@ docs/                         # Getting started, architecture, project spec
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
+**Project docs:**
+- [Mission](docs/mission.md) — four pillars, target audience, design north star
+- [Tech stack](docs/tech-stack.md) — components, infrastructure patterns, current gaps
+- [Roadmap](docs/roadmap.md) — shipped versions, v0.8.0 phases, v1.0 criteria
+- [Getting started](docs/GETTING-STARTED.md) — install walkthrough with Neo4j Desktop
+- [Project spec](docs/PROJECT-SPEC.md) — original design specification
+
 ## License
 
 [MIT](LICENSE)
