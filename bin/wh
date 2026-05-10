@@ -165,6 +165,11 @@ case "$SUBCMD" in
         exec "$WHEELER_DIR/.venv/bin/python" -m wheeler.tools.cli show "$@"
         ;;
 
+    # ── Backup verify (restore is verify-only in this version) ──────
+    restore)
+        exec "$WHEELER_DIR/.venv/bin/python" -m wheeler.tools.cli restore "$@"
+        ;;
+
     # ── Hooks ─────────────────────────────────────────────────────
     hooks)
         HOOKS_CMD="${1:-}"
