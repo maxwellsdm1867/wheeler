@@ -237,7 +237,11 @@ async def add_paper(backend, args: dict) -> str:
         "display_name": display_name,
     })
     logger.info("Created Paper %s: %s", node_id, args["title"][:60])
-    return json.dumps({"node_id": node_id, "label": "Paper", "status": "created"})
+    result = {"node_id": node_id, "label": "Paper", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "Paper", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_document(backend, args: dict) -> str:
@@ -319,7 +323,11 @@ async def add_script(backend, args: dict) -> str:
         "display_name": display_name,
     })
     logger.info("Created Script %s: %s", node_id, args.get("path", "")[:60])
-    return json.dumps({"node_id": node_id, "label": "Script", "status": "created"})
+    result = {"node_id": node_id, "label": "Script", "status": "created"}
+    prov = await _complete_provenance(backend, node_id, "Script", args)
+    if prov:
+        result["provenance"] = prov
+    return json.dumps(result)
 
 
 async def add_plan(backend, args: dict) -> str:
@@ -452,7 +460,10 @@ def _build_delegated_args(
     """Build args dict for the delegated add_* handler.
 
     Returns (tool_name, handler_args). Applies required-field defaults
-    and tracks which fields were defaulted.
+    and tracks which fields were defaulted. Provenance-completion keys
+    (execution_kind, used_entities, execution_description, was_informed_by)
+    are passed through to the delegated handler when present, so that
+    downstream _complete_provenance can fire.
     """
     from pathlib import Path as P
 
@@ -467,11 +478,25 @@ def _build_delegated_args(
         "tier": args.get("tier", "generated"),
     }
 
+    # Provenance-completion keys: pass through to delegated add_* so
+    # _complete_provenance fires after node creation. Without this,
+    # callers of ensure_artifact cannot attach provenance in one call.
+    prov_keys = (
+        "execution_kind",
+        "used_entities",
+        "execution_description",
+        "was_informed_by",
+    )
+    prov_passthrough = {k: args[k] for k in prov_keys if args.get(k)}
+
     if label == "Script":
         lang = args.get("language") or secondary
         if not args.get("language") and secondary:
             defaulted.append("language")
-        return "add_script", {**common, "language": lang, "_defaulted": defaulted}
+        return "add_script", {
+            **common, "language": lang, **prov_passthrough,
+            "_defaulted": defaulted,
+        }
 
     if label == "Dataset":
         dtype = args.get("data_type") or secondary
@@ -483,6 +508,7 @@ def _build_delegated_args(
         # add_dataset expects "type" not "data_type"
         return "add_dataset", {
             **common, "type": dtype, "description": desc,
+            **prov_passthrough,
             "_defaulted": defaulted,
         }
 
@@ -495,6 +521,7 @@ def _build_delegated_args(
             defaulted.append("status")
         return "add_plan", {
             **common, "title": title, "status": status,
+            **prov_passthrough,
             "_defaulted": defaulted,
         }
 
@@ -511,6 +538,7 @@ def _build_delegated_args(
             "artifact_type": args.get("artifact_type") or "figure",
             "session_id": args.get("session_id", ""),
             "tier": args.get("tier", "generated"),
+            **prov_passthrough,
             "_defaulted": defaulted,
         }
 
@@ -523,6 +551,7 @@ def _build_delegated_args(
         defaulted.append("status")
     return "add_document", {
         **common, "title": title, "status": status,
+        **prov_passthrough,
         "_defaulted": defaulted,
     }
 

@@ -491,6 +491,120 @@ class TestEnsureArtifactPlan:
         assert second["action"] == "updated"
         assert second["node_id"] == plan_id
 
+    @pytest.mark.asyncio
+    async def test_ensure_artifact_creates_execution_provenance(
+        self, sandbox, e2e_config,
+    ):
+        """ensure_artifact with execution_kind auto-creates a WAS_GENERATED_BY
+        edge to a new Execution node. Regression for #24: plans were born orphan."""
+        from wheeler.tools.graph_tools import execute_tool
+        from wheeler.graph.driver import get_async_driver
+
+        plan_file = sandbox / ".plans" / "e2e-prov-plan.md"
+        plan_file.write_text(
+            "---\ninvestigation: prov-plan\nstatus: draft\n---\n"
+            "# Plan with auto-provenance\n"
+        )
+
+        result = json.loads(await execute_tool(
+            "ensure_artifact",
+            {
+                "path": str(plan_file),
+                "artifact_type": "plan",
+                "title": "E2E: Plan with provenance",
+                "execution_kind": "discuss",
+                "execution_description": "Test discuss execution for plan birth",
+                # used_entities intentionally omitted: this exercises the
+                # "no upstream context" path. The Execution must still be
+                # created and linked.
+            },
+            e2e_config,
+        ))
+        assert result["label"] == "Plan"
+        assert result["action"] == "created"
+        plan_id = result["node_id"]
+        assert plan_id.startswith("PL-")
+
+        driver = get_async_driver(e2e_config)
+        await _tag(driver, e2e_config.neo4j.database, plan_id)
+
+        # Verify a WAS_GENERATED_BY edge to an Execution exists
+        async with driver.session(database=e2e_config.neo4j.database) as session:
+            res = await session.run(
+                "MATCH (p:Plan {id: $pid})-[:WAS_GENERATED_BY]->(x:Execution) "
+                "RETURN x.id AS exec_id, x.kind AS kind",
+                pid=plan_id,
+            )
+            rows = [dict(record) async for record in res]
+
+        assert len(rows) == 1, (
+            f"Expected exactly one WAS_GENERATED_BY edge from {plan_id} to "
+            f"an Execution, got {len(rows)}"
+        )
+        assert rows[0]["kind"] == "discuss"
+        # Tag the Execution for cleanup
+        await _tag(driver, e2e_config.neo4j.database, rows[0]["exec_id"])
+
+    @pytest.mark.asyncio
+    async def test_ensure_artifact_provenance_links_used_entities(
+        self, sandbox, e2e_config,
+    ):
+        """ensure_artifact with used_entities links the Execution to each input
+        via USED. Regression for #24: seed nodes from search_context must
+        attach to the new plan's Execution."""
+        from wheeler.tools.graph_tools import execute_tool
+        from wheeler.graph.driver import get_async_driver
+
+        # First, create a seed Finding to use as upstream context
+        seed = json.loads(await execute_tool(
+            "add_finding",
+            {"description": "E2E seed for plan provenance test",
+             "confidence": 0.5},
+            e2e_config,
+        ))
+        seed_id = seed["node_id"]
+
+        driver = get_async_driver(e2e_config)
+        await _tag(driver, e2e_config.neo4j.database, seed_id)
+
+        plan_file = sandbox / ".plans" / "e2e-prov-with-used.md"
+        plan_file.write_text(
+            "---\ninvestigation: prov-used\nstatus: draft\n---\n"
+            "# Plan citing a seed finding\n"
+        )
+
+        result = json.loads(await execute_tool(
+            "ensure_artifact",
+            {
+                "path": str(plan_file),
+                "artifact_type": "plan",
+                "title": "E2E: Plan citing seed finding",
+                "execution_kind": "discuss",
+                "execution_description": "Planned X based on seed F",
+                "used_entities": seed_id,
+            },
+            e2e_config,
+        ))
+        plan_id = result["node_id"]
+        assert plan_id.startswith("PL-")
+        await _tag(driver, e2e_config.neo4j.database, plan_id)
+
+        # Verify the Execution USED the seed Finding
+        async with driver.session(database=e2e_config.neo4j.database) as session:
+            res = await session.run(
+                "MATCH (p:Plan {id: $pid})-[:WAS_GENERATED_BY]->(x:Execution) "
+                "MATCH (x)-[:USED]->(f:Finding {id: $fid}) "
+                "RETURN x.id AS exec_id",
+                pid=plan_id, fid=seed_id,
+            )
+            rows = [dict(record) async for record in res]
+
+        assert len(rows) == 1, (
+            f"Expected (plan)-[WAS_GENERATED_BY]->(exec)-[USED]->(seed) chain "
+            f"for plan={plan_id}, seed={seed_id}; got {rows}"
+        )
+        await _tag(driver, e2e_config.neo4j.database, rows[0]["exec_id"])
+
 
 # ────────────────────────────────────────────────────────
 # 5. Process provenance: Execution nodes for pause/handoff
