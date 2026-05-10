@@ -747,6 +747,76 @@ def cmd_migrate(
         raise typer.Exit(1)
 
 
+# ---------------------------------------------------------------------------
+# restore --verify
+# ---------------------------------------------------------------------------
+
+
+@app.command("restore")
+def cmd_restore(
+    archive_path: Path = typer.Argument(..., help="Path to backup archive (tar.gz)"),
+    verify: bool = typer.Option(
+        False, "--verify", help="Verify restorability without applying changes"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Alias for --verify"
+    ),
+    keep_scratch: bool = typer.Option(
+        False,
+        "--keep-scratch",
+        help="Skip cleanup of the scratch namespace (debugging)",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None, "--config", "-c", help="Path to wheeler.yaml"
+    ),
+) -> None:
+    """Restore from a backup archive. Currently only --verify mode is supported.
+
+    --verify (or --dry-run) restores the archive into an isolated scratch
+    namespace inside Neo4j (using the existing project-tag isolation
+    mechanism), compares it against the manifest, then deletes the
+    scratch namespace. Your live data is never touched.
+    """
+    if not (verify or dry_run):
+        console.print(
+            "[red]Only --verify / --dry-run mode is supported in this version.[/red]"
+        )
+        raise typer.Exit(1)
+
+    from wheeler.restore import RestoreVerifyError, verify_backup
+
+    cfg = load_config(config_path) if config_path else load_config()
+    try:
+        result = asyncio.run(
+            verify_backup(cfg, archive_path, keep_scratch=keep_scratch)
+        )
+    except RestoreVerifyError as exc:
+        console.print(f"[red]Restore-verify aborted (safety check):[/red] {exc}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Restore-verify failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    verdict = result["verdict"]
+    color = "green" if verdict == "PASS" else "red"
+    console.print(f"[{color}]Verdict: {verdict}[/{color}]")
+    console.print(f"[dim]Archive: {result['archive_path']}[/dim]")
+    console.print(f"[dim]Scratch tag: {result['scratch_tag']}[/dim]")
+
+    for check in result["checks"]:
+        cresult = check["result"]
+        cstyle = "green" if cresult == "PASS" else "red"
+        console.print(
+            f"  [{cstyle}][{cresult}][/{cstyle}] "
+            f"{check['name']}: {check['detail']}"
+        )
+
+    if verdict == "FAIL":
+        if result.get("first_failure"):
+            console.print(f"\n[red]First failure:[/red] {result['first_failure']}")
+        raise typer.Exit(1)
+
+
 @app.command("show")
 def cmd_show(
     node_id: str = typer.Argument(help="Node ID (e.g., F-3a2b)"),

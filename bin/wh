@@ -69,6 +69,7 @@ usage() {
     echo -e "  ${BOLD}Knowledge${RESET}"
     echo -e "    ${AMBER}wh show${RESET} <node-id>   ${DIM}Display a knowledge node (markdown or --raw JSON)${RESET}"
     echo -e "    ${AMBER}wh backup${RESET}            ${DIM}Snapshot canonical state to tar.gz (use --destination <dir>)${RESET}"
+    echo -e "    ${AMBER}wh restore${RESET} <archive> ${DIM}Verify a backup archive (use --verify / --dry-run)${RESET}"
     echo ""
     echo -e "  ${BOLD}Development${RESET}"
     echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
@@ -169,6 +170,11 @@ case "$SUBCMD" in
     # ── Backup ─────────────────────────────────────────────────────
     backup)
         exec "$WHEELER_DIR/.venv/bin/python" -m wheeler.tools.cli backup "$@"
+        ;;
+
+    # ── Restore (currently --verify / --dry-run only) ───────────────
+    restore)
+        exec "$WHEELER_DIR/.venv/bin/python" -m wheeler.tools.cli restore "$@"
         ;;
 
     # ── Hooks ─────────────────────────────────────────────────────
