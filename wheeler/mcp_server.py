@@ -585,7 +585,16 @@ async def delete_node(node_id: str) -> dict:
 
 @mcp.tool()
 @_logged
-async def add_dataset(path: str, type: str, description: str) -> dict:
+async def add_dataset(
+    path: str,
+    type: str,
+    description: str,
+    schema: str = "",
+    source: str = "",
+    parent_dataset: str = "",
+    size: str = "",
+    format_details: str = "",
+) -> dict:
     """Add a Dataset node to the Wheeler knowledge graph. Returns the new node ID. For find-or-create by path, prefer ensure_artifact.
 
     Field constraints (enforced):
@@ -593,10 +602,30 @@ async def add_dataset(path: str, type: str, description: str) -> dict:
         Verify with ls or Read before calling. Relative paths are resolved to absolute.
       type: dataset format, e.g. 'mat', 'h5', 'csv' (required).
       description: what the dataset contains (required, non-empty).
+
+    Optional structured metadata (issue #17):
+      schema: structured schema description, e.g. column listing or HDF5 group layout.
+      source: where the data came from (instrument, pipeline, collaborator).
+      parent_dataset: ID of a Dataset this was derived from. When set to a
+        valid 'D-xxxxxxxx' ID, automatically creates a WAS_DERIVED_FROM
+        edge from the new dataset to the parent. Invalid or missing parents
+        produce a warning in the result instead of failing the call.
+      size: file size or row count (free-form string, e.g. '124MB' or '52000 rows').
+      format_details: encoding, compression, version (e.g. 'utf-8, gzip-9, HDF5 1.10').
     """
     result = await graph_tools.execute_tool(
         "add_dataset",
-        {"path": path, "type": type, "description": description, "session_id": _SESSION_ID},
+        {
+            "path": path,
+            "type": type,
+            "description": description,
+            "schema": schema,
+            "source": source,
+            "parent_dataset": parent_dataset,
+            "size": size,
+            "format_details": format_details,
+            "session_id": _SESSION_ID,
+        },
         _config,
     )
     return json.loads(result)

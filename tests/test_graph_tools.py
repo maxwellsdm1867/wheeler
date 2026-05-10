@@ -607,3 +607,167 @@ class TestToolImports:
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
         assert len(TOOL_DEFINITIONS) == 29
+
+
+class TestAddDatasetMetadata:
+    """Verify add_dataset accepts new structured metadata fields (issue #17)."""
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_with_schema_and_source(self):
+        """schema, source, size, format_details land on the created node."""
+        from wheeler.tools.graph_tools.mutations import add_dataset
+
+        captured_props: dict = {}
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+            async def create_relationship(self, *a):
+                return True
+
+        await add_dataset(FakeBackend(), {
+            "path": "/data/recordings/cell_data.mat",
+            "type": "mat",
+            "description": "Cell recordings",
+            "schema": "columns: [t, V, I]",
+            "source": "Patch-clamp rig 3",
+            "size": "124MB",
+            "format_details": "MATLAB v7.3, gzip-9",
+        })
+        assert captured_props["schema"] == "columns: [t, V, I]"
+        assert captured_props["source"] == "Patch-clamp rig 3"
+        assert captured_props["size"] == "124MB"
+        assert captured_props["format_details"] == "MATLAB v7.3, gzip-9"
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_with_parent_dataset_creates_was_derived_from(self):
+        """parent_dataset (valid 'D-xxxxxxxx') triggers WAS_DERIVED_FROM edge."""
+        from wheeler.tools.graph_tools.mutations import add_dataset
+
+        captured_props: dict = {}
+        rels_created: list = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+            async def create_relationship(self, src_l, src_id, rel, tgt_l, tgt_id):
+                rels_created.append((src_l, src_id, rel, tgt_l, tgt_id))
+                return True
+
+        result = json.loads(await add_dataset(FakeBackend(), {
+            "path": "/data/derived/cell_filtered.mat",
+            "type": "mat",
+            "description": "Filtered cell recordings",
+            "parent_dataset": "D-abcd1234",
+        }))
+
+        # Property recorded on the new node
+        assert captured_props["parent_dataset"] == "D-abcd1234"
+
+        # WAS_DERIVED_FROM edge created from new node to parent
+        derive_rels = [r for r in rels_created if r[2] == "WAS_DERIVED_FROM"]
+        assert len(derive_rels) == 1
+        src_l, src_id, _, tgt_l, tgt_id = derive_rels[0]
+        assert src_l == "Dataset"
+        assert tgt_l == "Dataset"
+        assert src_id == result["node_id"]
+        assert tgt_id == "D-abcd1234"
+
+        # Result reports the link status
+        assert result["parent_link"]["parent_dataset"] == "D-abcd1234"
+        assert result["parent_link"]["relationship"] == "WAS_DERIVED_FROM"
+        assert result["parent_link"]["status"] == "linked"
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_invalid_parent_dataset_warns_no_link(self):
+        """Malformed parent_dataset is rejected with a warning, no edge made."""
+        from wheeler.tools.graph_tools.mutations import add_dataset
+
+        rels_created: list = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                pass
+
+            async def create_relationship(self, *a):
+                rels_created.append(a)
+                return True
+
+        result = json.loads(await add_dataset(FakeBackend(), {
+            "path": "/data/derived/cell_filtered.mat",
+            "type": "mat",
+            "description": "Filtered cell recordings",
+            "parent_dataset": "not-a-real-id",
+        }))
+
+        # No relationship was created
+        assert len(rels_created) == 0
+        # But the call still succeeded with a warning in parent_link
+        assert result["status"] == "created"
+        assert result["parent_link"]["status"] == "warning"
+        assert "invalid format" in result["parent_link"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_parent_dataset_not_found_warns(self):
+        """Valid-format parent_dataset that backend reports missing: warning, not failure."""
+        from wheeler.tools.graph_tools.mutations import add_dataset
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                pass
+
+            async def create_relationship(self, *a):
+                # Backend returns False when one endpoint is missing
+                return False
+
+        result = json.loads(await add_dataset(FakeBackend(), {
+            "path": "/data/derived/cell_filtered.mat",
+            "type": "mat",
+            "description": "Filtered cell recordings",
+            "parent_dataset": "D-deadbeef",
+        }))
+
+        assert result["status"] == "created"
+        assert result["parent_link"]["status"] == "warning"
+        assert "not found" in result["parent_link"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_backward_compatible(self):
+        """Calling with only path/type/description still works as before."""
+        from wheeler.tools.graph_tools.mutations import add_dataset
+
+        captured_props: dict = {}
+        rels_created: list = []
+
+        class FakeBackend:
+            async def create_node(self, label, props):
+                captured_props.update(props)
+
+            async def create_relationship(self, *a):
+                rels_created.append(a)
+                return True
+
+        result = json.loads(await add_dataset(FakeBackend(), {
+            "path": "/data/cell.mat",
+            "type": "mat",
+            "description": "Recording",
+        }))
+
+        # Required fields present
+        assert captured_props["path"] == "/data/cell.mat"
+        assert captured_props["type"] == "mat"
+        assert captured_props["description"] == "Recording"
+        # Optional fields NOT persisted as empty strings
+        assert "schema" not in captured_props
+        assert "source" not in captured_props
+        assert "parent_dataset" not in captured_props
+        assert "size" not in captured_props
+        assert "format_details" not in captured_props
+        # No spurious relationships
+        assert rels_created == []
+        # No parent_link key in result
+        assert "parent_link" not in result
+        assert result["status"] == "created"
+        assert result["label"] == "Dataset"

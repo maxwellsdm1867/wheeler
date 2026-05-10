@@ -192,12 +192,21 @@ TOOL_DEFINITIONS = [
         "name": "add_dataset",
         "description": (
             "Add a Dataset node to the knowledge graph. Use when registering "
-            "a data file for provenance tracking. Returns the new node ID."
+            "a data file for provenance tracking. Returns the new node ID. "
+            "Optional metadata (schema, source, size, format_details) is "
+            "stored on the node only when supplied. When parent_dataset is "
+            "set to a valid 'D-xxxxxxxx' ID, a WAS_DERIVED_FROM edge is "
+            "auto-created from the new dataset to the parent."
         ),
         "parameters": {
             "path": {"type": "string", "description": "File path to the dataset"},
             "type": {"type": "string", "description": "Dataset type (e.g., mat, h5, csv)"},
             "description": {"type": "string", "description": "What the dataset contains"},
+            "schema": {"type": "string", "description": "Structured schema (column listing, group layout)", "default": ""},
+            "source": {"type": "string", "description": "Origin of the data (instrument, pipeline, collaborator)", "default": ""},
+            "parent_dataset": {"type": "string", "description": "ID of parent Dataset; auto-creates WAS_DERIVED_FROM edge", "default": ""},
+            "size": {"type": "string", "description": "File size or row count (free-form)", "default": ""},
+            "format_details": {"type": "string", "description": "Encoding, compression, version", "default": ""},
         },
         "required": ["path", "type", "description"],
     },

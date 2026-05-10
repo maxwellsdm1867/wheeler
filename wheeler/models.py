@@ -73,6 +73,11 @@ class DatasetModel(NodeBase):
     data_type: str = ""
     description: str = ""
     hash: str = ""
+    schema: str = ""             # structured schema description (e.g., column listing)
+    source: str = ""             # where data came from (instrument, pipeline, collaborator)
+    parent_dataset: str = ""     # ID of dataset this was derived from; triggers WAS_DERIVED_FROM
+    size: str = ""               # file size or row count
+    format_details: str = ""     # encoding, compression, version
 
 
 class PaperModel(NodeBase):
