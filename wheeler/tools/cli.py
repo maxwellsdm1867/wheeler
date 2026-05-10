@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -603,6 +605,55 @@ def cmd_update(
     except Exception as exc:
         console.print(f"[red]Update failed:[/red] {exc}")
         raise typer.Exit(1)
+
+
+@app.command("backup")
+def cmd_backup(
+    destination: Optional[Path] = typer.Option(
+        None,
+        "--destination",
+        "-d",
+        help="Directory to write the archive into. Default: <project>/.wheeler/backups/",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to wheeler.yaml. Default: ./wheeler.yaml or built-in defaults.",
+    ),
+    include_remote: bool = typer.Option(
+        False,
+        "--include-remote",
+        help="Reserved (no-op). Local-only for now; remote destinations TBD.",
+    ),
+) -> None:
+    """Snapshot Wheeler's canonical state to a tar.gz archive.
+
+    Bundles knowledge/, synthesis/, .wheeler/, wheeler.yaml, plus a JSONL
+    dump of every node and relationship in Neo4j, plus a manifest.json
+    describing layout, version, counts, and SHA-256 hashes.
+
+    Runs in-process so the MCP transport's ~235k-char tool-result cap does
+    not apply: a full graph dump fits easily.
+    """
+    from wheeler.backup import create_backup
+
+    cfg = load_config(config_path) if config_path else load_config()
+    try:
+        archive = asyncio.run(
+            create_backup(
+                cfg,
+                destination=destination,
+                include_remote=include_remote,
+            )
+        )
+    except Exception as exc:
+        console.print(f"[red]Backup failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    size_mb = archive.stat().st_size / (1024 * 1024)
+    console.print(f"[green]Backup created:[/green] {archive}")
+    console.print(f"[dim]Size: {size_mb:.2f} MB[/dim]")
 
 
 @app.command("version")
