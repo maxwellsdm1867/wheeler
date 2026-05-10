@@ -196,7 +196,16 @@ async def add_dataset(backend, args: dict) -> str:
     node_id = generate_node_id("D")
     path = args["path"]
     display_name = os.path.basename(path) if path else args["description"][:40]
-    await backend.create_node("Dataset", {
+
+    # Optional structured metadata fields (issue #17). Only persist when set
+    # to avoid storing empty strings on every Dataset node.
+    schema_val = args.get("schema", "")
+    source_val = args.get("source", "")
+    parent_dataset = args.get("parent_dataset", "")
+    size_val = args.get("size", "")
+    format_details = args.get("format_details", "")
+
+    props: dict = {
         "id": node_id,
         "path": path,
         "type": args["type"],
@@ -207,13 +216,86 @@ async def add_dataset(backend, args: dict) -> str:
         "stability": default_stability("Dataset", args.get("tier", "generated")),
         "session_id": args.get("session_id", ""),
         "display_name": display_name,
-    })
+    }
+    if schema_val:
+        props["schema"] = schema_val
+    if source_val:
+        props["source"] = source_val
+    if parent_dataset:
+        props["parent_dataset"] = parent_dataset
+    if size_val:
+        props["size"] = size_val
+    if format_details:
+        props["format_details"] = format_details
+
+    await backend.create_node("Dataset", props)
     logger.info("Created Dataset %s: %s", node_id, args["path"])
     result = {"node_id": node_id, "label": "Dataset", "status": "created"}
+
+    # Auto-link to parent dataset via WAS_DERIVED_FROM (issue #17).
+    # Validate the ID format: must be "D-" followed by 8 hex characters,
+    # matching generate_node_id("D"). Skip with a warning if malformed.
+    if parent_dataset:
+        if _is_valid_dataset_id(parent_dataset):
+            linked = await backend.create_relationship(
+                "Dataset", node_id, "WAS_DERIVED_FROM",
+                "Dataset", parent_dataset,
+            )
+            if linked:
+                logger.info(
+                    "Linked Dataset %s -[WAS_DERIVED_FROM]-> %s",
+                    node_id, parent_dataset,
+                )
+                result["parent_link"] = {
+                    "parent_dataset": parent_dataset,
+                    "relationship": "WAS_DERIVED_FROM",
+                    "status": "linked",
+                }
+            else:
+                logger.warning(
+                    "add_dataset: parent_dataset %s not found in graph",
+                    parent_dataset,
+                )
+                result["parent_link"] = {
+                    "parent_dataset": parent_dataset,
+                    "status": "warning",
+                    "message": "parent_dataset not found in graph",
+                }
+        else:
+            logger.warning(
+                "add_dataset: parent_dataset %r has invalid format "
+                "(expected 'D-<8 hex chars>')",
+                parent_dataset,
+            )
+            result["parent_link"] = {
+                "parent_dataset": parent_dataset,
+                "status": "warning",
+                "message": (
+                    "parent_dataset has invalid format; expected 'D-' "
+                    "followed by 8 hex characters"
+                ),
+            }
+
     prov = await _complete_provenance(backend, node_id, "Dataset", args)
     if prov:
         result["provenance"] = prov
     return json.dumps(result)
+
+
+def _is_valid_dataset_id(value: str) -> bool:
+    """Return True if value matches the Dataset node ID format 'D-<8 hex>'."""
+    if not isinstance(value, str):
+        return False
+    if not value.startswith("D-"):
+        return False
+    suffix = value[2:]
+    if len(suffix) != 8:
+        return False
+    try:
+        int(suffix, 16)
+    except ValueError:
+        return False
+    return True
 
 
 async def add_paper(backend, args: dict) -> str:
