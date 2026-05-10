@@ -170,6 +170,85 @@ class TestBuildDelegatedArgs:
         assert args["description"] == "Spike timing data"
         assert "description" not in args.pop("_defaulted")
 
+    def test_plan_passes_through_provenance_keys(self):
+        """Regression for #24: ensure_artifact(plan, execution_kind=...) must
+        forward provenance keys to add_plan so _complete_provenance fires."""
+        tool, args = _build_delegated_args(
+            "Plan", "markdown", "/project/.plans/inv.md",
+            {
+                "execution_kind": "discuss",
+                "used_entities": "F-abc,D-def",
+                "execution_description": "Planned X",
+            },
+            "abc",
+        )
+        assert tool == "add_plan"
+        assert args["execution_kind"] == "discuss"
+        assert args["used_entities"] == "F-abc,D-def"
+        assert args["execution_description"] == "Planned X"
+
+    def test_script_passes_through_provenance_keys(self):
+        tool, args = _build_delegated_args(
+            "Script", "python", "/tmp/foo.py",
+            {"execution_kind": "script_run", "used_entities": "D-input"},
+            "h",
+        )
+        assert tool == "add_script"
+        assert args["execution_kind"] == "script_run"
+        assert args["used_entities"] == "D-input"
+
+    def test_dataset_passes_through_provenance_keys(self):
+        tool, args = _build_delegated_args(
+            "Dataset", "csv", "/data/r.csv",
+            {"execution_kind": "script_run", "used_entities": "S-x"},
+            "h",
+        )
+        assert tool == "add_dataset"
+        assert args["execution_kind"] == "script_run"
+
+    def test_document_passes_through_provenance_keys(self):
+        tool, args = _build_delegated_args(
+            "Document", "markdown", "/docs/m.md",
+            {"execution_kind": "write", "used_entities": "F-1,P-2"},
+            "h",
+        )
+        assert tool == "add_document"
+        assert args["execution_kind"] == "write"
+
+    def test_finding_passes_through_provenance_keys(self):
+        tool, args = _build_delegated_args(
+            "Finding", "figure", "/r/f.png",
+            {"execution_kind": "script_run", "used_entities": "S-x,D-y"},
+            "h",
+        )
+        assert tool == "add_finding"
+        assert args["execution_kind"] == "script_run"
+        assert args["used_entities"] == "S-x,D-y"
+
+    def test_no_provenance_keys_when_not_passed(self):
+        """When the caller does not pass provenance keys, they should not
+        appear in the delegated args dict."""
+        _tool, args = _build_delegated_args(
+            "Plan", "markdown", "/project/.plans/inv.md", {}, "abc",
+        )
+        assert "execution_kind" not in args
+        assert "used_entities" not in args
+        assert "execution_description" not in args
+        assert "was_informed_by" not in args
+
+    def test_empty_provenance_keys_filtered(self):
+        """Empty-string provenance values must not be forwarded: they would
+        be treated as "no provenance requested" by _complete_provenance, but
+        they still pollute the args dict and may surprise validators."""
+        _tool, args = _build_delegated_args(
+            "Plan", "markdown", "/project/.plans/inv.md",
+            {"execution_kind": "", "used_entities": "", "execution_description": ""},
+            "abc",
+        )
+        assert "execution_kind" not in args
+        assert "used_entities" not in args
+        assert "execution_description" not in args
+
 
 # ---------------------------------------------------------------------------
 # validate_and_normalize for ensure_artifact

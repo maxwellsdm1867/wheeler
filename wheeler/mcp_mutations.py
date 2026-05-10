@@ -395,6 +395,9 @@ async def ensure_artifact(
     title: str = "",
     confidence: float = 0.0,
     status: str = "",
+    execution_kind: str = "",
+    used_entities: str = "",
+    execution_description: str = "",
 ) -> dict:
     """Register a file in the Wheeler knowledge graph, or update its hash if already registered.
 
@@ -431,6 +434,14 @@ async def ensure_artifact(
       confidence: for Finding only. 0.0-1.0, default 0.5.
       status: for Plan/Document only. 'draft' (default) or 'final'.
 
+    Provenance-completing: set execution_kind (e.g. "discuss", "write",
+    "script") to auto-create an Execution activity and link the new node
+    to it via WAS_GENERATED_BY. Pass used_entities as comma-separated
+    node IDs (e.g. "F-abc,D-def") to link what the execution consumed
+    (USED edges from the Execution to each input). This avoids born-orphan
+    artifacts when registering a plan, finding, or document derived from
+    earlier graph context.
+
     Use instead of add_script, add_dataset, add_document, add_plan, or the
     three-step "hash_file + query_* + add_*" pattern. Those remain available
     for cases that need explicit create-only semantics.
@@ -455,6 +466,12 @@ async def ensure_artifact(
         ea_args["confidence"] = confidence
     if status:
         ea_args["status"] = status
+    if execution_kind:
+        ea_args["execution_kind"] = execution_kind
+    if used_entities:
+        ea_args["used_entities"] = used_entities
+    if execution_description:
+        ea_args["execution_description"] = execution_description
 
     result = await graph_tools.execute_tool("ensure_artifact", ea_args, _config)
     return json.loads(result)

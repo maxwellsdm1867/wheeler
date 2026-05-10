@@ -135,7 +135,14 @@ Every plan MUST be registered as a graph node. The graph is the source of truth 
 
 1. **Before writing**: call `query_plans(keyword=<topic>)` to detect duplicates. If found, surface them and ask whether to update the existing plan or create a new one.
 2. **Write the plan file** to `.plans/<name>.md` (the existing step).
-3. **Register in graph**: call `ensure_artifact(path=<absolute path>, artifact_type="plan", title=<title>, status="draft")`. This is idempotent: `action=created` on first call, `action=updated` if file changed, `action=unchanged` if re-running.
+3. **Register in graph with provenance**: call
+   ```
+   ensure_artifact(path=<absolute path>, artifact_type="plan", title=<title>, status="draft",
+                   execution_kind="discuss",
+                   execution_description="Planned <topic>: <one-line summary>",
+                   used_entities=<comma-separated IDs from search_context / graph_gaps results>)
+   ```
+   This is idempotent (`action=created` on first call, `action=updated` if file changed, `action=unchanged` if re-running) and also provenance-completing: passing `execution_kind` auto-creates a `discuss` Execution node and links the Plan to it via `WAS_GENERATED_BY`, with `USED` edges from the Execution back to the seed nodes you cite. Plans registered without `execution_kind` are born orphan, which breaks downstream provenance traversal. Always pass at least the seed IDs you loaded from `search_context`. If you have no upstream context (truly greenfield plan), pass `used_entities=""` and a clear `execution_description` so the Execution still records the human intent.
 4. **Record the graph node ID**: write the returned `PL-xxxx` into the plan file frontmatter as `graph_node: PL-xxxx`.
 
 On scientist approval, call `update_node(node_id=PL-xxxx, status="approved")` AND update the file frontmatter (`status`, `updated`). The graph write is the authoritative step; the file update is the rendered view.
