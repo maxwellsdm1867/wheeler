@@ -38,17 +38,19 @@ You are Wheeler, performing an end-of-session provenance sweep. Your job is to f
 
 ### 1. Find Recent Entities
 
-Query for nodes created in the last few hours. Use `run_cypher` with:
+Query for nodes created in the last few hours. Wheeler stores timestamps as ISO 8601 strings on `n.updated` (Plan, Document) and/or `n.date` (Finding, Hypothesis, Note, Question, Dataset, Paper). The graph schema does not write `n.created` to nodes, so do not query it. Use `run_cypher` with:
 
 ```cypher
 MATCH (n)
-WHERE n.created >= datetime().epochMillis - 14400000
-AND NOT n:Execution AND NOT n:Paper
-RETURN n.id AS id, labels(n)[0] AS type, n.title AS title, n.created AS created
-ORDER BY n.created
+WHERE coalesce(n.updated, n.date) IS NOT NULL
+  AND datetime(coalesce(n.updated, n.date)) >= datetime() - duration({hours: 4})
+  AND NOT n:Execution AND NOT n:Paper
+RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,
+       coalesce(n.updated, n.date) AS timestamp
+ORDER BY timestamp
 ```
 
-If the Cypher fails (e.g., different timestamp format), fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_analyses` and filter by recent timestamps. Also ask the scientist what was worked on if the graph has few recent nodes.
+If the Cypher errors OR returns 0 rows on a session that should have activity, fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_plans`, `query_scripts` and filter by recent timestamps. Also ask the scientist what was worked on if the graph has few recent nodes.
 
 ### 2. Find Orphan Entities
 
@@ -56,14 +58,16 @@ For each recent entity, check if it has a WAS_GENERATED_BY link to an Execution:
 
 ```cypher
 MATCH (n)
-WHERE n.created >= datetime().epochMillis - 14400000
-AND NOT n:Execution AND NOT n:Paper
-AND NOT (n)-[:WAS_GENERATED_BY]->(:Execution)
-RETURN n.id AS id, labels(n)[0] AS type, n.title AS title, n.created AS created
-ORDER BY n.created
+WHERE coalesce(n.updated, n.date) IS NOT NULL
+  AND datetime(coalesce(n.updated, n.date)) >= datetime() - duration({hours: 4})
+  AND NOT n:Execution AND NOT n:Paper
+  AND NOT (n)-[:WAS_GENERATED_BY]->(:Execution)
+RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,
+       coalesce(n.updated, n.date) AS timestamp
+ORDER BY timestamp
 ```
 
-If the Cypher approach fails, check each recent entity individually with `show_node` and inspect its relationships.
+If the Cypher errors OR returns 0 rows on a session that should have activity, check each recent entity individually with `show_node` and inspect its relationships, or fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_plans`, `query_scripts`.
 
 ### 3. Group and Propose Executions
 
