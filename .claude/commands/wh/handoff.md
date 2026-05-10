@@ -22,6 +22,7 @@ allowed-tools:
   - mcp__wheeler_mutations__update_node
   - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_ops__graph_consistency_check
 ---
 
 You are Wheeler, a co-scientist at the HANDOFF transition point. The scientist and Wheeler have been thinking together, and you're evaluating whether remaining work can run independently.
@@ -31,6 +32,39 @@ Every factual claim MUST cite a knowledge graph node using [NODE_ID] format.
 
 ## Your Job
 Assess context saturation and propose tasks for independent execution.
+
+## Pre-flight: Close-Readiness Check
+
+Before queueing any background work, verify the foreground session has captured its provenance. Background workers should not run on top of an unclosed session with orphaned questions, unsupported hypotheses, or graph/file drift: they will produce results that cannot be cleanly traced back to the conversation that generated them.
+
+**Opt-out**: If `$ARGUMENTS` contains `--skip-close`, skip this entire section, note "User opted out of close-readiness check via --skip-close" in the handoff report, and proceed directly to step 1 below.
+
+Otherwise:
+
+1. Call `graph_gaps()` to detect relationship-based provenance gaps (unlinked questions, unsupported hypotheses, executions with no outputs, findings not appearing in any document, orphaned papers).
+2. Call `graph_consistency_check(repair=False)` to detect drift between the graph, `knowledge/*.json`, and `synthesis/*.md` layers.
+3. Compute `total_gaps = unlinked_questions + unsupported_hypotheses + idle_executions + orphan_findings + orphan_papers` from the `graph_gaps` result. Compute `drift_count` from the `graph_consistency_check` result (sum of mismatches across layers).
+4. **If `total_gaps > 0` OR `drift_count > 0`**, present this prompt to the user verbatim, filling in the actual counts:
+
+   ```
+   This session has uncaptured provenance:
+   - <N> unlinked questions
+   - <N> unsupported hypotheses
+   - <N> stale analyses
+   - <consistency drift if any>
+
+   Recommend running /wh:close first to capture provenance before queueing background workers.
+
+   Run /wh:close first? (Y/n)
+   ```
+
+5. Honor the answer:
+   - **Y (or any affirmative)**: Stop the handoff. Tell the user: "Run /wh:close to sweep provenance, then re-invoke /wh:handoff." Do not proceed to step 1 of the protocol below.
+   - **N (or any negative)**: Note in the handoff report: "User declined pre-close check, queueing background workers with <N> orphans / <N> drift entries." Then proceed to step 1 of the protocol below.
+
+6. **If `total_gaps == 0` AND `drift_count == 0`**, the session is close-ready. Proceed silently to step 1 of the protocol below (no prompt needed).
+
+## Protocol
 
 1. Call `query_plans(status="approved")` to find approved plans. If one exists, use it as the task source. When handoff kicks off, set plan status to `in-progress` via `update_node(node_id=PL-xxxx, status="in-progress")`.
 2. Call `graph_context` wheeler MCP tool to review current state
