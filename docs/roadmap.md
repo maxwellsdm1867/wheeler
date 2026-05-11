@@ -11,8 +11,9 @@
 | v0.6.2 | 2026-04-18 | Auto-routing, /wh:start entry point, 137 routing tests |
 | v0.6.3 | 2026-04-19 | Proactive graph context, execution tracking, /wh:bump |
 | v0.7.0 | 2026-04-20 | Graph-as-source-of-truth, plan lifecycle, read-before-mutate hooks, process provenance, Script node discoverability fixes |
+| v0.8.0 | 2026-05-10 | Backup/restore CLI, graph-link + graph-review agents, ensure_artifact auto-provenance, /wh:close Cypher fix, /wh:handoff pre-flight, add_dataset reference metadata |
 
-## Next: v0.8.0 (act-graph interaction clarity + graph agents)
+## Next: v0.9.0 (act-graph interaction clarity)
 
 The two themes: (1) make clear how each command mode interacts with the graph,
 and (2) automate the manual provenance and quality work.

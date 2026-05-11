@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.7.0-blue" alt="v0.7.0">
+  <img src="https://img.shields.io/badge/v0.8.0-blue" alt="v0.8.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -158,13 +158,26 @@ The graph is an index over files, not a document store. Each node stores an ID, 
 
 **14 relationship types:** 6 W3C PROV standard (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH) + 8 Wheeler semantic (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS).
 
-**46 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
+**50 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module dependency map, PROV schema, MCP tool listing, hardening patterns, design decisions.
 
 ---
 
 ## What's New
+
+<details>
+<summary><b>v0.8.0</b> (2026-05-10) — Backup/restore, graph quality agents, provenance fixes</summary>
+
+- **Backup and restore (#27, #28)**: New `wheeler backup` Typer subcommand snapshots canonical state (knowledge/, synthesis/, .wheeler/, wheeler.yaml + live Neo4j dump) to a single tar.gz archive with manifest.json. New `wheeler restore --verify` validates restorability via project-tag isolation, no Docker required.
+- **Graph quality agents (#21)**: `/wh:graph-link` batch-proposes grouped Execution provenance for session orphans (companion to /wh:close). `/wh:graph-review` runs a non-destructive quality audit (wrong types, broken paths, duplicates, isolated subgraphs) with concrete suggested fixes.
+- **`ensure_artifact` auto-provenance (#24)**: passes `execution_kind`, `used_entities`, `execution_description` through to handlers so PL- and other artifact-type nodes get auto-created Executions with proper WAS_GENERATED_BY links instead of being born orphan. Same kwargs pass-through fixes a latent drop affecting all label branches; `add_script` and `add_paper` now also wire to `_complete_provenance`.
+- **`add_dataset` reference metadata (#17)**: optional `schema`, `source`, `parent_dataset`, `size`, `format_details` fields. `parent_dataset` automatically creates a `WAS_DERIVED_FROM` edge.
+- **/wh:close orphan-Cypher fix (#25)**: replaces broken `n.created`/epochMillis Cypher with `coalesce(n.updated, n.date)` ISO comparison. Previously the documented primary path silently returned zero rows on every session.
+- **/wh:handoff pre-flight (#26)**: handoff now runs a close-readiness check (`graph_gaps` + `graph_consistency_check`) before queueing background workers, prompts the user if drift exists, supports `--skip-close` opt-out.
+- **Test suite at 1379** (was 1276 in v0.7.0).
+
+</details>
 
 <details>
 <summary><b>v0.7.0</b> (2026-04-20) — Graph-as-source-of-truth enforcement</summary>
@@ -227,12 +240,12 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (49 tools)
+    ├── MCP Servers (50 tools)
     │       ├── wheeler_core (12): health, status, context, search, cypher
     │       ├── wheeler_query (10): read-only query_* tools
-    │       ├── wheeler_mutations (17): add_*, link, delete, update, merge
+    │       ├── wheeler_mutations (18): add_*, link, delete, update, merge
     │       ├── wheeler_ops (10): staleness, citations, consistency
-    │       └── wheeler (legacy monolith): same 49 tools, one server
+    │       └── wheeler (legacy monolith): same 50 tools, one server
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -247,10 +260,10 @@ wheeler/
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
 ├── consistency.py           # Cross-layer drift detection and repair
-├── mcp_server.py            # Legacy monolith: all 49 tools
+├── mcp_server.py            # Legacy monolith: all 50 tools
 ├── mcp_core.py              # Split server: health, context, search (12)
 ├── mcp_query.py             # Split server: query_* read-only (10)
-├── mcp_mutations.py         # Split server: add_*, link, delete, update (15)
+├── mcp_mutations.py         # Split server: add_*, link, delete, update (18)
 ├── mcp_ops.py               # Split server: staleness, citations (10)
 ├── mcp_shared.py            # Shared: trace IDs, decorators, config
 ├── knowledge/               # File I/O: read, write, list, render, migrate
@@ -279,7 +292,7 @@ docs/                         # Getting started, architecture, project spec
 **Project docs:**
 - [Mission](docs/mission.md) — four pillars, target audience, design north star
 - [Tech stack](docs/tech-stack.md) — components, infrastructure patterns, current gaps
-- [Roadmap](docs/roadmap.md) — shipped versions, v0.8.0 phases, v1.0 criteria
+- [Roadmap](docs/roadmap.md) — shipped versions, v0.9.0 phases, v1.0 criteria
 - [Getting started](docs/GETTING-STARTED.md) — install walkthrough with Neo4j Desktop
 - [Project spec](docs/PROJECT-SPEC.md) — original design specification
 
