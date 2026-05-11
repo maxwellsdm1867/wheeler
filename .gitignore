@@ -16,3 +16,13 @@ wheeler.yaml
 tests/e2e/sandbox/
 docs/asta-integration.md
 docs/asta-integration.pdf
+
+# Runtime artifacts from triple-write (graph + JSON + synthesis)
+# These are produced by add_* mutations and should not be in source control;
+# the canonical state lives in Neo4j + per-project knowledge_path/synthesis_path.
+.DS_Store
+knowledge/
+synthesis/
+MagicMock/
+package/
+wh-triage-workspace/
