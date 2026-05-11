@@ -25,6 +25,8 @@ TRIGGER_COMMANDS = [
     "discuss",
     "dream",
     "execute",
+    "graph-link",
+    "graph-review",
     "handoff",
     "note",
     "pair",

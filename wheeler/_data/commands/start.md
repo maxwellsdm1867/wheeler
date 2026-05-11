@@ -26,7 +26,7 @@ Route the user to the right `/wh:*` command. Do not ask which command to use: an
    - **Session lifecycle**: `status`/`resume` at session start; `pause`/`close` at session end; `chat` for casual discussion
    - **Data capture** (concrete artifacts provided): `add` (DOI, paper, dataset, file) over `note` (insight, observation)
    - **Investigation workflow** (progressive): `discuss` -> `plan` -> `execute` -> `write`
-   - **Graph operations**: `ask` (query), `compile` (synthesis), `dream` (maintenance)
+   - **Graph operations**: `ask` (query), `compile` (synthesis), `dream` (maintenance), `graph-link` (batch orphan provenance), `graph-review` (quality audit)
    - **Collaboration**: `pair` (interactive), `handoff` (background), `reconvene` (review)
    - **Meta**: `report` (time window), `triage` (GitHub issues), `dev-feedback` (Wheeler bugs)
 4. Invoke the chosen command via the Skill tool. Prefix with a one-line explanation of the routing choice.

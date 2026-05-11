@@ -47,6 +47,10 @@ YAML frontmatter controls tool access. The markdown body IS the system prompt.
 - `handoff`/`reconvene`/`queue`: Independent work pipeline
 - `report`: Generate work log
 - `close`: End-of-session provenance sweep
+- `graph-link`: Propose grouped Execution provenance for session orphans (batched approval; companion to /wh:close)
+- `graph-review`: Non-destructive graph quality audit (wrong types, broken paths, duplicates, isolated subgraphs) with suggested fixes
+- `backup`: Snapshot canonical state to single-file tar.gz archive
+- `restore`: Verify a backup archive (currently --verify / --dry-run only)
 - `start`: User-invoked router. Asks for task intent (or takes $ARGUMENTS) and invokes the best /wh:* command.
 
 ### Development
