@@ -635,7 +635,9 @@ class TestAddDatasetMetadata:
             "size": "124MB",
             "format_details": "MATLAB v7.3, gzip-9",
         })
-        assert captured_props["schema"] == "columns: [t, V, I]"
+        # Public MCP param is "schema" but graph property is "column_schema" (issue #33)
+        assert captured_props["column_schema"] == "columns: [t, V, I]"
+        assert "schema" not in captured_props
         assert captured_props["source"] == "Patch-clamp rig 3"
         assert captured_props["size"] == "124MB"
         assert captured_props["format_details"] == "MATLAB v7.3, gzip-9"
@@ -761,6 +763,7 @@ class TestAddDatasetMetadata:
         assert captured_props["description"] == "Recording"
         # Optional fields NOT persisted as empty strings
         assert "schema" not in captured_props
+        assert "column_schema" not in captured_props
         assert "source" not in captured_props
         assert "parent_dataset" not in captured_props
         assert "size" not in captured_props

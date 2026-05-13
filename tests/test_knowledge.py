@@ -217,6 +217,35 @@ class TestModelRoundTrip:
         restored = KNOWLEDGE_NODE_ADAPTER.validate_json(json_bytes)
         assert restored.model_dump()["custom_field"] == "extra_value"
 
+    def test_dataset_legacy_schema_field_migrates_to_column_schema(self):
+        """Existing knowledge/D-*.json files use the old key `schema`.
+
+        The field was renamed to `column_schema` (issue #33) because the
+        old name shadowed pydantic's BaseModel.schema method. Loading a
+        legacy JSON payload should transparently map `schema` to
+        `column_schema` so on-disk artifacts keep working.
+        """
+        legacy_payload = {
+            "id": "D-legacy01",
+            "type": "Dataset",
+            "tier": "generated",
+            "created": NOW,
+            "updated": NOW,
+            "path": "/data/legacy.mat",
+            "data_type": "mat",
+            "description": "Old dataset written before the rename",
+            "schema": "columns: [t, V, I]",
+            "source": "rig 3",
+        }
+        json_bytes = json.dumps(legacy_payload).encode()
+        restored = KNOWLEDGE_NODE_ADAPTER.validate_json(json_bytes)
+
+        assert isinstance(restored, DatasetModel)
+        assert restored.column_schema == "columns: [t, V, I]"
+        # The legacy key is consumed by the migrator; not retained as
+        # an extra attribute on the model.
+        assert getattr(restored, "schema", None) != "columns: [t, V, I]"
+
 
 # ===================================================================
 # 2. Store operations

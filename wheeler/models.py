@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Discriminator, TypeAdapter
+from pydantic import BaseModel, Discriminator, TypeAdapter, model_validator
 
 
 class ChangeEntry(BaseModel):
@@ -73,11 +73,26 @@ class DatasetModel(NodeBase):
     data_type: str = ""
     description: str = ""
     hash: str = ""
-    schema: str = ""             # structured schema description (e.g., column listing)
+    column_schema: str = ""      # structured schema description (e.g., column listing)
     source: str = ""             # where data came from (instrument, pipeline, collaborator)
     parent_dataset: str = ""     # ID of dataset this was derived from; triggers WAS_DERIVED_FROM
     size: str = ""               # file size or row count
     format_details: str = ""     # encoding, compression, version
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_schema_field(cls, data):
+        """Back-compat: legacy JSON files store this field as `schema`.
+
+        The field was renamed from `schema` to `column_schema` because
+        `schema` shadowed pydantic's `BaseModel.schema` method. When
+        loading an existing knowledge/D-*.json that still uses the old
+        key, transparently re-map it.
+        """
+        if isinstance(data, dict) and "schema" in data and "column_schema" not in data:
+            data = dict(data)
+            data["column_schema"] = data.pop("schema")
+        return data
 
 
 class PaperModel(NodeBase):

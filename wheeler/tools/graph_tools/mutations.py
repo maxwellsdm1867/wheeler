@@ -218,7 +218,10 @@ async def add_dataset(backend, args: dict) -> str:
         "display_name": display_name,
     }
     if schema_val:
-        props["schema"] = schema_val
+        # Public MCP parameter is "schema", internal field/property is
+        # "column_schema" to avoid shadowing pydantic BaseModel.schema
+        # (issue #33).
+        props["column_schema"] = schema_val
     if source_val:
         props["source"] = source_val
     if parent_dataset:
