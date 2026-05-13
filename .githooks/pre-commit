@@ -42,9 +42,11 @@ if [[ -n "$STAGED_FILES" ]]; then
     for pattern in "${API_PATTERNS[@]}"; do
         # Check staged content, not working tree
         while IFS=: read -r file line content; do
-            # Skip this hook file itself, CLAUDE.md (documents the rule), and test files
+            # Skip files that legitimately reference these patterns:
+            # the hook itself, docs that describe the rule, test fixtures,
+            # and wheeler/portability.py which implements the secret scanner.
             case "$file" in
-                .githooks/*|CLAUDE.md|README.md|ARCHITECTURE.md|tests/*) continue ;;
+                .githooks/*|CLAUDE.md|README.md|ARCHITECTURE.md|tests/*|wheeler/portability.py) continue ;;
             esac
             echo -e "  ${RED}BLOCKED${RESET}: Direct API reference in ${BOLD}${file}:${line}${RESET}"
             echo -e "  ${DIM}${content}${RESET}"

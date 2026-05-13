@@ -213,20 +213,32 @@ class Neo4jBackend(GraphBackend):
         rel_type: str,
         tgt_label: str,
         tgt_id: str,
+        rel_props: dict | None = None,
     ) -> bool:
         self._cb.check()
         params: dict = {"src": src_id, "tgt": tgt_id}
+
+        # Build the SET clause for relationship properties when provided.
+        set_clause = ""
+        if rel_props:
+            set_parts = []
+            for i, (k, v) in enumerate(rel_props.items()):
+                param_key = f"rp_{i}"
+                params[param_key] = v
+                set_parts.append(f"r.{k} = ${param_key}")
+            set_clause = " SET " + ", ".join(set_parts)
+
         if self._project_tag:
             stmt = (
                 f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
                 f"WHERE a._wheeler_project = $ptag AND b._wheeler_project = $ptag "
-                f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
+                f"CREATE (a)-[r:{rel_type}]->(b){set_clause} RETURN type(r) AS rel"
             )
             params["ptag"] = self._project_tag
         else:
             stmt = (
                 f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
-                f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
+                f"CREATE (a)-[r:{rel_type}]->(b){set_clause} RETURN type(r) AS rel"
             )
 
         try:

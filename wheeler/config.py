@@ -99,6 +99,10 @@ class WheelerConfig(BaseModel):
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     knowledge_path: str = "knowledge"
     synthesis_path: str = "synthesis"
+    # Root of the project tree. "." means cwd at the time of the call.
+    # Resolved to absolute at call sites; the raw "." is intentional here
+    # so serialisation round-trips cleanly in wheeler.yaml.
+    project_root: str = "."
 
 
 def load_config(path: Path | None = None) -> WheelerConfig:

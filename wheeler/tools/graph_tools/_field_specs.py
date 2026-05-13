@@ -208,10 +208,15 @@ def validate_and_normalize(
         if warn:
             warnings[field] = warn
 
-    # 3. Check path (tool-aware: dataset/script error, others warn)
+    # 3. Check path (tool-aware: dataset/script error, others warn).
+    # When _restoring=True the caller is replaying a backup onto a new machine
+    # where artifact files may not yet exist.  Downgrade _PATH_MUST_EXIST
+    # errors to warnings so restore does not abort on missing external files.
+    # The flag is popped here so it never leaks into backend writes.
+    restoring = bool(args.pop("_restoring", False))
     if "path" in args and "path" not in errors:
         original = args["path"]
-        must_exist = tool_name in _PATH_MUST_EXIST
+        must_exist = (tool_name in _PATH_MUST_EXIST) and not restoring
         normalized, error, warn = _check_path(original, must_exist=must_exist)
         if error:
             errors["path"] = {"value": original, "error": error}

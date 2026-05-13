@@ -85,8 +85,12 @@ class GraphBackend(ABC):
         rel_type: str,
         tgt_label: str,
         tgt_id: str,
+        rel_props: dict | None = None,
     ) -> bool:
         """Create a directed relationship between two existing nodes.
+
+        ``rel_props``, when provided, are stored as properties on the
+        relationship. Pass ``None`` (the default) for property-less edges.
 
         Returns ``True`` if both nodes were found and the relationship
         was created.

@@ -6,30 +6,28 @@ monolith is easy to ship and hard to notice.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 
 def _extract_tool_names(mcp_module) -> set[str]:
     """Extract tool names from a FastMCP server module."""
     server = mcp_module.mcp
-    # FastMCP stores tools in _tool_manager or similar; inspect the registry
-    tools = set()
-    for tool in server._tools.values():
-        tools.add(tool.name)
-    return tools
+    tools = asyncio.run(server.list_tools())
+    return {tool.name for tool in tools}
 
 
 @pytest.fixture(scope="module")
 def monolith_tools():
     """Tools registered in the monolith server."""
     from unittest.mock import patch
-    # Prevent actual config loading from failing in test env
     with patch.dict("os.environ", {"WHEELER_YAML": "/dev/null"}, clear=False):
         try:
             import wheeler.mcp_server as srv
-            return _extract_tool_names(srv)
-        except Exception:
-            pytest.skip("Cannot import mcp_server (config/Neo4j not available)")
+        except ImportError:
+            pytest.skip("Cannot import mcp_server (optional dependency missing)")
+        return _extract_tool_names(srv)
 
 
 @pytest.fixture(scope="module")
@@ -39,15 +37,15 @@ def split_tools():
     with patch.dict("os.environ", {"WHEELER_YAML": "/dev/null"}, clear=False):
         try:
             import wheeler.mcp_core as core
-            import wheeler.mcp_query as query
             import wheeler.mcp_mutations as mutations
             import wheeler.mcp_ops as ops
-            tools = set()
-            for mod in (core, query, mutations, ops):
-                tools |= _extract_tool_names(mod)
-            return tools
-        except Exception:
-            pytest.skip("Cannot import split servers (config/Neo4j not available)")
+            import wheeler.mcp_query as query
+        except ImportError:
+            pytest.skip("Cannot import split servers (optional dependency missing)")
+        tools: set[str] = set()
+        for mod in (core, query, mutations, ops):
+            tools |= _extract_tool_names(mod)
+        return tools
 
 
 def test_split_tools_subset_of_monolith(monolith_tools, split_tools):

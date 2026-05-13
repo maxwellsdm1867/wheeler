@@ -626,27 +626,113 @@ def cmd_backup(
         "--include-remote",
         help="Reserved (no-op). Local-only for now; remote destinations TBD.",
     ),
+    scope: str = typer.Option(
+        "project",
+        "--scope",
+        help="Scope of the archive: 'project' (default, full project tree) or 'graph-only' (v1-style metadata-only archive).",
+    ),
+    max_artifact_size: Optional[int] = typer.Option(
+        None,
+        "--max-artifact-size",
+        help="Skip files larger than this many bytes. Skipped files are recorded in the manifest.",
+    ),
+    allow_secrets: bool = typer.Option(
+        False,
+        "--allow-secrets",
+        help="Override the secret scan and allow API keys in the archive.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip the size-readout confirmation prompt.",
+    ),
 ) -> None:
     """Snapshot Wheeler's canonical state to a tar.gz archive.
 
-    Bundles knowledge/, synthesis/, .wheeler/, wheeler.yaml, plus a JSONL
-    dump of every node and relationship in Neo4j, plus a manifest.json
-    describing layout, version, counts, and SHA-256 hashes.
+    Bundles the full project tree (scope=project) or just the Wheeler-managed
+    subset (scope=graph-only), plus a JSONL dump of every node and relationship
+    in Neo4j, plus a manifest.json describing layout, version, counts, and
+    SHA-256 hashes.
 
     Runs in-process so the MCP transport's ~235k-char tool-result cap does
     not apply: a full graph dump fits easily.
+
+    Scope: 'project' packs the whole project_root tree (default). Use
+    'graph-only' for a smaller v1-style metadata-only archive.
     """
-    from wheeler.backup import create_backup
+    import sys
+
+    from wheeler.backup import BackupAbortedDueToSecrets, create_backup
+
+    if scope not in ("project", "graph-only"):
+        console.print("[red]--scope must be 'project' or 'graph-only'[/red]")
+        raise typer.Exit(2)
 
     cfg = load_config(config_path) if config_path else load_config()
+
+    # Confirmation prompt when not skipped and stdin is a TTY.
+    if not yes and sys.stdin.isatty():
+        import os
+
+        project_root = Path(getattr(cfg, "project_root", ".")).resolve()
+        total_size = 0
+        total_files = 0
+        if scope == "project" and project_root.exists():
+            for dirpath, dirnames, filenames in os.walk(project_root):
+                # Skip heavy directories that backup also excludes.
+                dirnames[:] = [
+                    d
+                    for d in dirnames
+                    if d not in (".git", ".venv", "venv", "__pycache__", "node_modules")
+                    and not (Path(dirpath) / d).resolve()
+                    == (project_root / ".wheeler" / "backups").resolve()
+                ]
+                for fname in filenames:
+                    fp = Path(dirpath) / fname
+                    try:
+                        fsize = fp.stat().st_size
+                        if max_artifact_size is None or fsize <= max_artifact_size:
+                            total_size += fsize
+                            total_files += 1
+                    except OSError:
+                        pass
+        size_mb = total_size / (1024 * 1024)
+        console.print(
+            f"Backup will include approximately [bold]{size_mb:.1f} MB[/bold] "
+            f"across [bold]{total_files}[/bold] files. Proceed? [y/N] ",
+            end="",
+        )
+        answer = input().strip().lower()
+        if answer not in ("y", "yes"):
+            console.print("[yellow]Backup aborted.[/yellow]")
+            raise typer.Exit(0)
+
     try:
         archive = asyncio.run(
             create_backup(
                 cfg,
                 destination=destination,
                 include_remote=include_remote,
+                scope=scope,  # type: ignore[arg-type]
+                max_artifact_size=max_artifact_size,
+                allow_secrets=allow_secrets,
+                yes=True,  # prompt already handled above
             )
         )
+    except BackupAbortedDueToSecrets as exc:
+        console.print("[red]Backup aborted: secrets detected in the project tree.[/red]")
+        for offender in exc.offenders[:10]:
+            console.print(
+                f"  [yellow]{offender['path']}[/yellow]: "
+                f"pattern '{offender['pattern']}' matched '{offender['snippet']}'"
+            )
+        if len(exc.offenders) > 10:
+            console.print(f"  ... and {len(exc.offenders) - 10} more.")
+        console.print(
+            "\nTo override (not recommended), rerun with [bold]--allow-secrets[/bold]."
+        )
+        raise typer.Exit(2)
     except Exception as exc:
         console.print(f"[red]Backup failed:[/red] {exc}")
         raise typer.Exit(1)
@@ -654,6 +740,45 @@ def cmd_backup(
     size_mb = archive.stat().st_size / (1024 * 1024)
     console.print(f"[green]Backup created:[/green] {archive}")
     console.print(f"[dim]Size: {size_mb:.2f} MB[/dim]")
+
+    # Show hand-off hint when the output is a TTY (suppress in piped contexts).
+    if sys.stderr.isatty():
+        sys.stderr.write(
+            f"\n[OK] Archive: {archive} ({size_mb:.2f} MB)\n\n"
+            "Hand this archive to the recipient. They run:\n"
+            f"  wheeler restore {archive.name} --verify          # check integrity\n"
+            f"  wheeler restore {archive.name} --fresh --target ./<dir>   # restore into empty dir\n\n"
+            "Full instructions are baked into the archive as HANDOFF.md. To read without extracting:\n"
+            f"  tar -xOzf {archive.name} HANDOFF.md | less\n"
+        )
+
+    # If --allow-secrets was used and secrets were packed, warn explicitly so
+    # the operator cannot overlook the security decision.
+    if allow_secrets:
+        import tarfile as _tarfile
+
+        try:
+            with _tarfile.open(archive, "r:gz") as _tar:
+                _mf = _tar.extractfile("manifest.json")
+                if _mf is not None:
+                    import json as _json
+
+                    _manifest = _json.loads(_mf.read())
+                    _allowed = _manifest.get("allowed_secret_files") or []
+                    if _allowed:
+                        console.print(
+                            f"[bold yellow][WARN][/bold yellow] "
+                            f"{len(_allowed)} file(s) containing secrets were "
+                            "packed because --allow-secrets was set:"
+                        )
+                        for _entry in _allowed:
+                            _pats = ", ".join(_entry.get("patterns") or [])
+                            console.print(
+                                f"  [yellow]{_entry['path']}[/yellow]"
+                                f" (patterns: {_pats})"
+                            )
+        except Exception:
+            pass  # Best-effort: never fail the backup command due to post-scan
 
 
 @app.command("version")
@@ -748,7 +873,7 @@ def cmd_migrate(
 
 
 # ---------------------------------------------------------------------------
-# restore --verify
+# restore
 # ---------------------------------------------------------------------------
 
 
@@ -764,57 +889,240 @@ def cmd_restore(
     keep_scratch: bool = typer.Option(
         False,
         "--keep-scratch",
-        help="Skip cleanup of the scratch namespace (debugging)",
+        help="Skip cleanup of the scratch namespace (debugging, used with --verify)",
     ),
     config_path: Optional[Path] = typer.Option(
         None, "--config", "-c", help="Path to wheeler.yaml"
     ),
+    fresh: bool = typer.Option(
+        False,
+        "--fresh",
+        help="Restore archive into a fresh (empty or clean) target directory.",
+    ),
+    merge: bool = typer.Option(
+        False,
+        "--merge",
+        help="Merge archive nodes into the current project (conflict policy governs collisions).",
+    ),
+    target: Optional[Path] = typer.Option(
+        None,
+        "--target",
+        help="Recipient project root. Required with --fresh.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Allow --fresh into a non-clean target directory.",
+    ),
+    accept_signature_mismatch: bool = typer.Option(
+        False,
+        "--accept-signature-mismatch",
+        help="Bypass the manifest signature gate (not recommended).",
+    ),
+    conflict: str = typer.Option(
+        "skip",
+        "--conflict",
+        help="Conflict policy for --merge: skip, replace, or prefix.",
+    ),
+    prefix: Optional[str] = typer.Option(
+        None,
+        "--prefix",
+        help="ID prefix for incoming nodes when --conflict=prefix.",
+    ),
+    neo4j_uri: Optional[str] = typer.Option(
+        None,
+        "--neo4j-uri",
+        help="Override Neo4j URI for the recipient project.",
+    ),
+    neo4j_password: Optional[str] = typer.Option(
+        None,
+        "--neo4j-password",
+        help="Override Neo4j password for the recipient project.",
+    ),
+    neo4j_database: Optional[str] = typer.Option(
+        None,
+        "--neo4j-database",
+        help="Override Neo4j database name for the recipient project.",
+    ),
+    project_tag: Optional[str] = typer.Option(
+        None,
+        "--project-tag",
+        help="Override project_tag for the recipient project.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Non-interactive mode: skip confirmation prompts.",
+    ),
 ) -> None:
-    """Restore from a backup archive. Currently only --verify mode is supported.
+    """Restore from a backup archive.
 
-    --verify (or --dry-run) restores the archive into an isolated scratch
-    namespace inside Neo4j (using the existing project-tag isolation
-    mechanism), compares it against the manifest, then deletes the
-    scratch namespace. Your live data is never touched.
+    Three modes are supported:
+
+    --verify (or --dry-run): Replay the archive into an isolated scratch
+    namespace inside Neo4j, compare against the manifest, then delete the
+    scratch namespace. Live data is never touched.
+
+    --fresh --target DIR: Extract the full project tree and replay all
+    graph nodes and relationships into a fresh (empty or clean) target
+    directory. Requires manifest_version >= 2 (v2 archives).
+
+    --merge: Merge archive nodes into the current (possibly populated)
+    project. Conflict policy is governed by --conflict (skip, replace,
+    or prefix). Requires manifest_version >= 2 (v2 archives).
+
+    Config overrides (--neo4j-uri, --neo4j-password, --neo4j-database,
+    --project-tag) are applied to the recipient's wheeler.yaml before
+    graph replay begins.
+
+    An Execution(kind="restore") node is added to the graph and
+    .wheeler/restore_log.jsonl is appended on success.
     """
-    if not (verify or dry_run):
-        console.print(
-            "[red]Only --verify / --dry-run mode is supported in this version.[/red]"
-        )
-        raise typer.Exit(1)
+    import sys
 
-    from wheeler.restore import RestoreVerifyError, verify_backup
+    # Enforce mode mutex.
+    modes_set = sum([bool(verify or dry_run), bool(fresh), bool(merge)])
+    if modes_set > 1:
+        console.print(
+            "[red]--verify, --fresh, and --merge are mutually exclusive. "
+            "Specify exactly one mode.[/red]"
+        )
+        raise typer.Exit(2)
+    if modes_set == 0:
+        # Default to verify for backward compatibility.
+        verify = True
 
     cfg = load_config(config_path) if config_path else load_config()
-    try:
-        result = asyncio.run(
-            verify_backup(cfg, archive_path, keep_scratch=keep_scratch)
-        )
-    except RestoreVerifyError as exc:
-        console.print(f"[red]Restore-verify aborted (safety check):[/red] {exc}")
-        raise typer.Exit(1)
-    except Exception as exc:
-        console.print(f"[red]Restore-verify failed:[/red] {exc}")
-        raise typer.Exit(1)
 
-    verdict = result["verdict"]
-    color = "green" if verdict == "PASS" else "red"
-    console.print(f"[{color}]Verdict: {verdict}[/{color}]")
-    console.print(f"[dim]Archive: {result['archive_path']}[/dim]")
-    console.print(f"[dim]Scratch tag: {result['scratch_tag']}[/dim]")
+    if verify or dry_run:
+        from wheeler.restore import RestoreVerifyError, verify_backup
 
-    for check in result["checks"]:
-        cresult = check["result"]
-        cstyle = "green" if cresult == "PASS" else "red"
-        console.print(
-            f"  [{cstyle}][{cresult}][/{cstyle}] "
-            f"{check['name']}: {check['detail']}"
-        )
+        try:
+            result = asyncio.run(
+                verify_backup(cfg, archive_path, keep_scratch=keep_scratch)
+            )
+        except RestoreVerifyError as exc:
+            console.print(f"[red]Restore-verify aborted (safety check):[/red] {exc}")
+            raise typer.Exit(1)
+        except Exception as exc:
+            console.print(f"[red]Restore-verify failed:[/red] {exc}")
+            raise typer.Exit(1)
 
-    if verdict == "FAIL":
-        if result.get("first_failure"):
-            console.print(f"\n[red]First failure:[/red] {result['first_failure']}")
-        raise typer.Exit(1)
+        verdict = result["verdict"]
+        color = "green" if verdict == "PASS" else "red"
+        console.print(f"[{color}]Verdict: {verdict}[/{color}]")
+        console.print(f"[dim]Archive: {result['archive_path']}[/dim]")
+        console.print(f"[dim]Scratch tag: {result['scratch_tag']}[/dim]")
+
+        for check in result["checks"]:
+            cresult = check["result"]
+            cstyle = "green" if cresult == "PASS" else "red"
+            console.print(
+                f"  [{cstyle}][{cresult}][/{cstyle}] "
+                f"{check['name']}: {check['detail']}"
+            )
+
+        if verdict == "FAIL":
+            if result.get("first_failure"):
+                console.print(f"\n[red]First failure:[/red] {result['first_failure']}")
+            raise typer.Exit(1)
+
+        # PASS: show next-step hints when the output is a TTY.
+        if sys.stderr.isatty():
+            archive_name = Path(result.get("archive_path", "")).name or str(archive_path)
+            sys.stderr.write(
+                "\n[OK] Archive is intact.\n\n"
+                "To restore into a fresh directory:\n"
+                f"  wheeler restore {archive_name} --fresh --target ./<dir>\n\n"
+                "Or read the bundled instructions:\n"
+                f"  tar -xOzf {archive_name} HANDOFF.md\n"
+            )
+
+    elif fresh:
+        if target is None:
+            console.print("[red]--target DIR is required with --fresh.[/red]")
+            raise typer.Exit(2)
+
+        from wheeler.restore import restore_fresh
+
+        try:
+            result = asyncio.run(
+                restore_fresh(
+                    cfg,
+                    archive_path,
+                    target,
+                    force=force,
+                    accept_signature_mismatch=accept_signature_mismatch,
+                    neo4j_uri=neo4j_uri,
+                    neo4j_password=neo4j_password,
+                    neo4j_database=neo4j_database,
+                    project_tag=project_tag,
+                )
+            )
+        except Exception as exc:
+            console.print(f"[red]Restore (fresh) failed:[/red] {exc}")
+            raise typer.Exit(1)
+
+        console.print("[green]Restore complete.[/green]")
+        console.print(f"  Target root:            {result.get('target_root')}")
+        console.print(f"  Archive UUID:           {result.get('archive_uuid')}")
+        console.print(f"  Nodes restored:         {result.get('nodes_restored', 0)}")
+        console.print(f"  Relationships restored: {result.get('relationships_restored', 0)}")
+        console.print(f"  Failures:               {result.get('restore_failures', [])!r}" if result.get('restore_failures') else "  Failures:               0")
+        ext = result.get("externally_rooted_paths", [])
+        if ext:
+            console.print(
+                f"[yellow]  Heads up: {len(ext)} node(s) point at paths outside the archive. "
+                "They are listed in .wheeler/restore_log.jsonl.[/yellow]"
+            )
+        for w in result.get("warnings", []):
+            console.print(f"[yellow]  Warning: {w}[/yellow]")
+
+    elif merge:
+        if conflict not in ("skip", "replace", "prefix"):
+            console.print("[red]--conflict must be skip, replace, or prefix.[/red]")
+            raise typer.Exit(2)
+        if conflict == "prefix" and not prefix:
+            console.print("[red]--prefix STR is required when --conflict=prefix.[/red]")
+            raise typer.Exit(2)
+
+        from wheeler.restore import restore_merge
+
+        try:
+            result = asyncio.run(
+                restore_merge(
+                    cfg,
+                    archive_path,
+                    conflict_policy=conflict,  # type: ignore[arg-type]
+                    prefix=prefix,
+                    accept_signature_mismatch=accept_signature_mismatch,
+                    neo4j_uri=neo4j_uri,
+                    neo4j_password=neo4j_password,
+                    neo4j_database=neo4j_database,
+                    project_tag=project_tag,
+                )
+            )
+        except Exception as exc:
+            console.print(f"[red]Restore (merge) failed:[/red] {exc}")
+            raise typer.Exit(1)
+
+        console.print("[green]Merge complete.[/green]")
+        console.print(f"  Archive UUID:           {result.get('archive_uuid')}")
+        console.print(f"  Nodes restored:         {result.get('nodes_restored', 0)}")
+        console.print(f"  Relationships restored: {result.get('relationships_restored', 0)}")
+        console.print(f"  Skipped (conflict):     {result.get('skipped', 0)}")
+        console.print(f"  Replaced:               {result.get('replaced', 0)}")
+        console.print(f"  Prefixed:               {result.get('prefixed', 0)}")
+        console.print(f"  Failures:               {len(result.get('restore_failures', []))}")
+        ext = result.get("externally_rooted_paths", [])
+        if ext:
+            console.print(
+                f"[yellow]  Heads up: {len(ext)} node(s) point at paths outside the archive. "
+                "They are listed in .wheeler/restore_log.jsonl.[/yellow]"
+            )
+        for w in result.get("warnings", []):
+            console.print(f"[yellow]  Warning: {w}[/yellow]")
 
 
 @app.command("show")

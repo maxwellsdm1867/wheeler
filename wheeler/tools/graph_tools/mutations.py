@@ -124,7 +124,7 @@ async def _complete_provenance(
 
 
 async def add_finding(backend, args: dict) -> str:
-    node_id = generate_node_id("F")
+    node_id = args.get("id") or generate_node_id("F")
     display_name = args["description"][:40]
     await backend.create_node("Finding", {
         "id": node_id,
@@ -151,7 +151,7 @@ async def add_finding(backend, args: dict) -> str:
 
 
 async def add_hypothesis(backend, args: dict) -> str:
-    node_id = generate_node_id("H")
+    node_id = args.get("id") or generate_node_id("H")
     display_name = args["statement"][:40]
     await backend.create_node("Hypothesis", {
         "id": node_id,
@@ -172,7 +172,7 @@ async def add_hypothesis(backend, args: dict) -> str:
 
 
 async def add_question(backend, args: dict) -> str:
-    node_id = generate_node_id("Q")
+    node_id = args.get("id") or generate_node_id("Q")
     display_name = args["question"][:40]
     await backend.create_node("OpenQuestion", {
         "id": node_id,
@@ -193,7 +193,7 @@ async def add_question(backend, args: dict) -> str:
 
 
 async def add_dataset(backend, args: dict) -> str:
-    node_id = generate_node_id("D")
+    node_id = args.get("id") or generate_node_id("D")
     path = args["path"]
     display_name = os.path.basename(path) if path else args["description"][:40]
 
@@ -299,7 +299,7 @@ def _is_valid_dataset_id(value: str) -> bool:
 
 
 async def add_paper(backend, args: dict) -> str:
-    node_id = generate_node_id("P")
+    node_id = args.get("id") or generate_node_id("P")
     authors = args.get("authors", "")
     year = int(args.get("year", 0))
     if authors and year:
@@ -339,7 +339,7 @@ async def add_document(backend, args: dict) -> str:
             "suggestion": "add_script",
         })
 
-    node_id = generate_node_id("W")
+    node_id = args.get("id") or generate_node_id("W")
     now = _now()
     title = args["title"]
     display_name = title[:40] if title else os.path.basename(path) if path else ""
@@ -366,7 +366,7 @@ async def add_document(backend, args: dict) -> str:
 
 
 async def add_note(backend, args: dict) -> str:
-    node_id = generate_node_id("N")
+    node_id = args.get("id") or generate_node_id("N")
     title = args.get("title", "")
     display_name = title[:40] if title else args["content"][:40]
     await backend.create_node("ResearchNote", {
@@ -389,7 +389,7 @@ async def add_note(backend, args: dict) -> str:
 
 
 async def add_script(backend, args: dict) -> str:
-    node_id = generate_node_id("S")
+    node_id = args.get("id") or generate_node_id("S")
     path = args.get("path", "")
     display_name = os.path.basename(path) if path else ""
     await backend.create_node("Script", {
@@ -413,7 +413,7 @@ async def add_script(backend, args: dict) -> str:
 
 
 async def add_plan(backend, args: dict) -> str:
-    node_id = generate_node_id("PL")
+    node_id = args.get("id") or generate_node_id("PL")
     now = _now()
     title = args["title"]
     path = args.get("path", "")
@@ -440,7 +440,7 @@ async def add_plan(backend, args: dict) -> str:
 
 
 async def add_execution(backend, args: dict) -> str:
-    node_id = generate_node_id("X")
+    node_id = args.get("id") or generate_node_id("X")
     now = _now()
     kind = args.get("kind", "")
     description = args.get("description", "")
@@ -464,7 +464,7 @@ async def add_execution(backend, args: dict) -> str:
 
 
 async def add_ledger(backend, args: dict) -> str:
-    node_id = generate_node_id("L")
+    node_id = args.get("id") or generate_node_id("L")
     mode = args.get("mode", "")
     display_name = f"Ledger: {mode}" if mode else "Ledger"
     await backend.create_node("Ledger", {
@@ -776,17 +776,32 @@ async def link_nodes(backend, args: dict) -> str:
     if not src_label or not tgt_label:
         return json.dumps({"error": "Could not determine node labels from IDs"})
 
-    linked = await backend.create_relationship(
-        src_label, args["source_id"], rel, tgt_label, args["target_id"],
-    )
+    # Optional relationship properties (e.g. {"purpose": "training"}).
+    # Passed through to the backend so they survive round-trips through backup/restore.
+    raw_rel_props = args.get("rel_props")
+    rel_props: dict | None = raw_rel_props if isinstance(raw_rel_props, dict) and raw_rel_props else None
+
+    # Pass rel_props only when present so callers without the kwarg still work.
+    if rel_props:
+        linked = await backend.create_relationship(
+            src_label, args["source_id"], rel, tgt_label, args["target_id"],
+            rel_props=rel_props,
+        )
+    else:
+        linked = await backend.create_relationship(
+            src_label, args["source_id"], rel, tgt_label, args["target_id"],
+        )
     if linked:
         logger.info("Linked %s -[%s]-> %s", args["source_id"], rel, args["target_id"])
-        return json.dumps({
+        result: dict = {
             "status": "linked",
             "source": args["source_id"],
             "target": args["target_id"],
             "relationship": rel,
-        })
+        }
+        if rel_props:
+            result["rel_props"] = rel_props
+        return json.dumps(result)
     logger.warning("link_nodes failed: one or both nodes not found (%s, %s)", args["source_id"], args["target_id"])
     return json.dumps({"error": "One or both nodes not found"})
 
