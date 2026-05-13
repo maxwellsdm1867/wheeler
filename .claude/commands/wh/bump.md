@@ -94,6 +94,19 @@ The tagline is 3-6 words capturing the theme of this release.
 2. Grep for the new version string to confirm all locations updated.
 3. Show the scientist a summary of all changes made.
 
+## Step 6.5: Refresh installed metadata
+
+After all version strings and counts are updated and before committing, refresh the installed package metadata so wheeler.__version__ returns the new version:
+
+```bash
+pip install -e . --quiet
+python -c "import wheeler; print(wheeler.__version__)"
+```
+
+Verify the printed version exactly matches the new version you set. If it does not match, stop and investigate before committing — something is wrong with your environment and committing a bump with stale metadata will mis-stamp portable handoff archives.
+
+The reinstall must complete before the commit because the commit triggers pre-commit hooks (lint, mypy, test) that may import wheeler and expect the new version to be present.
+
 ## Step 7: Tag and commit
 
 ```bash
@@ -110,6 +123,6 @@ Do NOT push. Tell the scientist: "Version bumped and tagged. Run `git push && gi
 - Never rewrite prose. Only change version numbers, counts, and add the new changelog entry.
 - If a count hasn't changed, don't touch it.
 - If you're unsure whether something should be updated, ask.
-- The `wheeler/__init__.py` reads version from package metadata via `importlib.metadata`. Do NOT edit it. The version flows from `pyproject.toml` after `pip install -e .`.
+- The `wheeler/__init__.py` reads version from package metadata via `importlib.metadata`. Do NOT edit it. The version flows from `pyproject.toml` after `pip install -e .`, which is why Step 6.5 above is mandatory.
 
 $ARGUMENTS
