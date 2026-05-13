@@ -606,7 +606,14 @@ def _strip_neo4j_password(yaml_bytes: bytes) -> bytes:
 
 
 def _build_embedder_info(config: WheelerConfig) -> dict:
-    """Build the embedder identity dict for the manifest."""
+    """Build the embedder identity dict for the manifest.
+
+    Dimension resolution order:
+      1. Probe on-disk vectors (if any) via EmbeddingStore.load().
+      2. Look up the dim from fastembed's model registry (metadata only,
+         no model download).
+      3. Fall back to None.
+    """
     model: str | None = None
     dim: int | None = None
     fastembed_version: str | None = None
@@ -621,24 +628,37 @@ def _build_embedder_info(config: WheelerConfig) -> dict:
 
         fastembed_version = getattr(fastembed, "__version__", None)
     except ImportError:
-        pass
+        return {"model": model, "dim": None, "fastembed_version": None}
 
-    # Probe the embedding store for vector dimension (best-effort, no I/O on
-    # failure).
+    # Path 1: probe on-disk vectors (best-effort).
     try:
         from wheeler.search.embeddings import EmbeddingStore  # lazy import
 
-        store_path = Path(
+        store_path = str(
             getattr(config.search, "store_path", ".wheeler/embeddings")
         )
-        if store_path.exists():
-            store = EmbeddingStore(store_path, model=model or "BAAI/bge-small-en-v1.5")
-            first = next(iter(store), None)
-            if first is not None:
-                _, vec = first
-                dim = len(vec)
+        if Path(store_path).exists():
+            store = EmbeddingStore(store_path)
+            store.load()
+            if store._embeddings:
+                first_vec = next(iter(store._embeddings.values()))
+                dim = int(len(first_vec))
     except Exception:
         pass
+
+    # Path 2: fastembed metadata lookup if we still don't have a dim.
+    if dim is None and model:
+        try:
+            from fastembed import TextEmbedding
+
+            for m in TextEmbedding.list_supported_models():
+                if m.get("model") == model:
+                    raw_dim = m.get("dim")
+                    if isinstance(raw_dim, int):
+                        dim = raw_dim
+                    break
+        except Exception:
+            pass
 
     return {"model": model, "dim": dim, "fastembed_version": fastembed_version}
 

@@ -1054,3 +1054,56 @@ async def test_handoff_md_in_archive_layout(tmp_path, monkeypatch):
     assert "HANDOFF.md" in manifest["archive_layout"], (
         f"HANDOFF.md not in archive_layout: {manifest['archive_layout']}"
     )
+
+
+def test_build_embedder_info_uses_fastembed_registry_when_no_disk_vectors(
+    tmp_path,
+):
+    """When no on-disk vectors exist, the dim must come from fastembed's
+    metadata registry rather than staying None (issue #32)."""
+    from wheeler.backup import _build_embedder_info
+    from wheeler.config import SearchConfig, WheelerConfig
+
+    cfg = WheelerConfig(
+        search=SearchConfig(
+            model="BAAI/bge-small-en-v1.5",
+            store_path=str(tmp_path / "no_such_embeddings_dir"),
+        )
+    )
+
+    info = _build_embedder_info(cfg)
+
+    assert info["model"] == "BAAI/bge-small-en-v1.5"
+    assert info["dim"] == 384
+    assert info["fastembed_version"] is not None
+
+
+def test_build_embedder_info_fastembed_missing(tmp_path, monkeypatch):
+    """When fastembed cannot be imported, dim and version must be None
+    but the configured model name should still be reported."""
+    import builtins
+
+    from wheeler.backup import _build_embedder_info
+    from wheeler.config import SearchConfig, WheelerConfig
+
+    cfg = WheelerConfig(
+        search=SearchConfig(
+            model="BAAI/bge-small-en-v1.5",
+            store_path=str(tmp_path / "no_such_embeddings_dir"),
+        )
+    )
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "fastembed" or name.startswith("fastembed."):
+            raise ImportError("fastembed not installed (simulated)")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    info = _build_embedder_info(cfg)
+
+    assert info["model"] == "BAAI/bge-small-en-v1.5"
+    assert info["dim"] is None
+    assert info["fastembed_version"] is None
