@@ -577,6 +577,22 @@ async def restore_fresh(
         nodes_jsonl = _read_jsonl(archive_root / "graph_nodes.jsonl")
         rels_jsonl = _read_jsonl(archive_root / "graph_relationships.jsonl")
 
+        # -- Build a config with recipient connection overrides applied so any
+        #    backend call below (pre-checks, replay) talks to the recipient
+        #    Neo4j with the recipient's credentials, not the caller's. Without
+        #    this, the password from the caller's wheeler.yaml gets sent first,
+        #    fails 3 times, and trips Neo4j's AuthenticationRateLimit before the
+        #    --neo4j-password override is ever applied to the on-disk yaml.
+        #    project_tag is handled per-site below: pre-checks need to probe
+        #    with the original tag or with an empty tag, so do not bake it in.
+        recipient_config = deepcopy(config)
+        if neo4j_uri is not None:
+            recipient_config.neo4j.uri = neo4j_uri
+        if neo4j_password is not None:
+            recipient_config.neo4j.password = neo4j_password
+        if neo4j_database is not None:
+            recipient_config.neo4j.database = neo4j_database
+
         # -- Target shape check
         if not _target_is_clean(target_root) and not force:
             return {
@@ -592,7 +608,7 @@ async def restore_fresh(
         effective_tag = project_tag or config.neo4j.project_tag
         if effective_tag:
             try:
-                check_cfg = deepcopy(config)
+                check_cfg = deepcopy(recipient_config)
                 check_cfg.neo4j.project_tag = effective_tag
                 check_backend = get_backend(check_cfg)
                 await check_backend.initialize()
@@ -638,7 +654,7 @@ async def restore_fresh(
                 incoming_ids.append(nid)
         if incoming_ids:
             try:
-                probe_cfg = deepcopy(config)
+                probe_cfg = deepcopy(recipient_config)
                 # Empty tag so the query is unscoped (sees ALL namespaces).
                 probe_cfg.neo4j.project_tag = ""
                 probe_backend = get_backend(probe_cfg)
@@ -743,6 +759,19 @@ async def restore_fresh(
             recipient_config.knowledge_path = str(target_root / recipient_config.knowledge_path)
         if not Path(recipient_config.synthesis_path).is_absolute():
             recipient_config.synthesis_path = str(target_root / recipient_config.synthesis_path)
+        # Apply recipient overrides to the in-memory config. _apply_config_overrides
+        # writes them to the on-disk yaml, but if the archive did not pack a
+        # wheeler.yaml (the source kept it gitignored), the on-disk file does
+        # not exist and the override never reaches load_config. Apply directly
+        # so the replay backend talks to the right Neo4j with the right password.
+        if neo4j_uri is not None:
+            recipient_config.neo4j.uri = neo4j_uri
+        if neo4j_password is not None:
+            recipient_config.neo4j.password = neo4j_password
+        if neo4j_database is not None:
+            recipient_config.neo4j.database = neo4j_database
+        if project_tag is not None:
+            recipient_config.neo4j.project_tag = project_tag
 
         # -- Replay nodes
         from wheeler.tools.graph_tools import execute_tool

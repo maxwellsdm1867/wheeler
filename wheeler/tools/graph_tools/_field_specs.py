@@ -173,6 +173,16 @@ def validate_and_normalize(
     if required is None:
         return {}, {}
 
+    # _restoring=True flags a replay of archived nodes.  When set, any
+    # required-field check that would normally hard-fail is downgraded to
+    # a warning, because the archive may contain historical nodes from
+    # before validation tightened (or genuinely empty fields like Executions
+    # without a description).  The restore must preserve archive content
+    # faithfully; the tightened validation is for new writes, not for
+    # replaying provenance.  Popped here so it never leaks into backend
+    # writes; the path check below also consults the local variable.
+    restoring = bool(args.pop("_restoring", False))
+
     errors: dict[str, dict] = {}
     warnings: dict[str, str] = {}
 
@@ -182,9 +192,15 @@ def validate_and_normalize(
         # confidence=0.0 and priority=1 are valid, so only reject
         # missing keys and empty/whitespace strings.
         if val is None:
-            errors[field] = {"value": None, "error": "required field is missing"}
+            if restoring:
+                warnings[field] = "required field missing (restored from archive)"
+            else:
+                errors[field] = {"value": None, "error": "required field is missing"}
         elif isinstance(val, str) and not val.strip():
-            errors[field] = {"value": val, "error": "required, must be non-empty"}
+            if restoring:
+                warnings[field] = "required field empty (restored from archive)"
+            else:
+                errors[field] = {"value": val, "error": "required, must be non-empty"}
 
     # 2. Run typed field validators (only when the field is present)
     for field, checker in _FIELD_CHECKERS.items():
@@ -212,8 +228,6 @@ def validate_and_normalize(
     # When _restoring=True the caller is replaying a backup onto a new machine
     # where artifact files may not yet exist.  Downgrade _PATH_MUST_EXIST
     # errors to warnings so restore does not abort on missing external files.
-    # The flag is popped here so it never leaks into backend writes.
-    restoring = bool(args.pop("_restoring", False))
     if "path" in args and "path" not in errors:
         original = args["path"]
         must_exist = (tool_name in _PATH_MUST_EXIST) and not restoring
