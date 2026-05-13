@@ -1064,6 +1064,12 @@ def cmd_restore(
             console.print(f"[red]Restore (fresh) failed:[/red] {exc}")
             raise typer.Exit(1)
 
+        if result.get("status") == "error":
+            console.print(f"[red]Restore (fresh) refused:[/red] {result.get('error', 'unknown error')}")
+            for w in result.get("warnings", []):
+                console.print(f"[yellow]  Warning: {w}[/yellow]")
+            raise typer.Exit(1)
+
         console.print("[green]Restore complete.[/green]")
         console.print(f"  Target root:            {result.get('target_root')}")
         console.print(f"  Archive UUID:           {result.get('archive_uuid')}")
@@ -1105,6 +1111,12 @@ def cmd_restore(
             )
         except Exception as exc:
             console.print(f"[red]Restore (merge) failed:[/red] {exc}")
+            raise typer.Exit(1)
+
+        if result.get("status") == "error":
+            console.print(f"[red]Restore (merge) refused:[/red] {result.get('error', 'unknown error')}")
+            for w in result.get("warnings", []):
+                console.print(f"[yellow]  Warning: {w}[/yellow]")
             raise typer.Exit(1)
 
         console.print("[green]Merge complete.[/green]")

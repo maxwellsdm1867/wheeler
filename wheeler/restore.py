@@ -395,6 +395,43 @@ def _resolve_synthesis_sentinel(file_path: Path, target_root: Path) -> None:
         logger.warning("Could not resolve sentinel in %s: %s", file_path, exc)
 
 
+def _resolve_knowledge_json_sentinel(file_path: Path, target_root: Path) -> None:
+    """Replace ``${PROJECT}/`` with the target project root in a knowledge JSON.
+
+    Symmetric counterpart to ``_resolve_synthesis_sentinel``. Called during
+    extraction so the knowledge JSON on disk is portable even when graph
+    replay later fails or is skipped. Triple-write will overwrite this file
+    again during a successful replay, but the on-disk state is correct
+    either way.
+
+    Parses the JSON, walks declared path fields per ``iter_path_fields``, and
+    absolutizes any that start with ``${PROJECT}/``. Errors are logged and
+    silently ignored.
+    """
+    from wheeler.portability import _PROJECT_SENTINEL, absolutize, iter_path_fields  # noqa: PLC0415
+
+    try:
+        raw = file_path.read_bytes()
+        if _PROJECT_SENTINEL.encode("utf-8") not in raw:
+            return
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return
+        node_type = data.get("type", "")
+        changed = False
+        for field in iter_path_fields(node_type):
+            value = data.get(field)
+            if isinstance(value, str) and value.startswith(_PROJECT_SENTINEL):
+                data[field] = absolutize(value, target_root)
+                changed = True
+        if changed:
+            file_path.write_bytes(
+                json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+            )
+    except Exception as exc:
+        logger.warning("Could not resolve sentinel in %s: %s", file_path, exc)
+
+
 def _append_restore_log(
     target_root: Path,
     record: dict[str, Any],
@@ -587,6 +624,71 @@ async def restore_fresh(
                     "Proceeding without the check."
                 )
 
+        # -- Global id-uniqueness pre-check.
+        # Neo4j Community Edition enforces (label, id) uniqueness across the
+        # whole database, not per project_tag. Restoring an archive whose ids
+        # already exist under any other namespace would fail mid-replay with
+        # ConstraintValidationFailed. Detect collisions up front so the user
+        # can choose a workaround instead of debugging mid-restore.
+        incoming_ids: list[str] = []
+        for entry in nodes_jsonl:
+            props = entry.get("props") or {}
+            nid = props.get("id")
+            if isinstance(nid, str) and nid:
+                incoming_ids.append(nid)
+        if incoming_ids:
+            try:
+                probe_cfg = deepcopy(config)
+                # Empty tag so the query is unscoped (sees ALL namespaces).
+                probe_cfg.neo4j.project_tag = ""
+                probe_backend = get_backend(probe_cfg)
+                await probe_backend.initialize()
+                try:
+                    rows = await probe_backend.run_cypher(
+                        "MATCH (n) WHERE n.id IN $ids "
+                        "RETURN n.id AS id, n._wheeler_project AS tag LIMIT 50",
+                        {"ids": incoming_ids},
+                    )
+                    collisions = [
+                        (r.get("id"), r.get("tag") or "<no-tag>")
+                        for r in rows
+                        if r.get("id")
+                    ]
+                    if collisions:
+                        sample = ", ".join(
+                            f"{cid} (tag={ctag!r})" for cid, ctag in collisions[:5]
+                        )
+                        extra = (
+                            f" and {len(collisions) - 5} more"
+                            if len(collisions) > 5
+                            else ""
+                        )
+                        return {
+                            "status": "error",
+                            "error": (
+                                f"recipient Neo4j already has {len(collisions)} "
+                                f"incoming node id(s) under other project_tag(s) "
+                                f"(global (label, id) uniqueness on Community Edition). "
+                                f"Colliding ids: {sample}{extra}. "
+                                f"Workarounds: (1) run restore on a separate Neo4j "
+                                f"install, (2) use restore_merge with "
+                                f"conflict_policy='prefix' to rewrite incoming ids, "
+                                f"(3) delete the existing nodes first if they are stale."
+                            ),
+                            "archive_path": str(archive_path),
+                        }
+                finally:
+                    try:
+                        await probe_backend.close()
+                    except Exception:
+                        pass
+            except Exception as exc:
+                warnings.append(
+                    f"Could not pre-check recipient Neo4j for id collisions: {exc}. "
+                    "Proceeding; mid-restore ConstraintValidationFailed errors "
+                    "may surface if ids overlap."
+                )
+
         # -- Extract project/ subtree (must happen before graph replay so
         #    files exist on disk when _PATH_MUST_EXIST fires).
         # The embeddings directory is handled separately (step 8) so we can
@@ -614,6 +716,11 @@ async def restore_fresh(
                     # so intermediate state is correct before triple-write runs.
                     if rel_str.startswith("synthesis/") and item.name.endswith(".md"):
                         _resolve_synthesis_sentinel(dest, target_root)
+                    # Same for knowledge JSON files. Triple-write will
+                    # overwrite these on successful replay, but if replay
+                    # fails the on-disk JSONs must still be portable.
+                    elif rel_str.startswith("knowledge/") and item.name.endswith(".json"):
+                        _resolve_knowledge_json_sentinel(dest, target_root)
         else:
             # Fallback: old layout without project/ subtree.
             target_root.mkdir(parents=True, exist_ok=True)

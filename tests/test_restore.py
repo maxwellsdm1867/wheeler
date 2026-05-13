@@ -1615,3 +1615,178 @@ async def test_verify_against_same_instance_avoids_id_collision(tmp_path):
     # The pre-existing live node must survive scratch cleanup.
     assert "F-existing" in backend.nodes_by_id
     assert backend.nodes_by_id["F-existing"]["_wheeler_project"] == "live"
+
+
+# ===========================================================================
+# Issue #34: restore_fresh global id-uniqueness pre-check
+# ===========================================================================
+
+
+class GlobalIdCheckFakeBackend(FakeRestoreBackend):
+    """FakeRestoreBackend that answers the global id-collision pre-check.
+
+    The pre-check query is ``MATCH (n) WHERE n.id IN $ids RETURN n.id AS id,
+    n._wheeler_project AS tag``. This backend returns any pre-populated nodes
+    whose ids match, regardless of their tag.
+    """
+
+    async def run_cypher(self, query: str, params: dict | None = None) -> list[dict]:
+        params = params or {}
+        if "WHERE n.id IN $ids" in query:
+            ids = set(params.get("ids") or [])
+            matches: list[dict] = []
+            for nid in ids:
+                if nid in self.nodes_by_id:
+                    matches.append({
+                        "id": nid,
+                        "tag": self.nodes_by_id[nid].get("_wheeler_project", ""),
+                    })
+            return matches
+        return await super().run_cypher(query, params)
+
+
+@pytest.mark.asyncio
+async def test_restore_fresh_refuses_global_id_collision(tmp_path):
+    """Issue #34: restore_fresh must pre-check (label, id) uniqueness across
+    all namespaces in the recipient Neo4j. Community Edition enforces this
+    constraint globally, so two nodes with the same id under different
+    project_tags still collide. Refuse fast with a clear error pointing to
+    workarounds.
+    """
+    target = tmp_path / "target"
+    target.mkdir()
+
+    nodes = [
+        _make_finding_node("F-collide01"),
+        _make_finding_node("F-collide02"),
+        _make_finding_node("F-fresh"),
+    ]
+    archive = _build_v2_archive(tmp_path, nodes=nodes, relationships=[])
+
+    backend = GlobalIdCheckFakeBackend("new-target-tag")
+    # Pre-populate a colliding node under a DIFFERENT tag.
+    backend.nodes_by_id["F-collide01"] = {
+        "id": "F-collide01",
+        "title": "Pre-existing under different tag",
+        "_wheeler_project": "some-other-project",
+    }
+    backend.node_label_by_id["F-collide01"] = "Finding"
+    backend.nodes_by_label.setdefault("Finding", []).append(
+        backend.nodes_by_id["F-collide01"]
+    )
+
+    with patch(
+        "wheeler.tools.graph_tools._get_backend",
+        new_callable=AsyncMock,
+        return_value=backend,
+    ), patch("wheeler.restore.get_backend", return_value=backend):
+        cfg = WheelerConfig()
+        result = await restore_fresh(
+            cfg, archive, target, project_tag="new-target-tag"
+        )
+
+    assert result["status"] == "error"
+    err = result["error"].lower()
+    assert "id" in err
+    assert "F-collide01" in result["error"]
+    assert "some-other-project" in result["error"]
+    # The error must point the user to the workarounds.
+    assert "restore_merge" in result["error"] or "prefix" in result["error"]
+    # F-fresh must NOT have been created: replay never started.
+    assert "F-fresh" not in backend.nodes_by_id
+
+
+# ===========================================================================
+# Issue #35: knowledge JSON sentinel resolution on disk during extraction
+# ===========================================================================
+
+
+def test_resolve_knowledge_json_sentinel_in_isolation(tmp_path):
+    """Issue #35: _resolve_knowledge_json_sentinel must absolutize ${PROJECT}/
+    path fields in a knowledge JSON file in place, without depending on
+    triple-write or any graph state.
+    """
+    from wheeler.restore import _resolve_knowledge_json_sentinel  # noqa: PLC0415
+
+    target_root = tmp_path / "newproj"
+    target_root.mkdir()
+    knowledge_dir = target_root / "knowledge"
+    knowledge_dir.mkdir()
+
+    jpath = knowledge_dir / "S-deadbeef.json"
+    # Script has a 'path' field per portability.iter_path_fields("Script").
+    jpath.write_text(json.dumps({
+        "id": "S-deadbeef",
+        "type": "Script",
+        "path": "${PROJECT}/scripts/fit.py",
+        "hash": "sha256:abc",
+        "language": "python",
+        "version": "",
+    }))
+
+    _resolve_knowledge_json_sentinel(jpath, target_root)
+
+    resolved = json.loads(jpath.read_text())
+    assert "${PROJECT}" not in resolved["path"], resolved
+    expected_prefix = str(target_root.resolve())
+    assert resolved["path"].startswith(expected_prefix), resolved
+
+
+@pytest.mark.asyncio
+async def test_restore_fresh_resolves_knowledge_sentinel_even_when_replay_fails(tmp_path):
+    """Issue #35: even when graph replay fails entirely (here: simulated by an
+    empty backend that rejects every create), the extracted knowledge JSON
+    files on disk must have their ${PROJECT}/ sentinels resolved. Without
+    the extraction-time helper, the JSONs only get rewritten by triple-write
+    after a successful replay, so a failed restore leaves portable-but-not-
+    really sentinel paths on disk.
+    """
+    target = tmp_path / "target"
+    target.mkdir()
+
+    nodes = [
+        _make_finding_node("F-sentinel1", path="${PROJECT}/figures/x.png"),
+    ]
+    # The archive's project/knowledge/F-sentinel1.json carries the same
+    # sentinel-prefixed path as the graph node, mirroring what backup.py's
+    # _rewrite_knowledge_json_bytes produces.
+    knowledge_blob = json.dumps({
+        "id": "F-sentinel1",
+        "type": "Finding",
+        "description": "Test finding",
+        "path": "${PROJECT}/figures/x.png",
+    }).encode("utf-8")
+    archive = _build_v2_archive(
+        tmp_path,
+        nodes=nodes,
+        relationships=[],
+        project_files={"knowledge/F-sentinel1.json": knowledge_blob},
+    )
+
+    # Build a backend that fails every create_node so triple-write never
+    # overwrites the extracted knowledge JSON. The extraction-time resolver
+    # must do its job regardless.
+    class FailReplayBackend(FakeRestoreBackend):
+        async def create_node(self, label: str, properties: dict) -> str:
+            raise RuntimeError("simulated replay failure")
+
+    backend = FailReplayBackend("myproject")
+
+    with patch(
+        "wheeler.tools.graph_tools._get_backend",
+        new_callable=AsyncMock,
+        return_value=backend,
+    ), patch("wheeler.restore.get_backend", return_value=backend):
+        cfg = WheelerConfig()
+        await restore_fresh(cfg, archive, target, project_tag="myproject")
+
+    # The extracted knowledge JSON should NOT contain the sentinel anymore.
+    jpath = target / "knowledge" / "F-sentinel1.json"
+    assert jpath.exists(), "extraction must complete even when replay fails"
+    body = jpath.read_text()
+    assert "${PROJECT}" not in body, (
+        f"sentinel left unresolved on disk after replay failure:\n{body[:400]}"
+    )
+    expected_prefix = str(target.resolve())
+    parsed = json.loads(body)
+    assert parsed["path"].startswith(expected_prefix), parsed["path"]
