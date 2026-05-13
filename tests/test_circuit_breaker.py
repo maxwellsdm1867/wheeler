@@ -6,7 +6,20 @@ from unittest.mock import patch
 
 import pytest
 
-from wheeler.graph.circuit_breaker import CBState, CircuitBreaker, CircuitOpenError
+from wheeler.graph.circuit_breaker import (
+    CBState,
+    CircuitBreaker,
+    CircuitOpenError,
+    is_deterministic_neo4j_error,
+)
+
+
+class _FakeNeo4jError(Exception):
+    """Mimics neo4j.exceptions.Neo4jError: an exception with a `code` attribute."""
+
+    def __init__(self, code: str, message: str = "") -> None:
+        super().__init__(message or code)
+        self.code = code
 
 
 def test_initial_state_is_closed():
@@ -108,3 +121,70 @@ def test_check_message_includes_retry_time():
     cb.record_failure()
     with pytest.raises(CircuitOpenError, match=r"Retry in \d+s"):
         cb.check()
+
+
+# -- Deterministic-vs-transient error classification (issue #31) --
+
+
+def test_is_deterministic_schema_constraint_violation():
+    exc = _FakeNeo4jError("Neo.ClientError.Schema.ConstraintValidationFailed", "dup id")
+    assert is_deterministic_neo4j_error(exc) is True
+
+
+def test_is_deterministic_statement_syntax_error():
+    exc = _FakeNeo4jError("Neo.ClientError.Statement.SyntaxError", "bad cypher")
+    assert is_deterministic_neo4j_error(exc) is True
+
+
+def test_is_deterministic_plain_connection_error_is_false():
+    exc = ConnectionError("refused")
+    assert is_deterministic_neo4j_error(exc) is False
+
+
+def test_is_deterministic_no_code_attribute_is_false():
+    exc = RuntimeError("boom")
+    assert is_deterministic_neo4j_error(exc) is False
+
+
+def test_deterministic_failures_do_not_advance_counter():
+    cb = CircuitBreaker(failure_threshold=3)
+    deterministic = _FakeNeo4jError(
+        "Neo.ClientError.Schema.ConstraintValidationFailed", "dup id"
+    )
+    # Simulate the call-site logic: deterministic errors only call
+    # record_underlying, not record_failure.
+    for _ in range(5):
+        assert is_deterministic_neo4j_error(deterministic) is True
+        cb.record_underlying(deterministic)
+    assert cb._failure_count == 0
+    assert cb.state == CBState.CLOSED
+
+
+def test_open_message_includes_last_underlying_cause():
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
+    transient = ConnectionError("Connection refused on bolt://localhost:7687")
+    for _ in range(3):
+        cb.record_failure()
+        cb.record_underlying(transient)
+    assert cb.state == CBState.OPEN
+    with pytest.raises(CircuitOpenError) as excinfo:
+        cb.check()
+    msg = str(excinfo.value)
+    assert "Neo4j circuit breaker open" in msg
+    assert "Most recent failure: ConnectionError:" in msg
+    assert "Connection refused on bolt://localhost:7687" in msg
+
+
+def test_open_message_truncates_long_cause():
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+    long_text = "x" * 500
+    transient = ConnectionError(long_text)
+    cb.record_failure()
+    cb.record_underlying(transient)
+    with pytest.raises(CircuitOpenError) as excinfo:
+        cb.check()
+    msg = str(excinfo.value)
+    # 200-char cap + ellipsis
+    assert "..." in msg
+    # Ensure not the entire 500-char payload made it through
+    assert long_text not in msg

@@ -17,7 +17,11 @@ import logging
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.backend import GraphBackend
-from wheeler.graph.circuit_breaker import CircuitBreaker, CircuitOpenError
+from wheeler.graph.circuit_breaker import (
+    CircuitBreaker,
+    CircuitOpenError,
+    is_deterministic_neo4j_error,
+)
 from wheeler.graph.schema import (
     LABEL_TO_PREFIX,
     generate_node_id,
@@ -93,8 +97,12 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_success()
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
         logger.debug("Created %s node %s", label, node_id)
@@ -120,8 +128,12 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_success()
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
         if record is None:
@@ -159,8 +171,12 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_success()
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
         return record is not None
@@ -197,8 +213,12 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_success()
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
         logger.debug("Deleted %s node %s", label, node_id)
@@ -249,8 +269,12 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_success()
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
         if record:
@@ -301,8 +325,12 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_success()
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
         return [dict(r["n"]) for r in records]
@@ -318,8 +346,12 @@ class Neo4jBackend(GraphBackend):
             return result
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
 
     # -- raw cypher --
@@ -337,6 +369,10 @@ class Neo4jBackend(GraphBackend):
             return records
         except CircuitOpenError:
             raise
-        except Exception:
+        except Exception as exc:
+            if is_deterministic_neo4j_error(exc):
+                self._cb.record_underlying(exc)
+                raise
             self._cb.record_failure()
+            self._cb.record_underlying(exc)
             raise
