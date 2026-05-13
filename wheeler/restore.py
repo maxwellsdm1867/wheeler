@@ -1246,12 +1246,19 @@ async def restore_merge(
 async def _replay_nodes(
     backend: GraphBackend,
     nodes: list[dict[str, Any]],
+    id_map: dict[str, str] | None = None,
 ) -> tuple[dict[str, int], list[str]]:
     """Replay node JSONL into the scratch namespace.
 
     Returns (counts_by_label, errors). Each line is ``{"label": ..., "props": {...}}``.
     The backend auto-stamps ``_wheeler_project`` because project_tag is set
     on the config it was built with.
+
+    If ``id_map`` is provided, each node's ``id`` is rewritten to
+    ``id_map[original_id]`` before ``create_node``. This avoids collisions
+    with live nodes that share the same id when the archive was packed
+    from the same Neo4j instance (the ``(label, id)`` constraint is
+    global, not namespaced by ``_wheeler_project``).
     """
     counts: dict[str, int] = defaultdict(int)
     errors: list[str] = []
@@ -1262,7 +1269,11 @@ async def _replay_nodes(
             errors.append(f"malformed node entry: {entry!r}")
             continue
         try:
-            await backend.create_node(label, dict(props))
+            write_props = dict(props)
+            original_id = write_props.get("id")
+            if id_map and isinstance(original_id, str) and original_id in id_map:
+                write_props["id"] = id_map[original_id]
+            await backend.create_node(label, write_props)
             counts[label] += 1
         except Exception as exc:
             errors.append(f"create_node({label}, id={props.get('id')!r}) failed: {exc}")
@@ -1273,6 +1284,7 @@ async def _replay_relationships(
     backend: GraphBackend,
     rels: list[dict[str, Any]],
     node_label_by_id: dict[str, str],
+    id_map: dict[str, str] | None = None,
 ) -> tuple[dict[str, int], list[str]]:
     """Replay relationship JSONL into the scratch namespace.
 
@@ -1280,6 +1292,12 @@ async def _replay_relationships(
     "rel_props": {...}}``. We look up the source/target labels from the
     node JSONL we just replayed; relationships pointing at unknown IDs are
     counted as errors (the manifest comparison will surface the count drop).
+
+    ``node_label_by_id`` must be keyed on the **prefixed** ids when
+    ``id_map`` is supplied: callers build the label index after the
+    prefix rewrite so endpoints look up consistently. When ``id_map`` is
+    provided, source/target ids in the JSONL are rewritten symmetrically
+    via the map before label lookup and ``create_relationship``.
     """
     counts: dict[str, int] = defaultdict(int)
     errors: list[str] = []
@@ -1290,6 +1308,9 @@ async def _replay_relationships(
         if not (rel_type and src_id and tgt_id):
             errors.append(f"malformed relationship entry: {entry!r}")
             continue
+        if id_map:
+            src_id = id_map.get(src_id, src_id)
+            tgt_id = id_map.get(tgt_id, tgt_id)
         src_label = node_label_by_id.get(src_id)
         tgt_label = node_label_by_id.get(tgt_id)
         if not src_label or not tgt_label:
@@ -1338,6 +1359,7 @@ def _compare_counts(
 def _compare_property_sample(
     nodes_jsonl: list[dict[str, Any]],
     nodes_in_graph: list[dict[str, Any]],
+    id_map: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """Compare representative properties for a sample of nodes per label.
 
@@ -1345,6 +1367,12 @@ def _compare_property_sample(
     nodes; for each sampled node ID, find the corresponding entry in
     ``nodes_in_graph`` and compare ``_PROPERTY_SAMPLE_FIELDS`` (skipping
     fields the JSONL didn't carry). First mismatch wins.
+
+    When ``id_map`` is supplied, the graph holds prefixed ids while the
+    archive JSONL still carries the originals. We look up the in-graph
+    entry by the prefixed id, and when comparing the ``id`` field we
+    strip the prefix off the graph value before comparing against the
+    archive value.
     """
     by_label_jsonl: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for entry in nodes_jsonl:
@@ -1359,19 +1387,33 @@ def _compare_property_sample(
         if nid:
             graph_by_id[nid] = n
 
+    # Reverse map: prefixed id -> original id, for the id-field comparison.
+    reverse_id_map: dict[str, str] = (
+        {prefixed: orig for orig, prefixed in id_map.items()} if id_map else {}
+    )
+
     sampled = 0
     for label, props_list in by_label_jsonl.items():
         for original in props_list[:_PROPERTY_SAMPLE_PER_LABEL]:
-            nid = original["id"]
-            in_graph = graph_by_id.get(nid)
+            original_id = original["id"]
+            lookup_id = id_map.get(original_id, original_id) if id_map else original_id
+            in_graph = graph_by_id.get(lookup_id)
             if in_graph is None:
-                return False, f"{label} {nid}: present in archive but missing from graph"
+                return False, (
+                    f"{label} {original_id}: present in archive but missing from graph"
+                )
             for field in _PROPERTY_SAMPLE_FIELDS:
                 if field not in original:
                     continue
-                if in_graph.get(field) != original[field]:
+                graph_val = in_graph.get(field)
+                # When comparing the id field with an active prefix map,
+                # the graph carries the prefixed value: strip back to the
+                # original before comparing.
+                if field == "id" and id_map and isinstance(graph_val, str):
+                    graph_val = reverse_id_map.get(graph_val, graph_val)
+                if graph_val != original[field]:
                     return False, (
-                        f"{label} {nid} property '{field}': "
+                        f"{label} {original_id} property '{field}': "
                         f"expected {original[field]!r}, got {in_graph.get(field)!r}"
                     )
             sampled += 1
@@ -1583,20 +1625,31 @@ async def verify_backup(
             await backend.initialize()
 
         try:
-            # Replay nodes and relationships into the scratch namespace.
+            # Build an id-rewrite map so replayed nodes don't collide with
+            # live nodes that share the same id when the archive came from
+            # the same Neo4j instance. The global ``(label, id)`` constraint
+            # is not namespaced by ``_wheeler_project``; prefixing the
+            # scratch ids sidesteps the collision symmetrically for nodes
+            # and both relationship endpoints. (Issue #29.)
+            id_map: dict[str, str] = {}
             label_by_id: dict[str, str] = {}
             for entry in nodes_jsonl:
                 lbl = entry.get("label")
                 props = entry.get("props") or {}
                 nid = props.get("id")
                 if isinstance(lbl, str) and isinstance(nid, str):
-                    label_by_id[nid] = lbl
+                    prefixed = f"{scratch_tag}__{nid}"
+                    id_map[nid] = prefixed
+                    # Key the label index on the prefixed id so the
+                    # relationship replay can resolve endpoints after the
+                    # symmetric rewrite.
+                    label_by_id[prefixed] = lbl
 
             replay_node_counts, node_errors = await _replay_nodes(
-                backend, nodes_jsonl
+                backend, nodes_jsonl, id_map
             )
             replay_rel_counts, rel_errors = await _replay_relationships(
-                backend, rels_jsonl, label_by_id
+                backend, rels_jsonl, label_by_id, id_map
             )
 
             if node_errors:
@@ -1651,7 +1704,9 @@ async def verify_backup(
 
             # Property sample.
             graph_nodes_dump = await _fetch_all_scratch_nodes(backend, scratch_tag)
-            ok, detail = _compare_property_sample(nodes_jsonl, graph_nodes_dump)
+            ok, detail = _compare_property_sample(
+                nodes_jsonl, graph_nodes_dump, id_map
+            )
             _record("property_sample_match", "PASS" if ok else "FAIL", detail)
 
         finally:

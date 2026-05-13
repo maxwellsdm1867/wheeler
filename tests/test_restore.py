@@ -365,8 +365,11 @@ async def test_verify_property_mismatch_returns_fail(tmp_path):
     class CorruptingBackend(FakeBackend):
         async def create_node(self, label, properties):
             props = dict(properties)
-            # Silently corrupt the title for one specific node.
-            if props.get("id") == "F-bbb":
+            # Silently corrupt the title for one specific node. After the
+            # issue #29 fix, verify_backup prefixes incoming ids with the
+            # scratch tag, so match on the suffix rather than exact id.
+            incoming_id = props.get("id") or ""
+            if incoming_id.endswith("F-bbb"):
                 props["title"] = "CORRUPTED"
             return await super().create_node(label, props)
 
@@ -463,9 +466,11 @@ async def test_keep_scratch_skips_cleanup(tmp_path):
 
     assert result["verdict"] == "PASS"
     assert backend.cleanup_calls == []
-    # Replayed nodes should still be present.
-    assert "F-aaa" in backend.nodes_by_id
-    assert "F-bbb" in backend.nodes_by_id
+    # Replayed nodes should still be present. Issue #29: ids are prefixed
+    # with the scratch tag in the scratch namespace, so check for the
+    # prefixed form.
+    assert f"{scratch_tag}__F-aaa" in backend.nodes_by_id
+    assert f"{scratch_tag}__F-bbb" in backend.nodes_by_id
 
 
 @pytest.mark.asyncio
@@ -1506,3 +1511,107 @@ async def test_synthesis_sentinel_resolves_on_restore(tmp_path):
             f"Project A's root path leaked into {md_file.name} on project B. "
             f"A root: {a_root_str!r}"
         )
+
+
+# ===========================================================================
+# Issue #29: verify_backup against same Neo4j instance the archive came from.
+# ===========================================================================
+
+
+class UniqueIdFakeBackend(FakeBackend):
+    """FakeBackend that enforces the global ``(label, id)`` uniqueness
+    constraint Neo4j applies. ``_wheeler_project`` does NOT participate
+    in the constraint, so two nodes that share ``(label, id)`` but live
+    in different scratch namespaces still collide. This is precisely the
+    failure mode issue #29 fixes.
+
+    Also overrides DETACH DELETE cleanup to scope by ``_wheeler_project``
+    rather than wiping everything: the live (untagged-by-scratch) nodes
+    must survive a scratch cleanup.
+    """
+
+    async def create_node(self, label: str, properties: dict) -> str:
+        nid = properties.get("id")
+        if nid and nid in self.nodes_by_id:
+            existing_label = self.node_label_by_id.get(nid)
+            if existing_label == label:
+                raise RuntimeError(
+                    f"constraint violation: ({label}, id={nid!r}) "
+                    f"already exists"
+                )
+        return await super().create_node(label, properties)
+
+    async def run_cypher(self, query: str, params: dict | None = None) -> list[dict]:
+        params = params or {}
+        ptag = params.get("ptag", "")
+        if "DETACH DELETE" in query:
+            self.cleanup_calls.append(ptag)
+            if ptag:
+                doomed = [
+                    nid for nid, props in self.nodes_by_id.items()
+                    if props.get("_wheeler_project") == ptag
+                ]
+                for nid in doomed:
+                    self.nodes_by_id.pop(nid, None)
+                    self.node_label_by_id.pop(nid, None)
+                for label, items in list(self.nodes_by_label.items()):
+                    self.nodes_by_label[label] = [
+                        it for it in items if it.get("_wheeler_project") != ptag
+                    ]
+                self.relationships = [
+                    (s, r, t) for (s, r, t) in self.relationships
+                    if s in self.nodes_by_id and t in self.nodes_by_id
+                ]
+            return []
+        return await super().run_cypher(query, params)
+
+
+@pytest.mark.asyncio
+async def test_verify_against_same_instance_avoids_id_collision(tmp_path):
+    """Issue #29: verify on an archive packed from the same Neo4j instance.
+
+    A live ``Finding(id="F-existing")`` already exists. The archive also
+    contains ``Finding(id="F-existing")``. Pre-fix, the replay tripped
+    Neo4j's global ``(label, id)`` uniqueness constraint. Post-fix, the
+    scratch replay rewrites the id to ``<scratch_tag>__F-existing`` so
+    it cannot collide with the live node, and verify_backup returns
+    verdict=PASS.
+    """
+    nodes = [
+        {
+            "label": "Finding",
+            "props": {"id": "F-existing", "title": "Live", "type": "Finding"},
+        },
+    ]
+    archive = _build_archive(tmp_path, nodes=nodes, relationships=[])
+
+    cfg = WheelerConfig()
+    scratch_tag = "__restore_verify_test_collision__"
+
+    backend = UniqueIdFakeBackend(project_tag=scratch_tag)
+    # Pre-populate a live node with the same (label, id) the archive carries.
+    # Tag it with a different project so cleanup-by-tag won't sweep it.
+    backend.nodes_by_label["Finding"].append(
+        {"id": "F-existing", "title": "Live", "_wheeler_project": "live"}
+    )
+    backend.nodes_by_id["F-existing"] = {
+        "id": "F-existing",
+        "title": "Live",
+        "_wheeler_project": "live",
+    }
+    backend.node_label_by_id["F-existing"] = "Finding"
+
+    import wheeler.restore as restore_mod
+
+    original = restore_mod._make_scratch_tag
+    restore_mod._make_scratch_tag = lambda: scratch_tag
+    try:
+        result = await verify_backup(cfg, archive, backend=backend)
+    finally:
+        restore_mod._make_scratch_tag = original
+
+    assert result["verdict"] == "PASS", result
+    assert result["first_failure"] is None
+    # The pre-existing live node must survive scratch cleanup.
+    assert "F-existing" in backend.nodes_by_id
+    assert backend.nodes_by_id["F-existing"]["_wheeler_project"] == "live"
