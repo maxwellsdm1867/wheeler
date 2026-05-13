@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.0-blue" alt="v0.9.0">
+  <img src="https://img.shields.io/badge/v0.9.1-blue" alt="v0.9.1">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -167,6 +167,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details>
+<summary><b>v0.9.1</b> (2026-05-12) — Post-handoff bug sweep</summary>
+
+- **Restore verify on same Neo4j**: `wheeler restore --verify` now prefixes scratch-namespace node IDs so it works against the same Neo4j the archive was packed from (#29).
+- **Version stamping on bump**: `/wh:bump` now refreshes installed package metadata so `wheeler.__version__` (and HANDOFF.md / backup manifest) reflect the new version immediately (#30).
+- **Cypher error visibility**: The Neo4j circuit breaker no longer masks deterministic schema and syntax errors behind a generic "circuit breaker open" message; the original exception surfaces directly (#31).
+- **Embedder dimension in backups**: HANDOFF.md and the manifest report `dim 384` for fresh projects with no on-disk vectors, by reading the model registry instead of failing silently (#32).
+- **No more pydantic warning**: `DatasetModel.schema` was renamed to `column_schema` to stop shadowing pydantic's reserved attribute; the MCP/CLI parameter `schema` is unchanged for back-compat (#33).
+- **Test suite at 1545** (was 1534 in v0.9.0).
+
+</details>
+
+<details>
 <summary><b>v0.9.0</b> (2026-05-12) — Portable handoff and migration</summary>
 
 - **Portable archives**: `wheeler backup` now packs the full project tree (`.plans/`, `.notes/`, scripts, data) and rewrites artifact paths to a `${PROJECT}/` sentinel, so archives move cleanly between machines. Use `--scope graph-only` for the smaller v1-style metadata-only archive.
@@ -285,7 +297,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1534 tests
+tests/                        # 1545 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -297,7 +309,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1534 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1545 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 

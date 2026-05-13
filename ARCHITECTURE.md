@@ -673,7 +673,7 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ## MCP Tools (50 total, 5 servers)
 
-As of v0.9.0 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
+As of v0.9.1 the MCP surface is available as a monolith **and** as four focused servers. Both wrap the same underlying implementation in `wheeler/tools/graph_tools/`. Claude Code can load one, the other, or both via `.mcp.json`.
 
 | Server | Module | Tools | Scope |
 |--------|--------|-------|-------|
