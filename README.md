@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.8.0-blue" alt="v0.8.0">
+  <img src="https://img.shields.io/badge/v0.9.0-blue" alt="v0.9.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -167,6 +167,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details>
+<summary><b>v0.9.0</b> (2026-05-12) — Portable handoff and migration</summary>
+
+- **Portable archives**: `wheeler backup` now packs the full project tree (`.plans/`, `.notes/`, scripts, data) and rewrites artifact paths to a `${PROJECT}/` sentinel, so archives move cleanly between machines. Use `--scope graph-only` for the smaller v1-style metadata-only archive.
+- **Real restore**: `wheeler restore --fresh --target DIR` reconstitutes a Wheeler project on a new machine; `--merge --conflict {skip|replace|prefix}` imports into an existing one. `--verify` keeps its existing semantics.
+- **Manifest v2**: archives carry `archive_uuid`, SHA-256 `manifest_signature`, embedder identity, schema version, source machine info, and an `external_references` table for files outside the project root. Old (v1) archives still verify; restore requires v2.
+- **Self-documenting archives**: every archive ships a `HANDOFF.md` at its root with templated recipient instructions, readable without unpacking (`tar -xOzf <archive> HANDOFF.md`).
+- **Safety**: secret scan runs on every packed file; `wheeler.yaml` password is stripped to `${NEO4J_PASSWORD}`; `--allow-secrets` records offenders in the manifest.
+- **Test suite at 1534** (was 1379 in v0.8.0).
+
+</details>
+
+<details>
 <summary><b>v0.8.0</b> (2026-05-10) — Backup/restore, graph quality agents, provenance fixes</summary>
 
 - **Backup and restore (#27, #28)**: New `wheeler backup` Typer subcommand snapshots canonical state (knowledge/, synthesis/, .wheeler/, wheeler.yaml + live Neo4j dump) to a single tar.gz archive with manifest.json. New `wheeler restore --verify` validates restorability via project-tag isolation, no Docker required.
@@ -273,7 +285,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1023 tests
+tests/                        # 1534 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -285,7 +297,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1023 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1534 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
