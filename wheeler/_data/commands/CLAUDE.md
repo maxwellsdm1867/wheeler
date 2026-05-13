@@ -42,7 +42,7 @@ YAML frontmatter controls tool access. The markdown body IS the system prompt.
 - `ask`: Query the knowledge graph
 - `chat`: Casual discussion
 - `pair`: Live analysis co-work
-- `init`: Initialize new project
+- `init`: Initialize new project (fresh or restored from a backup archive)
 - `resume`/`pause`: Session continuity
 - `handoff`/`reconvene`/`queue`: Independent work pipeline
 - `report`: Generate work log

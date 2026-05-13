@@ -545,7 +545,10 @@ async def test_secret_scan_raises_on_api_key(tmp_path, monkeypatch):
 
     # Plant a secret in .notes/scratch.md.
     notes_file = tmp_path / ".notes" / "scratch.md"
-    notes_file.write_text("# Scratch\n\nANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxx\n")
+    notes_file.write_text(
+        "# Scratch\n\nANTHROPIC_API_KEY="
+        "sk-ant-api03-abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop\n"
+    )
 
     backend = FakeBackend()
 
@@ -572,7 +575,10 @@ async def test_secret_scan_allow_secrets_override(tmp_path, monkeypatch):
     cfg, project_root = _setup_full_project(tmp_path)
 
     notes_file = tmp_path / ".notes" / "scratch.md"
-    notes_file.write_text("# Scratch\n\nANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxx\n")
+    notes_file.write_text(
+        "# Scratch\n\nANTHROPIC_API_KEY="
+        "sk-ant-api03-abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop\n"
+    )
 
     backend = FakeBackend()
 
@@ -746,20 +752,21 @@ async def test_manifest_source_fields(tmp_path, monkeypatch):
 
 
 async def test_allow_secrets_recorded_in_manifest(tmp_path, monkeypatch):
-    """Gap 2: allow_secrets=True records offending files in manifest.allowed_secret_files.
+    """allow_secrets=True records offending files in manifest.allowed_secret_files.
 
-    Backs up a project containing ANTHROPIC_API_KEY=sk-ant-test in
+    Backs up a project containing a realistic-shape sk-ant- token in
     .notes/leak.md with allow_secrets=True. The manifest must carry an
     allowed_secret_files list with one entry that references .notes/leak.md
-    and lists both ANTHROPIC_API_KEY and sk-ant-token pattern names.
+    and lists the sk-ant-token pattern name.
     """
     monkeypatch.chdir(tmp_path)
     cfg, project_root = _setup_full_project(tmp_path)
 
-    # Plant a file with TWO matching patterns (key name + token value).
+    # Plant a file with a realistic key shape (>=32 chars after sk-ant-).
     leak_file = tmp_path / ".notes" / "leak.md"
     leak_file.write_text(
-        "# Leak\n\nANTHROPIC_API_KEY=sk-ant-test001\n"
+        "# Leak\n\nkey="
+        "sk-ant-api03-abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop\n"
     )
 
     backend = FakeBackend()
@@ -794,9 +801,6 @@ async def test_allow_secrets_recorded_in_manifest(tmp_path, monkeypatch):
         f"No entry for leak.md in allowed_secret_files: {allowed}"
     )
     patterns = entry.get("patterns", [])
-    assert "ANTHROPIC_API_KEY" in patterns, (
-        f"ANTHROPIC_API_KEY not listed in patterns: {patterns}"
-    )
     assert "sk-ant-token" in patterns, (
         f"sk-ant-token pattern not listed in patterns: {patterns}"
     )
@@ -818,7 +822,10 @@ async def test_graph_only_scope_runs_secret_scan(tmp_path, monkeypatch):
         json.dumps({
             "id": "F-test1234",
             "type": "Finding",
-            "description": "key=sk-ant-supersecret123 was accidentally captured",
+            "description": (
+                "key=sk-ant-api03-abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop"
+                " was accidentally captured"
+            ),
         })
     )
 
@@ -948,7 +955,10 @@ async def test_handoff_md_allowed_secrets_section(tmp_path, monkeypatch):
 
     # Plant a secret in .notes/secret_file.md.
     secret_file = tmp_path / ".notes" / "secret_file.md"
-    secret_file.write_text("# Notes\n\nANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxx\n")
+    secret_file.write_text(
+        "# Notes\n\nANTHROPIC_API_KEY="
+        "sk-ant-api03-abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop\n"
+    )
 
     backend = FakeBackend()
 

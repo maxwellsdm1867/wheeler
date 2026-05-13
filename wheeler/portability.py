@@ -98,29 +98,74 @@ def iter_path_fields(label: str) -> Iterable[str]:
 # Secret scanning
 # ---------------------------------------------------------------------------
 
-# Mirror the exact patterns from .githooks/pre-commit lines 32-38.
-# Ordered as in the hook: most specific first so snippets are readable.
+# Shape-based secret detection.  The scanner intentionally only looks for
+# the actual API-key shape, not for SDK references such as ``import anthropic``
+# or env-var names such as ``ANTHROPIC_API_KEY``.  SDK-reference detection
+# is a Wheeler *policy* concern handled by ``.githooks/pre-commit``; secret
+# scanning is a separate concern that only fires on content that could leak
+# a credential.
+#
+# Real Anthropic API keys look like ``sk-ant-api03-<~95-char base64-ish>``.
+# A length floor of 32 characters after the ``sk-ant-`` prefix excludes
+# all common test placeholders (e.g. ``sk-ant-test``, ``sk-ant-xxxx``,
+# ``sk-ant-supersecret123``, ``sk-ant-xxxxxxxxxxxxxxxxxxx``) while easily
+# matching genuine keys.  This matches the industry-standard approach used
+# by gitleaks and trufflehog: shape + length/charset constraints rather than
+# substring or entropy heuristics.
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("ANTHROPIC_API_KEY", re.compile(r"ANTHROPIC_API_KEY")),
-    ("api.anthropic.com", re.compile(r"api\.anthropic\.com")),
-    ("import anthropic", re.compile(r"import anthropic")),
-    ("from anthropic import", re.compile(r"from anthropic import")),
-    ("anthropic.Anthropic()", re.compile(r"anthropic\.Anthropic\(\)")),
-    ("sk-ant-token", re.compile(r"sk-ant-[a-zA-Z0-9_-]+")),
+    ("sk-ant-token", re.compile(r"sk-ant-[a-zA-Z0-9_-]{32,}")),
 ]
 
 
+# Path allowlist for files that legitimately contain key-shaped strings.
+# Mirrors the standard practice in gitleaks and trufflehog (test fixtures
+# and the scanner's own definition file are exempted by default) and the
+# narrower allowlist already encoded in ``.githooks/pre-commit`` lines 48-50.
+# Operators are responsible for not pasting real keys into these locations,
+# same convention as the hook.
+_ALLOWLIST_PREFIXES: tuple[str, ...] = (
+    ".githooks/",
+    "tests/",
+)
+_ALLOWLIST_EXACT: frozenset[str] = frozenset({
+    "wheeler/portability.py",
+})
+
+
+def _is_allowlisted(archive_path: str) -> bool:
+    """Whether ``archive_path`` is a file where key-shaped strings are
+    expected to be fixtures or pattern definitions, not real secrets.
+
+    Strips a leading ``project/`` prefix (used by ``scope=project`` archives)
+    before matching against the prefix and exact lists.
+    """
+    rel = archive_path
+    if rel.startswith("project/"):
+        rel = rel[len("project/"):]
+    if rel in _ALLOWLIST_EXACT:
+        return True
+    return any(rel.startswith(p) for p in _ALLOWLIST_PREFIXES)
+
+
 def scan_for_secrets(content: bytes, filename: str) -> list[tuple[str, str]]:
-    """Scan bytes for forbidden API-key patterns.
+    """Scan bytes for leaked API-key shapes.
 
     Decodes as latin-1 (byte-safe, no surrogates) so binary files do not
-    crash the scanner. Returns a list of ``(pattern_name, matched_snippet)``
-    pairs, one entry per match found. An empty list means clean.
+    crash the scanner.  Returns a list of ``(pattern_name, matched_snippet)``
+    pairs, one entry per match found.  An empty list means clean.
 
-    The patterns mirror `.githooks/pre-commit` lines 32-38 exactly so that
-    an archive produced on a machine with the hook installed cannot contain
-    any content the hook would have blocked in source.
+    Only key shapes are checked.  Things like ``import anthropic`` or the
+    bare string ``ANTHROPIC_API_KEY`` are not flagged: those are Wheeler
+    policy violations enforced by ``.githooks/pre-commit``, not secret
+    leakage.  Mixing the two concerns leads to false positives on every
+    file that documents the policy.
+
+    Test fixtures (``tests/``), the pre-commit hook (``.githooks/``), and
+    this file itself are exempt from the scan, matching the convention used
+    by gitleaks, trufflehog, and detect-secrets.
     """
+    if _is_allowlisted(filename):
+        return []
     text = content.decode("latin-1")
     hits: list[tuple[str, str]] = []
     for name, pattern in _SECRET_PATTERNS:

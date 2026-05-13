@@ -149,39 +149,14 @@ class TestIterPathFields:
 
 
 class TestScanForSecrets:
-    def test_catches_anthropic_api_key_literal(self) -> None:
-        content = b"ANTHROPIC_API_KEY=sk-ant-xxxx\n"
+    def test_catches_realistic_sk_ant_key(self) -> None:
+        """A real Anthropic key shape is detected anywhere it appears."""
+        content = (
+            b"token = 'sk-ant-api03-"
+            b"abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop"
+            b"'\n"
+        )
         hits = scan_for_secrets(content, "config.env")
-        names = [h[0] for h in hits]
-        assert "ANTHROPIC_API_KEY" in names
-
-    def test_catches_api_anthropic_com_url(self) -> None:
-        content = b"base_url = 'https://api.anthropic.com/v1'\n"
-        hits = scan_for_secrets(content, "client.py")
-        names = [h[0] for h in hits]
-        assert "api.anthropic.com" in names
-
-    def test_catches_import_anthropic(self) -> None:
-        content = b"import anthropic\nclient = anthropic.Client()\n"
-        hits = scan_for_secrets(content, "agent.py")
-        names = [h[0] for h in hits]
-        assert "import anthropic" in names
-
-    def test_catches_from_anthropic_import(self) -> None:
-        content = b"from anthropic import Anthropic\n"
-        hits = scan_for_secrets(content, "agent.py")
-        names = [h[0] for h in hits]
-        assert "from anthropic import" in names
-
-    def test_catches_anthropic_anthropic_instantiation(self) -> None:
-        content = b"client = anthropic.Anthropic()\n"
-        hits = scan_for_secrets(content, "tool.py")
-        names = [h[0] for h in hits]
-        assert "anthropic.Anthropic()" in names
-
-    def test_catches_sk_ant_token(self) -> None:
-        content = b"token = 'sk-ant-api03-abcDEF1234567890'\n"
-        hits = scan_for_secrets(content, "secrets.env")
         names = [h[0] for h in hits]
         assert "sk-ant-token" in names
 
@@ -192,18 +167,136 @@ class TestScanForSecrets:
 
     def test_binary_safe_decoding(self) -> None:
         """Bytes with high-latin1 chars do not crash the scanner."""
-        content = b"\xff\xfe" + b"ANTHROPIC_API_KEY=oops\n"
+        content = (
+            b"\xff\xfe"
+            b"sk-ant-api03-"
+            b"abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop"
+            b"\n"
+        )
         hits = scan_for_secrets(content, "binary.bin")
         names = [h[0] for h in hits]
-        assert "ANTHROPIC_API_KEY" in names
+        assert "sk-ant-token" in names
 
     def test_snippet_field_is_populated(self) -> None:
         """Each hit includes a non-empty snippet of the matched text."""
-        content = b"sk-ant-api03-realtoken123\n"
+        content = (
+            b"sk-ant-api03-"
+            b"abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop"
+            b"\n"
+        )
         hits = scan_for_secrets(content, "creds.txt")
         assert hits
         for _name, snippet in hits:
             assert snippet
+
+
+class TestScanForSecretsShapeAndLengthFloor:
+    """Shape detection must distinguish real keys from short placeholders.
+
+    Real Anthropic keys are ~95 characters long.  The length floor (32 chars
+    after ``sk-ant-``) catches every realistic key while ignoring all common
+    placeholder shapes used in tests and documentation.
+    """
+
+    REALISTIC_KEY = (
+        b"sk-ant-api03-"
+        b"abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop"
+    )
+
+    SHORT_PLACEHOLDERS = [
+        b"sk-ant-test",
+        b"sk-ant-token",
+        b"sk-ant-xxxx",
+        b"sk-ant-xxxxxxxxxxxxxxxxxxx",  # 19 chars after prefix
+        b"sk-ant-supersecret123",
+        b"sk-ant-test001",
+        b"sk-ant-api03-abcDEF1234567890",  # 22 chars after prefix, still short
+    ]
+
+    @pytest.mark.parametrize("placeholder", SHORT_PLACEHOLDERS)
+    def test_short_placeholders_are_not_flagged(self, placeholder: bytes) -> None:
+        """Stand-ins shorter than 32 chars after sk-ant- do not fire."""
+        hits = scan_for_secrets(placeholder + b"\n", "wheeler/some_module.py")
+        assert hits == [], (
+            f"placeholder {placeholder!r} should not match the shape regex, got {hits!r}"
+        )
+
+    def test_sdk_references_are_not_flagged(self) -> None:
+        """The scanner intentionally does not detect SDK usage (`import
+        anthropic`, ``ANTHROPIC_API_KEY``, etc.).  That is a Wheeler policy
+        concern owned by the pre-commit hook, not the backup scanner.
+        """
+        content = (
+            b"# This file documents the Wheeler ban on the Anthropic SDK.\n"
+            b"# Never use ANTHROPIC_API_KEY or api.anthropic.com.\n"
+            b"# Forbidden imports: `import anthropic`, "
+            b"`from anthropic import Anthropic`, anthropic.Anthropic().\n"
+        )
+        hits = scan_for_secrets(content, "CLAUDE.md")
+        assert hits == [], (
+            "SDK-reference patterns must not fire: those are policy, not secrets. "
+            f"Got: {hits!r}"
+        )
+
+    def test_realistic_key_in_docs_fires(self) -> None:
+        """A realistic-shape key in a non-allowlisted file is caught."""
+        content = b"Oops, here is the live key: " + self.REALISTIC_KEY + b"\n"
+        hits = scan_for_secrets(content, "CLAUDE.md")
+        names = [h[0] for h in hits]
+        assert "sk-ant-token" in names
+
+
+class TestScanForSecretsPathAllowlist:
+    """Test fixtures, the pre-commit hook, and ``wheeler/portability.py``
+    are exempt from the scan, matching the convention used by gitleaks,
+    trufflehog, and detect-secrets.
+    """
+
+    REALISTIC_KEY = (
+        b"sk-ant-api03-"
+        b"abcDEFghijKLMnopQRStuvWXYz0123456789-_abcDEFghijKLMnop"
+    )
+
+    ALLOWLISTED_PATHS = [
+        "tests/test_backup.py",
+        "tests/e2e/test_handoff_roundtrip.py",
+        ".githooks/pre-commit",
+        "wheeler/portability.py",
+        # scope=project archive paths carry a "project/" prefix.
+        "project/tests/test_backup.py",
+        "project/.githooks/pre-commit",
+        "project/wheeler/portability.py",
+    ]
+
+    @pytest.mark.parametrize("path", ALLOWLISTED_PATHS)
+    def test_allowlisted_paths_suppress_shape_hits(self, path: str) -> None:
+        """Files in tests/, .githooks/, or portability.py are exempt."""
+        hits = scan_for_secrets(self.REALISTIC_KEY + b"\n", path)
+        assert hits == [], (
+            f"allowlisted path {path!r} should be exempt, got {hits!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "wheeler/some_module.py",
+            "knowledge/F-abcd1234.json",
+            ".notes/scratch.md",
+            ".plans/some-plan.md",
+            "synthesis/F-abcd1234.md",
+            "docs/PROJECT-SPEC.md",
+            "wheeler.yaml",
+            "project/wheeler/some_module.py",
+            "project/.notes/scratch.md",
+        ],
+    )
+    def test_non_allowlisted_paths_fire(self, path: str) -> None:
+        """Realistic key shapes outside the allowlist are caught."""
+        hits = scan_for_secrets(self.REALISTIC_KEY + b"\n", path)
+        names = [h[0] for h in hits]
+        assert "sk-ant-token" in names, (
+            f"non-allowlisted path {path!r} should have caught the shape, got {hits!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

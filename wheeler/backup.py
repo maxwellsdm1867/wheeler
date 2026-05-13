@@ -234,8 +234,12 @@ _REL_DUMP_CYPHER = (
 )
 
 # Directories always excluded from the project/ walk. Non-overridable.
+# build/ and dist/ are standard Python build outputs and are listed in
+# .gitignore, but the simple gitignore fallback used when pathspec is not
+# installed does not handle trailing-slash directory patterns, so we add
+# them here for belt-and-braces.
 _EXCLUDED_DIRS: frozenset[str] = frozenset(
-    {".git", ".venv", "venv", "__pycache__", "node_modules"}
+    {".git", ".venv", "venv", "__pycache__", "node_modules", "build", "dist"}
 )
 
 
