@@ -26,3 +26,4 @@ synthesis/
 MagicMock/
 package/
 wh-triage-workspace/
+.claude/scheduled_tasks.lock
