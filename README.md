@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.2-blue" alt="v0.9.2">
+  <img src="https://img.shields.io/badge/v0.9.3-blue" alt="v0.9.3">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -176,6 +176,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.3</b> (2026-05-17) — Hands-free release pipeline</summary>
+
+- **`release.yml` reads `RELEASE_PAT`**: PAT-backed release creation so the resulting `release: published` event propagates to `publish.yml`. Version bump → `git push` → PyPI is now end-to-end automatic (gated on a single reviewer click for the `pypi` environment).
+
+</details>
+
+<details>
 <summary><b>v0.9.2</b> (2026-05-17) — Packaging rewrite</summary>
 
 - **One-liner install**: `uvx wheeler init my-project` scaffolds a project and wires Claude Code in under 10 seconds (well under 30 with a warm cache).
