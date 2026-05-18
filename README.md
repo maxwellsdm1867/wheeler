@@ -20,26 +20,35 @@ Runs 100% locally. No API keys, no cloud services. Your data never leaves your m
 
 ## Quick Start
 
-**New to Wheeler?** See the **[Getting Started Guide](docs/GETTING-STARTED.md)** for a complete walkthrough with Neo4j Desktop setup.
+```bash
+uvx wheeler init my-research-project
+cd my-research-project && claude
+/wh:start
+```
 
-**Already have Neo4j running?**
+That's it. The first command scaffolds the project (`.plans/`, `.wheeler/`, `wheeler.yaml`, `.mcp.json`) and installs slash commands and agents to `~/.claude/`. The second drops you into Claude Code with Wheeler's MCP servers wired up. The third routes you to the right `/wh:*` command for what you want to do.
+
+For long-lived use install Wheeler globally (faster startup, stable paths in `.mcp.json`):
+
+```bash
+uv tool install wheeler
+wheeler init my-research-project
+```
+
+Run `wheeler doctor` any time to verify your setup (Python version, deps, Claude Code, Neo4j connectivity).
+
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), and [Neo4j Desktop](https://neo4j.com/download/) (free). New to all this? Walk through the **[Getting Started Guide](docs/GETTING-STARTED.md)**.
+
+### From source
 
 ```bash
 git clone https://github.com/maxwellsdm1867/wheeler.git
 cd wheeler
-bash bin/setup.sh                # creates venv, installs deps, inits schema
+uv sync --extra dev              # editable install + tests + ruff + mypy + build
+uv run wheeler init ~/my-research-project
 ```
 
-Then open Claude Code and start working:
-
-```bash
-cd ~/my-research-project
-claude
-/wh:init                         # set up project, create graph schema
-/wh:start                        # begin each session here
-```
-
-**Prerequisites:** Python 3.11+, Node.js, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), [Neo4j Desktop](https://neo4j.com/download/) (free)
+`bin/setup.sh` is still around for the full bootstrap (Neo4j in Docker, schema init, git hooks, zsh completions).
 
 ---
 
