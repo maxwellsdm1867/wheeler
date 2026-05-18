@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.1-blue" alt="v0.9.1">
+  <img src="https://img.shields.io/badge/v0.9.2-blue" alt="v0.9.2">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -174,6 +174,19 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ---
 
 ## What's New
+
+<details open>
+<summary><b>v0.9.2</b> (2026-05-17) — Packaging rewrite</summary>
+
+- **One-liner install**: `uvx wheeler init my-project` scaffolds a project and wires Claude Code in under 10 seconds (well under 30 with a warm cache).
+- **`wheeler init` command**: creates `.plans/`, `.wheeler/`, `wheeler.yaml`, and a project-local `.mcp.json` pointing at the installed MCP servers, then registers slash commands and agents in `~/.claude/`.
+- **`wheeler serve` and `wheeler doctor`**: explicit MCP-server boot for debugging, and a tabular sanity check covering Python, deps, console scripts, Claude Code, slash commands, and Neo4j connectivity.
+- **`wheeler --version` flag**: now works at the root level (the `wheeler version` subcommand is also retained).
+- **hatchling build backend**: replaces setuptools for simpler wheel builds. `dev` and `all` extras added.
+- **uv as the primary dev workflow**: `uv sync --extra dev` replaces the manual venv + pip dance. `uv.lock` is checked in.
+- **Test suite at 1553** (was 1545 in v0.9.1).
+
+</details>
 
 <details>
 <summary><b>v0.9.1</b> (2026-05-12) — Post-handoff bug sweep</summary>
