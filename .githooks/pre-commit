@@ -72,7 +72,49 @@ else
     pass "API key safety (no staged files)"
 fi
 
-# ── Check 2: Tests pass (skip if only docs/markdown changed) ─────
+# ── Check 2: Command tree auto-mirror ────────────────────────────
+# .claude/commands/wh/ is the dev-runtime copy Claude Code loads here.
+# wheeler/_data/commands/ is the bundled copy shipped via pip.
+# Both must be identical. Auto-mirror whichever side was edited so the
+# scientist never has to remember.
+CLAUDE_CMDS_STAGED=$(echo "$STAGED_FILES" | grep -E '^\.claude/commands/wh/.+\.md$' || true)
+DATA_CMDS_STAGED=$(echo "$STAGED_FILES" | grep -E '^wheeler/_data/commands/.+\.md$' || true)
+
+if [[ -n "$CLAUDE_CMDS_STAGED" || -n "$DATA_CMDS_STAGED" ]]; then
+    MIRRORED=0
+    # .claude/ is the source of truth when both are edited. If only _data/
+    # was edited (rare), use it as source. Run .claude/ first so it wins
+    # on a tie.
+    for f in $CLAUDE_CMDS_STAGED; do
+        base=$(basename "$f")
+        target="wheeler/_data/commands/$base"
+        if ! diff -q "$f" "$target" >/dev/null 2>&1; then
+            cp "$f" "$target"
+            git add "$target"
+            MIRRORED=$((MIRRORED + 1))
+        fi
+    done
+    for f in $DATA_CMDS_STAGED; do
+        base=$(basename "$f")
+        target=".claude/commands/wh/$base"
+        # Skip if we already mirrored the other direction this run
+        if [[ -n "$CLAUDE_CMDS_STAGED" ]] && echo "$CLAUDE_CMDS_STAGED" | grep -q "/$base\$"; then
+            continue
+        fi
+        if ! diff -q "$f" "$target" >/dev/null 2>&1; then
+            cp "$f" "$target"
+            git add "$target"
+            MIRRORED=$((MIRRORED + 1))
+        fi
+    done
+    if [[ $MIRRORED -gt 0 ]]; then
+        pass "Command tree mirror (${MIRRORED} file(s) auto-synced and re-staged)"
+    else
+        pass "Command tree mirror (already in sync)"
+    fi
+fi
+
+# ── Check 3: Tests pass (skip if only docs/markdown changed) ─────
 # Detect if any Python or config files are staged
 PYTHON_CHANGED=$(echo "$STAGED_FILES" | grep -E '\.(py|toml|cfg|yaml|yml)$' || true)
 
@@ -98,7 +140,7 @@ else
     warn "Tests skipped: .venv not found"
 fi
 
-# ── Check 3: Type checking ───────────────────────────────────────
+# ── Check 4: Type checking ───────────────────────────────────────
 if command -v .venv/bin/mypy >/dev/null 2>&1; then
     info "Running mypy..."
     MYPY_OUTPUT=$(.venv/bin/mypy wheeler/ --ignore-missing-imports 2>&1) || true
@@ -115,7 +157,7 @@ else
     warn "Type checking skipped — mypy not installed"
 fi
 
-# ── Check 4: Linting ─────────────────────────────────────────────
+# ── Check 5: Linting ─────────────────────────────────────────────
 if command -v .venv/bin/ruff >/dev/null 2>&1; then
     info "Running ruff..."
     RUFF_OUTPUT=$(.venv/bin/ruff check wheeler/ 2>&1) || true

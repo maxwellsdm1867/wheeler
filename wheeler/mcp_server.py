@@ -1,11 +1,22 @@
-"""Wheeler MCP Server — exposes knowledge graph, citations, workspace, and provenance.
+"""Wheeler MCP Server — DEPRECATED legacy monolith.
 
-DEPRECATED: This monolithic server is kept for backward compatibility.
-Prefer the split servers: mcp_core, mcp_query, mcp_mutations, mcp_ops.
-See .plans/MCP-SERVER-SPLIT.md for rationale.
+** Do NOT add new tools to this file. ** New MCP tools go in the appropriate
+split server only:
 
-Thin wrapper over existing Wheeler modules. Each tool loads config once at startup,
-calls the same functions the CLI and engine use, and returns JSON-serializable results.
+  - mcp_core.py        health, status, context, search, schema, raw cypher
+  - mcp_query.py       read-only typed listings (query_*, graph_gaps)
+  - mcp_mutations.py   writes (add_*, link_nodes, update_node, set_tier, etc.)
+  - mcp_ops.py         validators, scanners, consistency (validate_citations, etc.)
+
+The split servers are the canonical surface. This monolith is scheduled for
+deletion in a future release; it remains in the source tree only for users
+running pre-split configs that the installer migration hasn't reached.
+
+Runtime safety: when this server is launched, it logs a deprecation warning so
+anyone still using it knows to switch their .mcp.json to the four splits.
+
+History: see .plans/MCP-SERVER-SPLIT.md for the rationale that produced the
+split servers.
 
 Run: python -m wheeler.mcp_server
 """
@@ -14,6 +25,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import secrets
 import time
 from datetime import datetime, timezone
@@ -33,6 +45,16 @@ from wheeler import workspace
 # Configure logging and load config once at startup
 configure_logging()
 _config: WheelerConfig = load_config()
+
+# Deprecation warning on every startup. Users on the split surface (via
+# .mcp.json connecting to mcp_core / mcp_query / mcp_mutations / mcp_ops)
+# never see this; only those still importing this module do.
+logging.getLogger(__name__).warning(
+    "wheeler.mcp_server is the DEPRECATED legacy monolith. "
+    "Update your .mcp.json to use the split servers: "
+    "mcp_core, mcp_query, mcp_mutations, mcp_ops. "
+    "The monolith will be removed in a future release."
+)
 
 # Unique session ID generated once per MCP server process
 _SESSION_ID: str = f"session-{secrets.token_hex(4)}"

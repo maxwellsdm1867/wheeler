@@ -58,11 +58,19 @@ After creating the Document node, also record the writing activity:
 - Distinguish between observed data and interpretation
 - Use the scientist's domain conventions
 
-## What are we writing?
-- Results section? Methods? Discussion? Abstract?
-- Which findings and hypotheses should be covered?
-- Target journal style/format?
+## What are we writing? (graph-first)
 
-Ask what section we're drafting.
+When `$ARGUMENTS` is empty, consult the graph before asking the scientist anything:
+
+1. Call `query_documents(status="draft", limit=3)`. `query_documents` is already ordered by `date DESC`, so the first row is the newest draft.
+2. If at least one draft exists, propose the newest on a single line:
+   `Newest draft: W-xxxx "title" ({section}, updated <relative>). Continue this? [Enter to confirm / paste a different W-xxxx / "new" to start a fresh section]`
+3. If the scientist confirms, read the file at the Document node's `path` and continue drafting.
+4. If they say "new", or no draft exists, ask which section (Results, Methods, Discussion, Abstract) and which findings/hypotheses to cover.
+5. **Nothing-to-write fast exit:** If `query_documents` returns nothing AND `query_findings(limit=1)` returns nothing, stop. Say: "Nothing in the graph to write about yet. Run `/wh:start` to begin an investigation, or `/wh:plan` to structure one." Do not draft from thin air.
+
+When `$ARGUMENTS` names a section (`results`, `methods`, etc.), skip the proposal and go straight to drafting that section.
+
+(Wheeler ID prefixes: Plan=PL-, Finding=F-, Hypothesis=H-, Document=W-, Dataset=D-, Paper=P-, Script=S-, Execution=X-, ResearchNote=N-, OpenQuestion=Q-.)
 
 $ARGUMENTS

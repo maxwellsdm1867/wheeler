@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from wheeler.contracts import (
     TaskContract, NodeRequirement, LinkRequirement, ContractResult,
     validate_contract,
+    PlanContract, VALIDATOR_REGISTRY, run_plan_validators,
 )
 
 
@@ -284,3 +287,108 @@ class TestValidateContract:
         # D-1234 found, D-5678 not found
         assert len(result.violations) == 1
         assert any("D-5678" in v for v in result.violations)
+
+
+# ---------------------------------------------------------------------------
+# PlanContract tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlanContract:
+    """Frontmatter parsing, defaults, validation."""
+
+    def test_defaults_match_legacy_behavior(self):
+        """A plan with no contract fields should parse to the default contract,
+        which is is_default and matches the historical 'analysis, flexible
+        citations, no terminal artifact' behavior."""
+        c = PlanContract.from_frontmatter({})
+        assert c.output_type == "mixed"
+        assert c.citation_mode == "flexible"
+        assert c.validation == []
+        assert c.section == "draft"
+        assert c.is_default is True
+
+    def test_writing_contract_round_trip(self):
+        """A writing plan contract parses with all four fields set."""
+        c = PlanContract.from_frontmatter({
+            "output_type": "document",
+            "citation_mode": "strict",
+            "validation": ["validate_citations"],
+            "section": "results",
+        })
+        assert c.output_type == "document"
+        assert c.citation_mode == "strict"
+        assert c.validation == ["validate_citations"]
+        assert c.section == "results"
+        assert c.is_default is False
+
+    def test_unknown_output_type_rejected(self):
+        """Typos in output_type surface at parse time, not silently fall through."""
+        with pytest.raises(ValueError, match="output_type"):
+            PlanContract.from_frontmatter({"output_type": "movie"})
+
+    def test_unknown_citation_mode_rejected(self):
+        with pytest.raises(ValueError, match="citation_mode"):
+            PlanContract.from_frontmatter({"citation_mode": "moderate"})
+
+    def test_validation_must_be_list(self):
+        """A scalar where a list is expected is a config error, not a coerced value."""
+        with pytest.raises(ValueError, match="validation"):
+            PlanContract.from_frontmatter({"validation": "validate_citations"})
+
+    def test_validation_string_items_coerced(self):
+        """List items get str()'d so YAML-parsed ints/floats don't crash later."""
+        c = PlanContract.from_frontmatter({"validation": ["validate_citations"]})
+        assert c.validation == ["validate_citations"]
+
+
+class TestValidatorRegistry:
+    """Registry contents and the unknown-validator path."""
+
+    def test_known_validators_registered(self):
+        """The minimal set of validators required for v1 must be registered."""
+        assert "validate_citations" in VALIDATOR_REGISTRY
+        assert "graph_consistency_check" in VALIDATOR_REGISTRY
+
+    @pytest.mark.asyncio
+    async def test_unknown_validator_produces_violation_not_crash(self):
+        """A typo in the plan's validation list must not crash run_plan_validators;
+        it should record a violation listing the known validators."""
+        from wheeler.config import load_config
+
+        contract = PlanContract(
+            output_type="document",
+            citation_mode="strict",
+            validation=["validate_citations_typo"],
+            section="results",
+        )
+        result = await run_plan_validators(contract, None, load_config())
+        assert result.passed is False
+        assert result.checks_run == 1
+        assert len(result.violations) == 1
+        assert "unknown validator" in result.violations[0]
+
+    @pytest.mark.asyncio
+    async def test_validate_citations_requires_path(self, tmp_path):
+        """The validate_citations runner must report a clean error when given
+        no artifact path, rather than crashing."""
+        from wheeler.config import load_config
+
+        contract = PlanContract(
+            output_type="document",
+            citation_mode="strict",
+            validation=["validate_citations"],
+        )
+        result = await run_plan_validators(contract, None, load_config())
+        assert result.passed is False
+        assert "requires an artifact path" in result.violations[0]
+
+    @pytest.mark.asyncio
+    async def test_empty_validation_passes_trivially(self):
+        """No validators = nothing to check = pass."""
+        from wheeler.config import load_config
+
+        contract = PlanContract()
+        result = await run_plan_validators(contract, None, load_config())
+        assert result.passed is True
+        assert result.checks_run == 0

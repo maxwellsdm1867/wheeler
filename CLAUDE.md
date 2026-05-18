@@ -115,14 +115,20 @@ Rules:
 
 See `ARCHITECTURE.md` for the full per-module dependency map.
 
-### The MCP tool surface is duplicated
+### The MCP tool surface (split servers are canonical)
 
-The same underlying implementation in `wheeler/tools/graph_tools/` is exposed through:
+The underlying implementation in `wheeler/tools/graph_tools/` is exposed through four split FastMCP servers, one per role:
 
-- `mcp_server.py` (the legacy monolith, all 50 tools in one process)
-- `mcp_core.py`, `mcp_query.py`, `mcp_mutations.py`, `mcp_ops.py` (4 split servers)
+- `mcp_core.py` — health, status, context, search, schema, raw cypher
+- `mcp_query.py` — read-only typed listings (`query_*`, `graph_gaps`)
+- `mcp_mutations.py` — writes (`add_*`, `link_nodes`, `update_node`, `set_tier`, etc.)
+- `mcp_ops.py` — validators, scanners, consistency (`validate_citations`, etc.)
 
-All five share `mcp_shared.py` for trace ID generation, the `@_logged` decorator, config loading, and backend access. **When you add or change a tool, the authoritative implementation goes in `tools/graph_tools/`**, not in any `mcp_*.py` file. The server files are thin FastMCP wrappers that call `execute_tool()`. If a new tool needs to appear in the split-server surface, add it to both `mcp_server.py` (monolith) and the appropriate `mcp_*.py` split file.
+All share `mcp_shared.py` for trace ID generation, the `@_logged` decorator, config loading, and backend access. **The authoritative implementation of every tool lives in `tools/graph_tools/`**, not in any `mcp_*.py` file. The server files are thin FastMCP wrappers that call `execute_tool()`.
+
+**When you add a new MCP tool, register it in the split server that matches its role.** Do not add it to any other server. The role map is: read-only listings → `mcp_query`; writes that change graph nodes → `mcp_mutations`; validators / scanners / consistency operations → `mcp_ops`; everything else (search, raw cypher, schema, health) → `mcp_core`.
+
+`wheeler/mcp_server.py` is the DEPRECATED legacy monolith. It logs a deprecation warning at startup and is scheduled for removal. Do NOT add new tools to it; do NOT mirror new split-server tools into it. The parity test that previously enforced this has been retired (`tests/test_mcp_surface_parity.py` is skipped).
 
 ### Provenance, stability, and staleness
 

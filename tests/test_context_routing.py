@@ -433,7 +433,15 @@ class TestToolServerMapping:
 
 
 class TestContextToolTreeSync:
-    """Verify .claude/ and _data/ trees have identical context tool access."""
+    """Verify .claude/ and _data/ trees stay identical.
+
+    The two command trees serve different consumers (Claude Code in the dev
+    repo vs. the pip-bundled copy) but must contain identical content. Three
+    layers protect this invariant:
+      1. `wh sync-commands` (manual, between commits)
+      2. .githooks/pre-commit auto-mirror (commit time)
+      3. These tests (CI)
+    """
 
     @pytest.mark.parametrize("cmd", ALL_COMMANDS)
     def test_allowed_tools_identical(self, cmd):
@@ -455,6 +463,44 @@ class TestContextToolTreeSync:
             f"{cmd}.md allowed-tools differ:\n"
             f"  .claude only: {claude_tools - data_tools}\n"
             f"  _data only:   {data_tools - claude_tools}"
+        )
+
+    @pytest.mark.parametrize("cmd", ALL_COMMANDS)
+    def test_files_byte_identical(self, cmd):
+        """Full file content (frontmatter + body) must be byte-identical.
+
+        The auto-mirror uses `cp`, so any drift in body text means a manual
+        edit bypassed both the pre-commit hook and `wh sync-commands`. This
+        catches it in CI as the last line of defense.
+        """
+        claude_path = COMMANDS_DIR / f"{cmd}.md"
+        data_path = DATA_DIR / f"{cmd}.md"
+        if not data_path.exists():
+            pytest.skip(f"No _data mirror for {cmd}")
+
+        claude_bytes = claude_path.read_bytes()
+        data_bytes = data_path.read_bytes()
+        if claude_bytes == data_bytes:
+            return
+
+        import difflib
+
+        claude_lines = claude_path.read_text().splitlines(keepends=True)
+        data_lines = data_path.read_text().splitlines(keepends=True)
+        diff = "".join(
+            difflib.unified_diff(
+                data_lines,
+                claude_lines,
+                fromfile=f"wheeler/_data/commands/{cmd}.md",
+                tofile=f".claude/commands/wh/{cmd}.md",
+                lineterm="",
+                n=2,
+            )
+        )
+        diff_preview = "\n".join(diff.split("\n")[:40])
+        pytest.fail(
+            f"{cmd}.md content differs between .claude/ and _data/.\n"
+            f"Run: wh sync-commands\n\n{diff_preview}"
         )
 
 

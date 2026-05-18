@@ -1,7 +1,13 @@
-"""Test that monolith and split MCP servers expose the same tool surface.
+"""DEPRECATED parity test: monolith vs split MCP servers.
 
-Adversarial review #4: adding tools to split servers but forgetting the
-monolith is easy to ship and hard to notice.
+Originally enforced that adding a tool to the split servers also added it to
+the legacy monolith. With the monolith being phased out (see
+wheeler/mcp_server.py docstring), parity is no longer required: new tools
+go into the appropriate split server only.
+
+The test module is kept as a skip-marker so the file does not just disappear
+silently; this records the intent. Delete the file along with
+wheeler/mcp_server.py when the monolith is removed.
 """
 
 from __future__ import annotations
@@ -9,6 +15,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+
+# Whole-module skip. Remove this and the file together when the monolith is
+# deleted from the source tree.
+pytestmark = pytest.mark.skip(
+    reason="monolith is deprecated; parity with split servers is no longer enforced"
+)
 
 
 def _extract_tool_names(mcp_module) -> set[str]:

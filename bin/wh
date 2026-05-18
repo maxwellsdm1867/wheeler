@@ -72,8 +72,10 @@ usage() {
     echo -e "    ${AMBER}wh restore${RESET} <archive> ${DIM}Verify a backup archive (use --verify / --dry-run)${RESET}"
     echo ""
     echo -e "  ${BOLD}Development${RESET}"
-    echo -e "    ${AMBER}wh hooks install${RESET}     ${DIM}Install git pre-commit/pre-push hooks${RESET}"
-    echo -e "    ${AMBER}wh hooks test${RESET}        ${DIM}Run all checks without committing${RESET}"
+    echo -e "    ${AMBER}wh hooks install${RESET}        ${DIM}Install git pre-commit/pre-push hooks${RESET}"
+    echo -e "    ${AMBER}wh hooks test${RESET}           ${DIM}Run all checks without committing${RESET}"
+    echo -e "    ${AMBER}wh sync-commands${RESET}        ${DIM}Mirror .claude/commands/wh/ -> wheeler/_data/commands/${RESET}"
+    echo -e "    ${AMBER}wh sync-commands check${RESET}  ${DIM}Report drift without fixing (exit 1 if any)${RESET}"
     echo ""
     echo -e "  ${BOLD}Options${RESET}"
     echo -e "    ${DIM}WHEELER_MODEL=sonnet wh queue \"...\"${RESET}  ${DIM}Override model${RESET}"
@@ -175,6 +177,87 @@ case "$SUBCMD" in
     # ── Restore (currently --verify / --dry-run only) ───────────────
     restore)
         exec "$WHEELER_DIR/.venv/bin/python" -m wheeler.tools.cli restore "$@"
+        ;;
+
+    # ── Sync command trees ──────────────────────────────────────────
+    # Mirror .claude/commands/wh/ (dev source of truth) into
+    # wheeler/_data/commands/ (the copy bundled with the pip wheel).
+    # The pre-commit hook also auto-mirrors at commit time; this command
+    # is for syncing between commits (e.g. before running local tests).
+    sync-commands|sync)
+        MODE="${1:-fix}"
+        SRC_DIR="$WHEELER_DIR/.claude/commands/wh"
+        TGT_DIR="$WHEELER_DIR/wheeler/_data/commands"
+
+        [[ -d "$SRC_DIR" ]] || die "Source dir not found: $SRC_DIR"
+        [[ -d "$TGT_DIR" ]] || die "Target dir not found: $TGT_DIR"
+
+        echo ""
+        echo -e "  ${BOLD}Command tree sync${RESET} ${DIM}(${MODE})${RESET}"
+        echo -e "  ${DIM}src: .claude/commands/wh/${RESET}"
+        echo -e "  ${DIM}tgt: wheeler/_data/commands/${RESET}"
+        echo ""
+
+        DRIFT=0
+        MIRRORED=0
+        ORPHAN=0
+
+        # Forward sync: every .md in .claude/ must exist and match in _data/
+        for src in "$SRC_DIR"/*.md; do
+            [[ -f "$src" ]] || continue
+            base=$(basename "$src")
+            tgt="$TGT_DIR/$base"
+            if ! diff -q "$src" "$tgt" >/dev/null 2>&1; then
+                DRIFT=$((DRIFT + 1))
+                if [[ "$MODE" == "check" || "$MODE" == "--check" ]]; then
+                    if [[ -f "$tgt" ]]; then
+                        echo -e "  ${AMBER}drift:${RESET} $base"
+                    else
+                        echo -e "  ${AMBER}missing:${RESET} $base ${DIM}(only in .claude/)${RESET}"
+                    fi
+                else
+                    cp "$src" "$tgt"
+                    MIRRORED=$((MIRRORED + 1))
+                    echo -e "  ${GREEN}✓${RESET} $base"
+                fi
+            fi
+        done
+
+        # Reverse check: files in _data/ that have no .claude/ counterpart
+        # are reported but never auto-deleted (could be intentional).
+        for tgt in "$TGT_DIR"/*.md; do
+            [[ -f "$tgt" ]] || continue
+            base=$(basename "$tgt")
+            src="$SRC_DIR/$base"
+            if [[ ! -f "$src" ]]; then
+                ORPHAN=$((ORPHAN + 1))
+                echo -e "  ${AMBER}!${RESET} $base exists in _data/ but not .claude/ ${DIM}(manual review)${RESET}"
+            fi
+        done
+
+        echo ""
+        if [[ "$MODE" == "check" || "$MODE" == "--check" ]]; then
+            if [[ $DRIFT -gt 0 ]]; then
+                echo -e "  ${RED}${BOLD}${DRIFT} file(s) out of sync.${RESET} Run: ${AMBER}wh sync-commands${RESET}"
+                exit 1
+            elif [[ $ORPHAN -gt 0 ]]; then
+                echo -e "  ${AMBER}${BOLD}In sync, but ${ORPHAN} orphan(s) in _data/.${RESET}"
+                exit 0
+            else
+                echo -e "  ${GREEN}${BOLD}All command files in sync.${RESET}"
+                exit 0
+            fi
+        else
+            if [[ $MIRRORED -gt 0 ]]; then
+                echo -e "  ${GREEN}${BOLD}Synced ${MIRRORED} file(s).${RESET}"
+            else
+                echo -e "  ${GREEN}${BOLD}Already in sync.${RESET}"
+            fi
+            if [[ $ORPHAN -gt 0 ]]; then
+                echo -e "  ${AMBER}!${RESET} ${ORPHAN} orphan file(s) in _data/ (see above)"
+            fi
+            exit 0
+        fi
         ;;
 
     # ── Hooks ─────────────────────────────────────────────────────

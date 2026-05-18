@@ -14,7 +14,8 @@ graph/*                <- models + config
 provenance.py          <- config + graph.driver (stability, invalidation)
   ^
 tools/graph_tools/*    <- graph + knowledge (lazy imports)
-mcp_server.py          <- everything
+mcp_core.py, mcp_query.py, mcp_mutations.py, mcp_ops.py   <- four split MCP servers (canonical surface)
+mcp_server.py          <- DEPRECATED legacy monolith (scheduled for removal)
 ```
 
 ## Key Modules
@@ -22,7 +23,8 @@ mcp_server.py          <- everything
 - `models.py` -- Pydantic v2 models for all node types + prefix mappings. Finding has path, artifact_type, source fields.
 - `config.py` -- YAML config loader (`wheeler.yaml`), includes `knowledge_path` and `synthesis_path`
 - `provenance.py` -- Stability scoring, invalidation propagation (W3C PROV-DM), detect_and_propagate_stale
-- `mcp_server.py` -- FastMCP server, 50 tools. Entry point: `python -m wheeler.mcp_server`
+- `mcp_core.py`, `mcp_query.py`, `mcp_mutations.py`, `mcp_ops.py` -- four split FastMCP servers (the canonical MCP surface). Each registers a role-specific subset of tools. Register new tools in the matching server only.
+- `mcp_server.py` -- DEPRECATED legacy monolith. Logs a deprecation warning at startup. Do NOT add new tools here.
 - `workspace.py` -- File discovery + context formatting for system prompts
 - `depscanner.py` -- AST-based dependency scanner (imports, data files)
 - `request_log.py` -- Append-only JSONL request logging

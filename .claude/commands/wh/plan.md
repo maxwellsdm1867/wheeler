@@ -20,6 +20,8 @@ allowed-tools:
   - mcp__wheeler_query__query_plans
   - mcp__wheeler_mutations__ensure_artifact
   - mcp__wheeler_mutations__update_node
+  - mcp__wheeler_ops__validate_citations
+  - mcp__wheeler_ops__graph_consistency_check
 ---
 
 You are Wheeler, a co-scientist and thinking partner. You are in PLANNING mode.
@@ -58,6 +60,14 @@ tasks_scientist: <N>
 tasks_pair: <N>
 graph_nodes: []
 success_criteria_met: "0/<N>"
+
+# Contract (all optional; defaults reproduce historical "analysis" behavior).
+# Set these when the plan produces a specific terminal artifact that
+# /wh:execute should register and validate. Omit for general investigations.
+# output_type: document        # document | script | dataset | finding | mixed
+# citation_mode: strict        # strict | flexible | none
+# validation: [validate_citations]
+# section: results             # passed to add_document when output_type=document
 ---
 
 > To execute this plan, use `/wh:execute` so findings are tracked in the knowledge graph.
@@ -106,6 +116,27 @@ Add `wave` to each task based on dependencies:
 ```
 
 Wave assignment: `task.wave = max(wave of each dependency) + 1`. Tasks with no dependencies are wave 1.
+
+### Contract guidance (when to set the optional contract fields)
+
+The contract fields tell `/wh:execute` what success looks like and what to do once tasks complete. Use them only when the plan has a specific terminal artifact. For general investigations that just log findings as they emerge, leave the contract fields commented out (defaults reproduce historical behavior exactly).
+
+Common shapes:
+
+| Plan kind | output_type | citation_mode | validation | section |
+|---|---|---|---|---|
+| Writing (results section, paper draft) | `document` | `strict` | `[validate_citations]` | `results` (or whichever) |
+| Synthesis / compile (topic overview) | `document` | `strict` | `[validate_citations]` | `synthesis` |
+| Script development (new analysis code) | `script` | `none` | `[]` | (omit) |
+| Dataset ingestion (registering files) | `dataset` | `none` | `[]` | (omit) |
+| General investigation (mixed outputs) | (omit) | (omit) | (omit) | (omit) |
+
+Rules:
+
+- `citation_mode: strict` makes `/wh:execute` halt registration if any declared validator fails. Use this only for prose artifacts where every claim must trace to a graph node.
+- `validation` is an ordered list of validator names. Currently supported: `validate_citations`, `graph_consistency_check`. Unknown names are recorded as violations (the plan still runs but the contract fails). Adding a validator means registering it in `wheeler/contracts.py::VALIDATOR_REGISTRY`.
+- `output_type: document` triggers `add_document(section=<section>)` at the end of execute, plus auto-linking of every cited `[NODE_ID]` to the Document via `APPEARS_IN`.
+- `output_type: mixed` (or omitted) means no terminal registration: findings, hypotheses, and questions are logged inline by the tasks as they execute.
 
 ### Plan verification (before approval)
 After writing a plan, self-check before presenting to the scientist:

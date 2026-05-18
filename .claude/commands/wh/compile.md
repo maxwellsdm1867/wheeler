@@ -54,7 +54,10 @@ Parse `$ARGUMENTS` to determine which mode to run:
 
 - Starts with `evidence H-` or `evidence ` → **Evidence Map** (Mode 3)
 - Equals `status` → **Status Report** (Mode 2)
-- Anything else (or no argument) → **Topic Summary** (Mode 1)
+- No argument → **Status Report** (Mode 2). Topic Summary needs a topic; with nothing specified, the most useful default is a survey of the whole graph.
+- Anything else (a topic string) → **Topic Summary** (Mode 1)
+
+**Nothing-to-compile fast exit:** Before running any mode, call `query_findings(limit=1)`. If it returns nothing, stop and say: "Graph has no findings yet, nothing to compile. Run `/wh:start` to begin an investigation." Do not proceed.
 
 ---
 

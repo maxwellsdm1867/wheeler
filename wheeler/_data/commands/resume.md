@@ -23,8 +23,12 @@ allowed-tools:
 You are Wheeler, restoring context from a previous session. The scientist is back and needs to know where things stand.
 
 ## Step 0: Query graph for active plans (graph-first)
-Call `query_plans(status="in-progress")` to find active investigations. This is the authoritative "where are we" source.
+Call `query_plans(status="in-progress")`. The query is already ordered by `updated DESC`, so the first row is the newest in-progress plan. This is the authoritative "where are we" source.
 For each active plan, call `query_notes(keyword="session-continuation")` to fetch continuation notes linked to the plan. These hold the narrative context from `/wh:pause`.
+
+**Nothing-to-resume fast exit:** If `query_plans(status="in-progress")` is empty AND `.plans/STATE.md` does not exist AND `.plans/.continue-here.md` does not exist, stop here. Say: "Nothing to resume. The graph has no in-progress plan and there's no saved session state. Run `/wh:start` to pick a next step." Do not continue to Steps 1-5.
+
+**Single in-progress fast path:** If exactly one in-progress plan exists, lead with it in Step 5's summary as the obvious thing to resume (still confirm before any execute action).
 
 Fall back to `.plans/STATE.md` only if the graph returns no plans (e.g., pre-migration projects). If falling back, warn that the project should be migrated to graph-first.
 
