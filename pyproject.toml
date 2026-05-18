@@ -1,27 +1,41 @@
 [build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
 
 [project]
 name = "wheeler"
 version = "0.9.1"
-description = "Lightweight orchestration for scientists co-working with Claude Code"
+description = "Reliable, trustworthy, trackable AI workflows for science. A Claude Code-native research assistant with a provenance-tracked knowledge graph."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "Arthur Hebert"},
 ]
-keywords = ["science", "research", "knowledge-graph", "claude", "ai", "neo4j"]
+keywords = [
+    "science",
+    "research",
+    "knowledge-graph",
+    "claude",
+    "claude-code",
+    "ai",
+    "neo4j",
+    "provenance",
+    "mcp",
+    "reproducibility",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 
 dependencies = [
@@ -42,14 +56,28 @@ Issues = "https://github.com/maxwellsdm1867/wheeler/issues"
 Documentation = "https://github.com/maxwellsdm1867/wheeler/blob/main/ARCHITECTURE.md"
 
 [project.optional-dependencies]
+# Semantic search deps are already in core; this extra is a no-op
+# kept for back-compat with `pip install wheeler[search]`.
 search = [
     "fastembed>=0.4",
     "numpy>=1.24",
 ]
+# Test-only deps, kept lean so `pip install wheeler[test]` stays small.
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "numpy>=1.24",
+]
+# Full developer toolchain: tests, lint, type-check, build backend.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "build>=1.2",
+]
+# Convenience aggregate for contributors.
+all = [
+    "wheeler[dev]",
 ]
 
 [project.scripts]
@@ -61,11 +89,26 @@ wheeler-query-mcp = "wheeler.mcp_query:main"
 wheeler-mutations-mcp = "wheeler.mcp_mutations:main"
 wheeler-ops-mcp = "wheeler.mcp_ops:main"
 
-[tool.setuptools.packages.find]
-include = ["wheeler*"]
+# ---------------------------------------------------------------------------
+# Hatch build configuration
+# ---------------------------------------------------------------------------
+# The `wheeler/_data/` tree (slash commands, agents, hooks, mcp.json template)
+# is required at runtime by `wheeler.installer` and `wheeler init`. Hatchling
+# includes all files inside listed packages by default, so no explicit
+# package-data block is needed; the `force-include` below covers the LICENSE.
 
-[tool.setuptools.package-data]
-wheeler = ["_data/**/*.md", "_data/**/*.json", "_data/**/*.js"]
+[tool.hatch.build.targets.wheel]
+packages = ["wheeler"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/wheeler",
+    "/README.md",
+    "/LICENSE",
+    "/ARCHITECTURE.md",
+    "/CONTRIBUTING.md",
+    "/pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
