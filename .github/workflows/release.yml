@@ -38,8 +38,13 @@ jobs:
 
       - name: Create release
         if: steps.check.outputs.needed == 'true'
+        # Use RELEASE_PAT when available so the `release: published` event
+        # propagates to downstream workflows (publish.yml). Releases created
+        # with the default GITHUB_TOKEN do NOT trigger downstream workflows.
+        # Falls back to GITHUB_TOKEN if the PAT secret is unset, so the
+        # workflow remains functional even before the secret is configured.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
         run: |
           version="v${{ steps.check.outputs.version }}"
           # Build release notes from commits since last tag
