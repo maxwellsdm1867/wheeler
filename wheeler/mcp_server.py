@@ -218,10 +218,11 @@ async def graph_health() -> dict:
             result["status"] = "offline"
             result["error"] = counts.get("_error", "Unknown error")
             result["blocking"] = True
-            result.update(_diagnose_health_error(counts.get("_error", "")))
+            result.update(_diagnose_health_error(str(counts.get("_error", ""))))
         else:
-            node_counts = {k: v for k, v in counts.items()
-                          if not k.startswith("_")}
+            node_counts: dict[str, int] = {
+                k: v for k, v in counts.items() if not k.startswith("_")
+            }
             total = sum(node_counts.values())
             result["status"] = "connected"
             result["node_count"] = total

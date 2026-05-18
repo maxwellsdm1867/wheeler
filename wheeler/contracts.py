@@ -270,44 +270,44 @@ async def validate_contract(
     checks = 0
 
     # Check required node types
-    for req in contract.required_nodes:
+    for node_req in contract.required_nodes:
         checks += 1
         try:
             records = await backend.run_cypher(
-                f"MATCH (n:{req.type}) WHERE n.session_id = $sid RETURN n.id AS id, n.confidence AS confidence",
+                f"MATCH (n:{node_req.type}) WHERE n.session_id = $sid RETURN n.id AS id, n.confidence AS confidence",
                 {"sid": session_id},
             )
             count = len(records)
-            if count < req.min_count:
+            if count < node_req.min_count:
                 violations.append(
-                    f"Expected >= {req.min_count} {req.type} nodes, got {count}"
+                    f"Expected >= {node_req.min_count} {node_req.type} nodes, got {count}"
                 )
             # Check confidence threshold for nodes that have it
-            if req.confidence_min > 0:
+            if node_req.confidence_min > 0:
                 for rec in records:
                     conf = rec.get("confidence")
-                    if conf is not None and conf < req.confidence_min:
+                    if conf is not None and conf < node_req.confidence_min:
                         violations.append(
-                            f"{req.type} {rec['id']} confidence {conf:.2f} < {req.confidence_min:.2f}"
+                            f"{node_req.type} {rec['id']} confidence {conf:.2f} < {node_req.confidence_min:.2f}"
                         )
         except Exception as exc:
-            violations.append(f"Failed to query {req.type} nodes: {exc}")
+            violations.append(f"Failed to query {node_req.type} nodes: {exc}")
 
     # Check required links
-    for req in contract.required_links:
+    for link_req in contract.required_links:
         checks += 1
         try:
             records = await backend.run_cypher(
-                f"MATCH (a:{req.from_type})-[:{req.relationship}]->(b:{req.to_type}) "
+                f"MATCH (a:{link_req.from_type})-[:{link_req.relationship}]->(b:{link_req.to_type}) "
                 "WHERE a.session_id = $sid RETURN a.id AS aid",
                 {"sid": session_id},
             )
             if not records:
                 violations.append(
-                    f"No {req.from_type}-[{req.relationship}]->{req.to_type} links found"
+                    f"No {link_req.from_type}-[{link_req.relationship}]->{link_req.to_type} links found"
                 )
         except Exception as exc:
-            violations.append(f"Failed to check {req.relationship} links: {exc}")
+            violations.append(f"Failed to check {link_req.relationship} links: {exc}")
 
     # Check must_reference (output nodes reference specific inputs)
     for ref_id in contract.must_reference:

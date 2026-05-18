@@ -84,6 +84,10 @@ def graph_status() -> None:
     table.add_column("Count", justify="right")
     total = 0
     for label, count in sorted(counts.items()):
+        # _status / _error sentinels carry str values when the backend
+        # is offline; skip them so the totals row stays numeric.
+        if label.startswith("_") or not isinstance(count, int):
+            continue
         table.add_row(label, str(count))
         total += count
     table.add_row("[bold]Total[/bold]", f"[bold]{total}[/bold]")

@@ -14,6 +14,7 @@ isolation and the tag is left empty.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.backend import GraphBackend
@@ -335,7 +336,7 @@ class Neo4jBackend(GraphBackend):
 
         return [dict(r["n"]) for r in records]
 
-    async def count_all(self) -> dict[str, int]:
+    async def count_all(self) -> dict[str, Any]:
         """Use the existing schema.get_status implementation."""
         self._cb.check()
         from wheeler.graph.schema import get_status

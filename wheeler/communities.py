@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict, deque
+from typing import cast
 
 from wheeler.config import WheelerConfig
 
@@ -119,7 +120,9 @@ async def find_communities(
             "labels": dict(_count_labels(members)),
         })
 
-    total_nodes = sum(c["size"] for c in communities)
+    # ``size`` is always int (len(component) above) but the surrounding
+    # dict literal is heterogeneous so mypy widens to ``object``.
+    total_nodes = sum(cast(int, c["size"]) for c in communities)
 
     return {
         "communities": communities,

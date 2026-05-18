@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any, Awaitable, Callable
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.circuit_breaker import CircuitOpenError
@@ -18,6 +19,12 @@ from wheeler.write_receipt import RepairQueue, WriteReceipt
 
 from . import mutations, queries
 from ._common import _now
+
+# Signature shared by every graph-tool handler: an async function that
+# receives the active backend and the user-supplied args dict and returns
+# a JSON-encoded string payload.  Backend is typed ``Any`` because tests
+# pass FakeBackend implementations that share the same duck-typed shape.
+_ToolHandler = Callable[[Any, dict], Awaitable[str]]
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +47,7 @@ _MUTATION_TOOLS = frozenset({
 
 # --- Tool registry: maps tool names to handler functions ---
 
-_TOOL_REGISTRY: dict[str, object] = {
+_TOOL_REGISTRY: dict[str, _ToolHandler] = {
     # Mutations
     "add_finding": mutations.add_finding,
     "add_hypothesis": mutations.add_hypothesis,
@@ -704,7 +711,14 @@ def _write_synthesis_file(
     try:
         from wheeler.knowledge.render import render_synthesis
         from wheeler.knowledge.store import write_synthesis
+        from wheeler.models import NodeBase
 
+        if not isinstance(model, NodeBase):
+            logger.error(
+                "Synthesis write: expected NodeBase, got %s",
+                type(model).__name__,
+            )
+            return False
         markdown = render_synthesis(model, relationships=relationships)
         write_synthesis(Path(config.synthesis_path), node_id, markdown)
         return True

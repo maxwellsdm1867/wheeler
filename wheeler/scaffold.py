@@ -82,10 +82,14 @@ def write_config(
     return config_path
 
 
-def scaffold_project(root: Path) -> dict[str, list[str]]:
+def scaffold_project(
+    root: Path,
+) -> dict[str, list[str] | dict[str, list[str]]]:
     """Full scaffold: detect dirs + create managed dirs.
 
-    Returns ``{"detected": [...], "created": [...]}``.
+    Returns ``{"detected": {...}, "created": [...]}`` where ``detected``
+    is a ``dict[str, list[str]]`` from :func:`detect_project_dirs` and
+    ``created`` is the list of managed dirs that were created on disk.
     """
     detected = detect_project_dirs(root)
     created = scaffold_managed_dirs(root)

@@ -4,32 +4,47 @@ Thanks for your interest in contributing to Wheeler! This project is a thinking 
 
 ## Development Setup
 
+Wheeler uses [uv](https://docs.astral.sh/uv/) for environment management. The
+`uv.lock` checked into the repo pins every transitive dependency.
+
 ```bash
 git clone https://github.com/maxwellsdm1867/wheeler.git
 cd wheeler
+uv sync --extra dev          # creates .venv/, installs core + dev deps from uv.lock
+```
+
+That's it. `uv run wheeler --version` should now print the installed version.
+
+For the full bootstrap (Neo4j in Docker, schema init, git hooks, zsh
+completions) the bundled script still works:
+
+```bash
 bash bin/setup.sh
 ```
 
-Or manually:
+Manual pip path (no uv):
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[test]"
+pip install -e ".[dev]"
 
 # Neo4j (required for graph features)
 docker run -d -p 7687:7687 -p 7474:7474 \
   -e NEO4J_AUTH=neo4j/research-graph neo4j:community
 
-wheeler-tools graph init
+wheeler graph init
 ```
 
 ## Running Tests
 
 ```bash
-source .venv/bin/activate
-python -m pytest tests/ -v
+uv run pytest tests/ -q                       # all unit tests
+uv run pytest tests/e2e/ -v                   # live-Neo4j e2e tests
+uv run pytest tests/test_merge.py -v          # one file
 ```
+
+Or with the pip workflow: `source .venv/bin/activate && python -m pytest tests/`.
 
 Tests run automatically on pre-commit and pre-push hooks. Install hooks with:
 
@@ -39,10 +54,10 @@ wh hooks install
 
 ## Code Style
 
-- Python 3.10+ with type hints on public APIs
-- Formatting: `ruff format wheeler/`
-- Linting: `ruff check wheeler/`
-- Type checking: `mypy wheeler/`
+- Python 3.11+ with type hints on public APIs
+- Formatting: `uv run ruff format wheeler/`
+- Linting: `uv run ruff check wheeler/`
+- Type checking: `uv run mypy wheeler/ --ignore-missing-imports`
 
 Pre-commit hooks enforce these automatically.
 

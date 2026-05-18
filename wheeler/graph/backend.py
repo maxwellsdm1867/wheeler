@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Any
 
 from wheeler.config import WheelerConfig
 
@@ -121,8 +122,13 @@ class GraphBackend(ABC):
         """
 
     @abstractmethod
-    async def count_all(self) -> dict[str, int]:
-        """Return node counts for every label. ``{label: count}``."""
+    async def count_all(self) -> dict[str, Any]:
+        """Return node counts for every label. ``{label: count}``.
+
+        On backend failure the implementation may also include
+        underscore-prefixed string sentinels (``_status``, ``_error``)
+        alongside the integer counts.
+        """
 
     # --- Raw Cypher ---
 

@@ -164,7 +164,7 @@ def format_workspace_context(summary: WorkspaceSummary) -> str:
         lines.append(f"Scripts ({len(summary.scripts)}): {', '.join(dir_summaries)}")
 
     if summary.data_files:
-        dirs: dict[str, list[str]] = {}
+        dirs = {}
         for f in summary.data_files:
             parent = str(Path(f.path).parent)
             dirs.setdefault(parent, []).append(Path(f.path).name)

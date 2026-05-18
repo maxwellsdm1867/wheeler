@@ -11,10 +11,14 @@ Version is `0.9.1`. 1545 tests, 50 MCP tools across 5 servers.
 ## Commands
 
 ```bash
-# Environment (Python 3.11+)
+# Environment (Python 3.11+).  uv is the primary workflow; the pip path
+# remains supported for contributors without uv installed.
+uv sync --extra dev            # creates .venv/, installs from uv.lock
+# or:
 source .venv/bin/activate
 pip install -e ".[test]"       # core + test deps (fastembed + numpy are in core)
-pip install -e ".[search]"     # redundant with core but kept for doc clarity
+pip install -e ".[dev]"        # full toolchain: tests + ruff + mypy + build
+pip install -e ".[search]"     # legacy no-op (fastembed+numpy already in core)
 
 # Tests
 python -m pytest tests/ -q                                   # full suite, quiet

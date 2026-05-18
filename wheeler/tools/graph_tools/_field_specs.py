@@ -10,6 +10,12 @@ This is a leaf module: stdlib + pathlib only, no internal imports.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
+
+# Signature of every per-field checker.  Each accepts a single value of
+# arbitrary type (JSON/YAML user input) and returns a tuple of
+# ``(normalized_value, error_message_or_none, warning_message_or_none)``.
+_FieldChecker = Callable[[Any], tuple[object, str | None, str | None]]
 
 # ---------------------------------------------------------------------------
 # Required fields per tool (error if missing or empty string)
@@ -55,7 +61,7 @@ _PROVENANCE_FIELDS = frozenset({
 # ---------------------------------------------------------------------------
 
 
-def _check_confidence(value: object) -> tuple[object, str | None, str | None]:
+def _check_confidence(value: Any) -> tuple[object, str | None, str | None]:
     """Validate confidence is a float in [0.0, 1.0]. Coerces strings."""
     try:
         fval = float(value)
@@ -66,7 +72,7 @@ def _check_confidence(value: object) -> tuple[object, str | None, str | None]:
     return fval, None, None
 
 
-def _check_priority(value: object) -> tuple[object, str | None, str | None]:
+def _check_priority(value: Any) -> tuple[object, str | None, str | None]:
     """Validate priority is an int in [1, 10] where 10 is highest. Coerces strings/floats."""
     try:
         ival = int(value)
@@ -77,7 +83,7 @@ def _check_priority(value: object) -> tuple[object, str | None, str | None]:
     return ival, None, None
 
 
-def _check_tier(value: object) -> tuple[object, str | None, str | None]:
+def _check_tier(value: Any) -> tuple[object, str | None, str | None]:
     """Validate tier is 'generated' or 'reference'. Normalizes case."""
     normalized = str(value).strip().lower()
     if normalized not in ("generated", "reference"):
@@ -85,7 +91,7 @@ def _check_tier(value: object) -> tuple[object, str | None, str | None]:
     return normalized, None, None
 
 
-def _check_year(value: object) -> tuple[object, str | None, str | None]:
+def _check_year(value: Any) -> tuple[object, str | None, str | None]:
     """Validate year is an int. Warns if 0 (unknown)."""
     try:
         ival = int(value)
@@ -135,7 +141,7 @@ def _check_status(
 # Dispatch table: field name -> checker function
 # ---------------------------------------------------------------------------
 
-_FIELD_CHECKERS: dict[str, object] = {
+_FIELD_CHECKERS: dict[str, _FieldChecker] = {
     "confidence": _check_confidence,
     "priority": _check_priority,
     "tier": _check_tier,

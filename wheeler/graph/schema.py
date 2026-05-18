@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from typing import Any
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.circuit_breaker import CircuitOpenError
@@ -156,12 +157,16 @@ async def init_schema(config: WheelerConfig) -> list[str]:
     return applied
 
 
-async def get_status(config: WheelerConfig) -> dict[str, int]:
+async def get_status(config: WheelerConfig) -> dict[str, Any]:
     """Return node counts per label in a single query.
 
-    Returns zeroed counts if Neo4j is unavailable — never crashes the caller.
+    Returns zeroed counts if Neo4j is unavailable, never crashes the caller.
+    On failure also sets ``_status`` (``circuit_open`` or ``offline``) and
+    optionally ``_error`` with the exception message.  Normal entries are
+    ``int`` counts keyed by node label; the underscore-prefixed entries are
+    ``str`` status/error sentinels.
     """
-    counts: dict[str, int] = {label: 0 for label in NODE_LABELS}
+    counts: dict[str, Any] = {label: 0 for label in NODE_LABELS}
     try:
         from wheeler.graph.driver import get_async_driver
         driver = get_async_driver(config)
