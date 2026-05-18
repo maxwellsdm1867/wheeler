@@ -18,18 +18,15 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Set up Python
-        run: uv python install 3.11
-
       - name: Build distributions
         run: uv build
 
       - name: Verify wheel and sdist contents
         run: |
           ls -lh dist/
-          python -m zipfile -l dist/wheeler-*.whl | head -50
-          test -n "$(python -m zipfile -l dist/wheeler-*.whl | grep '_data/mcp.json')"
-          test -n "$(python -m zipfile -l dist/wheeler-*.whl | grep 'entry_points.txt')"
+          uv run --no-project python -m zipfile -l dist/wheeler-*.whl | head -50
+          uv run --no-project python -m zipfile -l dist/wheeler-*.whl | grep -q '_data/mcp.json'
+          uv run --no-project python -m zipfile -l dist/wheeler-*.whl | grep -q 'entry_points.txt'
 
       - name: Upload built distributions
         uses: actions/upload-artifact@v4
