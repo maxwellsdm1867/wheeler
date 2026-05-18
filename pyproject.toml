@@ -81,7 +81,7 @@ all = [
 ]
 
 [project.scripts]
-wheeler = "wheeler.tools.cli:app"
+wheeler = "wheeler.cli:app"
 wheeler-tools = "wheeler.tools.cli:app"
 wheeler-mcp = "wheeler.mcp_server:main"
 wheeler-core-mcp = "wheeler.mcp_core:main"
