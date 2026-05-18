@@ -134,6 +134,8 @@ wh quick "check graph status"                 # haiku, 3 turns, fast
 wh dream                                      # graph consolidation
 ```
 
+The `wh` launcher is a bash script in `bin/wh` that ships only with the source tree, not the PyPI wheel. To enable it after a `uv tool install`, clone the repo and symlink it: `sudo ln -sf $PWD/bin/wh /usr/local/bin/wh`. A native `wheeler queue / quick / dream` is on the roadmap.
+
 **Wheeler never does your thinking.** Every task gets tagged: SCIENTIST (judgment calls), WHEELER (grinding), or PAIR (collaborative). Decision points are flagged as checkpoints, not guessed at.
 
 ---

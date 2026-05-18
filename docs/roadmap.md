@@ -90,7 +90,7 @@ v1.0 means a solo researcher who is not the creator can install Wheeler, run
 a multi-session research project, and produce a fully-provenance-tracked
 knowledge graph without hitting blocking bugs or needing to read source code.
 
-- [ ] Install story works end-to-end (setup.sh or pip install)
+- [x] Install story works end-to-end (`uvx wheeler init my-project` shipped in v0.9.2)
 - [ ] All acts produce correct graph mutations (validated by task-completion
   tests)
 - [ ] Graph agents handle routine provenance and quality (no 48-orphan sessions)

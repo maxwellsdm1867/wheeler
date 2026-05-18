@@ -786,7 +786,7 @@ Every mutation tool logs to `.wheeler/request_log.jsonl` via the `@_logged` deco
 | fastembed>=0.4 | `fastembed` | search/embeddings.py | Text embedding generation |
 | numpy>=1.24 | `numpy` | search/embeddings.py | Vector storage and cosine similarity |
 
-Note: `fastembed` and `numpy` are declared as both core and `[search]` optional dependencies. The `[search]` extra is redundant but kept for documentation clarity. `pip install wheeler` installs them unconditionally (fastembed downloads a 33MB model on first use).
+Note: `fastembed` and `numpy` are declared as both core and `[search]` optional dependencies. As of v0.9.2 the `[search]` extra is a back-compat no-op (the deps are unconditionally installed via the core list). `pip install wheeler` and `uv tool install wheeler` install them unconditionally. fastembed downloads a 33MB model on first use.
 
 ### Optional: `[test]`
 

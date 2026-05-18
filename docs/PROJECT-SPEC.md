@@ -310,7 +310,7 @@ Scientist → wh queue "task" (headless)
 | Containerization | Neo4j runs in Docker. Wheeler itself is a pip-installed Python package. |
 | CI/CD | GitHub Actions: auto-release on version bump. Pre-commit hooks: API safety + tests + mypy + ruff. Pre-push hooks: full test suite. |
 
-**Gap:** No Dockerfile for Wheeler itself. No docker-compose for one-command setup (Neo4j + Wheeler). Setup requires manual steps (venv, pip install, docker run neo4j).
+**Status (v0.9.2+):** Wheeler ships as a PyPI package installable via `uvx wheeler init my-project` (one command, ~10s warm-cache). The "two halves" problem (Python MCP servers + Claude Code config) is solved automatically by `wheeler init`. Remaining gap: no docker-compose for the Neo4j side, so users still install Neo4j Desktop separately.
 
 ---
 
