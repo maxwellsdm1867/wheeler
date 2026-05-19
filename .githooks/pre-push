@@ -23,7 +23,11 @@ fi
 echo -e "  ${DIM}Running full test suite...${RESET}"
 echo ""
 
-if .venv/bin/python -m pytest tests/ -v 2>&1; then
+# Strip inherited GIT_* env vars before running pytest. Some tests
+# (test_portability, test_backup) spawn `git` subprocesses; without
+# isolation those subprocesses inherit GIT_INDEX_FILE pointing at the
+# in-flight push context and can corrupt the repo's real index.
+if env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_EXEC_PATH -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_AUTHOR_DATE -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u GIT_COMMITTER_DATE -u GIT_REFLOG_ACTION .venv/bin/python -m pytest tests/ -v 2>&1; then
     echo ""
     echo -e "  ${GREEN}${BOLD}All tests passed. Pushing.${RESET}"
     echo ""
