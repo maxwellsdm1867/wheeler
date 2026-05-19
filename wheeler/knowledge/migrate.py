@@ -10,7 +10,8 @@ from wheeler.graph.backend import GraphBackend
 from wheeler.models import (
     NODE_LABELS, NodeBase, model_for_label, title_for_node
 )
-from wheeler.knowledge.store import write_node, node_exists
+from wheeler.knowledge.render import render_synthesis
+from wheeler.knowledge.store import node_exists, write_node, write_synthesis
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ async def migrate(
     backend: GraphBackend,
     knowledge_path: Path,
     dry_run: bool = False,
+    synthesis_path: Path | None = None,
 ) -> MigrationReport:
     """Migrate all graph nodes to filesystem-backed format.
 
@@ -34,11 +36,31 @@ async def migrate(
     1. Read all properties from graph
     2. Build Pydantic model
     3. Write JSON file to knowledge/
-    4. Update graph node with file_path and title
+    4. Write synthesis markdown file to synthesis/
+    5. Update graph node with file_path and title
 
     Idempotent: skips nodes that already have a JSON file.
+
+    Parameters
+    ----------
+    backend
+        Graph backend to read nodes from.
+    knowledge_path
+        Directory for knowledge JSON files.
+    dry_run
+        If True, report what would be migrated without writing.
+    synthesis_path
+        Directory for synthesis markdown files. Defaults to
+        ``knowledge_path.parent / "synthesis"`` (matches the default
+        layout in ``wheeler.yaml``).
     """
     report = MigrationReport()
+
+    # Default synthesis_path to the sibling of knowledge_path.  This
+    # matches the wheeler.yaml defaults (knowledge/, synthesis/) and
+    # keeps the function usable without a full config object.
+    if synthesis_path is None:
+        synthesis_path = knowledge_path.parent / "synthesis"
 
     for label in NODE_LABELS:
         nodes = await backend.query_nodes(label, limit=10000)
@@ -63,8 +85,21 @@ async def migrate(
                 # Build Pydantic model from graph data
                 model = _graph_data_to_model(label, node_data)
 
-                # Write file
+                # Triple-write: JSON, then synthesis markdown.
+                # Mirrors the pattern in tools/graph_tools/__init__.py so
+                # migration does not introduce json/synthesis drift
+                # (see issue #37).
                 write_node(knowledge_path, model)
+                try:
+                    markdown = render_synthesis(model)
+                    write_synthesis(synthesis_path, node_id, markdown)
+                except Exception as exc:
+                    # Synthesis is best-effort: JSON is the source of
+                    # truth for migration.  Log and continue so a
+                    # single bad render does not abort the batch.
+                    logger.warning(
+                        "Synthesis write failed for %s: %s", node_id, exc
+                    )
 
                 # Update graph node with file_path and title
                 title = title_for_node(model)

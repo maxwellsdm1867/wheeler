@@ -848,7 +848,12 @@ def cmd_migrate(
     async def _run() -> None:
         await backend.initialize()
         try:
-            report = await migrate(backend, Path(config.knowledge_path), dry_run=dry_run)
+            report = await migrate(
+                backend,
+                Path(config.knowledge_path),
+                dry_run=dry_run,
+                synthesis_path=Path(config.synthesis_path),
+            )
         finally:
             await backend.close()
 

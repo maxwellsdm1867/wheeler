@@ -268,9 +268,14 @@ async def propagate_invalidation(
                 hops=rec["hops"],
             ))
 
-            # Best-effort: update JSON change log for invalidated node
+            # Best-effort: update JSON change log for invalidated node,
+            # then re-render synthesis markdown so the two layers stay
+            # in sync (issue #37).
             try:
-                from wheeler.knowledge.store import read_node, write_node
+                from wheeler.knowledge.render import render_synthesis
+                from wheeler.knowledge.store import (
+                    read_node, write_node, write_synthesis,
+                )
                 from wheeler.models import ChangeEntry
                 from pathlib import Path
 
@@ -290,6 +295,21 @@ async def propagate_invalidation(
                 node_model.stale_since = now
                 node_model.stability = new_stab
                 write_node(knowledge_path, node_model)
+
+                # Re-render synthesis so the markdown reflects the new
+                # stale/stability state.  Best-effort: a render failure
+                # must not abort propagation.
+                try:
+                    synthesis_path = Path(config.synthesis_path)
+                    markdown = render_synthesis(node_model)
+                    write_synthesis(synthesis_path, dep_id, markdown)
+                except Exception as exc:
+                    logger.warning(
+                        "Synthesis write failed during invalidation "
+                        "for %s: %s",
+                        dep_id,
+                        exc,
+                    )
             except (FileNotFoundError, Exception):
                 pass  # pre-migration node or file error
 
