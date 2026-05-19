@@ -33,9 +33,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from pathlib import Path
+
 from wheeler.config import WheelerConfig
+from wheeler.write_receipt import RepairQueue, WriteReceipt
 
 logger = logging.getLogger(__name__)
+
+_repair_queue = RepairQueue(Path(".wheeler"))
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +315,20 @@ async def propagate_invalidation(
                         dep_id,
                         exc,
                     )
+                    # Surface the failure via the repair queue so it is
+                    # not silently dropped when logging is unconfigured
+                    # (issue #37, criterion 3).
+                    try:
+                        _repair_queue.enqueue(WriteReceipt(
+                            node_id=dep_id,
+                            label=rec["label"] or "Unknown",
+                            timestamp=now,
+                            graph=True,
+                            json=True,
+                            synthesis=False,
+                        ))
+                    except Exception:
+                        pass  # receipt tracking must never break propagation
             except (FileNotFoundError, Exception):
                 pass  # pre-migration node or file error
 

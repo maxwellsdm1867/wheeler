@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from wheeler.graph.backend import GraphBackend
@@ -12,8 +13,11 @@ from wheeler.models import (
 )
 from wheeler.knowledge.render import render_synthesis
 from wheeler.knowledge.store import node_exists, write_node, write_synthesis
+from wheeler.write_receipt import RepairQueue, WriteReceipt
 
 logger = logging.getLogger(__name__)
+
+_repair_queue = RepairQueue(Path(".wheeler"))
 
 
 @dataclass
@@ -100,6 +104,20 @@ async def migrate(
                     logger.warning(
                         "Synthesis write failed for %s: %s", node_id, exc
                     )
+                    # Surface the failure via the repair queue so it is
+                    # not silently dropped when logging is unconfigured
+                    # (issue #37, criterion 3).
+                    try:
+                        _repair_queue.enqueue(WriteReceipt(
+                            node_id=node_id,
+                            label=label,
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            graph=True,
+                            json=True,
+                            synthesis=False,
+                        ))
+                    except Exception:
+                        pass  # receipt tracking must never break migration
 
                 # Update graph node with file_path and title
                 title = title_for_node(model)
