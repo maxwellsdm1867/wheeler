@@ -71,19 +71,21 @@ Use wheeler MCP tools to query for recently added/modified nodes:
 
 ### Step 3: Present the Synthesis
 
+This is the scientist's first read of what happened while they were away, so follow the **action-prompt labeling rule** from `CLAUDE.md`: every `[NODE_ID]` carries a short label (first 80-120 chars of `description`/`statement`/`question`/`title`). Bare IDs in this listing force a `show_node` lookup before the scientist can decide what to act on.
+
 ```
 ## COMPLETED
-- [F-xxxx] Finding description (confidence: 0.X) <- [A-xxxx] Analysis
-- [D-xxxx] Dataset registered, linked to [E-xxxx]
+- [F-xxxx] "finding description text" (confidence: 0.X) <- [A-xxxx] "analysis title"
+- [D-xxxx] "dataset description" registered, linked to [E-xxxx] "execution kind: description"
 - Literature search: N papers found, M linked to hypotheses
 
 ## FLAGGED (needs your judgment)
-- Checkpoint: [description] — Wheeler took conservative path [details]
-- [Q-xxxx] "Decision needed: [question]" (priority: N)
+- Checkpoint: [description]. Wheeler took conservative path [details]
+- [Q-xxxx] "Decision needed: <question>" (priority: N)
 
 ## SURPRISES
-- [F-xxxx] contradicts [F-yyyy] — possible [explanation]
-- Unexpected pattern in [D-xxxx]: [description]
+- [F-xxxx] "finding A description" contradicts [F-yyyy] "finding B description". Possible [explanation]
+- Unexpected pattern in [D-xxxx] "dataset description": [details]
 
 ## NEXT
 - Prioritized by what would close the most gaps
@@ -97,12 +99,12 @@ If an investigation plan exists with status `in-progress`:
    - **MET**: Finding/dataset/hypothesis exists that satisfies it — cite [NODE_ID]
    - **PARTIAL**: Some evidence but gaps remain
    - **UNMET**: No evidence found
-3. Include verification summary in the synthesis:
+3. Include verification summary in the synthesis (apply the same labeling rule: every cited node gets a short label):
    ```
    ## VERIFICATION (against plan: <name>)
-   - [MET] Criterion 1 — satisfied by [F-xxxx]
-   - [PARTIAL] Criterion 2 — data loaded but analysis not complete
-   - [UNMET] Criterion 3 — no findings yet
+   - [MET] Criterion 1: satisfied by [F-xxxx] "finding description"
+   - [PARTIAL] Criterion 2: data loaded but analysis not complete
+   - [UNMET] Criterion 3: no findings yet
    ```
 4. If all MET → update plan frontmatter `status` to `completed` and `updated` timestamp
 5. If gaps → include in NEXT section with specific tasks to close them

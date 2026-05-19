@@ -70,18 +70,20 @@ Use wheeler MCP tools:
 
 ## Step 4: Present and Route
 
+This is a scannable status board, so follow the **action-prompt labeling rule** from `CLAUDE.md`: when listing findings, questions, plans, or any other graph nodes, include a short label (first 80-120 chars of `description`/`statement`/`question`/`title`) alongside each `[NODE_ID]`. Example: `[F-3a2b] "frequency scaling: 2-5 Hz baseline"`, not bare `[F-3a2b]`.
+
 ```
 ## Active Work
-<investigations in progress, paused work, pending contexts>
+<investigations in progress, paused work, pending contexts. Cite plans as [PL-xxxx] "plan title">
 
 ## Recent Results
-<team tasks or unreviewed logs, recent findings, flagged checkpoints>
+<team tasks or unreviewed logs, recent findings as [F-xxxx] "description", flagged checkpoints as [Q-xxxx] "question">
 
 ## Graph Summary
-<node counts, recent findings, open questions, gaps>
+<node counts, recent findings, open questions, gaps. Each listed node gets a label>
 
 ## Suggested Next Action
-/wh:<command> — <reasoning>
+/wh:<command>: <reasoning>
 ```
 
 ### Routing Logic

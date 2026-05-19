@@ -121,6 +121,8 @@ Apply the analogous check for Hypotheses referencing Findings.
 
 Group findings by category. For each category list the issues with **a concrete fix command**. Suppress empty categories.
 
+This is an action prompt: the scientist reads each row and decides which fix to run. Follow the **action-prompt labeling rule** from `CLAUDE.md`: every `[NODE_ID]` in the issue list carries a short label (first 80-120 chars of `description`/`statement`/`question`/`title`) alongside any `path` field, so the scientist can decide without a separate `show_node` lookup. For duplicate groups, include the label on each member.
+
 ```
 ## Graph Review: <date>
 Scope: <args summary>
@@ -133,25 +135,25 @@ Total issues found: <N> (across <K> categories)
 **Suggested fix**: `graph_consistency_check(repair=True)` (review the diff first)
 
 ### B. Wrong node types (<N> issues)
-- [W-abcd1234] /path/to/script.m -> should be Script
+- [W-abcd1234] "fit_model SRM analysis" (/path/to/script.m) -> should be Script
   **Suggested fix**: `delete_node("W-abcd1234")` then `add_script(path="/path/to/script.m", title="...")`. Re-link any existing edges manually.
 - ...
 
 ### C. Plans registered as Documents (<N> issues)
-- [W-...] /.plans/foo.md -> should be Plan
+- [W-...] "investigation plan title" (/.plans/foo.md) -> should be Plan
   **Suggested fix**: `delete_node(...)` then `add_plan(...)`. (Or, if links are not yet attached, just `update_node` if a re-label tool exists.)
 
 ### D. Broken file paths (<N> issues; showing first 20)
-- [F-...] /path/to/missing.csv MISSING
+- [F-...] "finding description" (/path/to/missing.csv) MISSING
   **Suggested fix**: investigate (file may have been moved); `update_node(id, path="/new/path")` or `delete_node(id)` if obsolete.
 - ...
 
 ### E. Duplicate nodes by path (<N> groups)
-- /shared/path: [F-aaa, F-bbb]
+- /shared/path: [F-aaa] "finding A description", [F-bbb] "finding B description"
   **Suggested fix**: `propose_merge("F-aaa", "F-bbb")` -> review -> `execute_merge(...)`.
 
 ### F. Missing semantic relationships (<N> heuristic hits)
-- [F-abcd] mentions H-efgh in description but no SUPPORTS/CONTRADICTS edge
+- [F-abcd] "finding description" mentions [H-efgh] "hypothesis statement" in description but no SUPPORTS/CONTRADICTS edge
   **Suggested fix**: confirm intent, then `link_nodes("F-abcd", "H-efgh", "SUPPORTS")` (or CONTRADICTS).
 
 ### G. Stale nodes (<N> by label)
