@@ -136,6 +136,8 @@ Look for consolidation opportunities:
 
 Act on what you found. For each action, log it for the report.
 
+**Action-prompt labeling rule.** OpenQuestions created here are shown to the scientist as user-facing prompts (they will be answered from the morning brief or `/wh:status`). Include a short quoted label (first 80-120 chars of the referenced node's `description`, `statement`, `question`, or `title`, coalesced) alongside each `[NODE_ID]` so the scientist can act without a separate lookup. Bare `[NODE_ID]` remains correct for factual claims in synthesis prose; the rule applies to OpenQuestion text and any other approval-style content.
+
 ### Tier Promotions
 For each generated finding with:
 - Full provenance chain (Finding → WAS_GENERATED_BY → Execution)
@@ -149,21 +151,21 @@ For each orphaned paper (no relationships):
 - Search finding descriptions for keywords from the paper title
 - Search execution descriptions for methodology matches
 - If a reasonable match exists, call `link_nodes(execution_id, paper_id, "USED")`
-- If uncertain, create an OpenQuestion: "Should [P-xxx] be linked to [X-yyy]?"
+- If uncertain, create an OpenQuestion: `Should [P-xxx] "<paper title>" be linked to [X-yyy] "<execution description>"?`
 
 ### Duplicate Flagging
 For each pair of findings with >70% word overlap:
-- Create an OpenQuestion: "Potential duplicate findings: [F-xxx] and [F-yyy]:should these be merged?"
+- Create an OpenQuestion: `Potential duplicate findings: [F-xxx] "<F-xxx description, ~100 chars>" and [F-yyy] "<F-yyy description, ~100 chars>": should these be merged?`
 - Set priority 5 (medium)
 
 ### Hypothesis Review
 For each open hypothesis with 3+ supporting findings:
-- Create an OpenQuestion: "[H-xxx] has N supporting findings and 0 contradictions:should this be marked as supported?"
+- Create an OpenQuestion: `[H-xxx] "<hypothesis statement, ~100 chars>" has N supporting findings and 0 contradictions: should this be marked as supported?`
 - Set priority 6
 
 ### Staleness Handling
 For each stale script from `detect_stale`:
-- Create an OpenQuestion: "[S-xxx] is stale (script modified since last execution):re-run needed?"
+- Create an OpenQuestion: `[S-xxx] "<script title or path>" is stale (script modified since last execution): re-run needed?`
 - Set priority 7
 
 ## Phase 3.5: Generate Synthesis Index Files

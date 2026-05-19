@@ -73,3 +73,9 @@ Tool access is the primary enforcement mechanism:
 - Write mode validates citations before creating Document nodes
 - All modes can call `graph_context` for research context
 - Never use em dashes. Use colons, commas, periods, parentheses.
+
+### Action-prompt labeling rule (titles alongside [NODE_ID])
+
+When a command presents a graph node to the scientist for a decision (approve/edit/skip, close out, sign off, mark as), or in a status/summary/progress listing where the scientist scans many nodes at once, include a short label alongside each `[NODE_ID]`. The label is the first 80-120 chars of the node's `description`, `statement`, `question`, or `title` field, coalesced. Format: `[NODE_ID] "label"` or `[NODE_ID] label`.
+
+This avoids forcing a separate `show_node` lookup before the scientist can decide. Bare `[NODE_ID]` remains the right style for factual claims in synthesis prose (compile, write), where the citation is a reference inside flowing text and the label would clutter the sentence. Confirm-style messages right after creation ("Added: [F-xxxx] ...", "Noted: [N-xxxx] ...") already include the title and don't need restating.

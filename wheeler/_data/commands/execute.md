@@ -169,7 +169,7 @@ After all WHEELER tasks complete, verify against the plan's success criteria:
 
 ## Execution Summary Template
 
-After execution, write `.plans/<name>-SUMMARY.md`:
+After execution, write `.plans/<name>-SUMMARY.md`. The summary is the scientist's scannable review of what changed, so follow the **action-prompt labeling rule** from `CLAUDE.md`: every `[NODE_ID]` in the lists below carries a short label (first 80-120 chars of `description`/`statement`/`question`/`title`) so the scientist can review without separate `show_node` lookups.
 
 ```markdown
 ---
@@ -184,22 +184,22 @@ checkpoints_hit: <N>
 # Execution Summary: <name>
 
 ## Tasks Completed
-<numbered list — task name, result, [NODE_ID] citations for any graph nodes created>
+<numbered list. Task name, result, [NODE_ID] "label" citations for any graph nodes created>
 
 ## Tasks Skipped (SCIENTIST/PAIR)
-<numbered list with assignee tags — these still need the scientist>
+<numbered list with assignee tags. These still need the scientist>
 
 ## Graph Nodes Created
-<list of [NODE_ID] with one-line descriptions>
+<list of [NODE_ID] "label" with one-line descriptions. Example: [F-3a2b] "frequency scaling: 2-5 Hz baseline, 8-12 Hz with agonist">
 
 ## Deviations from Plan
-<what changed from the plan and why, or "None — plan executed as written">
+<what changed from the plan and why, or "None: plan executed as written">
 
 ## Checkpoints Flagged
-<[Q-xxxx] nodes created at decision points, or "None">
+<[Q-xxxx] "question text" nodes created at decision points, or "None">
 
 ## Success Criteria Status
-<MET/PARTIAL/UNMET per criterion with [NODE_ID] evidence>
+<MET/PARTIAL/UNMET per criterion with [NODE_ID] "label" evidence>
 
 ## Next Steps
 <prioritized, tagged by assignee (SCIENTIST/WHEELER/PAIR)>
@@ -234,7 +234,7 @@ Evidence: <[NODE_ID] citations, or description of gap>
 <run validate_citations on all investigation files — report total, valid, invalid, stale>
 
 ## Open Questions Remaining
-<[Q-xxxx] nodes still open, with priority>
+<[Q-xxxx] "question text" nodes still open, with priority>
 
 ## Gaps Identified
 <missing coverage, stale analyses, unlinked findings>
