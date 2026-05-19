@@ -97,22 +97,26 @@ Outputs that defy clustering go into a final "Needs Review" group with no auto-E
 
 ## Phase 3: Propose
 
-Present the entire batch in one message. Use this exact format:
+Present the entire batch in one message.
+
+**Action-prompt labeling rule (applies to user-facing approval prompts, not in-prose citations).** Every `[NODE_ID]` listed in the batch must be followed by a short quoted label (the first 80-120 chars of the node's `description`, `statement`, `question`, or `title`, coalesced) so the scientist can decide per group without a separate `show_node` lookup. The `Needs Review` entries also need labels. Bare `[NODE_ID]` remains correct for factual claims in synthesis prose elsewhere; the rule here applies to this approval batch and the per-group reason text.
+
+Use this exact format:
 
 ```
 ## Proposed Provenance Groups
 
 ### Group 1: <inferred topic>
 - **Execution**: kind="<inferred>", description="<one line>"
-- **Inputs (USED)**: [P-...] <title>, [D-...] <title>  (or "none inferred")
-- **Outputs (WAS_GENERATED_BY)**: [F-...] <title>, [H-...] <title>, ...
+- **Inputs (USED)**: [P-a4f2] "Bhatt & Bhalla 2024: Fast and slow oscillations", [D-5678] "cell_042 recordings (patch clamp, pH 7.4)"  (or "none inferred")
+- **Outputs (WAS_GENERATED_BY)**: [F-3a2b] "frequency scaling: 2-5 Hz baseline, 8-12 Hz with agonist", [H-7c8d] "calcium-activated K+ channels mediate frequency shift", ...
 - **Confidence**: high / medium / low (with reason if low)
 
 ### Group 2: <inferred topic>
 ...
 
 ### Needs Review (no Execution proposed)
-- [N-...] <title> — reason: cannot infer kind from context
+- [N-91cd] "ad-hoc note on agonist concentration calibration" (reason: cannot infer kind from context)
 
 ---
 

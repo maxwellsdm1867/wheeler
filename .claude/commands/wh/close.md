@@ -104,15 +104,17 @@ For each orphan or cluster of related orphans, propose an Execution node:
   - Dataset from ingestion → kind="ingest"
 - **Identify likely inputs** — papers referenced, datasets used, prior findings discussed. Use `show_node` to check existing relationships for clues.
 
-Present the batch to the scientist:
+Present the batch to the scientist.
+
+**Action-prompt labeling rule (applies to user-facing approval prompts, not in-prose citations).** When asking the scientist to approve, edit, or skip a graph node, include a short label (the first 80-120 chars of the node's `description`, `statement`, `question`, or `title` field, coalesced) alongside each `[NODE_ID]`. Bare `[NODE_ID]` remains the right style for factual claims in synthesis prose, but action prompts need labels so the scientist can decide without a separate `show_node` lookup.
 
 ```
 ## Proposed Provenance Links
 
 ### Group 1: Discussion about calcium dynamics
 - **Execution**: kind="discuss", description="Discussion of calcium oscillation patterns"
-- **Inputs (USED)**: [P-a4f2] Bhatt & Bhalla 2024, [D-5678] cell_042 recordings
-- **Outputs (WAS_GENERATED_BY)**: [F-3a2b] frequency scaling finding, [H-7c8d] channel gating hypothesis
+- **Inputs (USED)**: [P-a4f2] "Bhatt & Bhalla 2024: Fast and slow oscillations", [D-5678] "cell_042 recordings (patch clamp, pH 7.4)"
+- **Outputs (WAS_GENERATED_BY)**: [F-3a2b] "frequency scaling: 2-5 Hz baseline, 8-12 Hz with agonist", [H-7c8d] "calcium-activated K+ channels mediate frequency shift"
 
 ### Group 2: ...
 
