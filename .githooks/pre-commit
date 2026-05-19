@@ -122,7 +122,10 @@ if [[ -z "$PYTHON_CHANGED" ]]; then
     pass "Tests ${DIM}(skipped, no code changes)${RESET}"
 elif [[ -d ".venv" ]]; then
     info "Running tests..."
-    TEST_OUTPUT=$(.venv/bin/python -m pytest tests/ -q --tb=short 2>&1) || true
+    # Strip inherited GIT_* env vars so tests that spawn `git` subprocesses
+    # (test_portability, test_backup, etc.) cannot accidentally write into
+    # the in-flight commit's index via GIT_INDEX_FILE.
+    TEST_OUTPUT=$(env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_EXEC_PATH -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_AUTHOR_DATE -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u GIT_COMMITTER_DATE -u GIT_REFLOG_ACTION .venv/bin/python -m pytest tests/ -q --tb=short 2>&1) || true
     TEST_EXIT=${PIPESTATUS[0]:-$?}
 
     # Check if pytest actually reported failures
