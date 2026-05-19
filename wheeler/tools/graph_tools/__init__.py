@@ -990,6 +990,60 @@ async def execute_tool(
                         )
             except Exception:
                 pass  # best-effort, fulltext is advisory
+
+            # Fan out the provenance-helper Execution through the same
+            # triple-write path. _complete_provenance creates the Execution
+            # via backend.create_node alone, so without this it lands graph-only.
+            try:
+                parsed_prov = json.loads(result)
+                prov = parsed_prov.get("provenance") or {}
+                exec_id = prov.get("execution_id", "")
+                if exec_id:
+                    exec_now = _now()
+                    exec_desc = args.get("execution_description", "")
+                    exec_args = {
+                        "id": exec_id,
+                        "kind": prov.get("execution_kind", ""),
+                        "agent_id": args.get("agent_id", "wheeler"),
+                        "status": "completed",
+                        "started_at": args.get("started_at", exec_now),
+                        "ended_at": args.get("ended_at", exec_now),
+                        "session_id": args.get("session_id", ""),
+                        "description": exec_desc,
+                        "tier": "generated",
+                    }
+                    exec_result = json.dumps({
+                        "node_id": exec_id,
+                        "label": "Execution",
+                        "status": "created",
+                    })
+                    exec_json_ok, exec_synthesis_ok = _write_knowledge_file(
+                        "add_execution", exec_args, exec_result, config,
+                    )
+                    try:
+                        _repair_queue.enqueue(WriteReceipt(
+                            node_id=exec_id,
+                            label="Execution",
+                            timestamp=_now(),
+                            graph=True,
+                            json=exec_json_ok,
+                            synthesis=exec_synthesis_ok,
+                        ))
+                    except Exception:
+                        pass
+                    if exec_desc:
+                        try:
+                            await backend.update_node(
+                                "Execution", exec_id, {"_search_text": exec_desc}
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                logger.error(
+                    "Provenance Execution fan-out failed for %s (best-effort)",
+                    tool_name,
+                    exc_info=True,
+                )
         elif tool_name == "set_tier":
             _update_knowledge_tier(args, result, config)
         elif tool_name == "update_node":
