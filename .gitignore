@@ -27,3 +27,12 @@ MagicMock/
 package/
 wh-triage-workspace/
 .claude/scheduled_tasks.lock
+
+# Dev-only skills (not shipped to Wheeler users)
+.claude/skills/
+
+# Dev-only agents for the issue-cycle workflow (not shipped to Wheeler users)
+.claude/agents/issue-*.md
+
+# Per-issue git worktrees created by /wheeler-issue-cycle
+.worktrees/
