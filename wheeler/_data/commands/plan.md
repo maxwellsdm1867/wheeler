@@ -87,7 +87,7 @@ What the graph already knows (cite nodes). Where the gaps are.
 - **type**: math | conceptual | literature | code | data_wrangling | graph_ops | writing | interpretation | experimental_design
 - **model**: opus | sonnet | haiku
 - **depends_on**: [] or [task numbers]
-- **checkpoint_if**: [conditions that should pause execution]
+- **checkpoint_if**: [conditions that should pause execution, stated as neutral descriptive thresholds; see Checkpoint language below]
 - **description**: What to do, with enough context for cold-start execution
 
 ### 2. <task title>
@@ -125,6 +125,19 @@ Add `wave` to each task based on dependencies:
 ```
 
 Wave assignment: `task.wave = max(wave of each dependency) + 1`. Tasks with no dependencies are wave 1.
+
+### Checkpoint language (neutral descriptive, not evaluative)
+
+For descriptive comparisons where no scientist-pre-committed good/bad threshold exists, write `checkpoint_if` conditions as neutral numerical descriptions of what the data shows. State the measurement, not its interpretation. The scientist's evaluative reading ("worse", "fails to", "amplifies rather than collapses") is the interpretation that follows the data, not the trigger condition itself.
+
+Examples:
+
+- Neutral (preferred): `Cohen's d of Delta exceeds Cohen's d of raw theta0 reference value`
+- Evaluative (avoid): `Delta makes the parasol-midget gap WORSE`
+
+Avoid "WORSE", "BETTER", "fails to", "succeeds in", "amplifies rather than collapses" in `checkpoint_if` text unless the scientist explicitly pre-committed an evaluative threshold; in that case, wrap the condition as `scientist-defined pre-commit threshold: <criterion>` so `/wh:execute` and downstream readers know the evaluative framing is intentional, not template rhetoric.
+
+This applies to checkpoint conditions only; the plan's `## Rationale` and `## Scientific reasoning` sections can still use whatever wording is needed to motivate the investigation.
 
 ### Contract guidance (when to set the optional contract fields)
 

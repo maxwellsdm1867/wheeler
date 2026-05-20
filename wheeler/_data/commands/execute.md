@@ -134,6 +134,18 @@ At decision points, STOP and surface the decision to the scientist:
 
 Do NOT guess at decision points. Flag them and wait.
 
+### Neutral language for checkpoint reports and Finding descriptions
+When a checkpoint fires and you report the result, and when you write the descriptive Finding(s) the task generates, state what the data shows in neutral descriptive language. Do not import good/bad/better/worse framing from the plan's `checkpoint_if` text unless the scientist pre-committed an evaluative threshold (wrapped as `scientist-defined pre-commit threshold: ...`).
+
+Examples:
+
+- Neutral Finding description (preferred): `Cohen's d of Delta = 0.82, Cohen's d of raw theta0 = 0.41 (Delta exceeds raw theta0 by 2.0x)`
+- Evaluative Finding description (avoid): `Delta AMPLIFIES the parasol-midget gap rather than collapsing it`
+
+Words like "WORSE", "BETTER", "fails to", "succeeds in", "amplifies rather than collapses", "performs better than" carry interpretation, not measurement. They belong in the scientist's downstream interpretation pass, not in the descriptive Finding the task registered.
+
+If the plan's `checkpoint_if` text contains evaluative wording without the `scientist-defined pre-commit` wrapper, treat it as planner shorthand: report the data neutrally and flag the wording mismatch to the scientist at the checkpoint.
+
 ## Wave-Based Parallel Execution
 Group tasks into dependency waves. All tasks in a wave run concurrently; wave N+1 starts only after wave N completes.
 
