@@ -8,6 +8,9 @@ that should be neutral and descriptive when no scientist-pre-committed threshold
 """
 
 import re
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_plan_command_no_evaluative_language_in_guidance():
@@ -20,10 +23,7 @@ def test_plan_command_no_evaluative_language_in_guidance():
     about using neutral descriptive language in checkpoint_if conditions.
     """
     # Read the actual plan.md file
-    plan_file = (
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/"
-        ".claude/commands/wh/plan.md"
-    )
+    plan_file = REPO_ROOT / ".claude/commands/wh/plan.md"
     with open(plan_file) as f:
         plan_content = f.read()
 
@@ -61,10 +61,7 @@ def test_execute_command_includes_neutral_language_instruction():
     to inherit evaluative framing from the plan template.
     """
     # Read the actual execute.md file
-    execute_file = (
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/"
-        ".claude/commands/wh/execute.md"
-    )
+    execute_file = REPO_ROOT / ".claude/commands/wh/execute.md"
     with open(execute_file) as f:
         execute_content = f.read()
 
@@ -104,13 +101,13 @@ def test_shipped_commands_match_source():
     import os
 
     source_files = [
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/.claude/commands/wh/plan.md",
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/.claude/commands/wh/execute.md",
+        str(REPO_ROOT / ".claude/commands/wh/plan.md"),
+        str(REPO_ROOT / ".claude/commands/wh/execute.md"),
     ]
 
     shipped_files = [
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/wheeler/_data/commands/plan.md",
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/wheeler/_data/commands/execute.md",
+        str(REPO_ROOT / "wheeler/_data/commands/plan.md"),
+        str(REPO_ROOT / "wheeler/_data/commands/execute.md"),
     ]
 
     for source, shipped in zip(source_files, shipped_files):
@@ -137,10 +134,7 @@ def test_checkpoint_reporting_guidance_exists():
     "what the data shows" not "good/bad/better/worse" unless explicitly
     pre-committed by the scientist.
     """
-    execute_file = (
-        "/Users/maxwellsdm/Documents/GitHub/wheeler/"
-        ".claude/commands/wh/execute.md"
-    )
+    execute_file = REPO_ROOT / ".claude/commands/wh/execute.md"
     with open(execute_file) as f:
         execute_content = f.read()
 
