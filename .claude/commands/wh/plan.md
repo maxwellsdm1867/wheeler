@@ -225,19 +225,28 @@ Never say "register as Document nodes" for code files. Use "register as Script n
 
 ### Canonical output paths for figures and datasets
 
-When a task produces a figure (`.png`, `.svg`, `.jpg`) or a dataset (`.csv`, `.mat`, `.h5`, `.parquet`) that should be archived alongside the investigation, the task's `description` MUST specify the output path in the canonical lab convention:
+When a task produces a figure (`.png`, `.svg`, `.jpg`) or a dataset (`.csv`, `.mat`, `.h5`, `.parquet`) that should be archived alongside the investigation, the task's `description` MUST specify the output path in the canonical lab convention. The filename itself must be prefixed with `<analysis_name>_<YYYY-MM-DD>_` (same value as the parent directory's `<slug>_<date>`) so the file remains identifiable when detached from its directory:
 
 ```
-analysis_exports/<investigation_slug>_<YYYY-MM-DD>/figures/fig_<X>_<descriptive_snake_case>.png
-analysis_exports/<investigation_slug>_<YYYY-MM-DD>/<descriptive_snake_case>.csv
+analysis_exports/<investigation_slug>_<YYYY-MM-DD>/figures/<analysis_name>_<YYYY-MM-DD>_fig_<X>_<descriptive_snake_case>.png
+analysis_exports/<investigation_slug>_<YYYY-MM-DD>/<analysis_name>_<YYYY-MM-DD>_<descriptive_snake_case>.csv
 ```
 
 where:
 
-- `<investigation_slug>` is the plan's `investigation:` frontmatter slug.
+- `<investigation_slug>` and `<analysis_name>` are the plan's `investigation:` frontmatter slug (the same value; "analysis_name" is the term used for the filename-prefix component).
 - `<YYYY-MM-DD>` is the date the plan will execute (use today's date when drafting; `/wh:execute` re-stamps if it runs on a later day).
 - `<X>` is a single uppercase letter (`A`, `B`, `C`, ...) pre-assigned by the planner in canonical importance order. If unsure, use creation order and add a note that the scientist may reorder.
 - The descriptive slug is short snake_case (e.g. `vrest_consistency`, `delta_vs_firing_rate`).
+
+Concrete example (assuming `investigation: operating_margin_pilot`, plan-draft date `2026-05-20`):
+
+```
+analysis_exports/operating_margin_pilot_2026-05-20/figures/operating_margin_pilot_2026-05-20_fig_A_delta_vs_firing_rate.png
+analysis_exports/operating_margin_pilot_2026-05-20/operating_margin_pilot_2026-05-20_operating_margin.csv
+```
+
+The filename prefix matters because a figure that lives only as `fig_A_delta_vs_firing_rate.png` loses its analysis context the moment it leaves its parent dir (dragged into a chat window, downloaded, screenshotted, attached to an email). With the prefix, the filename alone is globally unambiguous.
 
 Reserve the project-root `figures/` directory for ephemeral scratch output; the canonical archive lives under `analysis_exports/`. `/wh:execute` creates `analysis_exports/<slug>_<date>/{figures,scripts}/` at the start of the run and copies artifacts in as tasks complete; do not pre-create it from the plan side.
 

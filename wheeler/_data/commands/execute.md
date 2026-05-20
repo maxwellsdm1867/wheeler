@@ -73,14 +73,27 @@ When running from a registered plan (PL-xxxx):
 
 The archive root for a plan-based execute is `analysis_exports/<investigation_slug>_<YYYY-MM-DD>/`. Once Step 2.4 has created the directory, treat this as the source of truth for figure and dataset outputs:
 
-- Write figures directly to `analysis_exports/<slug>_<date>/figures/fig_<X>_<descriptive>.png`.
-- Write datasets to `analysis_exports/<slug>_<date>/<descriptive>.csv` (root of export dir, not inside `figures/`).
+- Write figures directly to `analysis_exports/<slug>_<date>/figures/<slug>_<date>_fig_<X>_<descriptive>.png` (the filename embeds the analysis name and date; see "Filename prefix" below).
+- Write datasets to `analysis_exports/<slug>_<date>/<slug>_<date>_<descriptive>.csv` (root of export dir, not inside `figures/`).
 - Copy each Script that produced output into `analysis_exports/<slug>_<date>/scripts/` after it runs. The canonical Script node path in the graph stays at project root (MATLAB executes from project root); the export copy is the archival snapshot.
 - Pass the canonical export path (not a project-root scratch path) to `ensure_artifact(path=..., artifact_type="finding")` for figures and `ensure_artifact(path=..., artifact_type="dataset")` for datasets. The Finding/Dataset node's `path` field MUST point at the canonical export location so downstream readers do not chase a scratch dump.
 - At end of execute, copy `.plans/<name>-SUMMARY.md` and `.plans/<name>-VERIFICATION.md` into `analysis_exports/<slug>_<date>/` so the export dir is a self-contained archive (plan + summary + verification + figures + datasets + scripts).
 - Do NOT use the project-root `figures/<investigation>/` location for canonical archival; it is ephemeral scratch only.
 
 If the plan's task descriptions specify only scratch paths (`figures/<investigation>/<name>.png`), rewrite them to the canonical path before running and note the rewrite in the SUMMARY's "Deviations from Plan" section.
+
+### Filename prefix (analysis name + date)
+
+Every figure and dataset filename inside `analysis_exports/<slug>_<date>/` MUST be prefixed with `<analysis_name>_<YYYY-MM-DD>_` (matching the parent directory's `<slug>_<date>`). This makes the filename globally unique on its own, so a file dragged into a chat, downloaded from Drive, or screenshotted by filename still names its analysis and date. Without the prefix, two unrelated investigations can ship the same `fig_A_overview.png` and provenance is lost as soon as the file leaves its parent dir.
+
+Examples (assuming `investigation: operating_margin_pilot`, executing on `2026-05-19`):
+
+- Figure: `analysis_exports/operating_margin_pilot_2026-05-19/figures/operating_margin_pilot_2026-05-19_fig_F_theta0_vs_delta_scatter.png`
+- Dataset: `analysis_exports/operating_margin_pilot_2026-05-19/operating_margin_pilot_2026-05-19_operating_margin.csv`
+
+Bake the same prefixed slug into the figure's on-disk title (the visible plot title rendered by MATLAB / matplotlib), so a screenshot of the figure body alone carries the analysis-and-date provenance. Pass the prefixed slug as `title=` when calling `ensure_artifact` so the graph node title matches the filename and the on-figure title (the triple-lock).
+
+Do NOT save files as bare slugs (`fig_F_scatter.png`, `operating_margin.csv`) inside the export directory; the parent dir's name alone is fragile.
 
 ### Step 2.5: Honor the contract (only when the plan declares one)
 
