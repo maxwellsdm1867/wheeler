@@ -65,9 +65,10 @@ When running from a registered plan (PL-xxxx):
 4. **Create the canonical export directory** for archived figures, datasets, scripts, and verification docs: `mkdir -p analysis_exports/<investigation_slug>_<YYYY-MM-DD>/{figures,scripts}` where `<investigation_slug>` is the plan's `investigation:` frontmatter and `<YYYY-MM-DD>` is today's date (the execute date, not the plan-draft date). This is the archive root all figure / dataset / script paths should resolve under; see "Artifact organization" below.
 5. Execute WHEELER-assigned tasks in dependency order. **If `citation_mode: strict`**, every factual claim produced by a task must cite a `[NODE_ID]` already in the graph. Untraced claims are a contract violation; either ground them or remove them.
 6. Skip SCIENTIST and PAIR tasks: flag them as needing the scientist
-7. After each task, update the plan file (mark task done, note results)
-8. When all WHEELER tasks complete, run **Step 2.5: Honor the contract** if any contract field is set. Otherwise jump straight to checking success criteria.
-9. Call `update_node(node_id=PL-xxxx, status="completed")` (or leave as in-progress if gaps remain). Update plan file frontmatter to mirror.
+7. After each task that produced a figure (any artifact registered via `ensure_artifact(artifact_type="finding")` whose path ends in `.png`/`.jpg`/`.svg`/`.pdf`), display the anchor figure inline by calling `Read` on the PNG path. Do this per-task at the moment of registration, not just at end of execution, so the scientist sees the figure in the chat thread without having to ask.
+8. After each task, update the plan file (mark task done, note results)
+9. When all WHEELER tasks complete, run **Step 2.5: Honor the contract** if any contract field is set. Otherwise jump straight to checking success criteria.
+10. Call `update_node(node_id=PL-xxxx, status="completed")` (or leave as in-progress if gaps remain). Update plan file frontmatter to mirror.
 
 ### Artifact organization (canonical export directory)
 
