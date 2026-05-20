@@ -96,6 +96,15 @@ What the graph already knows (cite nodes). Where the gaps are.
 ## Success Criteria
 How do we know we answered the question? What findings would close the investigation?
 
+## Scientific reasoning
+For plans with method choices (estimator selection, statistical test, signal-processing choice, model parameterization), document:
+- (a) **Foundation**: the equations or principles the method rests on
+- (b) **Why the chosen method is correct**: derivation connecting foundation to procedure
+- (c) **Why alternatives were rejected**: explicit comparison vs other reasonable approaches and why they fail for this question
+- (d) **Assumptions and failure modes**: what the method assumes, how those assumptions could break, how the pipeline detects breakage
+
+Omit this section only for pure data-wrangling plans with no method choice. A reader who has not seen the planning conversation should be able to answer "why this estimator instead of alternative X?" from the plan alone.
+
 ## Rationale
 Why this approach. What alternatives were considered.
 ```
@@ -148,6 +157,7 @@ After writing a plan, self-check before presenting to the scientist:
 5. **Dependencies**: Is the wave assignment consistent? No circular dependencies?
 6. **Scope**: Are WHEELER tasks actually WHEELER-suitable? Are SCIENTIST tasks properly routed?
 7. **Frontmatter accuracy**: Do task counts in frontmatter match the actual task list? Is wave count correct? Does `success_criteria_met` denominator match the number of success criteria?
+8. **Scientific reasoning**: For plans with method choices (estimator selection, statistical test, signal-processing choice, model parameterization), does the plan document the four reasoning items (foundation, why-correct, why-alternatives-rejected, assumptions/failure-modes) in a `## Scientific reasoning` section? Pure data-wrangling plans with no method choice are exempt; flag the omission instead of forcing a section. If the section is missing on a plan that needs it, fix before approval.
 
 If any check fails, fix the plan before presenting it.
 
