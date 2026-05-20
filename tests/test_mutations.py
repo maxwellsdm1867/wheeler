@@ -170,3 +170,94 @@ class TestLinkNodesRelProps:
             "rel_props": {"note": "test"},
         }))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# add_finding -- title field round-trip (figure triple-lock)
+# ---------------------------------------------------------------------------
+
+
+class TestAddFindingTitleField:
+    """Verify the new title field on Finding propagates through add_finding."""
+
+    @pytest.mark.asyncio
+    async def test_add_finding_persists_title_on_graph_node(self) -> None:
+        """add_finding writes the title onto the backend node props."""
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        captured: dict = {}
+
+        class FakeBackend:
+            async def create_node(self, label: str, props: dict) -> bool:
+                captured["label"] = label
+                captured["props"] = props
+                return True
+
+        await add_finding(FakeBackend(), {
+            "description": "F theta0 vs delta scatter",
+            "confidence": 0.8,
+            "title": "fig_F_theta0_vs_delta",
+            "artifact_type": "figure",
+            "path": "/tmp/fig_F_theta0_vs_delta.png",
+        })
+
+        assert captured["label"] == "Finding"
+        assert captured["props"]["title"] == "fig_F_theta0_vs_delta"
+        # display_name should prefer title when present (matches filename slug)
+        assert captured["props"]["display_name"] == "fig_F_theta0_vs_delta"
+
+    @pytest.mark.asyncio
+    async def test_add_finding_without_title_defaults_to_empty(self) -> None:
+        """Existing callers that omit title still work; field defaults to empty."""
+        from wheeler.tools.graph_tools.mutations import add_finding
+
+        captured: dict = {}
+
+        class FakeBackend:
+            async def create_node(self, label: str, props: dict) -> bool:
+                captured["props"] = props
+                return True
+
+        await add_finding(FakeBackend(), {
+            "description": "Backward-compat finding without title",
+            "confidence": 0.5,
+        })
+
+        assert captured["props"]["title"] == ""
+        # display_name falls back to description prefix when title is absent
+        assert captured["props"]["display_name"] == "Backward-compat finding without title"
+
+    def test_finding_model_round_trips_title(self) -> None:
+        """FindingModel accepts title and survives a JSON round trip."""
+        from wheeler.models import FindingModel, KNOWLEDGE_NODE_ADAPTER
+
+        m = FindingModel(
+            id="F-deadbeef",
+            description="F vs delta scatter",
+            confidence=0.9,
+            title="fig_F_vs_delta",
+            path="/tmp/fig_F_vs_delta.png",
+            artifact_type="figure",
+        )
+        assert m.title == "fig_F_vs_delta"
+
+        # Round-trip through the discriminated-union adapter (used by store.py)
+        payload = m.model_dump()
+        restored = KNOWLEDGE_NODE_ADAPTER.validate_python(payload)
+        assert isinstance(restored, FindingModel)
+        assert restored.title == "fig_F_vs_delta"
+
+    def test_finding_model_legacy_json_without_title_loads(self) -> None:
+        """Existing knowledge/F-*.json files predating the title field still load."""
+        from wheeler.models import FindingModel
+
+        # Legacy payload: no title key at all.
+        legacy = {
+            "id": "F-cafebabe",
+            "type": "Finding",
+            "description": "Legacy finding",
+            "confidence": 0.6,
+        }
+        m = FindingModel.model_validate(legacy)
+        assert m.title == ""
+        assert m.description == "Legacy finding"

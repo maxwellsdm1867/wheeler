@@ -53,6 +53,7 @@ class FindingModel(NodeBase):
     artifact_type: str = ""  # figure, table, number, csv, etc.
     source: str = ""  # who/what produced this (e.g., collaborator name, paper ID)
     hash: str = ""
+    title: str = ""  # short label; for figures, matches the filename slug (triple-lock)
 
 
 class HypothesisModel(NodeBase):

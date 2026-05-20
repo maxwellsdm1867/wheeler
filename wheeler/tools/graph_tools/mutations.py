@@ -125,7 +125,8 @@ async def _complete_provenance(
 
 async def add_finding(backend, args: dict) -> str:
     node_id = args.get("id") or generate_node_id("F")
-    display_name = args["description"][:40]
+    title = args.get("title", "")
+    display_name = (title[:40] if title else args["description"][:40])
     await backend.create_node("Finding", {
         "id": node_id,
         "description": args["description"],
@@ -134,6 +135,7 @@ async def add_finding(backend, args: dict) -> str:
         "artifact_type": args.get("artifact_type", ""),
         "source": args.get("source", ""),
         "hash": args.get("hash", ""),
+        "title": title,
         "date": _now(),
         "tier": args.get("tier", "generated"),
         "stability": default_stability("Finding", args.get("tier", "generated")),
@@ -618,9 +620,17 @@ def _build_delegated_args(
         if conf is None or conf == 0.0:
             conf = 0.5
             defaulted.append("confidence")
+        # Triple-lock: for figure Findings the title should equal the filename
+        # slug (stem). If the caller did not provide one, default to the stem
+        # so the on-disk filename, the graph node title, and the on-figure
+        # title can all be matched downstream.
+        title = args.get("title") or stem
+        if not args.get("title"):
+            defaulted.append("title")
         return "add_finding", {
             "path": path, "description": desc, "confidence": conf,
             "artifact_type": args.get("artifact_type") or "figure",
+            "title": title,
             "session_id": args.get("session_id", ""),
             "tier": args.get("tier", "generated"),
             **prov_passthrough,
