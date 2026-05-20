@@ -87,7 +87,7 @@ What the graph already knows (cite nodes). Where the gaps are.
 - **type**: math | conceptual | literature | code | data_wrangling | graph_ops | writing | interpretation | experimental_design
 - **model**: opus | sonnet | haiku
 - **depends_on**: [] or [task numbers]
-- **checkpoint_if**: [conditions that should pause execution]
+- **checkpoint_if**: [conditions that should pause execution, stated as neutral descriptive thresholds; see Checkpoint language below]
 - **description**: What to do, with enough context for cold-start execution
 
 ### 2. <task title>
@@ -95,6 +95,15 @@ What the graph already knows (cite nodes). Where the gaps are.
 
 ## Success Criteria
 How do we know we answered the question? What findings would close the investigation?
+
+## Scientific reasoning
+For plans with method choices (estimator selection, statistical test, signal-processing choice, model parameterization), document:
+- (a) **Foundation**: the equations or principles the method rests on
+- (b) **Why the chosen method is correct**: derivation connecting foundation to procedure
+- (c) **Why alternatives were rejected**: explicit comparison vs other reasonable approaches and why they fail for this question
+- (d) **Assumptions and failure modes**: what the method assumes, how those assumptions could break, how the pipeline detects breakage
+
+Omit this section only for pure data-wrangling plans with no method choice. A reader who has not seen the planning conversation should be able to answer "why this estimator instead of alternative X?" from the plan alone.
 
 ## Rationale
 Why this approach. What alternatives were considered.
@@ -116,6 +125,19 @@ Add `wave` to each task based on dependencies:
 ```
 
 Wave assignment: `task.wave = max(wave of each dependency) + 1`. Tasks with no dependencies are wave 1.
+
+### Checkpoint language (neutral descriptive, not evaluative)
+
+For descriptive comparisons where no scientist-pre-committed good/bad threshold exists, write `checkpoint_if` conditions as neutral numerical descriptions of what the data shows. State the measurement, not its interpretation. The scientist's evaluative reading ("worse", "fails to", "amplifies rather than collapses") is the interpretation that follows the data, not the trigger condition itself.
+
+Examples:
+
+- Neutral (preferred): `Cohen's d of Delta exceeds Cohen's d of raw theta0 reference value`
+- Evaluative (avoid): `Delta makes the parasol-midget gap WORSE`
+
+Avoid "WORSE", "BETTER", "fails to", "succeeds in", "amplifies rather than collapses" in `checkpoint_if` text unless the scientist explicitly pre-committed an evaluative threshold; in that case, wrap the condition as `scientist-defined pre-commit threshold: <criterion>` so `/wh:execute` and downstream readers know the evaluative framing is intentional, not template rhetoric.
+
+This applies to checkpoint conditions only; the plan's `## Rationale` and `## Scientific reasoning` sections can still use whatever wording is needed to motivate the investigation.
 
 ### Contract guidance (when to set the optional contract fields)
 
@@ -148,6 +170,7 @@ After writing a plan, self-check before presenting to the scientist:
 5. **Dependencies**: Is the wave assignment consistent? No circular dependencies?
 6. **Scope**: Are WHEELER tasks actually WHEELER-suitable? Are SCIENTIST tasks properly routed?
 7. **Frontmatter accuracy**: Do task counts in frontmatter match the actual task list? Is wave count correct? Does `success_criteria_met` denominator match the number of success criteria?
+8. **Scientific reasoning**: For plans with method choices (estimator selection, statistical test, signal-processing choice, model parameterization), does the plan document the four reasoning items (foundation, why-correct, why-alternatives-rejected, assumptions/failure-modes) in a `## Scientific reasoning` section? Pure data-wrangling plans with no method choice are exempt; flag the omission instead of forcing a section. If the section is missing on a plan that needs it, fix before approval.
 
 If any check fails, fix the plan before presenting it.
 
@@ -199,6 +222,35 @@ When planning tasks that register files in the graph, use the correct node type:
 | .png, .jpg, .svg, .tif | Finding (figure) | `ensure_artifact` | F- |
 
 Never say "register as Document nodes" for code files. Use "register as Script nodes via `ensure_artifact`" or "register as Script nodes via `add_script`".
+
+### Canonical output paths for figures and datasets
+
+When a task produces a figure (`.png`, `.svg`, `.jpg`) or a dataset (`.csv`, `.mat`, `.h5`, `.parquet`) that should be archived alongside the investigation, the task's `description` MUST specify the output path in the canonical lab convention. The filename itself must be prefixed with `<analysis_name>_<YYYY-MM-DD>_` (same value as the parent directory's `<slug>_<date>`) so the file remains identifiable when detached from its directory:
+
+```
+analysis_exports/<investigation_slug>_<YYYY-MM-DD>/figures/<analysis_name>_<YYYY-MM-DD>_fig_<X>_<descriptive_snake_case>.png
+analysis_exports/<investigation_slug>_<YYYY-MM-DD>/<analysis_name>_<YYYY-MM-DD>_<descriptive_snake_case>.csv
+```
+
+where:
+
+- `<investigation_slug>` and `<analysis_name>` are the plan's `investigation:` frontmatter slug (the same value; "analysis_name" is the term used for the filename-prefix component).
+- `<YYYY-MM-DD>` is the date the plan will execute (use today's date when drafting; `/wh:execute` re-stamps if it runs on a later day).
+- `<X>` is a single uppercase letter (`A`, `B`, `C`, ...) pre-assigned by the planner in canonical importance order. If unsure, use creation order and add a note that the scientist may reorder.
+- The descriptive slug is short snake_case (e.g. `vrest_consistency`, `delta_vs_firing_rate`).
+
+Concrete example (assuming `investigation: operating_margin_pilot`, plan-draft date `2026-05-20`):
+
+```
+analysis_exports/operating_margin_pilot_2026-05-20/figures/operating_margin_pilot_2026-05-20_fig_A_delta_vs_firing_rate.png
+analysis_exports/operating_margin_pilot_2026-05-20/operating_margin_pilot_2026-05-20_operating_margin.csv
+```
+
+The filename prefix matters because a figure that lives only as `fig_A_delta_vs_firing_rate.png` loses its analysis context the moment it leaves its parent dir (dragged into a chat window, downloaded, screenshotted, attached to an email). With the prefix, the filename alone is globally unambiguous.
+
+Reserve the project-root `figures/` directory for ephemeral scratch output; the canonical archive lives under `analysis_exports/`. `/wh:execute` creates `analysis_exports/<slug>_<date>/{figures,scripts}/` at the start of the run and copies artifacts in as tasks complete; do not pre-create it from the plan side.
+
+For a complete worked example of the directory layout, see `analysis_exports/within_parasol_theta0_swap_pilot_2026-05-11/` (lab-existing precedent).
 
 ## Rules
 - Do NOT execute code. Propose only. Wait for scientist approval.

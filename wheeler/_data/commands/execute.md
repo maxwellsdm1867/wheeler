@@ -62,11 +62,38 @@ When running from a registered plan (PL-xxxx):
 1. Read the plan file (from graph node's `path`): objectives, tasks, dependencies, success criteria, AND the optional **contract** fields (`output_type`, `citation_mode`, `validation`, `section`). If any contract field is set, the plan is contract-bearing and Step 2.5 below applies. If all are absent or commented out, run as a default "mixed" plan (historical behavior).
 2. Call `search_context` with the plan's objective to load what the graph already knows about this topic
 3. Call `update_node(node_id=PL-xxxx, status="in-progress")` (graph is authoritative). Then update plan file frontmatter `status` to `in-progress` and `updated` timestamp. Update `.plans/STATE.md` frontmatter: set `status: in-progress`, `updated` timestamp.
-4. Execute WHEELER-assigned tasks in dependency order. **If `citation_mode: strict`**, every factual claim produced by a task must cite a `[NODE_ID]` already in the graph. Untraced claims are a contract violation; either ground them or remove them.
-5. Skip SCIENTIST and PAIR tasks: flag them as needing the scientist
-6. After each task, update the plan file (mark task done, note results)
-7. When all WHEELER tasks complete, run **Step 2.5: Honor the contract** if any contract field is set. Otherwise jump straight to checking success criteria.
-8. Call `update_node(node_id=PL-xxxx, status="completed")` (or leave as in-progress if gaps remain). Update plan file frontmatter to mirror.
+4. **Create the canonical export directory** for archived figures, datasets, scripts, and verification docs: `mkdir -p analysis_exports/<investigation_slug>_<YYYY-MM-DD>/{figures,scripts}` where `<investigation_slug>` is the plan's `investigation:` frontmatter and `<YYYY-MM-DD>` is today's date (the execute date, not the plan-draft date). This is the archive root all figure / dataset / script paths should resolve under; see "Artifact organization" below.
+5. Execute WHEELER-assigned tasks in dependency order. **If `citation_mode: strict`**, every factual claim produced by a task must cite a `[NODE_ID]` already in the graph. Untraced claims are a contract violation; either ground them or remove them.
+6. Skip SCIENTIST and PAIR tasks: flag them as needing the scientist
+7. After each task, update the plan file (mark task done, note results)
+8. When all WHEELER tasks complete, run **Step 2.5: Honor the contract** if any contract field is set. Otherwise jump straight to checking success criteria.
+9. Call `update_node(node_id=PL-xxxx, status="completed")` (or leave as in-progress if gaps remain). Update plan file frontmatter to mirror.
+
+### Artifact organization (canonical export directory)
+
+The archive root for a plan-based execute is `analysis_exports/<investigation_slug>_<YYYY-MM-DD>/`. Once Step 2.4 has created the directory, treat this as the source of truth for figure and dataset outputs:
+
+- Write figures directly to `analysis_exports/<slug>_<date>/figures/<slug>_<date>_fig_<X>_<descriptive>.png` (the filename embeds the analysis name and date; see "Filename prefix" below).
+- Write datasets to `analysis_exports/<slug>_<date>/<slug>_<date>_<descriptive>.csv` (root of export dir, not inside `figures/`).
+- Copy each Script that produced output into `analysis_exports/<slug>_<date>/scripts/` after it runs. The canonical Script node path in the graph stays at project root (MATLAB executes from project root); the export copy is the archival snapshot.
+- Pass the canonical export path (not a project-root scratch path) to `ensure_artifact(path=..., artifact_type="finding")` for figures and `ensure_artifact(path=..., artifact_type="dataset")` for datasets. The Finding/Dataset node's `path` field MUST point at the canonical export location so downstream readers do not chase a scratch dump.
+- At end of execute, copy `.plans/<name>-SUMMARY.md` and `.plans/<name>-VERIFICATION.md` into `analysis_exports/<slug>_<date>/` so the export dir is a self-contained archive (plan + summary + verification + figures + datasets + scripts).
+- Do NOT use the project-root `figures/<investigation>/` location for canonical archival; it is ephemeral scratch only.
+
+If the plan's task descriptions specify only scratch paths (`figures/<investigation>/<name>.png`), rewrite them to the canonical path before running and note the rewrite in the SUMMARY's "Deviations from Plan" section.
+
+### Filename prefix (analysis name + date)
+
+Every figure and dataset filename inside `analysis_exports/<slug>_<date>/` MUST be prefixed with `<analysis_name>_<YYYY-MM-DD>_` (matching the parent directory's `<slug>_<date>`). This makes the filename globally unique on its own, so a file dragged into a chat, downloaded from Drive, or screenshotted by filename still names its analysis and date. Without the prefix, two unrelated investigations can ship the same `fig_A_overview.png` and provenance is lost as soon as the file leaves its parent dir.
+
+Examples (assuming `investigation: operating_margin_pilot`, executing on `2026-05-19`):
+
+- Figure: `analysis_exports/operating_margin_pilot_2026-05-19/figures/operating_margin_pilot_2026-05-19_fig_F_theta0_vs_delta_scatter.png`
+- Dataset: `analysis_exports/operating_margin_pilot_2026-05-19/operating_margin_pilot_2026-05-19_operating_margin.csv`
+
+Bake the same prefixed slug into the figure's on-disk title (the visible plot title rendered by MATLAB / matplotlib), so a screenshot of the figure body alone carries the analysis-and-date provenance. Pass the prefixed slug as `title=` when calling `ensure_artifact` so the graph node title matches the filename and the on-figure title (the triple-lock).
+
+Do NOT save files as bare slugs (`fig_F_scatter.png`, `operating_margin.csv`) inside the export directory; the parent dir's name alone is fragile.
 
 ### Step 2.5: Honor the contract (only when the plan declares one)
 
@@ -133,6 +160,18 @@ At decision points, STOP and surface the decision to the scientist:
 - **judgment**: Threshold or parameter choice that affects conclusions
 
 Do NOT guess at decision points. Flag them and wait.
+
+### Neutral language for checkpoint reports and Finding descriptions
+When a checkpoint fires and you report the result, and when you write the descriptive Finding(s) the task generates, state what the data shows in neutral descriptive language. Do not import good/bad/better/worse framing from the plan's `checkpoint_if` text unless the scientist pre-committed an evaluative threshold (wrapped as `scientist-defined pre-commit threshold: ...`).
+
+Examples:
+
+- Neutral Finding description (preferred): `Cohen's d of Delta = 0.82, Cohen's d of raw theta0 = 0.41 (Delta exceeds raw theta0 by 2.0x)`
+- Evaluative Finding description (avoid): `Delta AMPLIFIES the parasol-midget gap rather than collapsing it`
+
+Words like "WORSE", "BETTER", "fails to", "succeeds in", "amplifies rather than collapses", "performs better than" carry interpretation, not measurement. They belong in the scientist's downstream interpretation pass, not in the descriptive Finding the task registered.
+
+If the plan's `checkpoint_if` text contains evaluative wording without the `scientist-defined pre-commit` wrapper, treat it as planner shorthand: report the data neutrally and flag the wording mismatch to the scientist at the checkpoint.
 
 ## Wave-Based Parallel Execution
 Group tasks into dependency waves. All tasks in a wave run concurrently; wave N+1 starts only after wave N completes.
