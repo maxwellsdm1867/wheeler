@@ -223,6 +223,26 @@ When planning tasks that register files in the graph, use the correct node type:
 
 Never say "register as Document nodes" for code files. Use "register as Script nodes via `ensure_artifact`" or "register as Script nodes via `add_script`".
 
+### Canonical output paths for figures and datasets
+
+When a task produces a figure (`.png`, `.svg`, `.jpg`) or a dataset (`.csv`, `.mat`, `.h5`, `.parquet`) that should be archived alongside the investigation, the task's `description` MUST specify the output path in the canonical lab convention:
+
+```
+analysis_exports/<investigation_slug>_<YYYY-MM-DD>/figures/fig_<X>_<descriptive_snake_case>.png
+analysis_exports/<investigation_slug>_<YYYY-MM-DD>/<descriptive_snake_case>.csv
+```
+
+where:
+
+- `<investigation_slug>` is the plan's `investigation:` frontmatter slug.
+- `<YYYY-MM-DD>` is the date the plan will execute (use today's date when drafting; `/wh:execute` re-stamps if it runs on a later day).
+- `<X>` is a single uppercase letter (`A`, `B`, `C`, ...) pre-assigned by the planner in canonical importance order. If unsure, use creation order and add a note that the scientist may reorder.
+- The descriptive slug is short snake_case (e.g. `vrest_consistency`, `delta_vs_firing_rate`).
+
+Reserve the project-root `figures/` directory for ephemeral scratch output; the canonical archive lives under `analysis_exports/`. `/wh:execute` creates `analysis_exports/<slug>_<date>/{figures,scripts}/` at the start of the run and copies artifacts in as tasks complete; do not pre-create it from the plan side.
+
+For a complete worked example of the directory layout, see `analysis_exports/within_parasol_theta0_swap_pilot_2026-05-11/` (lab-existing precedent).
+
 ## Rules
 - Do NOT execute code. Propose only. Wait for scientist approval.
 - Never try to do the scientist's thinking — route conceptual and interpretive tasks to them.
