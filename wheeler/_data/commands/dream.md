@@ -130,7 +130,24 @@ Look for consolidation opportunities:
 
 5. **Stale scripts**:call `detect_stale`.
 
-6. Read `.plans/STATE.md` and any recent `*-SUMMARY.md` for context on what happened recently.
+6. **Framing divergence between linked Findings**:scan recent Findings (last 30 days) that are linked via `RELEVANT_TO` or `AROSE_FROM` from an even-newer Finding. The newer Finding's description may have reframed the older one (a follow-up trace subsumed or contradicted the original framing), leaving the older Finding's description stale. Flag these pairs for human review; do not auto-revise.
+
+   ```cypher
+   MATCH (newer:Finding)-[r:RELEVANT_TO|AROSE_FROM]->(older:Finding)
+   WHERE newer.date IS NOT NULL AND older.date IS NOT NULL
+     AND newer.date > older.date
+     AND duration.between(date(older.date), date()).days <= 30
+     AND newer.description IS NOT NULL AND older.description IS NOT NULL
+     AND size(newer.description) > 40 AND size(older.description) > 40
+   RETURN older.id AS older_id, older.description AS older_desc, older.date AS older_date,
+          newer.id AS newer_id, newer.description AS newer_desc, newer.date AS newer_date,
+          type(r) AS rel
+   ORDER BY newer.date DESC LIMIT 20
+   ```
+
+   For each returned pair, compare framings. Cheap heuristics: low keyword overlap (under 30% shared content words) combined with the newer description introducing a relationship word the older one lacks ("inversely", "single", "continuous", "same line", "subsumes", "consequence of") suggests the newer trace reframed rather than merely added evidence. When uncertain, treat as a candidate. The bar is "is this worth a human look", not "definitely reframed".
+
+7. Read `.plans/STATE.md` and any recent `*-SUMMARY.md` for context on what happened recently.
 
 ## Phase 3: Consolidate
 
@@ -167,6 +184,14 @@ For each open hypothesis with 3+ supporting findings:
 For each stale script from `detect_stale`:
 - Create an OpenQuestion: `[S-xxx] "<script title or path>" is stale (script modified since last execution): re-run needed?`
 - Set priority 7
+
+### Framing-Divergence Review
+For each candidate pair from Phase 2 step 6 (an older Finding that a newer RELEVANT_TO Finding appears to have reframed):
+- Create an OpenQuestion citing both Findings and quoting the description-diff in compact form. Template:
+  `Framing divergence: [F-older] "<first 80-120 chars of older.description>" may have been reframed by [F-newer] "<first 80-120 chars of newer.description>" (linked RELEVANT_TO). Revise [F-older]'s description to cite [F-newer], or accept the divergence?`
+- Set priority 6 (medium: chronic, not acute, per issue context).
+- Do not call `update_node` on the older Finding automatically. The flag is the deliverable; the scientist edits the description (typically via `update_node`) if they agree.
+- If the same older Finding is reframed by multiple newer Findings, consolidate into a single OpenQuestion listing each newer Finding rather than spawning one question per pair.
 
 ## Phase 3.5: Generate Synthesis Index Files
 
@@ -439,6 +464,7 @@ Consolidated: <timestamp>
 - [Q-cccc] Potential duplicate: [F-dddd] and [F-eeee]
 - [Q-ffff] Hypothesis [H-gggg] ready for review (4 supporting findings)
 - [Q-hhhh] Stale script [S-iiii] needs re-run
+- [Q-jjjj] Framing divergence: [F-older] may have been reframed by [F-newer]
 
 ## Synthesis Files Generated
 - synthesis/INDEX.md: N nodes indexed
