@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.3-blue" alt="v0.9.3">
+  <img src="https://img.shields.io/badge/v0.9.4-blue" alt="v0.9.4">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -178,6 +178,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.4</b> (2026-05-20) — PyPI show_node fix, triple-write completeness, act prompt polish</summary>
+
+- **PyPI `show_node` works again**: anchored two unanchored `.gitignore` lines (`knowledge/`, `synthesis/`) that caused hatch to silently drop the `wheeler.knowledge` subpackage from every published wheel since v0.9.0. Any tool that imports `wheeler.knowledge` (most notably `show_node`) raised `ModuleNotFoundError` in installs; this release ships the full subpackage. (#54)
+- **Triple-write completeness**: `migrate` and provenance paths now fan out `Execution` writes to JSON and synthesis alongside the graph node, Finding nodes carry an optional `title` field so figure triple-lock can label artifacts cleanly, and synthesis is regenerated on every provenance-completing mutation. (#37, #47)
+- **Slash-command prompt fixes**: plan-mode execute renders anchor figures inline, `/wh:dream` runs a framing-divergence detection phase before consolidation, the researcher agent can write and edit notes during research, act prompts include a human-readable label alongside `[NODE_ID]` references, and scientific-reasoning prose and canonical export paths are tightened across acts. (#38, #43, #44, #45, #52)
+- **Hooks and dev workflow**: pre-commit and pre-push hooks isolate the pytest subprocess environment so host vars (including `ANTHROPIC_API_KEY`) cannot leak into the test runner. `.gitignore` excludes dev-only `.claude/skills/`, `.claude/agents/issue-*.md`, and `.worktrees/`.
+- **Test suite at 1661** (was 1553 in v0.9.3).
+
+</details>
+
+<details>
 <summary><b>v0.9.3</b> (2026-05-17) — Hands-free release pipeline</summary>
 
 - **`release.yml` reads `RELEASE_PAT`**: PAT-backed release creation so the resulting `release: published` event propagates to `publish.yml`. Version bump → `git push` → PyPI is now end-to-end automatic (gated on a single reviewer click for the `pypi` environment).
@@ -328,7 +339,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1545 tests
+tests/                        # 1661 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -340,7 +351,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1545 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1661 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
