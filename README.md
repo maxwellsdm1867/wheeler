@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.4-blue" alt="v0.9.4">
+  <img src="https://img.shields.io/badge/v0.9.5-blue" alt="v0.9.5">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -178,6 +178,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.5</b> (2026-05-25) — Acts grounded in the graph</summary>
+
+- **Acts sweep intermediate work to the graph**: `/wh:pause`, `/wh:close`, `/wh:reconvene`, `/wh:write`, `/wh:pair`, `/wh:discuss`, `/wh:chat`, `/wh:note`, and `/wh:compile` now register conversational artifacts (findings, decisions, sub-questions) as Findings, Notes, and OpenQuestions instead of losing them in prose summaries.
+- **Open threads surface on resume**: `/wh:resume` queries OpenQuestion nodes linked to the active plan and surfaces them with `[Q-xxxx]` labels so the scientist sees what's still unresolved across sessions.
+- **UPDATE existing graph state**: acts now mark answered OpenQuestions, link new findings to relevant hypotheses (`SUPPORTS`/`CONTRADICTS`) on confirm, and update plan status when criteria are met.
+- **Close prompts at natural session ends**: acts that reach a wrap-up moment now suggest `/wh:close` so the orphan sweep and synthesis actually runs.
+- **CRUD-at-right-time pattern codified**: `.claude/commands/wh/CLAUDE.md` documents the pattern so future acts inherit it (READ at start, CREATE on emergence, UPDATE on conversation, prompt close at natural ends).
+
+</details>
+
+<details>
 <summary><b>v0.9.4</b> (2026-05-20) — PyPI show_node fix, triple-write completeness, act prompt polish</summary>
 
 - **PyPI `show_node` works again**: anchored two unanchored `.gitignore` lines (`knowledge/`, `synthesis/`) that caused hatch to silently drop the `wheeler.knowledge` subpackage from every published wheel since v0.9.0. Any tool that imports `wheeler.knowledge` (most notably `show_node`) raised `ModuleNotFoundError` in installs; this release ships the full subpackage. (#54)
