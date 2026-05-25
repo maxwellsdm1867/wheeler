@@ -53,6 +53,22 @@ Call `graph_context` and `graph_gaps` wheeler MCP tools to understand current kn
 - Open questions (especially checkpoint-generated ones)
 - Graph gaps that need attention
 
+## Step 4b: Open threads from the previous pause (mandatory)
+The previous `/wh:pause` is supposed to have registered every unresolved sub-question as an `OpenQuestion` (`Q-xxxx`) and linked it to the active plan via `AROSE_FROM`, plus to the pause Execution via `WAS_INFORMED_BY`. Surface those explicitly so the scientist sees what they still have open.
+
+For the active `PL-xxxx`, run a Cypher query that fetches OpenQuestions tied to the plan or to the most recent pause execution. Example:
+
+```cypher
+MATCH (q:OpenQuestion)-[:AROSE_FROM]->(p:Plan {id: $plan_id})
+RETURN q.id AS id, q.question AS question, q.priority AS priority, q.date_added AS added
+ORDER BY q.priority DESC, q.date_added DESC
+LIMIT 20
+```
+
+If the active plan has no `AROSE_FROM` open questions, fall back to `query_open_questions(keyword=<investigation topic>)`.
+
+Each result becomes one line in the "Open Threads" section of Step 5. Use the labeled form: `[Q-xxxx] question text (priority N)`. If nothing comes back, write "No open threads from previous session" — do not omit the section, the absence itself is information.
+
 ## Step 5: Present and Route
 
 Present a concise summary:
@@ -66,8 +82,13 @@ Present a concise summary:
 - <new graph nodes>
 - <flagged checkpoints>
 
+## Open Threads (from previous pause)
+- [Q-xxxx] <question> (priority N)
+- [Q-yyyy] <question> (priority N)
+<or "No open threads from previous session.">
+
 ## Open Decisions
-- <from .continue-here.md or graph OpenQuestion nodes>
+- <from .continue-here.md or graph OpenQuestion nodes not already in Open Threads>
 
 ## Suggested Next Step
 /wh:<command> — <reasoning>
@@ -81,6 +102,7 @@ Choose the best next action based on what you find:
 | Active team with completed tasks | `/wh:reconvene` — review team results |
 | Unreviewed headless task logs | `/wh:reconvene` — review results first |
 | Plan approved but not executed | `/wh:execute` — pick up the plan |
+| Open threads exist (Q-xxxx) and scientist wants to resolve them | Address them inline or hand off the top-priority one |
 | Checkpoints need scientist judgment | Present them inline for quick decisions |
 | Investigation complete, need to write up | `/wh:write` — draft results |
 | No active work, graph has gaps | `/wh:plan` — start planning next investigation |
