@@ -16,8 +16,10 @@ allowed-tools:
   - mcp__wheeler_query__query_papers
   - mcp__wheeler_mutations__add_document
   - mcp__wheeler_mutations__add_paper
+  - mcp__wheeler_mutations__add_note
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_mutations__add_execution
+  - mcp__wheeler_mutations__update_node
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
 ---
@@ -51,6 +53,23 @@ After creating the Document node, also record the writing activity:
 2. Link inputs: `link_nodes(execution_id, finding_id, "USED")` for each finding cited, `link_nodes(execution_id, paper_id, "USED")` for each paper referenced
 3. Link output: `link_nodes(document_id, execution_id, "WAS_GENERATED_BY")`
 
+### Mid-draft decisions sweep (mandatory)
+
+The act of drafting surfaces decisions that aren't in any cited node: "we excluded dataset X because of artifact Y", "we framed the result as A rather than B for clarity", "we chose this statistical test because Z". These are interpretive choices that future readers (and the scientist returning in six months) need to find. Scan the draft text after validation:
+
+- For each exclusion / inclusion / framing / methodology choice that appears in the draft but isn't a cited node, register it as a Note: `add_note(content="<decision and rationale>", context="write-decision:<section>")`.
+- Link each note to the Document so future provenance walks find it: `link_nodes(N-xxxx, W-xxxx, "WAS_INFORMED_BY")`.
+
+Surface the proposed notes to the scientist before writing them. These are interpretive claims; the scientist must endorse.
+
+### UPDATE existing graph state (mandatory)
+
+After the Document is registered:
+- For each Hypothesis cited in the draft (`[H-xxxx]` references), the citation IS new evidence-of-use. If the draft's prose presents the hypothesis as supported by the cited findings, link those findings to the hypothesis: `link_nodes(F-xxxx, H-xxxx, "SUPPORTS")`. If the draft presents a contradiction, `link_nodes(F-xxxx, H-xxxx, "CONTRADICTS")`. Ask the scientist to confirm each link before writing.
+- If the draft answers an existing OpenQuestion (the scientist will know — ask if this section closes any open thread): `update_node(Q-xxxx, status="answered")` + `link_nodes(W-xxxx, Q-xxxx, "RELEVANT_TO")`.
+
+Never infer support/contradiction silently from prose adjacency. Always surface and confirm.
+
 ## Style
 - Formal scientific writing
 - Active voice preferred ("We found..." not "It was found...")
@@ -72,5 +91,11 @@ When `$ARGUMENTS` is empty, consult the graph before asking the scientist anythi
 When `$ARGUMENTS` names a section (`results`, `methods`, etc.), skip the proposal and go straight to drafting that section.
 
 (Wheeler ID prefixes: Plan=PL-, Finding=F-, Hypothesis=H-, Document=W-, Dataset=D-, Paper=P-, Script=S-, Execution=X-, ResearchNote=N-, OpenQuestion=Q-.)
+
+## After registration: prompt to close
+
+Once the Document is registered, the Execution recorded, the mid-draft notes captured, and existing graph state updated, prompt:
+
+> Drafted [W-xxxx] '<title>' ({section}). Citations validated: <pass/fail>. New notes: [N-xxxx list]. Updated: [H-xxxx and Q-xxxx that changed]. Run `/wh:close` to sweep the rest of the session and write a synthesis, or `/wh:write` again for another section.
 
 $ARGUMENTS

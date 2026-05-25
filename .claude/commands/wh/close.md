@@ -27,6 +27,9 @@ allowed-tools:
   - mcp__wheeler_mutations__delete_node
   - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_mutations__add_document
+  - mcp__wheeler_mutations__add_finding
+  - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__add_question
   - mcp__wheeler_mutations__update_node
   - mcp__wheeler_ops__detect_stale
   - mcp__wheeler_ops__graph_consistency_check
@@ -90,6 +93,41 @@ ORDER BY timestamp
 ```
 
 If the Cypher errors OR returns 0 rows on a session that should have activity, inspect each recent entity individually with `show_node` and check its relationships, or fall back to the `query_*` tools.
+
+### 1.3b Conversation sweep (mandatory, before orphan grouping)
+
+Phase 1's existing orphan sweep finds *already-created graph nodes* that lack provenance. It does NOT catch *conversational artifacts* — decisions, rationales, and unresolved sub-questions that emerged during the session but never made it to the graph at all. Ask the scientist:
+
+> Before I sweep orphans, anything from this session that isn't in the graph yet? Decisions you made, results you reached, sub-questions you opened, paths you decided not to pursue?
+
+For each item the scientist surfaces, register and link:
+- Endorsed result → `add_finding(description=..., confidence=...)`
+- Decision or rationale → `add_note(content=..., context=<topic>)`
+- Unresolved sub-question or deferred fork → `add_question(question=..., priority=N)`
+
+These nodes will then appear in Phase 1.3's orphan sweep below and get grouped into the session Execution along with everything else. The orphan sweep is now operating on a complete record, not a partial one.
+
+If the scientist says "nothing", proceed to 1.4. Do not press.
+
+### 1.3c UPDATE existing graph state (mandatory)
+
+Walk through items whose state may have changed during this session:
+
+1. **OpenQuestions answered.** Query questions older than `$since` that may have been answered by session findings:
+   ```cypher
+   MATCH (q:OpenQuestion) WHERE q.status = "open" OR q.status IS NULL
+   RETURN q.id, q.question, q.priority
+   ORDER BY q.priority DESC LIMIT 20
+   ```
+   For each, ask the scientist: "Did this session answer [Q-xxxx] '<question>'?" If yes:
+   - `update_node(Q-xxxx, status="answered")`
+   - `link_nodes(<answering F-xxxx or N-xxxx>, Q-xxxx, "RELEVANT_TO")`
+
+2. **Hypotheses with new evidence.** For each Finding created in window, check whether it bears on an existing Hypothesis. If yes and the scientist confirms: `link_nodes(F-xxxx, H-xxxx, "SUPPORTS"|"CONTRADICTS")`.
+
+3. **Plans completed.** For each in-progress Plan whose success criteria are now met (verified against graph), surface to the scientist: "Plan [PL-xxxx] '<title>' looks complete based on the graph. Mark completed?" If yes: `update_node(PL-xxxx, status="completed")` + plan-file frontmatter update.
+
+These updates are why the graph stays useful over time. Without them, OpenQuestions accumulate as stale debt and `/wh:resume` surfaces threads that have already been answered.
 
 ### 1.4 Group and propose Executions
 For each orphan or cluster of related orphans, propose an Execution node:

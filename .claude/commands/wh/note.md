@@ -10,6 +10,7 @@ allowed-tools:
   - mcp__wheeler_mutations__add_note
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_query__query_notes
+  - mcp__wheeler_query__query_plans
   - mcp__wheeler_core__graph_context
   - mcp__wheeler_core__show_node
   - mcp__wheeler_core__search_findings
@@ -61,13 +62,14 @@ Don't overthink this. Two questions, move on.
 
 4. Call `index_node` with the new node ID, label `"ResearchNote"`, and the content text to make it searchable.
 
-## Link it (optional, quick)
+## Link it (mandatory if a plan is active, otherwise optional)
 
-Check `search_findings` with a short query derived from the note content to see if anything in the graph is obviously related.
+1. **Active plan check (mandatory).** Call `query_plans(status="in-progress")`. If a plan exists, automatically link the new note to it: `link_nodes(N-xxxx, PL-xxxx, "AROSE_FROM")`. This prevents notes from floating orphan, which is the most common quick-capture failure. No approval prompt for this link — the scientist is in a plan, the note belongs to it.
 
-- If there's a clear connection (high similarity score, obviously the same topic), suggest it briefly: "This seems related to [NODE_ID] TITLE. Want me to link them?"
-- If the scientist says yes, call `link_nodes` with relationship `RELEVANT_TO` or `AROSE_FROM` (whichever fits).
-- If nothing obvious comes up, skip this entirely. Don't force connections.
+2. **Related-content link (optional, quick).** Call `search_findings` with a short query derived from the note content.
+   - If a clear connection emerges (high similarity, obviously the same topic), suggest briefly: "This seems related to [NODE_ID] TITLE. Want me to link them?"
+   - If the scientist says yes, `link_nodes(N-xxxx, <related_id>, "RELEVANT_TO")`.
+   - If nothing obvious comes up, skip. Don't force connections.
 
 ## Confirm
 

@@ -22,6 +22,7 @@ allowed-tools:
   - mcp__wheeler_query__query_documents
   - mcp__wheeler_query__query_notes
   - mcp__wheeler_mutations__add_document
+  - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_mutations__link_nodes
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_query__query_plans
@@ -166,9 +167,12 @@ Compiled from the Wheeler knowledge graph on {date}.
 
 ### Step 5: Register in the Graph
 
-1. Call `add_document` with title = "Compile: {topic}", path = the file path, section = "synthesis", status = "compiled".
-2. For each source node cited in the document, call `link_nodes(source_id=DOC_ID, target_id=SOURCE_NODE_ID, relationship="WAS_DERIVED_FROM")`.
-3. Call `validate_citations` on the generated text to verify all [NODE_ID] references resolve.
+1. Create an Execution node wrapping the compile act itself: `add_execution(kind="compile", description="Topic synthesis: {topic}")`. Capture the returned `X-xxxx`.
+2. Link each source node as input to the Execution: `link_nodes(X-xxxx, <source_node_id>, "USED")` for every node cited in the document.
+3. Call `add_document` with title = "Compile: {topic}", path = the file path, section = "synthesis", status = "compiled". Capture the returned `W-xxxx`.
+4. Link the Document to the Execution: `link_nodes(W-xxxx, X-xxxx, "WAS_GENERATED_BY")`.
+5. For each source node cited in the document, also call `link_nodes(W-xxxx, <source_node_id>, "WAS_DERIVED_FROM")` so backward provenance traversal works directly from the Document.
+6. Call `validate_citations` on the generated text to verify all `[NODE_ID]` references resolve.
 
 ---
 
@@ -406,10 +410,12 @@ Confidence-weighted contradiction: {sum of contradicting confidences}.
 
 ### Step 7: Register in the Graph
 
-1. Call `add_document` with title = "Evidence Map: {hyp_id}", path = the file path, section = "evidence-map", status = "compiled".
-2. Call `link_nodes(source_id=DOC_ID, target_id=HYP_ID, relationship="WAS_DERIVED_FROM")`.
-3. For each finding cited, call `link_nodes(source_id=DOC_ID, target_id=FINDING_ID, relationship="WAS_DERIVED_FROM")`.
-4. Call `validate_citations` on the generated text.
+1. Create an Execution node wrapping the compile act: `add_execution(kind="compile", description="Evidence map for {hyp_id}")`. Capture the returned `X-xxxx`.
+2. Link the hypothesis and every cited finding as inputs to the Execution: `link_nodes(X-xxxx, HYP_ID, "USED")` and `link_nodes(X-xxxx, FINDING_ID, "USED")` for each finding.
+3. Call `add_document` with title = "Evidence Map: {hyp_id}", path = the file path, section = "evidence-map", status = "compiled". Capture the returned `W-xxxx`.
+4. Link the Document to the Execution: `link_nodes(W-xxxx, X-xxxx, "WAS_GENERATED_BY")`.
+5. Also link directly for backward traversal: `link_nodes(W-xxxx, HYP_ID, "WAS_DERIVED_FROM")` and `link_nodes(W-xxxx, FINDING_ID, "WAS_DERIVED_FROM")` for each finding cited.
+6. Call `validate_citations` on the generated text.
 
 ---
 

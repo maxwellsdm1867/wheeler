@@ -25,6 +25,10 @@ allowed-tools:
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
   - mcp__wheeler_query__query_plans
+  - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__add_question
+  - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__update_node
 ---
 
 ## Connectivity Check
@@ -92,6 +96,22 @@ This is the scientist's first read of what happened while they were away, so fol
 - Tagged by assignee (scientist/wheeler/pair)
 ```
 
+### Step 3b: Capture review decisions in the graph (mandatory)
+
+The scientist's review IS new work: accepting, rejecting, or annotating background results produces decisions that must land in the graph. See "Graph CRUD at the right time" in `.claude/commands/wh/CLAUDE.md` for the full pattern.
+
+For each FLAGGED checkpoint or COMPLETED result the scientist reacts to:
+
+- **Scientist accepts a result** → `add_note(content="Reviewed and accepted: <one-line summary>", context="reconvene-decision")` and `link_nodes(<note_id>, <reviewed task's Execution X-xxxx>, "WAS_INFORMED_BY")`. This makes the acceptance traceable.
+- **Scientist rejects or flags a concern** → `add_note(content="Reviewed and flagged: <concern>", context="reconvene-decision")` linked to the relevant Execution.
+- **Scientist asks a follow-up question** ("interesting but raises Q about X") → `add_question(question="X", priority=6)` linked to the relevant Execution via `WAS_INFORMED_BY`, and linked `AROSE_FROM` the active plan if one exists.
+- **A result answered an existing OpenQuestion** → `update_node(Q-xxxx, status="answered")` + `link_nodes(<finding from result>, Q-xxxx, "RELEVANT_TO")`.
+- **A finding from background work bears on an existing Hypothesis** → ask the scientist whether it supports or contradicts, then `link_nodes(F-xxxx, H-xxxx, "SUPPORTS"|"CONTRADICTS")`.
+
+Surface the IDs created in this step before moving to verification: "Review captured: [N-xxxx], [Q-yyyy]. Existing nodes updated: [Q-zzzz] → answered."
+
+Do NOT silently write any of these. Always show the scientist the proposed text and target IDs before the call.
+
 ### Step 4: Verify Against Plan
 If an investigation plan exists with status `in-progress`:
 1. Read its **Success Criteria**
@@ -120,6 +140,12 @@ After completing the synthesis and verification:
 After review, offer cleanup options:
 - **Team cleanup**: If an agent team is active and all tasks are done, offer to shut down the team (`SendMessage` shutdown requests to agents, then `TeamDelete`)
 - **Log archive**: If headless logs were reviewed, offer `python -m wheeler.log_summary --archive`
+
+## Prompt to close
+
+After review captures and cleanup, prompt the scientist:
+
+> Review complete. Captured: [list of new N-xxxx / Q-xxxx]. Updated: [list of Q-/H-/PL- status changes]. Run `/wh:close` to sweep any remaining orphans and write a session synthesis, then `/wh:start` or `/wh:plan` for the next task.
 
 ## Rules
 - Be a co-scientist, not a reporter. Challenge weak conclusions.

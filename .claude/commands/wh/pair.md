@@ -24,8 +24,8 @@ Every factual claim about our research MUST cite a knowledge graph node using [N
 
 ## Setup
 
-1. **Establish context**: Ask what script, dataset, and question we're working on (if not provided via $ARGUMENTS).
-2. **Load graph context**: Call `search_context` with the topic to surface relevant findings and prior analyses. Briefly note what the graph knows so the session starts informed.
+1. **Load graph context first**: as the first action after seeing $ARGUMENTS (or the scientist's opening message), call `search_context` with whatever topic/script/dataset is referenced. Briefly summarize what the graph already knows about this analysis space (e.g., `Graph has: [D-xxxx] "label" (the dataset), [F-yyyy] "label" (a prior result), [P-zzzz] "label" (the script)`). This shapes every subsequent question.
+2. **Establish context with the scientist**: ask what script, dataset, and question we're working on (if not already obvious from $ARGUMENTS). Use the graph context to ask sharper questions: "the graph has [D-3a2b] tagged for this dataset, is that the one?" beats a blank "which dataset?".
 3. **Check for existing session**: Look in `.wheeler/sessions/` for today's sessions on this topic. If one exists, offer to continue or start fresh.
 4. **Create session file**: Write `.wheeler/sessions/YYYY-MM-DD-{topic}.md` with header:
 
@@ -72,16 +72,33 @@ Do NOT automatically add findings, hypotheses, or questions to the graph during 
 
 When the scientist is done (or says "wrap up", "that's enough", "let's stop"):
 
-1. Summarize what was tried and what worked
-2. List any findings that were logged to the graph
-3. Suggest any unlogged entities worth capturing:
+### 1. Intermediate-artifact sweep (mandatory)
 
-> **[FINDING]** "description" (confidence: X.X)
-> **[HYPOTHESIS]** "statement"
-> **[QUESTION]** "question" (priority: N)
+Walk the session file and conversation. For each substantive item that is NOT already in the graph, classify and register. See "Graph CRUD at the right time" in `.claude/commands/wh/CLAUDE.md` for the full pattern.
 
-4. Ask: "Want me to add any of these before we close?"
-5. Note what's worth trying next time
+- Logged finding (already has `[F-xxxx]`) → skip.
+- Observation the scientist endorsed but didn't explicitly log → `add_finding(description=..., confidence=...)` then `ensure_artifact` on the producing script.
+- Methodology choice, parameter decision, or rationale ("we used theta0 = 0.4 because...") → `add_note(content=..., context="pair-session:<topic>")`.
+- Unresolved sub-question, "try X next time", fork not taken → `add_question(question=..., priority=N)`.
+
+Conservative rule: when in doubt whether the scientist endorsed, prefer `add_question`. An open `Q-xxxx` is safe; forging a `F-xxxx` is not.
+
+Create a pair Execution to anchor the session: `add_execution(kind="pair", description=<script, dataset, topic>)`. Link each new node to the Execution via `link_nodes(<new_id>, X-xxxx, "WAS_GENERATED_BY")`, and link inputs via `link_nodes(X-xxxx, <script_id|dataset_id>, "USED")`.
+
+If an active plan exists (`query_plans(status="in-progress")`), also link each new node `AROSE_FROM` the plan: `link_nodes(<new_id>, PL-xxxx, "AROSE_FROM")`.
+
+### 2. Update existing graph state
+
+- A finding logged this session that bears on an existing Hypothesis: `link_nodes(F-xxxx, H-xxxx, "SUPPORTS"|"CONTRADICTS")`. Surface the link before creating it — don't infer support/contradiction silently.
+- An existing OpenQuestion that this session answered: `update_node(Q-xxxx, status="answered")` + `link_nodes(F-xxxx, Q-xxxx, "RELEVANT_TO")`. Ask the scientist to confirm the answer before flipping status.
+
+### 3. Summarize and prompt to close
+
+List logged findings `[F-xxxx]`, newly registered notes `[N-xxxx]`, and newly opened questions `[Q-xxxx]`. Note what's worth trying next time.
+
+Then prompt:
+
+> Session swept. When you're ready to lock this in, run `/wh:close` to sweep any remaining orphans, mark answered questions, and write a session synthesis. After close, start fresh with `/wh:start` or `/wh:plan` for the next task.
 
 ## Math Notation
 When writing equations or mathematical expressions, use Unicode symbols — NOT raw LaTeX. The scientist is a physicist and reads equations fastest in standard notation.

@@ -32,13 +32,18 @@ Every factual claim about our research MUST cite a knowledge graph node using [N
 ## Your Job
 Help the scientist plan their next investigation.
 
-## When to use tools vs. just talk
-After the first exchange, use `AskUserQuestion` freely to understand what the scientist actually wants to investigate. Once their research intent is clear, call `search_context` once with the topic to load relevant findings, hypotheses, and provenance chains. This is a one-time context load at the start of planning, not something to repeat every turn. Use `graph_gaps` alongside it to show where coverage is thin.
+## Graph-first opening (run before any question)
 
-If the input is about Wheeler workflow, how to structure plans, or general approach questions, just answer directly without querying the graph.
+The very first thing you do after seeing the scientist's input, BEFORE `AskUserQuestion`, BEFORE proposing anything: classify the input.
 
-**No tools needed**: brainstorming approaches, answering how-to questions, sharpening questions before a topic is defined, Wheeler workflow questions
-**Graph query needed**: once intent is clear, when proposing tasks based on graph state, when citing specific findings
+- **Wheeler-workflow or general-approach question** (how to structure plans, what `/wh:plan` does, generic method discussion not tied to this project's research): answer directly. Skip the graph.
+- **Anything that names a topic, dataset, finding, hypothesis, or research artifact** (the common case): call `search_context` with the user's $ARGUMENTS (or the topic implicit in the first message), and `graph_gaps` alongside. Then post a one-line preamble like `Graph already has: [F-xxxx] "label", [H-yyyy] "label" | Thin areas: ...` so the scientist sees what you have pulled in.
+
+This is a one-time context load. Do not re-query the graph on every turn. If the conversation pivots to a different topic, call `search_context` again on the new topic.
+
+## Then sharpen the question
+
+With graph context in hand, use `AskUserQuestion` to refine what the scientist actually wants to investigate. The graph context shapes what you ask: skip questions whose answers are visible in the context you already loaded ("the graph already lists [D-xxxx] as your dataset; should we plan against that?"), and ground proposed tasks in specific `[NODE_ID]`s.
 
 ## Investigation Plans
 
@@ -171,6 +176,10 @@ After writing a plan, self-check before presenting to the scientist:
 6. **Scope**: Are WHEELER tasks actually WHEELER-suitable? Are SCIENTIST tasks properly routed?
 7. **Frontmatter accuracy**: Do task counts in frontmatter match the actual task list? Is wave count correct? Does `success_criteria_met` denominator match the number of success criteria?
 8. **Scientific reasoning**: For plans with method choices (estimator selection, statistical test, signal-processing choice, model parameterization), does the plan document the four reasoning items (foundation, why-correct, why-alternatives-rejected, assumptions/failure-modes) in a `## Scientific reasoning` section? Pure data-wrangling plans with no method choice are exempt; flag the omission instead of forcing a section. If the section is missing on a plan that needs it, fix before approval.
+9. **Intermediate artifacts (defer captures, do not create them in plan mode)**: Plan mode is intentionally narrow — it only creates the Plan node itself, via `ensure_artifact`. Sub-hypotheses, sub-questions, and methodology decisions that emerged during the planning conversation cannot be written from this act. Instead:
+   - If non-trivial sub-hypotheses or sub-questions surfaced, surface them to the scientist with the prompt: "I noticed [N] sub-questions / [M] sub-hypotheses during planning. Run `/wh:discuss <topic>` to register them before approving this plan, or include them as inline tasks so `/wh:execute` registers them when it runs."
+   - Confirm that any upstream `[NODE_ID]` cited during sharpening (papers, datasets, prior findings, prior open questions) is included in the `used_entities` argument of `ensure_artifact` at registration time. That is plan mode's one chance to wire provenance — the auto-created Execution gets `USED` edges to those entities.
+   - If an existing OpenQuestion is the question this plan addresses, include its `Q-xxxx` in `used_entities` so the Execution links the plan back to it.
 
 If any check fails, fix the plan before presenting it.
 
@@ -200,6 +209,13 @@ Every plan MUST be registered as a graph node. The graph is the source of truth 
 4. **Record the graph node ID**: write the returned `PL-xxxx` into the plan file frontmatter as `graph_node: PL-xxxx`.
 
 On scientist approval, call `update_node(node_id=PL-xxxx, status="approved")` AND update the file frontmatter (`status`, `updated`). The graph write is the authoritative step; the file update is the rendered view.
+
+After approval, also handle UPDATE of existing graph state that this plan affects (plan mode is restricted to `update_node` for state changes; new relationships were wired at `ensure_artifact` time via `used_entities`):
+- If the plan is the answer-pursuit for an existing OpenQuestion (the `Q-xxxx` was included in `used_entities` at registration), call `update_node(Q-xxxx, status="in-progress")` so the question is visibly being addressed rather than appearing open on `/wh:resume`.
+
+Then prompt the scientist:
+
+> Plan approved as [PL-xxxx]. Run `/wh:execute` to begin work, `/wh:handoff` to queue background tasks, or `/wh:close` if you're wrapping the planning session for now.
 
 ### After writing or updating a plan:
 Update `.plans/STATE.md` if it exists: set `investigation` to the plan slug, `plan` to the plan file path, `status` to the plan status, and `updated` to current timestamp. Update the body's "Active Investigation" section with the investigation name and objective.

@@ -1,6 +1,6 @@
 ---
 name: wh:chat
-description: Use for casual discussion with Wheeler that reads the knowledge graph but does not modify it
+description: Use for casual discussion with Wheeler that reads the knowledge graph and writes only on explicit scientist approval
 argument-hint: "[topic]"
 allowed-tools:
   - Read
@@ -45,7 +45,7 @@ If the input is about Wheeler itself, general science background, workflow quest
 
 ## What You Don't Do in Chat Mode
 - Execute code or analyses
-- Create or modify graph nodes
+- Modify graph nodes WITHOUT explicit scientist approval (the Graph Suggestions section below is the only path to writes, and only on "yes")
 - Run MATLAB or Python scripts
 
 ## Graph Suggestions
@@ -89,6 +89,18 @@ Examples:
 - Path integral: ∫ Dφ e^{iS[φ]/ℏ}
 
 For display equations (important results, key derivations), put them on their own line with blank lines above and below for visual separation.
+
+## End of Chat Session
+
+When the scientist signals the chat is winding down (long pause, "okay thanks", "let me think on that", or any explicit close), do a brief sweep:
+
+1. If any nodes were created during this chat via approved Graph Suggestions (F-xxxx, H-xxxx, Q-xxxx), list them in one block: `Created this chat: [F-xxxx] "label", [Q-yyyy] "label" (priority N), ...`. This is the only durable record of the conversation.
+2. If you noticed unresolved follow-up threads the scientist mentioned ("we should look at X later", "I wonder about Y") and did NOT capture them as Q-xxxx, surface them now and ask: "These came up but weren't logged. Add as open questions before we end?" Only `add_question` on explicit yes.
+3. Prompt to close if any nodes were created:
+
+> Chat created [N] new graph nodes. Run `/wh:close` when you want to sweep them with the rest of today's session work and write a synthesis. Otherwise, they'll be picked up by the next `/wh:close`.
+
+If no nodes were created this chat, no close prompt is needed — there's nothing to sweep.
 
 You're here to think, discuss, and help sharpen questions. The value is in the conversation.
 
