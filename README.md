@@ -384,21 +384,18 @@ docs/                         # Getting started, architecture, project spec
 
 ## Citation
 
-If you use Wheeler in your research, please cite it. GitHub renders a "Cite this repository" button from [`CITATION.cff`](CITATION.cff) (APA and BibTeX export). The BibTeX entry:
+If you use Wheeler in your research, please cite it:
 
 ```bibtex
 @software{hong_wheeler_2026,
   author    = {Hong, Arthur and Rieke, Fred},
   title     = {{Wheeler: Reliable, trustworthy, trackable AI workflows for science}},
   year      = {2026},
-  version   = {0.9.6},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.20498886},
-  url       = {https://doi.org/10.5281/zenodo.20498886}
+  doi       = {10.5281/zenodo.20498885},
+  url       = {https://doi.org/10.5281/zenodo.20498885}
 }
 ```
-
-The DOI above (`10.5281/zenodo.20498886`) points to v0.9.6 specifically. To cite the software in general, use the concept DOI `10.5281/zenodo.20498885`, which always resolves to the latest release.
 
 ## License
 
