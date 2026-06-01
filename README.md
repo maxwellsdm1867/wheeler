@@ -387,16 +387,17 @@ If you use Wheeler in your research, please cite it. GitHub renders a "Cite this
 
 ```bibtex
 @software{hong_wheeler_2026,
-  author  = {Hong, Arthur and Rieke, Fred},
-  title   = {{Wheeler: Reliable, trustworthy, trackable AI workflows for science}},
-  year    = {2026},
-  version = {0.9.6},
-  url     = {https://github.com/maxwellsdm1867/wheeler},
-  note    = {Claude Code-native research assistant with a provenance-tracked knowledge graph}
+  author    = {Hong, Arthur and Rieke, Fred},
+  title     = {{Wheeler: Reliable, trustworthy, trackable AI workflows for science}},
+  year      = {2026},
+  version   = {0.9.6},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.20498886},
+  url       = {https://doi.org/10.5281/zenodo.20498886}
 }
 ```
 
-No DOI yet. To mint a citable, versioned DOI, enable the [GitHub-Zenodo integration](https://docs.github.com/en/repositories/archiving-a-github-repository/referencing-and-citing-content) and cut a release; then add the DOI to `CITATION.cff` (`doi:` field) and the BibTeX entry.
+The DOI above (`10.5281/zenodo.20498886`) points to v0.9.6 specifically. To cite the software in general, use the concept DOI `10.5281/zenodo.20498885`, which always resolves to the latest release.
 
 ## License
 
