@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use Wheeler in your research, please cite it as below."
+title: "Wheeler: Reliable, trustworthy, trackable AI workflows for science"
+abstract: >-
+  A Claude Code-native research assistant with a provenance-tracked
+  knowledge graph that makes every AI-produced result traceable back to
+  the exact script, data, and parameters that produced it.
+type: software
+authors:
+  - family-names: Hong
+    given-names: Arthur
+  - family-names: Rieke
+    given-names: Fred
+version: 0.9.6
+date-released: "2026-06-01"
+license: MIT
+repository-code: "https://github.com/maxwellsdm1867/wheeler"
+url: "https://github.com/maxwellsdm1867/wheeler"
+keywords:
+  - science
+  - research
+  - knowledge-graph
+  - claude
+  - claude-code
+  - provenance
+  - reproducibility
+  - neo4j
+  - mcp

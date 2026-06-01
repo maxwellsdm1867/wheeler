@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.5-blue" alt="v0.9.5">
+  <img src="https://img.shields.io/badge/v0.9.6-blue" alt="v0.9.6">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -178,6 +178,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.6</b> (2026-06-01) — Software citation</summary>
+
+- **Cite this repository**: Added `CITATION.cff` so GitHub renders a one-click "Cite this repository" button (APA and BibTeX export), plus a Citation section in the README with a ready-to-paste BibTeX entry.
+- **Authorship recorded**: Arthur Hong and Fred Rieke are now listed as authors and copyright holders across `pyproject.toml`, `LICENSE`, and the citation metadata.
+
+</details>
+
+<details>
 <summary><b>v0.9.5</b> (2026-05-25) — Acts grounded in the graph</summary>
 
 - **Acts sweep intermediate work to the graph**: `/wh:pause`, `/wh:close`, `/wh:reconvene`, `/wh:write`, `/wh:pair`, `/wh:discuss`, `/wh:chat`, `/wh:note`, and `/wh:compile` now register conversational artifacts (findings, decisions, sub-questions) as Findings, Notes, and OpenQuestions instead of losing them in prose summaries.
@@ -372,6 +380,23 @@ docs/                         # Getting started, architecture, project spec
 - [Roadmap](docs/roadmap.md) — shipped versions, v0.9.0 phases, v1.0 criteria
 - [Getting started](docs/GETTING-STARTED.md) — install walkthrough with Neo4j Desktop
 - [Project spec](docs/PROJECT-SPEC.md) — original design specification
+
+## Citation
+
+If you use Wheeler in your research, please cite it. GitHub renders a "Cite this repository" button from [`CITATION.cff`](CITATION.cff) (APA and BibTeX export). The BibTeX entry:
+
+```bibtex
+@software{hong_wheeler_2026,
+  author  = {Hong, Arthur and Rieke, Fred},
+  title   = {{Wheeler: Reliable, trustworthy, trackable AI workflows for science}},
+  year    = {2026},
+  version = {0.9.6},
+  url     = {https://github.com/maxwellsdm1867/wheeler},
+  note    = {Claude Code-native research assistant with a provenance-tracked knowledge graph}
+}
+```
+
+No DOI yet. To mint a citable, versioned DOI, enable the [GitHub-Zenodo integration](https://docs.github.com/en/repositories/archiving-a-github-repository/referencing-and-citing-content) and cut a release; then add the DOI to `CITATION.cff` (`doi:` field) and the BibTeX entry.
 
 ## License
 
