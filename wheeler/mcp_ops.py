@@ -255,10 +255,11 @@ async def graph_consistency_check(repair: bool = False) -> dict:
     Use during /wh:dream consolidation or /wh:close end-of-session sweep.
     """
     from dataclasses import asdict
-    from wheeler.consistency import check_consistency, repair_consistency
+    from wheeler.consistency import check_consistency, repair_consistency, summarize_drift
 
     report = await check_consistency(_config)
     result = asdict(report)
+    result["summary"] = summarize_drift(report)
 
     if repair:
         repair_log = await repair_consistency(_config, report, dry_run=False)
