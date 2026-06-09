@@ -629,7 +629,8 @@ def _build_delegated_args(
         if not args.get("title"):
             defaulted.append("title")
         return "add_finding", {
-            "path": path, "description": desc, "confidence": conf,
+            "path": path, "hash": file_hash,
+            "description": desc, "confidence": conf,
             "artifact_type": args.get("artifact_type") or "figure",
             "title": title,
             "session_id": args.get("session_id", ""),

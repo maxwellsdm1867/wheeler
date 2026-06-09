@@ -457,7 +457,9 @@ async def ensure_artifact(
         are resolved to absolute.
       artifact_type: override auto-detection. One of 'script', 'dataset',
         'document', 'plan', 'finding'.
-      description / title: optional. If omitted, defaults to filename.
+      description: optional. If omitted, defaults to filename.
+      title: optional. If omitted, defaults to the filename stem, so
+        figure Findings always get a non-null title matching the file slug.
       language: for Script only. Defaults to extension-derived value.
       data_type: for Dataset only. Defaults to extension.
       confidence: for Finding only. 0.0-1.0, default 0.5.
