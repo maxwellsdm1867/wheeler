@@ -653,6 +653,21 @@ def _build_delegated_args(
     }
 
 
+def _relative_path_candidates(path: str) -> list[str]:
+    """Relative suffixes of an absolute path, most specific first.
+
+    Nodes created before path normalization was enforced may store a path
+    relative to some ancestor directory (often just the filename). Each
+    suffix of the absolute path is a candidate stored value for the same
+    physical file, e.g. /a/b/c.m yields ["b/c.m", "c.m"].
+    """
+    from pathlib import PurePath
+
+    p = PurePath(path)
+    parts = p.parts[1:] if p.anchor else p.parts
+    return ["/".join(parts[i:]) for i in range(1, len(parts))]
+
+
 async def ensure_artifact(backend, args: dict) -> str:
     """Find-or-create a graph node for a file artifact, keyed on path.
 
@@ -668,11 +683,19 @@ async def ensure_artifact(backend, args: dict) -> str:
     # Multi-label lookup: find any artifact node at this path
     artifact_labels = ["Script", "Dataset", "Document", "Plan", "Finding"]
     or_clause = " OR ".join(f"n:{lbl}" for lbl in artifact_labels)
-    records = await backend.run_cypher(
+    lookup_query = (
         f"MATCH (n) WHERE n.path = $path AND ({or_clause}) "
-        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2",
-        {"path": path},
+        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2"
     )
+    records = await backend.run_cypher(lookup_query, {"path": path})
+    if not records:
+        # Legacy nodes may store the same file under a relative path.
+        # Try each relative suffix of the resolved absolute path so one
+        # file never gets a second node.
+        for candidate in _relative_path_candidates(path):
+            records = await backend.run_cypher(lookup_query, {"path": candidate})
+            if records:
+                break
 
     if not records:
         # Create new node
