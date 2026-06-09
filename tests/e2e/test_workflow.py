@@ -359,6 +359,96 @@ class TestCitationValidation:
         # Finding without WAS_GENERATED_BY relationship = MISSING_PROVENANCE
         assert results[0].status == CitationStatus.MISSING_PROVENANCE
 
+    @pytest.mark.asyncio
+    async def test_session_synthesis_document_validates_via_close_execution(
+        self, e2e_config, tmp_path
+    ):
+        """A session-synthesis Document is valid through its WAS_GENERATED_BY
+        edge to the close Execution, with no APPEARS_IN edge required."""
+        from wheeler.tools.graph_tools import execute_tool
+        from wheeler.validation.citations import validate_citations, CitationStatus
+        from wheeler.graph.driver import get_async_driver
+
+        session_file = tmp_path / "SESSION-e2e-synthesis.md"
+        session_file.write_text("# Session synthesis\n")
+
+        doc = json.loads(await execute_tool(
+            "add_document",
+            {
+                "title": "Session synthesis: e2e",
+                "path": str(session_file),
+                "section": "session-synthesis",
+                "status": "final",
+            },
+            e2e_config,
+        ))
+        doc_id = doc["node_id"]
+
+        close_exec = json.loads(await execute_tool(
+            "add_execution",
+            {"kind": "close", "description": "E2E close for synthesis validation"},
+            e2e_config,
+        ))
+        exec_id = close_exec["node_id"]
+
+        await execute_tool(
+            "link_nodes",
+            {
+                "source_id": doc_id,
+                "target_id": exec_id,
+                "relationship": "WAS_GENERATED_BY",
+            },
+            e2e_config,
+        )
+
+        driver = get_async_driver(e2e_config)
+        async with driver.session(database=e2e_config.neo4j.database) as session:
+            for nid in (doc_id, exec_id):
+                await session.run(
+                    "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
+                    id=nid, tag=E2E_TAG,
+                )
+
+        results = await validate_citations(f"See [{doc_id}]", e2e_config)
+        assert len(results) == 1
+        assert results[0].node_id == doc_id
+        assert results[0].status == CitationStatus.VALID, results[0].details
+
+    @pytest.mark.asyncio
+    async def test_regular_document_still_requires_appears_in(
+        self, e2e_config, tmp_path
+    ):
+        """A non-synthesis Document without APPEARS_IN stays missing_provenance."""
+        from wheeler.tools.graph_tools import execute_tool
+        from wheeler.validation.citations import validate_citations, CitationStatus
+        from wheeler.graph.driver import get_async_driver
+
+        doc_file = tmp_path / "draft-e2e.md"
+        doc_file.write_text("# Draft\n")
+
+        doc = json.loads(await execute_tool(
+            "add_document",
+            {
+                "title": "Draft document: e2e",
+                "path": str(doc_file),
+                "section": "results",
+                "status": "draft",
+            },
+            e2e_config,
+        ))
+        doc_id = doc["node_id"]
+
+        driver = get_async_driver(e2e_config)
+        async with driver.session(database=e2e_config.neo4j.database) as session:
+            await session.run(
+                "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
+                id=doc_id, tag=E2E_TAG,
+            )
+
+        results = await validate_citations(f"See [{doc_id}]", e2e_config)
+        assert len(results) == 1
+        assert results[0].status == CitationStatus.MISSING_PROVENANCE
+
 
 class TestGraphGaps:
     @pytest.mark.asyncio
