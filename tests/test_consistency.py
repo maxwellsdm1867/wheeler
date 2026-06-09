@@ -394,3 +394,176 @@ class TestRepairConsistency:
         result = await repair_consistency(config, report, dry_run=True)
         assert result["total"] == len(result["actions"])
         assert result["total"] == 5
+
+
+class TestSummarizeDrift:
+    def test_empty_report_is_clean(self):
+        from wheeler.consistency import summarize_drift
+
+        summary = summarize_drift(ConsistencyReport())
+        assert summary["total_divergent"] == 0
+        assert summary["exceeds_threshold"] is False
+        assert "json_only_by_prefix" not in summary
+        assert "graph_only_by_prefix" not in summary
+
+    def test_counts_all_categories(self):
+        from wheeler.consistency import summarize_drift
+
+        report = ConsistencyReport(
+            graph_only=["X-a", "F-b"],
+            json_only=["A-c"],
+            synthesis_missing=["A-c", "W-d"],
+            synthesis_orphaned=["F-e"],
+        )
+        summary = summarize_drift(report)
+        assert summary["graph_only"] == 2
+        assert summary["json_only"] == 1
+        assert summary["synthesis_missing"] == 2
+        assert summary["synthesis_orphaned"] == 1
+        assert summary["total_divergent"] == 6
+
+    def test_threshold_boundary(self):
+        from wheeler.consistency import summarize_drift
+
+        report = ConsistencyReport(json_only=[f"F-{i:04d}" for i in range(10)])
+        assert summarize_drift(report, threshold=10)["exceeds_threshold"] is False
+        report = ConsistencyReport(json_only=[f"F-{i:04d}" for i in range(11)])
+        assert summarize_drift(report, threshold=10)["exceeds_threshold"] is True
+
+    def test_prefix_breakdown_flags_whole_node_class(self):
+        """An entire node class missing from the graph (legacy A-* Analysis
+        files that only exist in JSON) shows up as a single loud prefix count."""
+        from wheeler.consistency import summarize_drift
+
+        report = ConsistencyReport(
+            json_only=[f"A-{i:08x}" for i in range(15)] + ["W-aaaa", "W-bbbb"],
+            graph_only=["X-1111", "X-2222", "F-3333"],
+        )
+        summary = summarize_drift(report)
+        assert summary["json_only_by_prefix"]["A"] == 15
+        assert summary["json_only_by_prefix"]["W"] == 2
+        assert summary["graph_only_by_prefix"]["X"] == 2
+        assert summary["graph_only_by_prefix"]["F"] == 1
+
+    def test_default_threshold_constant(self):
+        from wheeler.consistency import DRIFT_WARNING_THRESHOLD, summarize_drift
+
+        summary = summarize_drift(ConsistencyReport())
+        assert summary["threshold"] == DRIFT_WARNING_THRESHOLD
+
+
+class TestGraphHealthDriftSurfacing:
+    """graph_health surfaces triple-write drift proactively (issue #60)."""
+
+    async def test_warns_when_drift_exceeds_threshold(self):
+        report = ConsistencyReport(
+            json_only=[f"A-{i:08x}" for i in range(20)],
+            total_graph=5,
+            total_json=25,
+            total_synthesis=5,
+        )
+        mock_counts = {"Finding": 5}
+        with patch(
+            "wheeler.mcp_core.schema.get_status",
+            new_callable=AsyncMock,
+            return_value=mock_counts,
+        ), patch(
+            "wheeler.consistency.check_consistency",
+            new_callable=AsyncMock,
+            return_value=report,
+        ):
+            from wheeler.mcp_core import graph_health
+
+            result = await graph_health()
+
+        assert result["status"] == "connected"
+        assert result["drift"]["total_divergent"] == 20
+        assert result["drift"]["exceeds_threshold"] is True
+        assert result["drift"]["json_only_by_prefix"]["A"] == 20
+        assert any("drift" in w.lower() for w in result.get("warnings", []))
+
+    async def test_no_drift_warning_below_threshold(self):
+        report = ConsistencyReport(
+            json_only=["F-aaaa"],
+            total_graph=10,
+            total_json=11,
+            total_synthesis=11,
+        )
+        mock_counts = {"Finding": 10}
+        with patch(
+            "wheeler.mcp_core.schema.get_status",
+            new_callable=AsyncMock,
+            return_value=mock_counts,
+        ), patch(
+            "wheeler.consistency.check_consistency",
+            new_callable=AsyncMock,
+            return_value=report,
+        ):
+            from wheeler.mcp_core import graph_health
+
+            result = await graph_health()
+
+        assert result["status"] == "connected"
+        assert result["drift"]["total_divergent"] == 1
+        assert result["drift"]["exceeds_threshold"] is False
+        assert not any(
+            "drift" in w.lower() for w in result.get("warnings", [])
+        )
+
+    async def test_offline_graph_skips_drift_check(self):
+        mock_counts = {"Finding": 0, "_status": "offline", "_error": "Connection refused"}
+        with patch(
+            "wheeler.mcp_core.schema.get_status",
+            new_callable=AsyncMock,
+            return_value=mock_counts,
+        ):
+            from wheeler.mcp_core import graph_health
+
+            result = await graph_health()
+
+        assert result["status"] == "offline"
+        assert "drift" not in result
+
+    async def test_drift_check_failure_is_nonfatal(self):
+        mock_counts = {"Finding": 3}
+        with patch(
+            "wheeler.mcp_core.schema.get_status",
+            new_callable=AsyncMock,
+            return_value=mock_counts,
+        ), patch(
+            "wheeler.consistency.check_consistency",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("boom"),
+        ):
+            from wheeler.mcp_core import graph_health
+
+            result = await graph_health()
+
+        assert result["status"] == "connected"
+        assert result["drift"] == {"error": "boom"}
+
+
+class TestConsistencyCheckSummary:
+    """graph_consistency_check includes the compact drift summary (issue #60)."""
+
+    async def test_result_includes_summary(self):
+        report = ConsistencyReport(
+            json_only=["A-aaaa"],
+            graph_only=["X-bbbb"],
+            total_graph=2,
+            total_json=2,
+            total_synthesis=1,
+        )
+        with patch(
+            "wheeler.consistency.check_consistency",
+            new_callable=AsyncMock,
+            return_value=report,
+        ):
+            from wheeler.mcp_ops import graph_consistency_check
+
+            result = await graph_consistency_check(repair=False)
+
+        assert result["summary"]["total_divergent"] == 2
+        assert result["summary"]["json_only_by_prefix"] == {"A": 1}
+        assert result["summary"]["graph_only_by_prefix"] == {"X": 1}
+        assert result["summary"]["exceeds_threshold"] is False

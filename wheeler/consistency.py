@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Synthesis index files that are NOT node files
 _SYNTHESIS_INDEX_FILES = frozenset({"INDEX", "OPEN_QUESTIONS", "EVIDENCE_MAP"})
 
+# Divergent-node count above which routine health checks warn loudly
+DRIFT_WARNING_THRESHOLD = 10
+
 
 @dataclass
 class ConsistencyReport:
@@ -71,6 +74,45 @@ async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
         total_json=len(json_ids),
         total_synthesis=len(synth_ids),
     )
+
+
+def summarize_drift(
+    report: ConsistencyReport,
+    threshold: int = DRIFT_WARNING_THRESHOLD,
+) -> dict:
+    """Compact drift summary for embedding in routine health/status output.
+
+    Counts divergent nodes per category and breaks json_only and graph_only
+    down by node-ID prefix so that an entire missing node class (e.g. all
+    legacy A-* Analysis files present only in JSON) is visible at a glance.
+    """
+    def _by_prefix(ids: list[str]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for nid in ids:
+            prefix = nid.split("-", 1)[0] if "-" in nid else nid
+            counts[prefix] = counts.get(prefix, 0) + 1
+        return counts
+
+    total_divergent = (
+        len(report.graph_only)
+        + len(report.json_only)
+        + len(report.synthesis_missing)
+        + len(report.synthesis_orphaned)
+    )
+    summary: dict = {
+        "total_divergent": total_divergent,
+        "graph_only": len(report.graph_only),
+        "json_only": len(report.json_only),
+        "synthesis_missing": len(report.synthesis_missing),
+        "synthesis_orphaned": len(report.synthesis_orphaned),
+        "threshold": threshold,
+        "exceeds_threshold": total_divergent > threshold,
+    }
+    if report.json_only:
+        summary["json_only_by_prefix"] = _by_prefix(report.json_only)
+    if report.graph_only:
+        summary["graph_only_by_prefix"] = _by_prefix(report.graph_only)
+    return summary
 
 
 async def repair_consistency(

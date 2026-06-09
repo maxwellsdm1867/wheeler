@@ -125,6 +125,25 @@ async def graph_health() -> dict:
         if result["status"] == "connected":
             result["warnings"] = ["knowledge/ directory does not exist -- run /wh:init"]
 
+    # Triple-write drift surfacing: compare graph, JSON, and synthesis
+    # inventories so drift is reported at routine health checks instead
+    # of only on a manual graph_consistency_check.
+    if result["status"] == "connected":
+        try:
+            from wheeler.consistency import check_consistency, summarize_drift
+
+            drift = summarize_drift(await check_consistency(_config))
+            result["drift"] = drift
+            if drift["exceeds_threshold"]:
+                result.setdefault("warnings", []).append(
+                    f"Triple-write drift: {drift['total_divergent']} nodes diverge "
+                    "across graph/JSON/synthesis layers "
+                    f"(threshold {drift['threshold']}). "
+                    "Run graph_consistency_check for details."
+                )
+        except Exception as exc:
+            result["drift"] = {"error": str(exc)}
+
     return result
 
 

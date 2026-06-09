@@ -17,6 +17,7 @@ import os
 
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS, PREFIX_TO_LABEL, generate_node_id
 from wheeler.graph import provenance as graph_provenance
+from wheeler.models import model_for_label
 from wheeler.provenance import default_stability
 
 from ._common import _now
@@ -499,6 +500,7 @@ _EXT_TO_TYPE: dict[str, tuple[str, str]] = {
     ".mat": ("Dataset", "mat"), ".h5": ("Dataset", "h5"),
     ".hdf5": ("Dataset", "hdf5"), ".csv": ("Dataset", "csv"),
     ".npy": ("Dataset", "npy"), ".parquet": ("Dataset", "parquet"),
+    ".db": ("Dataset", "db"),
     ".md": ("Document", "markdown"), ".tex": ("Document", "latex"),
     ".pdf": ("Document", "pdf"),
     ".png": ("Finding", "figure"), ".jpg": ("Finding", "figure"),
@@ -528,6 +530,10 @@ def _detect_artifact_type(
         label = override_map.get(override.lower(), "Document")
         ext = P(path).suffix.lower()
         _, secondary = _EXT_TO_TYPE.get(ext, ("Document", ""))
+        if not secondary and ext:
+            # Documented default: data_type/language falls back to the
+            # extension itself when no explicit mapping exists.
+            secondary = ext.lstrip(".")
         return label, secondary
 
     p = P(path)
@@ -628,7 +634,8 @@ def _build_delegated_args(
         if not args.get("title"):
             defaulted.append("title")
         return "add_finding", {
-            "path": path, "description": desc, "confidence": conf,
+            "path": path, "hash": file_hash,
+            "description": desc, "confidence": conf,
             "artifact_type": args.get("artifact_type") or "figure",
             "title": title,
             "session_id": args.get("session_id", ""),
@@ -651,6 +658,21 @@ def _build_delegated_args(
     }
 
 
+def _relative_path_candidates(path: str) -> list[str]:
+    """Relative suffixes of an absolute path, most specific first.
+
+    Nodes created before path normalization was enforced may store a path
+    relative to some ancestor directory (often just the filename). Each
+    suffix of the absolute path is a candidate stored value for the same
+    physical file, e.g. /a/b/c.m yields ["b/c.m", "c.m"].
+    """
+    from pathlib import PurePath
+
+    p = PurePath(path)
+    parts = p.parts[1:] if p.anchor else p.parts
+    return ["/".join(parts[i:]) for i in range(1, len(parts))]
+
+
 async def ensure_artifact(backend, args: dict) -> str:
     """Find-or-create a graph node for a file artifact, keyed on path.
 
@@ -666,11 +688,19 @@ async def ensure_artifact(backend, args: dict) -> str:
     # Multi-label lookup: find any artifact node at this path
     artifact_labels = ["Script", "Dataset", "Document", "Plan", "Finding"]
     or_clause = " OR ".join(f"n:{lbl}" for lbl in artifact_labels)
-    records = await backend.run_cypher(
+    lookup_query = (
         f"MATCH (n) WHERE n.path = $path AND ({or_clause}) "
-        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2",
-        {"path": path},
+        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2"
     )
+    records = await backend.run_cypher(lookup_query, {"path": path})
+    if not records:
+        # Legacy nodes may store the same file under a relative path.
+        # Try each relative suffix of the resolved absolute path so one
+        # file never gets a second node.
+        for candidate in _relative_path_candidates(path):
+            records = await backend.run_cypher(lookup_query, {"path": candidate})
+            if records:
+                break
 
     if not records:
         # Create new node
@@ -899,13 +929,44 @@ async def set_tier(backend, args: dict) -> str:
     return json.dumps({"error": f"Node {node_id} not found"})
 
 
+_UPDATE_IMMUTABLE_FIELDS = frozenset({"id", "type", "created", "change_log"})
+
+# Provenance timestamps are set at Execution creation time. update_node
+# rejects them unless the caller passes allow_provenance=true, which exists
+# so a broken Execution (e.g. empty started_at) can be repaired explicitly.
+_UPDATE_PROVENANCE_FIELDS = frozenset({"started_at", "ended_at"})
+
+# Graph-only bookkeeping fields written by add_* handlers but not declared
+# on the Pydantic models.
+_UPDATE_EXTRA_FIELDS = frozenset({"date", "date_added"})
+
+
+def _updatable_fields(label: str, allow_provenance: bool) -> set[str]:
+    """Return the set of fields update_node may write for a node label."""
+    try:
+        fields = set(model_for_label(label).model_fields)
+    except KeyError:
+        fields = set()
+    fields |= _UPDATE_EXTRA_FIELDS
+    fields -= _UPDATE_IMMUTABLE_FIELDS
+    if not allow_provenance:
+        fields -= _UPDATE_PROVENANCE_FIELDS
+    return fields
+
+
 async def update_node(backend, args: dict) -> str:
     """Update fields on an existing knowledge graph node.
 
     Required: node_id
-    Optional: any field appropriate for the node type (description,
+    Optional: any field defined on the node type's model (description,
     confidence, statement, status, title, content, question, priority,
     path, tier, etc.)
+
+    Fields are validated against the node type's schema. Unknown fields
+    are rejected with an error naming the field. Provenance timestamps
+    (started_at, ended_at) are immutable through this tool unless
+    allow_provenance=true is passed, which permits explicit repair of a
+    broken Execution record.
 
     Only non-empty, non-None fields are applied. The 'updated' timestamp
     is set automatically. Returns the node_id, label, list of updated
@@ -925,14 +986,38 @@ async def update_node(backend, args: dict) -> str:
         return json.dumps({"error": f"Node not found: {node_id}"})
 
     # Extract fields to update (exclude internal/meta keys)
-    exclude_keys = {"node_id", "session_id", "_config"}
+    exclude_keys = {"node_id", "session_id", "_config", "allow_provenance"}
+    allow_provenance = bool(args.get("allow_provenance", False))
+    allowed_fields = _updatable_fields(label, allow_provenance)
     updates: dict = {}
+    rejected: dict[str, str] = {}
     for k, v in args.items():
         if k in exclude_keys:
             continue
         if v is None or v == "":
             continue
+        if k not in allowed_fields:
+            if k in _UPDATE_PROVENANCE_FIELDS:
+                rejected[k] = (
+                    "provenance timestamp, immutable via update_node; "
+                    "pass allow_provenance=true to repair it explicitly"
+                )
+            else:
+                rejected[k] = f"not a valid field for {label}"
+            continue
         updates[k] = v
+
+    if rejected and not updates:
+        return json.dumps({
+            "error": "invalid_fields",
+            "node_id": node_id,
+            "label": label,
+            "fields": rejected,
+            "message": (
+                f"update_node was NOT executed for {node_id}. "
+                "Fix or remove the fields listed in 'fields' and retry."
+            ),
+        })
 
     if not updates:
         return json.dumps({"error": "No fields to update"})
@@ -951,13 +1036,16 @@ async def update_node(backend, args: dict) -> str:
             changes[key] = {"old": old_val, "new": new_val}
 
     if not changes:
-        return json.dumps({
+        no_change_result = {
             "node_id": node_id,
             "label": label,
             "updated_fields": [],
             "changes": {},
             "status": "no_changes",
-        })
+        }
+        if rejected:
+            no_change_result["rejected_fields"] = rejected
+        return json.dumps(no_change_result)
 
     # Update display_name if a primary content field changed
     display_field_map = {
@@ -987,10 +1075,13 @@ async def update_node(backend, args: dict) -> str:
         "Updated node %s (label=%s, fields=%s)",
         node_id, label, list(changes.keys()),
     )
-    return json.dumps({
+    update_result = {
         "node_id": node_id,
         "label": label,
         "updated_fields": list(changes.keys()),
         "changes": changes,
         "status": "updated",
-    })
+    }
+    if rejected:
+        update_result["rejected_fields"] = rejected
+    return json.dumps(update_result)
