@@ -644,14 +644,26 @@ async def update_node(
     priority: int | None = None,
     path: str = "",
     tier: str = "",
+    started_at: str = "",
+    ended_at: str = "",
+    allow_provenance: bool = False,
 ) -> dict:
     """Update fields on an existing Wheeler knowledge graph node. Only non-empty fields are applied.
+
+    Fields are validated against the node type's schema: a field that does
+    not exist on the node type is rejected with an error naming it, never
+    silently written or misrouted into another field.
 
     Field constraints (enforced, same as creation):
       confidence: float 0.0-1.0
       priority: integer 1-10, where 10 is highest
       tier: 'generated' or 'reference'
       path: resolved to absolute if relative
+
+    Provenance timestamps (started_at, ended_at, Execution nodes only) are
+    immutable by default. To repair a broken Execution record (e.g. backfill
+    an empty started_at), pass the timestamp together with
+    allow_provenance=true; without the flag the call is rejected.
 
     Returns the node_id, updated fields, and a changes dict showing old vs new values.
     Use for correcting descriptions, changing status, adjusting confidence,
@@ -663,9 +675,12 @@ async def update_node(
         ("statement", statement), ("status", status), ("title", title),
         ("content", content), ("question", question), ("priority", priority),
         ("path", path), ("tier", tier),
+        ("started_at", started_at), ("ended_at", ended_at),
     ]:
         if val is not None and val != "":
             update_args[field] = val
+    if allow_provenance:
+        update_args["allow_provenance"] = True
 
     result = await graph_tools.execute_tool("update_node", update_args, _config)
     return json.loads(result)

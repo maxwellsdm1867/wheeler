@@ -1178,6 +1178,9 @@ async def restore_merge(
                             if k not in ("id", "_restoring")
                         }
                         update_args["node_id"] = orig_id
+                        # Archive replay is allowed to restore provenance
+                        # timestamps (started_at/ended_at) on Executions.
+                        update_args["allow_provenance"] = True
                         try:
                             result_str = await execute_tool(
                                 "update_node", update_args, working_config

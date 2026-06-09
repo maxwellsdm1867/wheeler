@@ -17,6 +17,7 @@ import os
 
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS, PREFIX_TO_LABEL, generate_node_id
 from wheeler.graph import provenance as graph_provenance
+from wheeler.models import model_for_label
 from wheeler.provenance import default_stability
 
 from ._common import _now
@@ -899,13 +900,44 @@ async def set_tier(backend, args: dict) -> str:
     return json.dumps({"error": f"Node {node_id} not found"})
 
 
+_UPDATE_IMMUTABLE_FIELDS = frozenset({"id", "type", "created", "change_log"})
+
+# Provenance timestamps are set at Execution creation time. update_node
+# rejects them unless the caller passes allow_provenance=true, which exists
+# so a broken Execution (e.g. empty started_at) can be repaired explicitly.
+_UPDATE_PROVENANCE_FIELDS = frozenset({"started_at", "ended_at"})
+
+# Graph-only bookkeeping fields written by add_* handlers but not declared
+# on the Pydantic models.
+_UPDATE_EXTRA_FIELDS = frozenset({"date", "date_added"})
+
+
+def _updatable_fields(label: str, allow_provenance: bool) -> set[str]:
+    """Return the set of fields update_node may write for a node label."""
+    try:
+        fields = set(model_for_label(label).model_fields)
+    except KeyError:
+        fields = set()
+    fields |= _UPDATE_EXTRA_FIELDS
+    fields -= _UPDATE_IMMUTABLE_FIELDS
+    if not allow_provenance:
+        fields -= _UPDATE_PROVENANCE_FIELDS
+    return fields
+
+
 async def update_node(backend, args: dict) -> str:
     """Update fields on an existing knowledge graph node.
 
     Required: node_id
-    Optional: any field appropriate for the node type (description,
+    Optional: any field defined on the node type's model (description,
     confidence, statement, status, title, content, question, priority,
     path, tier, etc.)
+
+    Fields are validated against the node type's schema. Unknown fields
+    are rejected with an error naming the field. Provenance timestamps
+    (started_at, ended_at) are immutable through this tool unless
+    allow_provenance=true is passed, which permits explicit repair of a
+    broken Execution record.
 
     Only non-empty, non-None fields are applied. The 'updated' timestamp
     is set automatically. Returns the node_id, label, list of updated
@@ -925,14 +957,38 @@ async def update_node(backend, args: dict) -> str:
         return json.dumps({"error": f"Node not found: {node_id}"})
 
     # Extract fields to update (exclude internal/meta keys)
-    exclude_keys = {"node_id", "session_id", "_config"}
+    exclude_keys = {"node_id", "session_id", "_config", "allow_provenance"}
+    allow_provenance = bool(args.get("allow_provenance", False))
+    allowed_fields = _updatable_fields(label, allow_provenance)
     updates: dict = {}
+    rejected: dict[str, str] = {}
     for k, v in args.items():
         if k in exclude_keys:
             continue
         if v is None or v == "":
             continue
+        if k not in allowed_fields:
+            if k in _UPDATE_PROVENANCE_FIELDS:
+                rejected[k] = (
+                    "provenance timestamp, immutable via update_node; "
+                    "pass allow_provenance=true to repair it explicitly"
+                )
+            else:
+                rejected[k] = f"not a valid field for {label}"
+            continue
         updates[k] = v
+
+    if rejected and not updates:
+        return json.dumps({
+            "error": "invalid_fields",
+            "node_id": node_id,
+            "label": label,
+            "fields": rejected,
+            "message": (
+                f"update_node was NOT executed for {node_id}. "
+                "Fix or remove the fields listed in 'fields' and retry."
+            ),
+        })
 
     if not updates:
         return json.dumps({"error": "No fields to update"})
@@ -951,13 +1007,16 @@ async def update_node(backend, args: dict) -> str:
             changes[key] = {"old": old_val, "new": new_val}
 
     if not changes:
-        return json.dumps({
+        no_change_result = {
             "node_id": node_id,
             "label": label,
             "updated_fields": [],
             "changes": {},
             "status": "no_changes",
-        })
+        }
+        if rejected:
+            no_change_result["rejected_fields"] = rejected
+        return json.dumps(no_change_result)
 
     # Update display_name if a primary content field changed
     display_field_map = {
@@ -987,10 +1046,13 @@ async def update_node(backend, args: dict) -> str:
         "Updated node %s (label=%s, fields=%s)",
         node_id, label, list(changes.keys()),
     )
-    return json.dumps({
+    update_result = {
         "node_id": node_id,
         "label": label,
         "updated_fields": list(changes.keys()),
         "changes": changes,
         "status": "updated",
-    })
+    }
+    if rejected:
+        update_result["rejected_fields"] = rejected
+    return json.dumps(update_result)
