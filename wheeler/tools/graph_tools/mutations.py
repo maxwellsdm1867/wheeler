@@ -500,6 +500,7 @@ _EXT_TO_TYPE: dict[str, tuple[str, str]] = {
     ".mat": ("Dataset", "mat"), ".h5": ("Dataset", "h5"),
     ".hdf5": ("Dataset", "hdf5"), ".csv": ("Dataset", "csv"),
     ".npy": ("Dataset", "npy"), ".parquet": ("Dataset", "parquet"),
+    ".db": ("Dataset", "db"),
     ".md": ("Document", "markdown"), ".tex": ("Document", "latex"),
     ".pdf": ("Document", "pdf"),
     ".png": ("Finding", "figure"), ".jpg": ("Finding", "figure"),
@@ -529,6 +530,10 @@ def _detect_artifact_type(
         label = override_map.get(override.lower(), "Document")
         ext = P(path).suffix.lower()
         _, secondary = _EXT_TO_TYPE.get(ext, ("Document", ""))
+        if not secondary and ext:
+            # Documented default: data_type/language falls back to the
+            # extension itself when no explicit mapping exists.
+            secondary = ext.lstrip(".")
         return label, secondary
 
     p = P(path)

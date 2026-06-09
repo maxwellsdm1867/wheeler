@@ -436,7 +436,7 @@ async def ensure_artifact(
 
     Auto-detects node type from extension:
       .py .m .r .jl .sh         -> Script
-      .mat .h5 .hdf5 .csv .npy  -> Dataset
+      .mat .h5 .hdf5 .csv .npy .parquet .db -> Dataset
       .md .tex .pdf             -> Document  (or Plan if path is under .plans/)
       .png .jpg .svg .tif       -> Finding (artifact_type=figure)
       Unknown extension          -> Document
