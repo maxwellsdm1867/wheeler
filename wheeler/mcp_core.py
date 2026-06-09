@@ -184,11 +184,14 @@ async def graph_context(topic: str = "") -> str:
 async def graph_gaps(limit: int = 10, offset: int = 0, summary: bool = False) -> dict:
     """Find gaps in the Wheeler knowledge graph: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates.
 
+    The response always includes a counts dict with true per-bucket
+    totals; total_gaps is the sum of those totals.
+
     Args:
         limit: Max items per gap bucket (default 10)
         offset: Items to skip per bucket, for pagination (default 0)
-        summary: When true, cap each bucket at 3 items and add per-bucket
-                 counts (compact output for large graphs)
+        summary: When true, cap each bucket at 3 items (compact output
+                 for large graphs)
     """
     result = await graph_tools.execute_tool(
         "graph_gaps",

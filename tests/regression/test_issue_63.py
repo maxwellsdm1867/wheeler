@@ -107,6 +107,33 @@ class TestIssue63GraphGapsTokenLimit:
                 )
 
     @pytest.mark.asyncio
+    async def test_graph_gaps_default_includes_counts_and_true_total(self, e2e_config):
+        """Default response includes per-bucket counts and a true total_gaps."""
+        from wheeler.tools.graph_tools import execute_tool
+
+        result = json.loads(await execute_tool("graph_gaps", {"limit": 1}, e2e_config))
+
+        assert "counts" in result, "default response should include per-bucket counts"
+        counts = result["counts"]
+        for bucket_key in [
+            "unlinked_questions",
+            "unsupported_hypotheses",
+            "executions_without_outputs",
+            "unreported_findings",
+            "orphaned_papers",
+        ]:
+            assert bucket_key in counts, f"counts should include {bucket_key}"
+            assert isinstance(counts[bucket_key], int)
+            assert counts[bucket_key] >= len(result.get(bucket_key, [])), (
+                f"true count for {bucket_key} should be >= returned page size"
+            )
+
+        assert result["total_gaps"] == sum(counts.values()), (
+            "total_gaps should be the sum of true per-bucket counts, "
+            "not the capped list lengths"
+        )
+
+    @pytest.mark.asyncio
     async def test_graph_gaps_summary_includes_counts(self, e2e_config):
         """When summary=true, graph_gaps should include bucket counts."""
         from wheeler.tools.graph_tools import execute_tool

@@ -683,7 +683,9 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
 
     Optional args: ``limit`` (per-bucket cap, default 10), ``offset``
     (per-bucket pagination, default 0), ``summary`` (bool, default False;
-    caps each bucket at 3 items and adds per-bucket ``counts``).
+    caps each bucket at 3 items). The response always includes a
+    ``counts`` dict with true per-bucket totals, and ``total_gaps`` is
+    the sum of those totals (not the capped list lengths).
     """
     if args is None:
         args = {}
@@ -835,22 +837,19 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
         "unreported_findings": unreported_findings,
         "orphaned_papers": orphaned_papers,
     }
-    if summary:
-        counts: dict[str, int] = {}
-        for key, match, alias in (
-            ("unlinked_questions", q_match, "q"),
-            ("unsupported_hypotheses", h_match, "h"),
-            ("executions_without_outputs", x_match, "x"),
-            ("unreported_findings", f_match, "f"),
-            ("orphaned_papers", p_match, "p"),
-        ):
-            records = await backend.run_cypher(
-                match + f"RETURN count({alias}) AS n",
-                _inject_ptag({}, ctx.project_tag) or None,
-            )
-            counts[key] = records[0]["n"] if records else 0
-        gaps["counts"] = counts
-        gaps["total_gaps"] = sum(counts.values())
-    else:
-        gaps["total_gaps"] = sum(len(v) for v in gaps.values() if isinstance(v, list))
+    counts: dict[str, int] = {}
+    for key, match, alias in (
+        ("unlinked_questions", q_match, "q"),
+        ("unsupported_hypotheses", h_match, "h"),
+        ("executions_without_outputs", x_match, "x"),
+        ("unreported_findings", f_match, "f"),
+        ("orphaned_papers", p_match, "p"),
+    ):
+        records = await backend.run_cypher(
+            match + f"RETURN count({alias}) AS n",
+            _inject_ptag({}, ctx.project_tag) or None,
+        )
+        counts[key] = records[0]["n"] if records else 0
+    gaps["counts"] = counts
+    gaps["total_gaps"] = sum(counts.values())
     return json.dumps(gaps)
