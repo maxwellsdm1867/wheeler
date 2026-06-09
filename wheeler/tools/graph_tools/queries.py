@@ -668,11 +668,38 @@ async def query_executions(backend, args: dict) -> str:
     return json.dumps({"executions": executions, "count": len(executions)})
 
 
+_GAP_TEXT_CAP = 300
+
+
+def _cap_text(value):  # noqa: ANN202
+    """Truncate long text fields so gap listings stay inline-consumable."""
+    if isinstance(value, str) and len(value) > _GAP_TEXT_CAP:
+        return value[:_GAP_TEXT_CAP] + "..."
+    return value
+
+
 async def graph_gaps(backend, args: dict | None = None) -> str:
-    """Find knowledge gaps: unlinked questions, unsupported hypotheses, idle executions."""
+    """Find knowledge gaps: unlinked questions, unsupported hypotheses, idle executions.
+
+    Optional args: ``limit`` (per-bucket cap, default 10), ``offset``
+    (per-bucket pagination, default 0), ``summary`` (bool, default False;
+    caps each bucket at 3 items and adds per-bucket ``counts``).
+    """
     if args is None:
         args = {}
     ctx = _extract_context(args)
+
+    summary = bool(args.get("summary", False))
+    try:
+        limit = max(0, int(args.get("limit", 10)))
+    except (TypeError, ValueError):
+        limit = 10
+    try:
+        offset = max(0, int(args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    if summary:
+        limit = min(limit, 3)
 
     # Build project WHERE fragments for each alias
     pw_q = _project_where("q", ctx.project_tag, has_existing_where=True)
@@ -681,51 +708,70 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
     pw_f = _project_where("f", ctx.project_tag, has_existing_where=True)
     pw_p = _project_where("p", ctx.project_tag, has_existing_where=True)
 
-    q_records = await backend.run_cypher(
+    q_match = (
         "MATCH (q:OpenQuestion) "
         "WHERE NOT (q)<-[:AROSE_FROM]-() AND NOT ()-[:RELEVANT_TO]->(q)"
         f"{pw_q} "
-        "RETURN q.id AS id, coalesce(q.question, '') AS question, "
-        "coalesce(q.priority, 0) AS priority "
-        "ORDER BY q.priority DESC LIMIT 10",
-        _inject_ptag({}, ctx.project_tag) or None,
     )
-
-    h_records = await backend.run_cypher(
+    h_match = (
         "MATCH (h:Hypothesis) WHERE h.status = 'open' "
         "AND NOT ()-[:SUPPORTS|CONTRADICTS]->(h)"
         f"{pw_h} "
-        "RETURN h.id AS id, h.statement AS stmt "
-        "LIMIT 10",
-        _inject_ptag({}, ctx.project_tag) or None,
     )
-
-    x_records = await backend.run_cypher(
+    x_match = (
         "MATCH (x:Execution) "
         "WHERE NOT ()-[:WAS_GENERATED_BY]->(x)"
         f"{pw_x} "
-        "RETURN x.id AS id, coalesce(x.description, '') AS description "
-        "LIMIT 10",
-        _inject_ptag({}, ctx.project_tag) or None,
     )
-
-    f_records = await backend.run_cypher(
+    f_match = (
         "MATCH (f:Finding) "
         "WHERE NOT (f)-[:APPEARS_IN]->(:Document)"
         f"{pw_f} "
-        "RETURN f.id AS id, coalesce(f.description, '') AS description "
-        "ORDER BY f.date DESC LIMIT 10",
-        _inject_ptag({}, ctx.project_tag) or None,
     )
-
-    p_records = await backend.run_cypher(
+    p_match = (
         "MATCH (p:Paper) "
         "WHERE NOT (p)-[:WAS_INFORMED_BY|RELEVANT_TO|CITES|APPEARS_IN]->() "
         "AND NOT ()-[:WAS_DERIVED_FROM|CITES]->(p)"
         f"{pw_p} "
-        "RETURN p.id AS id, coalesce(p.title, '') AS title "
-        "LIMIT 10",
-        _inject_ptag({}, ctx.project_tag) or None,
+    )
+
+    def _page_params() -> dict:
+        return _inject_ptag({"skip": offset, "limit": limit}, ctx.project_tag)
+
+    q_records = await backend.run_cypher(
+        q_match
+        + "RETURN q.id AS id, coalesce(q.question, '') AS question, "
+        "coalesce(q.priority, 0) AS priority "
+        "ORDER BY q.priority DESC, q.id SKIP $skip LIMIT $limit",
+        _page_params(),
+    )
+
+    h_records = await backend.run_cypher(
+        h_match
+        + "RETURN h.id AS id, h.statement AS stmt "
+        "ORDER BY h.id SKIP $skip LIMIT $limit",
+        _page_params(),
+    )
+
+    x_records = await backend.run_cypher(
+        x_match
+        + "RETURN x.id AS id, coalesce(x.description, '') AS description "
+        "ORDER BY x.id SKIP $skip LIMIT $limit",
+        _page_params(),
+    )
+
+    f_records = await backend.run_cypher(
+        f_match
+        + "RETURN f.id AS id, coalesce(f.description, '') AS description "
+        "ORDER BY f.date DESC, f.id SKIP $skip LIMIT $limit",
+        _page_params(),
+    )
+
+    p_records = await backend.run_cypher(
+        p_match
+        + "RETURN p.id AS id, coalesce(p.title, '') AS title "
+        "ORDER BY p.id SKIP $skip LIMIT $limit",
+        _page_params(),
     )
 
     # Enrich gap results with knowledge file data where available
@@ -734,11 +780,13 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
         model = _read_knowledge_node(ctx.knowledge_path, r["id"])
         if model is not None:
             unlinked_questions.append({
-                "id": model.id, "question": model.question, "priority": model.priority,
+                "id": model.id, "question": _cap_text(model.question),
+                "priority": model.priority,
             })
         else:
             unlinked_questions.append({
-                "id": r["id"], "question": r["question"], "priority": r["priority"],
+                "id": r["id"], "question": _cap_text(r["question"]),
+                "priority": r["priority"],
             })
 
     unsupported_hypotheses = []
@@ -746,11 +794,11 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
         model = _read_knowledge_node(ctx.knowledge_path, r["id"])
         if model is not None:
             unsupported_hypotheses.append({
-                "id": model.id, "statement": model.statement,
+                "id": model.id, "statement": _cap_text(model.statement),
             })
         else:
             unsupported_hypotheses.append({
-                "id": r["id"], "statement": r["stmt"],
+                "id": r["id"], "statement": _cap_text(r["stmt"]),
             })
 
     unreported_findings = []
@@ -758,11 +806,11 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
         model = _read_knowledge_node(ctx.knowledge_path, r["id"])
         if model is not None:
             unreported_findings.append({
-                "id": model.id, "description": model.description,
+                "id": model.id, "description": _cap_text(model.description),
             })
         else:
             unreported_findings.append({
-                "id": r["id"], "description": r["description"],
+                "id": r["id"], "description": _cap_text(r["description"]),
             })
 
     orphaned_papers = []
@@ -770,22 +818,39 @@ async def graph_gaps(backend, args: dict | None = None) -> str:
         model = _read_knowledge_node(ctx.knowledge_path, r["id"])
         if model is not None:
             orphaned_papers.append({
-                "id": model.id, "title": model.title,
+                "id": model.id, "title": _cap_text(model.title),
             })
         else:
             orphaned_papers.append({
-                "id": r["id"], "title": r["title"],
+                "id": r["id"], "title": _cap_text(r["title"]),
             })
 
     gaps: dict = {
         "unlinked_questions": unlinked_questions,
         "unsupported_hypotheses": unsupported_hypotheses,
         "executions_without_outputs": [
-            {"id": r["id"], "description": r["description"]}
+            {"id": r["id"], "description": _cap_text(r["description"])}
             for r in x_records
         ],
         "unreported_findings": unreported_findings,
         "orphaned_papers": orphaned_papers,
     }
-    gaps["total_gaps"] = sum(len(v) for v in gaps.values() if isinstance(v, list))
+    if summary:
+        counts: dict[str, int] = {}
+        for key, match, alias in (
+            ("unlinked_questions", q_match, "q"),
+            ("unsupported_hypotheses", h_match, "h"),
+            ("executions_without_outputs", x_match, "x"),
+            ("unreported_findings", f_match, "f"),
+            ("orphaned_papers", p_match, "p"),
+        ):
+            records = await backend.run_cypher(
+                match + f"RETURN count({alias}) AS n",
+                _inject_ptag({}, ctx.project_tag) or None,
+            )
+            counts[key] = records[0]["n"] if records else 0
+        gaps["counts"] = counts
+        gaps["total_gaps"] = sum(counts.values())
+    else:
+        gaps["total_gaps"] = sum(len(v) for v in gaps.values() if isinstance(v, list))
     return json.dumps(gaps)
