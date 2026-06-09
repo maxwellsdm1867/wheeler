@@ -199,7 +199,17 @@ async def show_node(node_id: str) -> dict:
     read findings, hypotheses, questions, papers, etc. without needing
     a graph query.
     """
-    from wheeler.knowledge import store
+    try:
+        from wheeler.knowledge import store
+    except ImportError as exc:
+        return {
+            "error": (
+                f"Cannot read node files: {exc}. The wheeler.knowledge "
+                "subpackage is missing from this installation (known defect "
+                "in wheels built before v0.9.4). Reinstall with: "
+                "pip install --upgrade --force-reinstall wheeler"
+            )
+        }
 
     knowledge_path = Path(_config.knowledge_path)
     try:
