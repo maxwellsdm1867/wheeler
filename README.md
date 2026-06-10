@@ -92,6 +92,18 @@ Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip 
 
 Every plan and execution renders a self-contained **visual brief**: the question and sub-questions, figure mockups (pre-registered sketches) paired with the real result figures, a pipeline flow chart, and the data sources. `/wh:discuss` reads that brief to interpret the results with you like a colleague, referencing figures by number and running quick checks against the data to strengthen or disprove a point.
 
+### A typical session
+
+The flow we design for, end to end:
+
+1. **`/wh:discuss`** — talk through the question until it is sharp. Wheeler asks like a colleague, grounds the conversation in what the graph already knows, and locks the decisions.
+2. **`/wh:plan`** — Wheeler structures the investigation into waves of tasks and, before any data is touched, **pre-registers the figures**: what each one plots and how competing hypotheses would look different in it. On approval it renders a **visual brief** (question, mockups, pipeline, data sources) so you react to a picture, not prose. Seeing the mockup often sends one more round of sharpening back into the plan.
+3. **`/wh:execute`** — Wheeler runs the WHEELER-assigned tasks, logs findings with full provenance, then regenerates the brief as a **report**: each pre-registered mockup now sits beside its real result figure, success criteria are marked, and result tables tuck into dropdowns.
+4. **`/wh:discuss`** (again, on the results) — hand Wheeler the brief and interpret together: what holds, what is fragile, what the next question is. Wheeler references figures by number, pulls related findings from the graph, and can run a quick check against the data to settle a contested point, registering whatever you endorse back into the graph.
+5. **`/wh:write`** drafts from the endorsed findings with strict citations, or **`/wh:plan`** opens the follow-up investigation. **`/wh:close`** sweeps the session into a synthesis.
+
+You can enter at any step, skip stages, or loop steps 2 to 4 as the work demands.
+
 ### Commands
 
 | Command | What it does |
