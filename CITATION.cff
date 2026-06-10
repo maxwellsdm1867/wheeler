@@ -11,16 +11,13 @@ authors:
     given-names: Arthur
   - family-names: Rieke
     given-names: Fred
-version: 0.9.6
-date-released: "2026-06-01"
+version: 0.9.7
+date-released: "2026-06-10"
 license: MIT
-doi: 10.5281/zenodo.20498886
+doi: 10.5281/zenodo.20498885
 repository-code: "https://github.com/maxwellsdm1867/wheeler"
 url: "https://github.com/maxwellsdm1867/wheeler"
 identifiers:
-  - type: doi
-    value: 10.5281/zenodo.20498886
-    description: "DOI for version v0.9.6"
   - type: doi
     value: 10.5281/zenodo.20498885
     description: "Concept DOI for all versions (always resolves to the latest release)"

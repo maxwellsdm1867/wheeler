@@ -4,12 +4,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.6-blue" alt="v0.9.6">
+  <img src="https://img.shields.io/badge/v0.9.7-blue" alt="v0.9.7">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://doi.org/10.5281/zenodo.20498885"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.20498885.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.20498885"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20498885-blue.svg" alt="DOI"></a>
 </p>
 Wheeler is a thinking partner for scientists, built natively on Claude Code. It gives you slash commands for each stage of research: discuss the question, plan the investigation, execute analyses, write up results. Every action is wrapped in a knowledge graph that tracks how research artifacts (papers, code, data, findings, drafts) depend on each other, making every AI-produced result traceable back to the exact script, data, and parameters that produced it.
 
@@ -179,6 +179,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.7</b> (2026-06-10): bug queue cleared</summary>
+
+- **Nine reported bugs fixed (#56 through #64)**: every open issue reproduced, fixed, and verified end-to-end against a live graph.
+- **`show_node` and `graph_gaps` hardened**: `show_node` returns an actionable error instead of crashing when a packaged environment is missing `wheeler.knowledge`; `graph_gaps` gains `limit`/`offset`/`summary` parameters and per-bucket counts so its default response stays under the token cap on mature graphs.
+- **`/wh:close` made robust**: close Executions always carry a non-empty `started_at` across all three triple-write layers, the session-boundary query ignores malformed timestamps and warns instead of silently falling back, and session-synthesis Documents validate via their close-Execution provenance.
+- **Mutation fixes**: `update_node` field validation, figure titles, path dedup, and dataset type defaults (`#57`, `#59`, `#61`, `#62`); triple-write drift is now surfaced proactively in `graph_health` and the consistency summary (`#60`).
+- **DOI badge fixed**: the citation badge is now served through shields.io so it renders reliably alongside the other badges.
+
+</details>
+
+<details>
 <summary><b>v0.9.6</b> (2026-06-01) — Software citation</summary>
 
 - **Cite this repository**: Added `CITATION.cff` so GitHub renders a one-click "Cite this repository" button (APA and BibTeX export), plus a Citation section in the README with a ready-to-paste BibTeX entry.
@@ -359,7 +370,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1661 tests
+tests/                        # 1707 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -371,7 +382,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1661 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1707 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
