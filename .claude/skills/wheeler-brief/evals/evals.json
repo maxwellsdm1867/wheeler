@@ -1,0 +1,29 @@
+{
+  "skill_name": "wheeler-brief",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I just approved the plan at .plans/adaptation_contrast.md. Can you make me a visual brief I can actually read, with the question up top and a mockup of the figure we expect?",
+      "expected_output": "Composes a spec JSON from the plan (question, bulleted execution, data sources, a figure entry with a hand-drawn mockup SVG showing the expected trend), runs render_brief.py, writes .plans/brief/adaptation-contrast.html, opens it, and prints the path. Leads with the question, not the task breakdown.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "The within_type_swap_control plan finished executing. Show me the mockups next to the actual figures so I can see if the predictions held.",
+      "expected_output": "Reads the existing .plans/brief/within-type-swap-control.json (pre-registration), keeps the mockups immutable, fills image_path from analysis_exports/<slug>_<date>/figures/, sets each figure status to produced/missing, updates success-criteria statuses from VERIFICATION, regenerates the HTML in execution mode with side-by-side mockup vs result, copies it into the export dir, and opens it.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Before I commit to this plan, draw me what the primary figure would look like under each hypothesis, so I can tell if it can even distinguish them.",
+      "expected_output": "Elicits the competing hypotheses if not stated, draws a mockup (SVG or synthetic-data PNG) with one predicted series per hypothesis (distinct style + text label), populates the figure's hypotheses field so the brief renders a matching legend, and surfaces any figure that cannot look different under the alternatives as a planning gap.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "plot the spike counts from rgc_spikes.mat as a histogram and save it",
+      "expected_output": "Should NOT trigger wheeler-brief. This is a direct one-off plotting task on a data file, not a request to visualize a plan or pre-register figure mockups. A normal analysis/plotting path handles it.",
+      "files": []
+    }
+  ]
+}

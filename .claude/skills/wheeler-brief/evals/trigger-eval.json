@@ -1,0 +1,14 @@
+[
+  {"query": "I just approved the within_type_swap_control plan. Can you make me that visual brief with the question up top and the figure mockups so I can eyeball what we are about to plot?", "should_trigger": true},
+  {"query": "show me the research brief for PL-99d25314", "should_trigger": true},
+  {"query": "the swap sweep finished running, render the execution dashboard so I can see the mockups next to the actual residual figures", "should_trigger": true},
+  {"query": "before I commit to this plan, draw me what the primary figure would look like under H0 vs H1 so I can tell if it can even separate them", "should_trigger": true},
+  {"query": "make a one-page game plan view of the operating margin investigation, question then mockups, I want to share it with Fred", "should_trigger": true},
+  {"query": "visualize the plan as an html page with the data sources and a pipeline so I can see what feeds the figure", "should_trigger": true},
+  {"query": "plot the spike counts from rgc_spikes.mat as a histogram and save the png to figures/", "should_trigger": false},
+  {"query": "what does finding F-82c3dec3 actually say, give me the median break and refit numbers", "should_trigger": false},
+  {"query": "add the within_cross_swap.csv dataset to the knowledge graph and link it to the plan", "should_trigger": false},
+  {"query": "draft the results paragraph for the swap control with strict citations from our findings", "should_trigger": false},
+  {"query": "regenerate fig_A in the export dir with a bigger font and a transparent background", "should_trigger": false},
+  {"query": "summarize what I worked on this week across my wheeler projects", "should_trigger": false}
+]
