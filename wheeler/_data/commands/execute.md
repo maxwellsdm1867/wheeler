@@ -15,6 +15,7 @@ allowed-tools:
   - TaskCreate
   - TaskList
   - TaskUpdate
+  - Skill
   - mcp__wheeler_core__*
   - mcp__wheeler_query__*
   - mcp__wheeler_mutations__*
@@ -206,6 +207,7 @@ After all WHEELER tasks complete, verify against the plan's success criteria:
 7. Write `.plans/<name>-SUMMARY.md` using the summary template below
 8. If investigation is complete (all criteria MET or all WHEELER tasks done), write `.plans/<name>-VERIFICATION.md` using the verification template below. Run `validate_citations` on all investigation artifacts for the citation audit.
 9. Update `.plans/STATE.md`: set status, update Graph Snapshot (call `graph_status`), update Recent Findings, update Session Continuity.
+10. Generate the execution report by default: invoke the `wheeler-brief` skill via the Skill tool with the plan path as args. Do this every time, automatically, unless the scientist asked you to skip it (or the skill is not available, then skip silently). It re-reads the pre-registration brief spec at `.plans/brief/<investigation>.json` (created at plan time, if any), pairs each pre-registered figure mockup with the actual result figure from `analysis_exports/<slug>_<date>/figures/`, updates the success-criteria statuses from the verification, tucks the data sources and result tables into dropdowns, numbers the sections and figures, regenerates `.plans/brief/<investigation>.html`, copies it into the export dir, and opens it. The result is a numbered mockup-vs-result report that shows at a glance whether each pre-registered prediction held. Do not let it rewrite the pre-registered question, rationale, or mockups; it only fills in actual figures and statuses.
 
 ## Execution Summary Template
 

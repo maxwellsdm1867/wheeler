@@ -29,7 +29,12 @@ wh-triage-workspace/
 .claude/scheduled_tasks.lock
 
 # Dev-only skills (not shipped to Wheeler users)
-.claude/skills/
+# Ignore skill contents but keep the dir traversable so wheeler-brief can be re-included.
+.claude/skills/*
+# except wheeler-brief, which is versioned with the repo
+!.claude/skills/wheeler-brief/
+# brief HTML/JSON outputs (.plans/ is already ignored; listed for clarity)
+.plans/brief/
 
 # Dev-only agents for the issue-cycle workflow (not shipped to Wheeler users)
 .claude/agents/issue-*.md

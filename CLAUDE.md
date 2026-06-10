@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.9.7`. 1707 tests, 50 MCP tools across 5 servers.
+Version is `0.9.8`. 1713 tests, 50 MCP tools across 5 servers.
 
 ## Commands
 
@@ -168,7 +168,9 @@ Each `.claude/commands/wh/*.md` file is a Claude Code slash command. YAML frontm
 
 `/wh:start` is a user-invoked router: it analyzes task intent and invokes the best `/wh:*` command via the Skill tool. Individual commands have narrow trigger descriptions requiring Wheeler/knowledge-graph vocabulary, so they auto-fire for unambiguous research actions but not for general coding.
 
-The **same command files exist twice**: in `.claude/commands/wh/` (what Claude Code actually loads from this repo) and in `wheeler/_data/commands/` (what the PyPI package ships to users via `wheeler install`). **Keep these two trees in sync.** Edits to one should be mirrored to the other; tests check both paths.
+The **same command files exist twice**: in `.claude/commands/wh/` (what Claude Code actually loads from this repo) and in `wheeler/_data/commands/` (what the PyPI package ships to users via `wheeler install`). **Keep these two trees in sync.** Edit the `.claude/commands/wh/` tree, then run `python -c "from wheeler.installer import sync_data; sync_data()"` to regenerate the `_data` mirror byte-for-byte. Tests check both paths (`tests/test_installer.py::test_package_data_in_sync`, `tests/test_context_routing.py`, `tests/test_routing.py::TestTreeSync`).
+
+The `wheeler-brief` skill (`.claude/skills/wheeler-brief/`, versioned with the repo via a `.gitignore` negation; other dev skills stay ignored) renders self-contained HTML research briefs (question, bulleted execution plan, data sources, figure mockups paired with actual results). It is invoked from `/wh:plan` after approval and `/wh:execute` after the completion summary; the act step is conditional ("if the skill is available, else skip silently") so shipped users without the skill are unaffected. The renderer is stdlib-only and unit-tested in `tests/test_render_brief.py` (which skips when the skill dir is absent).
 
 ## Non-obvious constraints
 

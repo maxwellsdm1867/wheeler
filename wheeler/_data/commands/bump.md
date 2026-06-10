@@ -31,6 +31,8 @@ Run `git log` from the last version tag to HEAD. Group commits into themes (not 
 
 Present the changelog to the scientist for approval before writing anything. They may want to reword, reorder, or drop items.
 
+**Keep only the last three What's New entries.** The README `## What's New` section holds at most three `<details>` version blocks: the new one (set `<details open>`) plus the two most recent prior versions. When you add the new entry at the top, delete the oldest block(s) so exactly three remain. Older history lives in git, not the README. Close the previously-open block (its `<details open>` becomes `<details>`) so only the newest is expanded.
+
 ## Step 3: Update version strings
 
 These are the known locations. Grep for the old version string to catch any others.

@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.7-blue" alt="v0.9.7">
+  <img src="https://img.shields.io/badge/v0.9.8-blue" alt="v0.9.8">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -90,14 +90,28 @@ Wheeler gives you a fluid cycle, not a rigid pipeline. Enter at any point, skip 
  reconvene        back to TOGETHER
 ```
 
+Every plan and execution renders a self-contained **visual brief**: the question and sub-questions, figure mockups (pre-registered sketches) paired with the real result figures, a pipeline flow chart, and the data sources. `/wh:discuss` reads that brief to interpret the results with you like a colleague, referencing figures by number and running quick checks against the data to strengthen or disprove a point.
+
+### A typical session
+
+The flow we design for, end to end:
+
+1. **`/wh:discuss`** — talk through the question until it is sharp. Wheeler asks like a colleague, grounds the conversation in what the graph already knows, and locks the decisions.
+2. **`/wh:plan`** — Wheeler structures the investigation into waves of tasks and, before any data is touched, **pre-registers the figures**: what each one plots and how competing hypotheses would look different in it. On approval it renders a **visual brief** (question, mockups, pipeline, data sources) so you react to a picture, not prose. Seeing the mockup often sends one more round of sharpening back into the plan.
+3. **`/wh:execute`** — Wheeler runs the WHEELER-assigned tasks, logs findings with full provenance, then regenerates the brief as a **report**: each pre-registered mockup now sits beside its real result figure, success criteria are marked, and result tables tuck into dropdowns.
+4. **`/wh:discuss`** (again, on the results) — hand Wheeler the brief and interpret together: what holds, what is fragile, what the next question is. Wheeler references figures by number, pulls related findings from the graph, and can run a quick check against the data to settle a contested point, registering whatever you endorse back into the graph.
+5. **`/wh:write`** drafts from the endorsed findings with strict citations, or **`/wh:plan`** opens the follow-up investigation. **`/wh:close`** sweeps the session into a synthesis.
+
+You can enter at any step, skip stages, or loop steps 2 to 4 as the work demands.
+
 ### Commands
 
 | Command | What it does |
 |---------|-------------|
 | `/wh:start` | Route to the right command (or type your task) |
-| `/wh:discuss` | Sharpen the research question through structured dialogue |
-| `/wh:plan` | Structure tasks with waves, assignees, checkpoints |
-| `/wh:execute` | Run analyses, log findings to graph with provenance |
+| `/wh:discuss` | Think like a colleague: sharpen the question, or interpret a plan's results from its brief (runs checks against the data, cites figures by number) |
+| `/wh:plan` | Structure tasks with waves, assignees, checkpoints; render a visual brief with figure mockups |
+| `/wh:execute` | Run analyses, log findings with provenance; pair mockups with the real result figures in a report |
 | `/wh:write` | Draft text with strict citation enforcement |
 | `/wh:ingest` | Bootstrap graph from existing code, data, papers |
 | `/wh:add` | General-purpose ingest: text, DOI, file, URL |
@@ -179,6 +193,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.8</b> (2026-06-10): visual research briefs</summary>
+
+- **Visual research briefs**: `/wh:plan` and `/wh:execute` now render a self-contained HTML brief (`.plans/brief/<investigation>.html`) that leads with the question and sub-questions, then figure mockups (inline SVG or synthetic-data PNG) paired with the real result figures at execute time, a pipeline flow chart, data sources linked into it, and collapsible data tables. Numbered sections and figures with legends so the brief is referenceable in discussion. Accessible by default: light/dark toggle, colorblind-safe status chips, WCAG-AA contrast.
+- **Figure intent is pre-registered**: `/wh:plan` draws out what each figure will plot and how competing hypotheses would look different in it, then mocks it up so the scientist reacts before any data is touched.
+- **`/wh:discuss` is now a two-mode colleague**: sharpen a question before planning, or interpret a plan's results from its brief or md file after it runs. Interpret mode references the report by figure and section number, pulls relevant graph context, runs scoped code to strengthen or disprove a point, and registers checks back into the graph with full provenance.
+- **Test suite at 1713** (was 1707 in v0.9.7).
+
+</details>
+
+<details>
 <summary><b>v0.9.7</b> (2026-06-10): bug queue cleared</summary>
 
 - **Nine reported bugs fixed (#56 through #64)**: every open issue reproduced, fixed, and verified end-to-end against a live graph.
@@ -194,135 +218,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 
 - **Cite this repository**: Added `CITATION.cff` so GitHub renders a one-click "Cite this repository" button (APA and BibTeX export), plus a Citation section in the README with a ready-to-paste BibTeX entry.
 - **Authorship recorded**: Arthur Hong and Fred Rieke are now listed as authors and copyright holders across `pyproject.toml`, `LICENSE`, and the citation metadata.
-
-</details>
-
-<details>
-<summary><b>v0.9.5</b> (2026-05-25) — Acts grounded in the graph</summary>
-
-- **Acts sweep intermediate work to the graph**: `/wh:pause`, `/wh:close`, `/wh:reconvene`, `/wh:write`, `/wh:pair`, `/wh:discuss`, `/wh:chat`, `/wh:note`, and `/wh:compile` now register conversational artifacts (findings, decisions, sub-questions) as Findings, Notes, and OpenQuestions instead of losing them in prose summaries.
-- **Open threads surface on resume**: `/wh:resume` queries OpenQuestion nodes linked to the active plan and surfaces them with `[Q-xxxx]` labels so the scientist sees what's still unresolved across sessions.
-- **UPDATE existing graph state**: acts now mark answered OpenQuestions, link new findings to relevant hypotheses (`SUPPORTS`/`CONTRADICTS`) on confirm, and update plan status when criteria are met.
-- **Close prompts at natural session ends**: acts that reach a wrap-up moment now suggest `/wh:close` so the orphan sweep and synthesis actually runs.
-- **CRUD-at-right-time pattern codified**: `.claude/commands/wh/CLAUDE.md` documents the pattern so future acts inherit it (READ at start, CREATE on emergence, UPDATE on conversation, prompt close at natural ends).
-
-</details>
-
-<details>
-<summary><b>v0.9.4</b> (2026-05-20) — PyPI show_node fix, triple-write completeness, act prompt polish</summary>
-
-- **PyPI `show_node` works again**: anchored two unanchored `.gitignore` lines (`knowledge/`, `synthesis/`) that caused hatch to silently drop the `wheeler.knowledge` subpackage from every published wheel since v0.9.0. Any tool that imports `wheeler.knowledge` (most notably `show_node`) raised `ModuleNotFoundError` in installs; this release ships the full subpackage. (#54)
-- **Triple-write completeness**: `migrate` and provenance paths now fan out `Execution` writes to JSON and synthesis alongside the graph node, Finding nodes carry an optional `title` field so figure triple-lock can label artifacts cleanly, and synthesis is regenerated on every provenance-completing mutation. (#37, #47)
-- **Slash-command prompt fixes**: plan-mode execute renders anchor figures inline, `/wh:dream` runs a framing-divergence detection phase before consolidation, the researcher agent can write and edit notes during research, act prompts include a human-readable label alongside `[NODE_ID]` references, and scientific-reasoning prose and canonical export paths are tightened across acts. (#38, #43, #44, #45, #52)
-- **Hooks and dev workflow**: pre-commit and pre-push hooks isolate the pytest subprocess environment so host vars (including `ANTHROPIC_API_KEY`) cannot leak into the test runner. `.gitignore` excludes dev-only `.claude/skills/`, `.claude/agents/issue-*.md`, and `.worktrees/`.
-- **Test suite at 1661** (was 1553 in v0.9.3).
-
-</details>
-
-<details>
-<summary><b>v0.9.3</b> (2026-05-17) — Hands-free release pipeline</summary>
-
-- **`release.yml` reads `RELEASE_PAT`**: PAT-backed release creation so the resulting `release: published` event propagates to `publish.yml`. Version bump → `git push` → PyPI is now end-to-end automatic (gated on a single reviewer click for the `pypi` environment).
-
-</details>
-
-<details>
-<summary><b>v0.9.2</b> (2026-05-17) — Packaging rewrite</summary>
-
-- **One-liner install**: `uvx wheeler init my-project` scaffolds a project and wires Claude Code in under 10 seconds (well under 30 with a warm cache).
-- **`wheeler init` command**: creates `.plans/`, `.wheeler/`, `wheeler.yaml`, and a project-local `.mcp.json` pointing at the installed MCP servers, then registers slash commands and agents in `~/.claude/`.
-- **`wheeler serve` and `wheeler doctor`**: explicit MCP-server boot for debugging, and a tabular sanity check covering Python, deps, console scripts, Claude Code, slash commands, and Neo4j connectivity.
-- **`wheeler --version` flag**: now works at the root level (the `wheeler version` subcommand is also retained).
-- **hatchling build backend**: replaces setuptools for simpler wheel builds. `dev` and `all` extras added.
-- **uv as the primary dev workflow**: `uv sync --extra dev` replaces the manual venv + pip dance. `uv.lock` is checked in.
-- **Test suite at 1553** (was 1545 in v0.9.1).
-
-</details>
-
-<details>
-<summary><b>v0.9.1</b> (2026-05-12) — Post-handoff bug sweep</summary>
-
-- **Restore verify on same Neo4j**: `wheeler restore --verify` now prefixes scratch-namespace node IDs so it works against the same Neo4j the archive was packed from (#29).
-- **Version stamping on bump**: `/wh:bump` now refreshes installed package metadata so `wheeler.__version__` (and HANDOFF.md / backup manifest) reflect the new version immediately (#30).
-- **Cypher error visibility**: The Neo4j circuit breaker no longer masks deterministic schema and syntax errors behind a generic "circuit breaker open" message; the original exception surfaces directly (#31).
-- **Embedder dimension in backups**: HANDOFF.md and the manifest report `dim 384` for fresh projects with no on-disk vectors, by reading the model registry instead of failing silently (#32).
-- **No more pydantic warning**: `DatasetModel.schema` was renamed to `column_schema` to stop shadowing pydantic's reserved attribute; the MCP/CLI parameter `schema` is unchanged for back-compat (#33).
-- **Test suite at 1545** (was 1534 in v0.9.0).
-
-</details>
-
-<details>
-<summary><b>v0.9.0</b> (2026-05-12) — Portable handoff and migration</summary>
-
-- **Portable archives**: `wheeler backup` now packs the full project tree (`.plans/`, `.notes/`, scripts, data) and rewrites artifact paths to a `${PROJECT}/` sentinel, so archives move cleanly between machines. Use `--scope graph-only` for the smaller v1-style metadata-only archive.
-- **Real restore**: `wheeler restore --fresh --target DIR` reconstitutes a Wheeler project on a new machine; `--merge --conflict {skip|replace|prefix}` imports into an existing one. `--verify` keeps its existing semantics.
-- **Manifest v2**: archives carry `archive_uuid`, SHA-256 `manifest_signature`, embedder identity, schema version, source machine info, and an `external_references` table for files outside the project root. Old (v1) archives still verify; restore requires v2.
-- **Self-documenting archives**: every archive ships a `HANDOFF.md` at its root with templated recipient instructions, readable without unpacking (`tar -xOzf <archive> HANDOFF.md`).
-- **Safety**: secret scan runs on every packed file; `wheeler.yaml` password is stripped to `${NEO4J_PASSWORD}`; `--allow-secrets` records offenders in the manifest.
-- **Test suite at 1534** (was 1379 in v0.8.0).
-
-</details>
-
-<details>
-<summary><b>v0.8.0</b> (2026-05-10) — Backup/restore, graph quality agents, provenance fixes</summary>
-
-- **Backup and restore (#27, #28)**: New `wheeler backup` Typer subcommand snapshots canonical state (knowledge/, synthesis/, .wheeler/, wheeler.yaml + live Neo4j dump) to a single tar.gz archive with manifest.json. New `wheeler restore --verify` validates restorability via project-tag isolation, no Docker required.
-- **Graph quality agents (#21)**: `/wh:graph-link` batch-proposes grouped Execution provenance for session orphans (companion to /wh:close). `/wh:graph-review` runs a non-destructive quality audit (wrong types, broken paths, duplicates, isolated subgraphs) with concrete suggested fixes.
-- **`ensure_artifact` auto-provenance (#24)**: passes `execution_kind`, `used_entities`, `execution_description` through to handlers so PL- and other artifact-type nodes get auto-created Executions with proper WAS_GENERATED_BY links instead of being born orphan. Same kwargs pass-through fixes a latent drop affecting all label branches; `add_script` and `add_paper` now also wire to `_complete_provenance`.
-- **`add_dataset` reference metadata (#17)**: optional `schema`, `source`, `parent_dataset`, `size`, `format_details` fields. `parent_dataset` automatically creates a `WAS_DERIVED_FROM` edge.
-- **/wh:close orphan-Cypher fix (#25)**: replaces broken `n.created`/epochMillis Cypher with `coalesce(n.updated, n.date)` ISO comparison. Previously the documented primary path silently returned zero rows on every session.
-- **/wh:handoff pre-flight (#26)**: handoff now runs a close-readiness check (`graph_gaps` + `graph_consistency_check`) before queueing background workers, prompts the user if drift exists, supports `--skip-close` opt-out.
-- **Test suite at 1379** (was 1276 in v0.7.0).
-
-</details>
-
-<details>
-<summary><b>v0.7.0</b> (2026-04-20) — Graph-as-source-of-truth enforcement</summary>
-
-- **Graph-first plan lifecycle**: Every `/wh:*` act now queries the graph first for plan identity, status, and session state. Filesystem files (STATE.md, .continue-here.md) become rendered views, not authoritative sources.
-- **`query_plans` tool**: New MCP tool to search Plan nodes by keyword and status (draft/approved/in-progress/completed), available on all servers. 49 tools total.
-- **Read-before-mutate hooks**: Claude Code PreToolUse hook blocks file-bearing mutations unless the file was Read or Written first in the session, enforcing grounded provenance.
-- **Process provenance**: Pause, handoff, and close events are recorded as Execution nodes in the graph, making the research process itself auditable.
-- **Session continuation notes**: `/wh:pause` writes continuation context as graph-backed ResearchNote nodes linked to the active plan, not just a flat file.
-
-</details>
-
-<details>
-<summary><b>v0.6.3</b> (2026-04-19) — Proactive context, cleaner search results</summary>
-
-- **Proactive graph context**: Research acts (plan, execute, pair, chat) now call `search_context` automatically when the input is about research topics, returning clean summarized results instead of raw model dumps.
-- **Neo4j connection diagnostics**: Helpful error messages when Neo4j Desktop isn't running, auth fails, or the database is unreachable.
-- **Execution tracking**: `add_execution` and `query_executions` MCP tools wired up across all five servers. 46 tools total.
-- **`/wh:bump` skill**: Version bump workflow that updates version strings, doc counts, and changelog in one command.
-
-</details>
-
-<details>
-<summary><b>v0.6.2</b> (2026-04-18) — Auto-routing, /wh:start entry point</summary>
-
-- **Auto-routing**: 20 command descriptions rewritten with narrow triggers requiring explicit Wheeler/knowledge-graph vocabulary. Commands auto-fire only for unambiguous Wheeler actions, never for general coding.
-- **`/wh:start` router**: User-invoked entry point that analyzes your task and routes to the best `/wh:*` command. Accepts optional argument for immediate routing or asks interactively.
-- **Routing test suite**: 137 new tests covering tree sync, trigger patterns, domain anchoring, router structure, and false-positive resistance. Total: 1018 tests.
-
-</details>
-
-<details>
-<summary><b>v0.6.1</b> (2026-04-16) — Bug fixes, update_node, parameter discoverability</summary>
-
-- **Stale driver fix (#9)**: MCP servers no longer return zeros on first `graph_status` call.
-- **`update_node` tool (#16)**: update fields on existing nodes after creation. Full triple-write, field validation, change_log, embedding updates. 44 tools total.
-- **`graph_context` topic filter (#10)**: optional `topic` parameter for filtered context injection.
-- **Parameter discoverability (#11-14)**: `link_nodes` `relationship` parameter now uses `Literal` type (JSON schema enum). `add_note` docstring updated. Priority scale clarified.
-- **Ingest data source discovery (#15)**: workspace scanner detects `.db`/`.sqlite`/`.sqlite3`. Phase 0 in `/wh:ingest` asks about primary data sources.
-
-</details>
-
-<details>
-<summary><b>v0.6.0</b> (2026-04-08) — Infrastructure hardening, GraphRAG, split MCP servers</summary>
-
-- **Infrastructure hardening**: circuit breaker, consistency checker, trace IDs, write receipts, node change log, task contracts.
-- **GraphRAG enhancements**: graph-expanded local search (`search_context`), Neo4j fulltext index, community detection, entity resolution (`propose_merge` + `execute_merge`), retrieval quality metrics.
-- **Split MCP servers**: monolith available as 4 focused servers (`wheeler_core`, `wheeler_query`, `wheeler_mutations`, `wheeler_ops`).
 
 </details>
 
@@ -370,7 +265,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1707 tests
+tests/                        # 1713 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -382,7 +277,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1707 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1713 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
