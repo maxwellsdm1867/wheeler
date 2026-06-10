@@ -63,6 +63,22 @@ _PROVENANCE_RULES: dict[str, list[tuple[str, str, str]]] = {
     "Document": [("APPEARS_IN", "Finding|Paper|Script|Hypothesis", "in")],
 }
 
+# Session-synthesis Documents are produced by /wh:close, which links them
+# WAS_GENERATED_BY the close Execution. That edge IS their provenance; they
+# never receive APPEARS_IN edges from source nodes.
+_SESSION_SYNTHESIS_RULES: list[tuple[str, str, str]] = [
+    ("WAS_GENERATED_BY", "Execution", "out"),
+]
+
+
+def _provenance_rules_for(
+    label: str, node_data: dict
+) -> list[tuple[str, str, str]]:
+    """Pick the provenance rules for a node, honoring per-node exemptions."""
+    if label == "Document" and node_data.get("section") == "session-synthesis":
+        return _SESSION_SYNTHESIS_RULES
+    return _PROVENANCE_RULES.get(label, [])
+
 
 async def validate_citations(
     text: str, config: WheelerConfig
@@ -145,8 +161,9 @@ async def validate_citations(
                 # Step 3: Provenance check — single query per rule
                 prov_status = CitationStatus.VALID
                 prov_detail = ""
-                if label in _PROVENANCE_RULES:
-                    for rel_pattern, target_pattern, direction in _PROVENANCE_RULES[label]:
+                prov_rules = _provenance_rules_for(label, found_nodes[node_id])
+                if prov_rules:
+                    for rel_pattern, target_pattern, direction in prov_rules:
                         if direction == "out":
                             match_frag = (
                                 f"MATCH (n:{label} {{id: $id}})"

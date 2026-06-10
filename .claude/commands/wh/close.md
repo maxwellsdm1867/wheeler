@@ -51,10 +51,11 @@ Do the sweep first so the synthesis can cite a fully-linked graph.
 ## Phase 1: Orphan Sweep
 
 ### 1.1 Determine the session window
-The session window is "since the last close." Find it via Cypher:
+The session window is "since the last close." Find it via Cypher. Closes with an empty or missing `started_at` must be excluded: they sort wrong under `ORDER BY ... DESC` and would silently pull the boundary back to an older close.
 
 ```cypher
 MATCH (x:Execution {kind: "close"})
+WHERE x.started_at IS NOT NULL AND x.started_at <> ""
 RETURN x.started_at AS last_close
 ORDER BY x.started_at DESC LIMIT 1
 ```
@@ -62,6 +63,20 @@ ORDER BY x.started_at DESC LIMIT 1
 - If a row returns, use `last_close` as the window start.
 - If no row, default to the last 24 hours.
 - Remember this timestamp as `$since`; both phases use it.
+
+Then check for malformed close boundaries. Never fall back silently:
+
+```cypher
+MATCH (x:Execution {kind: "close"})
+WHERE x.started_at IS NULL OR x.started_at = ""
+RETURN x.id AS id, x.description AS description, x.date AS date
+```
+
+If this returns any rows, warn the scientist before proceeding:
+
+> Warning: {N} close Execution(s) have no started_at ([X-xxxx] "{description}"). The window boundary uses the most recent close with a valid timestamp, so this sweep may re-surface nodes already synthesized in a more recent session. Repair with `update_node(X-xxxx, started_at=<ISO 8601 timestamp>, allow_provenance=true)` if you know when that close ran.
+
+Then continue with the valid `$since` boundary. The warning is mandatory; stopping is not.
 
 ### 1.2 Find recent entities
 Wheeler stores timestamps as ISO 8601 on `n.updated` (Plan, Document) and/or `n.date` (Finding, Hypothesis, Note, Question, Dataset, Paper). The graph schema does not write `n.created`, so do not query it.

@@ -73,7 +73,7 @@ async def _complete_provenance(
         "kind": execution_kind,
         "agent_id": args.get("agent_id", "wheeler"),
         "status": "completed",
-        "started_at": args.get("started_at", now),
+        "started_at": args.get("started_at") or now,
         "ended_at": args.get("ended_at", now),
         "session_id": args.get("session_id", ""),
         "description": exec_desc,
@@ -448,6 +448,13 @@ async def add_plan(backend, args: dict) -> str:
 async def add_execution(backend, args: dict) -> str:
     node_id = args.get("id") or generate_node_id("X")
     now = _now()
+    # Default started_at back into args so all three triple-write layers agree.
+    # _write_knowledge_file (__init__.py) reads args verbatim, so defaulting only
+    # in the graph props below would leave knowledge/{id}.json with started_at=""
+    # (field-spec normalization sets the empty string). An empty started_at sorts
+    # incorrectly in the /wh:close boundary query (issue #58), so it must never
+    # reach any layer.
+    args["started_at"] = args.get("started_at") or now
     kind = args.get("kind", "")
     description = args.get("description", "")
     display_name = f"{kind}: {description[:30]}" if kind and description else kind or description[:40]
@@ -456,7 +463,7 @@ async def add_execution(backend, args: dict) -> str:
         "kind": kind,
         "agent_id": args.get("agent_id", "wheeler"),
         "status": args.get("status", "completed"),
-        "started_at": args.get("started_at", now),
+        "started_at": args["started_at"],
         "ended_at": args.get("ended_at", now),
         "session_id": args.get("session_id", ""),
         "description": description,
