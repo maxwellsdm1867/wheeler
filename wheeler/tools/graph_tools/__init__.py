@@ -192,7 +192,11 @@ TOOL_DEFINITIONS = [
             "executions, hypotheses without supporting findings, idle executions. "
             "Use in planning mode to propose next investigations."
         ),
-        "parameters": {},
+        "parameters": {
+            "limit": {"type": "integer", "description": "Max items per gap bucket (default 10)", "default": 10},
+            "offset": {"type": "integer", "description": "Items to skip per bucket, for pagination (default 0)", "default": 0},
+            "summary": {"type": "boolean", "description": "Compact mode: cap buckets at 3 items (counts with true totals are always included)", "default": False},
+        },
         "required": [],
     },
     {

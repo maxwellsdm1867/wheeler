@@ -181,22 +181,37 @@ async def graph_context(topic: str = "") -> str:
 
 @mcp.tool()
 @_logged
-async def graph_gaps() -> dict:
-    """Find gaps in the Wheeler knowledge graph: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates."""
-    result = await graph_tools.execute_tool("graph_gaps", {}, _config)
+async def graph_gaps(limit: int = 10, offset: int = 0, summary: bool = False) -> dict:
+    """Find gaps in the Wheeler knowledge graph: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates.
+
+    The response always includes a counts dict with true per-bucket
+    totals; total_gaps is the sum of those totals.
+
+    Args:
+        limit: Max items per gap bucket (default 10)
+        offset: Items to skip per bucket, for pagination (default 0)
+        summary: When true, cap each bucket at 3 items (compact output
+                 for large graphs)
+    """
+    result = await graph_tools.execute_tool(
+        "graph_gaps",
+        {"limit": limit, "offset": offset, "summary": summary},
+        _config,
+    )
     gaps = json.loads(result)
 
     # Enrich with near-duplicate detection from embeddings (if available)
     try:
         store = _get_embedding_store()
         pairs = store.find_similar_pairs(threshold=0.85)
+        pair_cap = 3 if summary else 10
         gaps["potential_duplicates"] = [
             {
-                "node_a": {"id": a.node_id, "label": a.label, "text": a.text},
-                "node_b": {"id": b.node_id, "label": b.label, "text": b.text},
+                "node_a": {"id": a.node_id, "label": a.label, "text": (a.text or "")[:300]},
+                "node_b": {"id": b.node_id, "label": b.label, "text": (b.text or "")[:300]},
                 "similarity": round(score, 4),
             }
-            for a, b, score in pairs[:10]  # cap at 10 pairs
+            for a, b, score in pairs[:pair_cap]
         ]
         gaps["total_gaps"] = gaps.get("total_gaps", 0) + len(gaps["potential_duplicates"])
     except (ImportError, Exception):
@@ -218,7 +233,17 @@ async def show_node(node_id: str) -> dict:
     read findings, hypotheses, questions, papers, etc. without needing
     a graph query.
     """
-    from wheeler.knowledge import store
+    try:
+        from wheeler.knowledge import store
+    except ImportError as exc:
+        return {
+            "error": (
+                f"Cannot read node files: {exc}. The wheeler.knowledge "
+                "subpackage is missing from this installation (known defect "
+                "in wheels built before v0.9.4). Reinstall with: "
+                "pip install --upgrade --force-reinstall wheeler"
+            )
+        }
 
     knowledge_path = Path(_config.knowledge_path)
     try:
