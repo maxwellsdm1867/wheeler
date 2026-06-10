@@ -1006,7 +1006,7 @@ async def execute_tool(
                         "kind": prov.get("execution_kind", ""),
                         "agent_id": args.get("agent_id", "wheeler"),
                         "status": "completed",
-                        "started_at": args.get("started_at", exec_now),
+                        "started_at": args.get("started_at") or exec_now,
                         "ended_at": args.get("ended_at", exec_now),
                         "session_id": args.get("session_id", ""),
                         "description": exec_desc,

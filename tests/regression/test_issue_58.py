@@ -192,3 +192,68 @@ class TestIssue58:
             f"issue #58. Ensure add_execution defaults started_at to _now() "
             f"when kind='close' and started_at is not provided."
         )
+
+    @pytest.mark.asyncio
+    async def test_close_execution_started_at_consistent_across_triple_write(
+        self, e2e_config
+    ):
+        """started_at must be non-empty in ALL THREE triple-write layers.
+
+        The original #58 fix defaulted started_at only in the graph props, but
+        _write_knowledge_file reads args verbatim, so knowledge/{id}.json kept
+        started_at="" (the field-spec default). That drift means the JSON layer
+        disagrees with the graph layer. graph_consistency_check would flag it and
+        any consumer reading the JSON layer for the boundary would still break.
+
+        The extended fix defaults started_at back into args inside add_execution
+        so the graph node, knowledge/{id}.json, and synthesis/{id}.md all carry
+        the same non-empty timestamp.
+        """
+        from pathlib import Path
+
+        from wheeler.tools.graph_tools import execute_tool
+        from wheeler.graph.driver import get_async_driver
+
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # Create a close Execution without specifying started_at
+        result = json.loads(await execute_tool(
+            "add_execution",
+            {
+                "kind": "close",
+                "description": "Test triple-write started_at for issue #58",
+            },
+            e2e_config,
+        ))
+        exec_id = result["node_id"]
+        await _tag(driver, db, exec_id)
+
+        # Layer 1: graph
+        async with driver.session(database=db) as session:
+            record = await (await session.run(
+                "MATCH (x:Execution {id: $id}) RETURN x.started_at AS s",
+                id=exec_id,
+            )).single()
+        graph_started_at = record["s"] if record else None
+        assert graph_started_at not in ("", None), (
+            f"graph layer: Execution {exec_id} has empty started_at"
+        )
+
+        # Layer 2: knowledge/{id}.json
+        json_path = Path(e2e_config.knowledge_path) / f"{exec_id}.json"
+        assert json_path.exists(), f"knowledge JSON missing for {exec_id}"
+        json_started_at = json.loads(json_path.read_text()).get("started_at")
+        assert json_started_at not in ("", None), (
+            f"ISSUE #58 DRIFT: knowledge/{exec_id}.json has empty/null "
+            f"started_at='{json_started_at}' while the graph layer has "
+            f"'{graph_started_at}'. The triple-write layers disagree; "
+            f"add_execution must default started_at into args so every layer "
+            f"persists the same value."
+        )
+
+        # The two layers must carry the SAME value (no silent divergence).
+        assert json_started_at == graph_started_at, (
+            f"ISSUE #58 DRIFT: started_at differs across layers "
+            f"(graph='{graph_started_at}', json='{json_started_at}')."
+        )
