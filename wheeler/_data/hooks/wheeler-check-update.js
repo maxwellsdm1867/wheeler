@@ -99,10 +99,25 @@ const child = spawn(process.execPath, ['-e', `
 
   (async () => {
     const latest = await checkGitHub() || await checkPyPI();
+    let updateAvailable = latest ? isNewer(installed, latest) : false;
+    let latestKnown = latest || 'unknown';
+    if (!latest) {
+      // Offline or check failed: keep the previously cached flag instead of
+      // clobbering a known update_available=true with false. Only valid if
+      // the cached entry refers to the same installed version (an upgrade
+      // must still clear the badge).
+      try {
+        const prev = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        if (prev && prev.installed === installed) {
+          updateAvailable = !!prev.update_available;
+          if (prev.latest && prev.latest !== 'unknown') latestKnown = prev.latest;
+        }
+      } catch (e) {}
+    }
     const result = {
-      update_available: latest ? isNewer(installed, latest) : false,
+      update_available: updateAvailable,
       installed,
-      latest: latest || 'unknown',
+      latest: latestKnown,
       checked: Math.floor(Date.now() / 1000)
     };
     fs.writeFileSync(cacheFile, JSON.stringify(result));

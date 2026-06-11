@@ -957,6 +957,58 @@ def test_check_version_cached_stale_cache(tmp_path, monkeypatch):
     assert update_available is True
 
 
+def test_check_version_cached_offline_preserves_cached_flag(tmp_path, monkeypatch):
+    """A failed network check must not clobber a cached update_available=True."""
+    cache_path = tmp_path / "version-check.json"
+    monkeypatch.setattr(installer, "VERSION_CACHE_PATH", cache_path)
+
+    # Stale cache recording a known available update for the current install
+    cache = {
+        "installed": wheeler.__version__,
+        "latest": "99.0.0",
+        "update_available": True,
+        "checked_at": "2020-01-01T00:00:00+00:00",
+    }
+    cache_path.write_text(json.dumps(cache))
+
+    # Offline: both checkers fail
+    monkeypatch.setattr(installer, "_check_github_latest", lambda: None)
+    monkeypatch.setattr(installer, "_check_pypi_latest", lambda: None)
+
+    installed, latest, update_available = installer.check_version_cached()
+
+    assert latest == "99.0.0"
+    assert update_available is True
+    # And the rewritten cache keeps the flag too
+    assert installer._read_version_cache()["update_available"] is True
+
+
+def test_check_version_cached_offline_after_upgrade_clears_flag(
+    tmp_path, monkeypatch
+):
+    """The offline fallback must not resurrect a flag from a prior version."""
+    cache_path = tmp_path / "version-check.json"
+    monkeypatch.setattr(installer, "VERSION_CACHE_PATH", cache_path)
+
+    # Stale cache from BEFORE an upgrade: installed no longer matches
+    cache = {
+        "installed": "0.0.1",
+        "latest": "99.0.0",
+        "update_available": True,
+        "checked_at": "2020-01-01T00:00:00+00:00",
+    }
+    cache_path.write_text(json.dumps(cache))
+
+    monkeypatch.setattr(installer, "_check_github_latest", lambda: None)
+    monkeypatch.setattr(installer, "_check_pypi_latest", lambda: None)
+
+    installed, latest, update_available = installer.check_version_cached()
+
+    assert installed == wheeler.__version__
+    assert latest is None
+    assert update_available is False
+
+
 # ---------------------------------------------------------------------------
 # package data sync guard
 # ---------------------------------------------------------------------------

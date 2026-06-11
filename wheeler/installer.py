@@ -574,6 +574,13 @@ def check_version_cached(
 
     # Cache is stale or missing — do a fresh check
     installed, latest, update_available = check_version()
+    if latest is None and cache is not None and cache.get("installed") == installed:
+        # Offline or check failed: keep the previously cached flag instead of
+        # clobbering a known update_available=true with false. Only valid if
+        # the cached entry refers to the same installed version (an upgrade
+        # must still clear the badge).
+        latest = cache.get("latest")
+        update_available = bool(cache.get("update_available", False))
     _write_version_cache(installed, latest, update_available)
     return installed, latest, update_available
 
