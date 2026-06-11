@@ -247,12 +247,33 @@ def _deregister_mcp_servers() -> None:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
 
+def _is_uv_tool_install() -> bool:
+    """Best-effort check for a working uv when pip is unavailable.
+
+    A venv without pip is almost always uv-managed; confirm uv is on
+    PATH and responds before routing the upgrade through it.
+    """
+    if shutil.which("uv") is None:
+        return False
+    probe = subprocess.run(
+        ["uv", "tool", "list"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return probe.returncode == 0
+
+
 def _detect_install_source() -> str:
     """Detect how wheeler was installed.
 
     Returns:
-        "editable" | "github" | "pypi"
+        "editable" | "uv" | "github" | "pypi"
     """
+    exe_parts = Path(sys.executable).parts
+    for i in range(len(exe_parts) - 1):
+        if exe_parts[i] == "uv" and exe_parts[i + 1] == "tools":
+            return "uv"
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "show", "wheeler"],
@@ -266,6 +287,8 @@ def _detect_install_source() -> str:
                     return "editable"
                 if line.startswith("Location:") and "site-packages" not in line:
                     return "editable"
+        elif _is_uv_tool_install():
+            return "uv"
     except Exception:
         pass
     return "github"
@@ -275,7 +298,7 @@ def update(source: str | None = None) -> str:
     """Backup local mods, upgrade wheeler, then reinstall files.
 
     Args:
-        source: Force install source ("pypi", "github", or "editable").
+        source: Force install source ("pypi", "github", "editable", or "uv").
                 Auto-detected if None.
 
     Returns:
@@ -298,6 +321,13 @@ def update(source: str | None = None) -> str:
         )
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "-e", str(repo_root)],
+            check=True,
+        )
+    elif source == "uv":
+        # uv tool venvs ship without pip; uv reinstalls from the
+        # original spec (git or PyPI) on upgrade.
+        subprocess.run(
+            ["uv", "tool", "upgrade", "wheeler"],
             check=True,
         )
     elif source == "github":

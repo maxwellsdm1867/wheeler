@@ -553,11 +553,11 @@ def cmd_update(
         None,
         "--source",
         "-s",
-        help="Install source: pypi, github, or editable (auto-detected if omitted)",
+        help="Install source: pypi, github, editable, or uv (auto-detected if omitted)",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ) -> None:
-    """Upgrade Wheeler via pip and reinstall files."""
+    """Upgrade Wheeler (pip or uv, per install source) and reinstall files."""
     import wheeler
     from wheeler.installer import (
         _detect_install_source,
@@ -604,7 +604,7 @@ def cmd_update(
             f"[green]Updated: {old_version} → {new_version}[/green]"
         )
     except subprocess.CalledProcessError as exc:
-        console.print(f"[red]pip upgrade failed:[/red] {exc}")
+        console.print(f"[red]Upgrade failed:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
         console.print(f"[red]Update failed:[/red] {exc}")
