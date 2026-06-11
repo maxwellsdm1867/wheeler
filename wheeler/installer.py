@@ -44,7 +44,8 @@ def install(link: bool = False) -> dict[str, str]:
 
     Installs commands, agents, and hooks. Registers the SessionStart
     hook in ~/.claude/settings.json so the update checker runs on
-    every session.
+    every session, and the statusLine command so the update badge
+    is rendered when an update is available.
 
     Args:
         link: If True, create symlinks instead of copies.
@@ -88,7 +89,10 @@ def _register_hooks() -> None:
     """Register Wheeler hooks in ~/.claude/settings.json.
 
     Adds the SessionStart hook for update checking without
-    overwriting existing hooks from other tools (e.g. GSD).
+    overwriting existing hooks from other tools (e.g. GSD), and
+    registers the top-level statusLine command that renders the
+    update badge. A pre-existing non-Wheeler statusLine is left
+    untouched.
     """
     settings_path = INSTALL_BASE / "settings.json"
     if settings_path.exists():
@@ -119,6 +123,20 @@ def _register_hooks() -> None:
         session_start.append({
             "hooks": [{"type": "command", "command": hook_command}]
         })
+
+    # statusLine is a top-level settings key in Claude Code (not part of
+    # the hooks object). It renders the update badge from the version
+    # cache. Never clobber a custom statusLine the user already set.
+    statusline_path = str(INSTALL_BASE / HOOKS_REL / "wheeler-statusline.js")
+    statusline_command = f'node "{statusline_path}"'
+    existing_statusline = settings.get("statusLine")
+    if existing_statusline is None:
+        settings["statusLine"] = {"type": "command", "command": statusline_command}
+    elif (
+        isinstance(existing_statusline, dict)
+        and "wheeler-statusline" in existing_statusline.get("command", "")
+    ):
+        existing_statusline["command"] = statusline_command
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
@@ -168,8 +186,21 @@ def _deregister_hooks() -> None:
         )
     ]
 
+    changed = False
     if len(filtered) != len(session_start):
         hooks["SessionStart"] = filtered
+        changed = True
+
+    # Remove the statusLine only if it is the Wheeler-owned one
+    statusline = settings.get("statusLine")
+    if (
+        isinstance(statusline, dict)
+        and "wheeler-statusline" in statusline.get("command", "")
+    ):
+        del settings["statusLine"]
+        changed = True
+
+    if changed:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
 

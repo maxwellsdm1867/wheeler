@@ -336,6 +336,59 @@ def test_uninstall_removes_hook_files(fake_home, fake_data, monkeypatch):
     assert not (fake_home / ".claude" / "hooks" / "wheeler-statusline.js").exists()
 
 
+def test_install_registers_statusline(fake_home, fake_data, monkeypatch):
+    """install() registers the top-level statusLine command."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+
+    installer.install()
+
+    settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+    statusline = settings.get("statusLine")
+    assert isinstance(statusline, dict)
+    assert statusline.get("type") == "command"
+    assert "wheeler-statusline" in statusline.get("command", "")
+
+
+def test_install_preserves_custom_statusline(fake_home, fake_data, monkeypatch):
+    """A pre-existing non-Wheeler statusLine must not be overwritten."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+
+    settings_path = fake_home / ".claude" / "settings.json"
+    custom = {"type": "command", "command": "node my-custom-statusline.js"}
+    settings_path.write_text(json.dumps({"statusLine": custom}))
+
+    installer.install()
+
+    settings = json.loads(settings_path.read_text())
+    assert settings["statusLine"] == custom
+
+
+def test_uninstall_deregisters_statusline(fake_home, fake_data, monkeypatch):
+    """uninstall() removes the Wheeler-owned statusLine entry."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+
+    installer.install()
+    installer.uninstall()
+
+    settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+    assert "statusLine" not in settings
+
+
+def test_uninstall_preserves_custom_statusline(fake_home, fake_data, monkeypatch):
+    """uninstall() leaves a non-Wheeler statusLine in place."""
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+
+    settings_path = fake_home / ".claude" / "settings.json"
+    custom = {"type": "command", "command": "node my-custom-statusline.js"}
+    settings_path.write_text(json.dumps({"statusLine": custom}))
+
+    installer.install()
+    installer.uninstall()
+
+    settings = json.loads(settings_path.read_text())
+    assert settings.get("statusLine") == custom
+
+
 def test_register_hooks_malformed_settings(fake_home, monkeypatch):
     """Malformed settings.json should be replaced cleanly."""
     settings_path = fake_home / ".claude" / "settings.json"
