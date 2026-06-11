@@ -379,7 +379,20 @@ def update(source: str | None = None) -> str:
             check=True,
         )
 
-    install()
+    # Reinstall files by re-executing the FRESHLY UPGRADED wheeler
+    # entrypoint, not by calling install() in-process: the running
+    # interpreter still holds the pre-upgrade code, so an in-process
+    # install would stamp the manifest with the old version and skip any
+    # registration logic that is new in the version just installed.
+    new_wheeler = Path(sys.executable).parent / "wheeler"
+    try:
+        if new_wheeler.exists():
+            subprocess.run([str(new_wheeler), "install"], check=True)
+        else:
+            install()
+    except subprocess.CalledProcessError:
+        # A re-exec hiccup must never leave the upgrade without files.
+        install()
 
     # Invalidate cache so next check picks up the new version
     if VERSION_CACHE_PATH.exists():
@@ -538,13 +551,20 @@ def _read_version_cache() -> dict | None:
 def _write_version_cache(
     installed: str, latest: str | None, update_available: bool
 ) -> None:
-    """Write version check result to cache."""
+    """Write version check result to cache.
+
+    Writes both timestamp keys: "checked_at" (ISO string, the Python
+    convention) and "checked" (epoch seconds, the JS hook convention)
+    so either reader accepts a cache written by the other.
+    """
     VERSION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
     cache = {
         "installed": installed,
         "latest": latest,
         "update_available": update_available,
-        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "checked_at": now.isoformat(),
+        "checked": int(now.timestamp()),
     }
     try:
         VERSION_CACHE_PATH.write_text(json.dumps(cache, indent=2) + "\n")
@@ -568,7 +588,15 @@ def check_version_cached(
 
     if cache is not None:
         try:
-            checked = datetime.fromisoformat(cache["checked_at"])
+            # Accept either timestamp convention: "checked_at" (ISO,
+            # Python-written) or "checked" (epoch seconds, written by the
+            # wheeler-check-update.js SessionStart hook).
+            if "checked_at" in cache:
+                checked = datetime.fromisoformat(cache["checked_at"])
+            else:
+                checked = datetime.fromtimestamp(
+                    int(cache["checked"]), tz=timezone.utc
+                )
             age_hours = (
                 datetime.now(timezone.utc) - checked
             ).total_seconds() / 3600
@@ -578,7 +606,7 @@ def check_version_cached(
                     cache.get("latest"),
                     cache.get("update_available", False),
                 )
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             pass
 
     # Cache is stale or missing — do a fresh check

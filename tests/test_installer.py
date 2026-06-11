@@ -983,6 +983,64 @@ def test_check_version_cached_stale_cache(tmp_path, monkeypatch):
     assert update_available is True
 
 
+def test_check_version_cached_accepts_hook_schema(tmp_path, monkeypatch):
+    """A cache written by wheeler-check-update.js (epoch 'checked' key,
+    no 'checked_at') must be treated as fresh, not silently discarded."""
+    import time
+
+    cache_path = tmp_path / "version-check.json"
+    monkeypatch.setattr(installer, "VERSION_CACHE_PATH", cache_path)
+
+    # Hook-style cache: epoch seconds, written moments ago
+    cache = {
+        "update_available": True,
+        "installed": wheeler.__version__,
+        "latest": "99.0.0",
+        "checked": int(time.time()),
+    }
+    cache_path.write_text(json.dumps(cache))
+
+    def no_network():
+        raise AssertionError("fresh hook cache should not trigger a network check")
+
+    monkeypatch.setattr(installer, "_check_github_latest", no_network)
+    monkeypatch.setattr(installer, "_check_pypi_latest", no_network)
+
+    installed, latest, update_available = installer.check_version_cached()
+
+    assert latest == "99.0.0"
+    assert update_available is True
+
+
+def test_update_reexecs_new_wheeler_for_install(tmp_path, monkeypatch):
+    """update() must reinstall files via the freshly upgraded wheeler
+    entrypoint, not the stale in-process install()."""
+    call_log = []
+
+    def fake_run(cmd, *args, **kwargs):
+        call_log.append([str(c) for c in cmd])
+        from unittest.mock import MagicMock
+
+        result = MagicMock()
+        result.returncode = 0
+        return result
+
+    def in_process_install():
+        raise AssertionError("in-process install() must not run when re-exec works")
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(installer, "install", in_process_install)
+    monkeypatch.setattr(installer, "backup_local_mods", lambda: None)
+    monkeypatch.setattr(installer, "VERSION_CACHE_PATH", tmp_path / "vc.json")
+
+    installer.update(source="uv")
+
+    wheeler_bin = str(Path(installer.sys.executable).parent / "wheeler")
+    assert [wheeler_bin, "install"] in call_log, (
+        f"Expected re-exec of {wheeler_bin} install. Call log: {call_log}"
+    )
+
+
 def test_check_version_cached_offline_preserves_cached_flag(tmp_path, monkeypatch):
     """A failed network check must not clobber a cached update_available=True."""
     cache_path = tmp_path / "version-check.json"

@@ -130,7 +130,8 @@ const child = spawn(process.execPath, ['-e', `
       update_available: updateAvailable,
       installed,
       latest: latestKnown,
-      checked: Math.floor(Date.now() / 1000)
+      checked: Math.floor(Date.now() / 1000),
+      checked_at: new Date().toISOString()
     };
     fs.writeFileSync(cacheFile, JSON.stringify(result));
   })();
