@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.9-blue" alt="v0.9.9">
+  <img src="https://img.shields.io/badge/v0.9.10-blue" alt="v0.9.10">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -193,6 +193,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.10</b> (2026-06-11): update chain hardened</summary>
+
+- **Updates apply fully on the first run**: `wheeler update` reinstalls files by re-executing the freshly upgraded wheeler, so registrations that are new in the version just installed (like the status bar badge) take effect immediately and the manifest records the correct version.
+- **Version check works without pip**: the PyPI check uses the JSON API via urllib instead of shelling out to pip (uv tool venvs have no pip); the GitHub check sends a proper User-Agent.
+- **The badge never lies**: the session hook probes known install locations when run with a minimal PATH, never claims an update when the installed version cannot be determined, and the CLI now accepts the hook-written cache instead of re-checking the network on every invocation.
+- **Test suite at 1733** (was 1730 in v0.9.9).
+
+</details>
+
+<details>
 <summary><b>v0.9.9</b> (2026-06-11): update path fixed end to end</summary>
 
 - **uv tool installs can update**: `wheeler update` now detects uv-managed installs and upgrades via `uv tool upgrade wheeler` instead of failing on the missing pip (#69).
@@ -209,17 +219,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 - **Figure intent is pre-registered**: `/wh:plan` draws out what each figure will plot and how competing hypotheses would look different in it, then mocks it up so the scientist reacts before any data is touched.
 - **`/wh:discuss` is now a two-mode colleague**: sharpen a question before planning, or interpret a plan's results from its brief or md file after it runs. Interpret mode references the report by figure and section number, pulls relevant graph context, runs scoped code to strengthen or disprove a point, and registers checks back into the graph with full provenance.
 - **Test suite at 1713** (was 1707 in v0.9.7).
-
-</details>
-
-<details>
-<summary><b>v0.9.7</b> (2026-06-10): bug queue cleared</summary>
-
-- **Nine reported bugs fixed (#56 through #64)**: every open issue reproduced, fixed, and verified end-to-end against a live graph.
-- **`show_node` and `graph_gaps` hardened**: `show_node` returns an actionable error instead of crashing when a packaged environment is missing `wheeler.knowledge`; `graph_gaps` gains `limit`/`offset`/`summary` parameters and per-bucket counts so its default response stays under the token cap on mature graphs.
-- **`/wh:close` made robust**: close Executions always carry a non-empty `started_at` across all three triple-write layers, the session-boundary query ignores malformed timestamps and warns instead of silently falling back, and session-synthesis Documents validate via their close-Execution provenance.
-- **Mutation fixes**: `update_node` field validation, figure titles, path dedup, and dataset type defaults (`#57`, `#59`, `#61`, `#62`); triple-write drift is now surfaced proactively in `graph_health` and the consistency summary (`#60`).
-- **DOI badge fixed**: the citation badge is now served through shields.io so it renders reliably alongside the other badges.
 
 </details>
 
@@ -267,7 +266,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1730 tests
+tests/                        # 1733 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -279,7 +278,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1730 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1733 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
