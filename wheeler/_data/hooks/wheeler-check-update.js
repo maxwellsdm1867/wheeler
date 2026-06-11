@@ -24,14 +24,25 @@ const child = spawn(process.execPath, ['-e', `
 
   const cacheFile = ${JSON.stringify(cacheFile)};
 
-  // Get installed version from wheeler
+  // Get installed version from wheeler. Hook environments (Claude Code
+  // SessionStart) often run with a minimal PATH that omits ~/.local/bin,
+  // so probe known install locations before giving up. '0.0.0' means
+  // "could not determine"; never claim an update against it.
   let installed = '0.0.0';
-  try {
-    const out = execSync('wheeler version 2>/dev/null || echo "Wheeler 0.0.0"',
-      { encoding: 'utf8', timeout: 5000, windowsHide: true });
-    const match = out.match(/Wheeler\\s+([\\d.]+)/);
-    if (match) installed = match[1];
-  } catch (e) {}
+  const home = process.env.HOME || require('os').homedir();
+  const candidates = [
+    'wheeler',
+    home + '/.local/bin/wheeler',
+    home + '/.local/share/uv/tools/wheeler/bin/wheeler',
+  ];
+  for (const cmd of candidates) {
+    try {
+      const out = execSync('"' + cmd + '" version 2>/dev/null',
+        { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const match = out.match(/Wheeler\\s+([\\d.]+)/);
+      if (match) { installed = match[1]; break; }
+    } catch (e) {}
+  }
 
   // Check GitHub releases API
   function checkGitHub() {
@@ -99,9 +110,10 @@ const child = spawn(process.execPath, ['-e', `
 
   (async () => {
     const latest = await checkGitHub() || await checkPyPI();
-    let updateAvailable = latest ? isNewer(installed, latest) : false;
+    const installedKnown = installed !== '0.0.0';
+    let updateAvailable = (installedKnown && latest) ? isNewer(installed, latest) : false;
     let latestKnown = latest || 'unknown';
-    if (!latest) {
+    if (!latest && installedKnown) {
       // Offline or check failed: keep the previously cached flag instead of
       // clobbering a known update_available=true with false. Only valid if
       // the cached entry refers to the same installed version (an upgrade

@@ -592,40 +592,66 @@ def urllib_error_for_test():
     return installer.urllib.error.URLError("Network unreachable")
 
 
-def test_check_pypi_parses_output(monkeypatch):
-    """PyPI check should parse pip index output format."""
-    def fake_run(*args, **kwargs):
-        class Result:
-            returncode = 0
-            stdout = "wheeler (1.5.0)\n  Available versions: 1.5.0, 1.4.0\n"
-        return Result()
+def test_check_pypi_parses_json(monkeypatch):
+    """PyPI check should parse the JSON API response (no pip involved)."""
+    class FakeResp:
+        def read(self):
+            return json.dumps({"info": {"version": "1.5.0"}}).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
 
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        installer.urllib.request, "urlopen", lambda *a, **kw: FakeResp()
+    )
     assert installer._check_pypi_latest() == "1.5.0"
 
 
-def test_check_pypi_no_match(monkeypatch):
-    """Unexpected pip output should return None."""
-    def fake_run(*args, **kwargs):
-        class Result:
-            returncode = 0
-            stdout = "some unexpected output\n"
-        return Result()
+def test_check_pypi_missing_version(monkeypatch):
+    """Response without info.version should return None."""
+    class FakeResp:
+        def read(self):
+            return json.dumps({"info": {}}).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
 
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        installer.urllib.request, "urlopen", lambda *a, **kw: FakeResp()
+    )
     assert installer._check_pypi_latest() is None
 
 
-def test_check_pypi_failure(monkeypatch):
-    """pip failure should return None."""
-    def fake_run(*args, **kwargs):
-        class Result:
-            returncode = 1
-            stdout = ""
-        return Result()
-
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+def test_check_pypi_network_error(monkeypatch):
+    """Network error should return None, not raise."""
+    monkeypatch.setattr(
+        installer.urllib.request,
+        "urlopen",
+        lambda *a, **kw: (_ for _ in ()).throw(urllib_error_for_test()),
+    )
     assert installer._check_pypi_latest() is None
+
+
+def test_check_pypi_does_not_require_pip(monkeypatch):
+    """The PyPI check must never shell out (uv tool venvs have no pip)."""
+    def boom(*args, **kwargs):
+        raise AssertionError("subprocess.run called by _check_pypi_latest")
+
+    class FakeResp:
+        def read(self):
+            return json.dumps({"info": {"version": "2.0.0"}}).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(installer.subprocess, "run", boom)
+    monkeypatch.setattr(
+        installer.urllib.request, "urlopen", lambda *a, **kw: FakeResp()
+    )
+    assert installer._check_pypi_latest() == "2.0.0"
 
 
 # ---------------------------------------------------------------------------

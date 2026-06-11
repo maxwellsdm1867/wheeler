@@ -456,7 +456,11 @@ def _check_github_latest() -> Optional[str]:
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     try:
         req = urllib.request.Request(
-            url, headers={"Accept": "application/vnd.github.v3+json"}
+            url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "wheeler-update-checker",
+            },
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
@@ -467,21 +471,26 @@ def _check_github_latest() -> Optional[str]:
 
 
 def _check_pypi_latest() -> Optional[str]:
-    """Check PyPI for the latest version via pip index."""
+    """Check PyPI's JSON API for the latest version.
+
+    Uses urllib rather than shelling out to pip so the check works in
+    pip-less environments such as uv tool venvs.
+    """
+    url = "https://pypi.org/pypi/wheeler/json"
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "index", "versions", "wheeler"],
-            capture_output=True,
-            text=True,
-            timeout=10,
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "wheeler-update-checker",
+            },
         )
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                if "wheeler" in line and "(" in line:
-                    return line.split("(")[1].split(")")[0].strip()
-    except (subprocess.TimeoutExpired, Exception):
-        pass
-    return None
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            version = data.get("info", {}).get("version")
+            return version or None
+    except Exception:
+        return None
 
 
 def _compare_versions(installed: str, latest: str) -> bool:
