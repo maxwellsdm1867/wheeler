@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.8-blue" alt="v0.9.8">
+  <img src="https://img.shields.io/badge/v0.9.9-blue" alt="v0.9.9">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -193,6 +193,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.9</b> (2026-06-11): update path fixed end to end</summary>
+
+- **uv tool installs can update**: `wheeler update` now detects uv-managed installs and upgrades via `uv tool upgrade wheeler` instead of failing on the missing pip (#69).
+- **Update badge actually appears**: `wheeler install` now registers the statusline hook as the top-level `statusLine` settings key, so the yellow `⬆ /wh:update` badge renders when an update is available; a custom statusLine is never overwritten (#70).
+- **Offline checks keep the badge**: a failed network check no longer overwrites a cached `update_available: true`, so the badge survives offline session starts.
+- **Test suite at 1730** (was 1713 in v0.9.8).
+
+</details>
+
+<details>
 <summary><b>v0.9.8</b> (2026-06-10): visual research briefs</summary>
 
 - **Visual research briefs**: `/wh:plan` and `/wh:execute` now render a self-contained HTML brief (`.plans/brief/<investigation>.html`) that leads with the question and sub-questions, then figure mockups (inline SVG or synthetic-data PNG) paired with the real result figures at execute time, a pipeline flow chart, data sources linked into it, and collapsible data tables. Numbered sections and figures with legends so the brief is referenceable in discussion. Accessible by default: light/dark toggle, colorblind-safe status chips, WCAG-AA contrast.
@@ -210,14 +220,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 - **`/wh:close` made robust**: close Executions always carry a non-empty `started_at` across all three triple-write layers, the session-boundary query ignores malformed timestamps and warns instead of silently falling back, and session-synthesis Documents validate via their close-Execution provenance.
 - **Mutation fixes**: `update_node` field validation, figure titles, path dedup, and dataset type defaults (`#57`, `#59`, `#61`, `#62`); triple-write drift is now surfaced proactively in `graph_health` and the consistency summary (`#60`).
 - **DOI badge fixed**: the citation badge is now served through shields.io so it renders reliably alongside the other badges.
-
-</details>
-
-<details>
-<summary><b>v0.9.6</b> (2026-06-01) — Software citation</summary>
-
-- **Cite this repository**: Added `CITATION.cff` so GitHub renders a one-click "Cite this repository" button (APA and BibTeX export), plus a Citation section in the README with a ready-to-paste BibTeX entry.
-- **Authorship recorded**: Arthur Hong and Fred Rieke are now listed as authors and copyright holders across `pyproject.toml`, `LICENSE`, and the citation metadata.
 
 </details>
 
@@ -265,7 +267,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1713 tests
+tests/                        # 1730 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -277,7 +279,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1713 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1730 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
