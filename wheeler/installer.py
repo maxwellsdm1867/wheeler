@@ -44,7 +44,8 @@ def install(link: bool = False) -> dict[str, str]:
 
     Installs commands, agents, and hooks. Registers the SessionStart
     hook in ~/.claude/settings.json so the update checker runs on
-    every session.
+    every session, and the statusLine command so the update badge
+    is rendered when an update is available.
 
     Args:
         link: If True, create symlinks instead of copies.
@@ -88,7 +89,10 @@ def _register_hooks() -> None:
     """Register Wheeler hooks in ~/.claude/settings.json.
 
     Adds the SessionStart hook for update checking without
-    overwriting existing hooks from other tools (e.g. GSD).
+    overwriting existing hooks from other tools (e.g. GSD), and
+    registers the top-level statusLine command that renders the
+    update badge. A pre-existing non-Wheeler statusLine is left
+    untouched.
     """
     settings_path = INSTALL_BASE / "settings.json"
     if settings_path.exists():
@@ -119,6 +123,20 @@ def _register_hooks() -> None:
         session_start.append({
             "hooks": [{"type": "command", "command": hook_command}]
         })
+
+    # statusLine is a top-level settings key in Claude Code (not part of
+    # the hooks object). It renders the update badge from the version
+    # cache. Never clobber a custom statusLine the user already set.
+    statusline_path = str(INSTALL_BASE / HOOKS_REL / "wheeler-statusline.js")
+    statusline_command = f'node "{statusline_path}"'
+    existing_statusline = settings.get("statusLine")
+    if existing_statusline is None:
+        settings["statusLine"] = {"type": "command", "command": statusline_command}
+    elif (
+        isinstance(existing_statusline, dict)
+        and "wheeler-statusline" in existing_statusline.get("command", "")
+    ):
+        existing_statusline["command"] = statusline_command
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
@@ -168,8 +186,21 @@ def _deregister_hooks() -> None:
         )
     ]
 
+    changed = False
     if len(filtered) != len(session_start):
         hooks["SessionStart"] = filtered
+        changed = True
+
+    # Remove the statusLine only if it is the Wheeler-owned one
+    statusline = settings.get("statusLine")
+    if (
+        isinstance(statusline, dict)
+        and "wheeler-statusline" in statusline.get("command", "")
+    ):
+        del settings["statusLine"]
+        changed = True
+
+    if changed:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
 
@@ -247,12 +278,33 @@ def _deregister_mcp_servers() -> None:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
 
+def _is_uv_tool_install() -> bool:
+    """Best-effort check for a working uv when pip is unavailable.
+
+    A venv without pip is almost always uv-managed; confirm uv is on
+    PATH and responds before routing the upgrade through it.
+    """
+    if shutil.which("uv") is None:
+        return False
+    probe = subprocess.run(
+        ["uv", "tool", "list"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return probe.returncode == 0
+
+
 def _detect_install_source() -> str:
     """Detect how wheeler was installed.
 
     Returns:
-        "editable" | "github" | "pypi"
+        "editable" | "uv" | "github" | "pypi"
     """
+    exe_parts = Path(sys.executable).parts
+    for i in range(len(exe_parts) - 1):
+        if exe_parts[i] == "uv" and exe_parts[i + 1] == "tools":
+            return "uv"
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "show", "wheeler"],
@@ -266,6 +318,8 @@ def _detect_install_source() -> str:
                     return "editable"
                 if line.startswith("Location:") and "site-packages" not in line:
                     return "editable"
+        elif _is_uv_tool_install():
+            return "uv"
     except Exception:
         pass
     return "github"
@@ -275,7 +329,7 @@ def update(source: str | None = None) -> str:
     """Backup local mods, upgrade wheeler, then reinstall files.
 
     Args:
-        source: Force install source ("pypi", "github", or "editable").
+        source: Force install source ("pypi", "github", "editable", or "uv").
                 Auto-detected if None.
 
     Returns:
@@ -298,6 +352,13 @@ def update(source: str | None = None) -> str:
         )
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "-e", str(repo_root)],
+            check=True,
+        )
+    elif source == "uv":
+        # uv tool venvs ship without pip; uv reinstalls from the
+        # original spec (git or PyPI) on upgrade.
+        subprocess.run(
+            ["uv", "tool", "upgrade", "wheeler"],
             check=True,
         )
     elif source == "github":
