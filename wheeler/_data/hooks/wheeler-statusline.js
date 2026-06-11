@@ -2,12 +2,36 @@
 // Wheeler statusline — shows update indicator and basic session info.
 // Reads update cache written by wheeler-check-update.js (SessionStart hook).
 //
-// Configure in settings.json:
-//   "statusLine": { "type": "command", "command": "node \"<path>/wheeler-statusline.js\"" }
+// Two modes, configured in settings.json:
+//   Full:    "statusLine": { "type": "command", "command": "node \"<path>/wheeler-statusline.js\"" }
+//   Wrapper: "statusLine": { "type": "command", "command": "node \"<path>/wheeler-statusline.js\" --wrap-b64 <base64-cmd>" }
+// In wrapper mode the base64-decoded original statusline command is run
+// with the same stdin and its output is shown unchanged; the Wheeler
+// update badge is prepended only when an update is pending. This lets
+// the badge coexist with any other tool's statusline (e.g. GSD's).
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
+
+function wheelerBadge() {
+  const cacheFile = path.join(os.homedir(), '.cache', 'wheeler', 'version-check.json');
+  if (fs.existsSync(cacheFile)) {
+    try {
+      const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      if (cache.update_available) {
+        return `\x1b[33m⬆ /wh:update\x1b[0m │ `;
+      }
+    } catch (e) {}
+  }
+  return '';
+}
+
+const wrapIdx = process.argv.indexOf('--wrap-b64');
+const wrapCmd = wrapIdx !== -1 && process.argv[wrapIdx + 1]
+  ? Buffer.from(process.argv[wrapIdx + 1], 'base64').toString('utf8')
+  : null;
 
 let input = '';
 const stdinTimeout = setTimeout(() => process.exit(0), 3000);
@@ -15,6 +39,28 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
   clearTimeout(stdinTimeout);
+
+  if (wrapCmd) {
+    // Wrapper mode: delegate to the original statusline, prepend badge.
+    let delegateOut = '';
+    try {
+      const res = spawnSync(wrapCmd, {
+        shell: true,
+        input,
+        encoding: 'utf8',
+        timeout: 3000,
+        windowsHide: true
+      });
+      if (res.stdout) delegateOut = res.stdout.replace(/\n+$/, '');
+    } catch (e) {}
+    if (delegateOut) {
+      process.stdout.write(`${wheelerBadge()}${delegateOut}`);
+      return;
+    }
+    // Delegate produced nothing: fall through to the full rendering so
+    // the status line never goes blank.
+  }
+
   try {
     const data = JSON.parse(input);
     const model = data.model?.display_name || 'Claude';
@@ -41,16 +87,7 @@ process.stdin.on('end', () => {
     }
 
     // Wheeler update available?
-    let wheelerUpdate = '';
-    const cacheFile = path.join(os.homedir(), '.cache', 'wheeler', 'version-check.json');
-    if (fs.existsSync(cacheFile)) {
-      try {
-        const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        if (cache.update_available) {
-          wheelerUpdate = `\x1b[33m\u2B06 /wh:update\x1b[0m \u2502 `;
-        }
-      } catch (e) {}
-    }
+    const wheelerUpdate = wheelerBadge();
 
     // GSD update available? (coexist with GSD if installed)
     let gsdUpdate = '';

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
+import re
 import shutil
 import subprocess
 import sys
@@ -126,7 +128,16 @@ def _register_hooks() -> None:
 
     # statusLine is a top-level settings key in Claude Code (not part of
     # the hooks object). It renders the update badge from the version
-    # cache. Never clobber a custom statusLine the user already set.
+    # cache. Three cases:
+    #   - no statusLine: register Wheeler's full statusline.
+    #   - Wheeler-owned (full or wrapper): refresh the script path,
+    #     preserving any existing wrap target.
+    #   - custom statusLine from another tool: WRAP it. The wrapper runs
+    #     the original command with the same stdin and prepends the
+    #     update badge only when an update is pending, so the user's
+    #     statusline renders unchanged otherwise. The original command
+    #     is carried base64-encoded in the wrapper invocation and is
+    #     restored verbatim on uninstall.
     statusline_path = str(INSTALL_BASE / HOOKS_REL / "wheeler-statusline.js")
     statusline_command = f'node "{statusline_path}"'
     existing_statusline = settings.get("statusLine")
@@ -136,7 +147,24 @@ def _register_hooks() -> None:
         isinstance(existing_statusline, dict)
         and "wheeler-statusline" in existing_statusline.get("command", "")
     ):
-        existing_statusline["command"] = statusline_command
+        wrap = re.search(
+            r"--wrap-b64 (\S+)", existing_statusline.get("command", "")
+        )
+        if wrap:
+            existing_statusline["command"] = (
+                f"{statusline_command} --wrap-b64 {wrap.group(1)}"
+            )
+        else:
+            existing_statusline["command"] = statusline_command
+    elif isinstance(existing_statusline, dict) and existing_statusline.get(
+        "command"
+    ):
+        original = existing_statusline["command"]
+        encoded = base64.b64encode(original.encode()).decode()
+        settings["statusLine"] = {
+            "type": "command",
+            "command": f"{statusline_command} --wrap-b64 {encoded}",
+        }
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
@@ -191,13 +219,25 @@ def _deregister_hooks() -> None:
         hooks["SessionStart"] = filtered
         changed = True
 
-    # Remove the statusLine only if it is the Wheeler-owned one
+    # Remove the statusLine only if it is Wheeler-owned. If it is the
+    # Wheeler wrapper around a user's original command, restore the
+    # original verbatim instead of deleting.
     statusline = settings.get("statusLine")
     if (
         isinstance(statusline, dict)
         and "wheeler-statusline" in statusline.get("command", "")
     ):
-        del settings["statusLine"]
+        wrap = re.search(r"--wrap-b64 (\S+)", statusline.get("command", ""))
+        restored = None
+        if wrap:
+            try:
+                restored = base64.b64decode(wrap.group(1)).decode()
+            except Exception:
+                restored = None
+        if restored:
+            settings["statusLine"] = {"type": "command", "command": restored}
+        else:
+            del settings["statusLine"]
         changed = True
 
     if changed:

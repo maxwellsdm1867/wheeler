@@ -349,18 +349,51 @@ def test_install_registers_statusline(fake_home, fake_data, monkeypatch):
     assert "wheeler-statusline" in statusline.get("command", "")
 
 
-def test_install_preserves_custom_statusline(fake_home, fake_data, monkeypatch):
-    """A pre-existing non-Wheeler statusLine must not be overwritten."""
+def test_install_wraps_custom_statusline(fake_home, fake_data, monkeypatch):
+    """A pre-existing non-Wheeler statusLine is wrapped, not replaced:
+    the wrapper carries the original command base64-encoded so the badge
+    composes with the user's own statusline."""
+    import base64
+
     monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
 
     settings_path = fake_home / ".claude" / "settings.json"
-    custom = {"type": "command", "command": "node my-custom-statusline.js"}
-    settings_path.write_text(json.dumps({"statusLine": custom}))
+    original = "node my-custom-statusline.js"
+    settings_path.write_text(
+        json.dumps({"statusLine": {"type": "command", "command": original}})
+    )
 
     installer.install()
 
     settings = json.loads(settings_path.read_text())
-    assert settings["statusLine"] == custom
+    cmd = settings["statusLine"]["command"]
+    assert "wheeler-statusline" in cmd
+    assert "--wrap-b64" in cmd
+    encoded = cmd.split("--wrap-b64 ")[1].split()[0]
+    assert base64.b64decode(encoded).decode() == original
+
+
+def test_reinstall_does_not_double_wrap(fake_home, fake_data, monkeypatch):
+    """Running install() twice must keep the SAME wrap target, not wrap
+    the wrapper."""
+    import base64
+
+    monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
+
+    settings_path = fake_home / ".claude" / "settings.json"
+    original = "node my-custom-statusline.js"
+    settings_path.write_text(
+        json.dumps({"statusLine": {"type": "command", "command": original}})
+    )
+
+    installer.install()
+    installer.install()
+
+    settings = json.loads(settings_path.read_text())
+    cmd = settings["statusLine"]["command"]
+    assert cmd.count("--wrap-b64") == 1
+    encoded = cmd.split("--wrap-b64 ")[1].split()[0]
+    assert base64.b64decode(encoded).decode() == original
 
 
 def test_uninstall_deregisters_statusline(fake_home, fake_data, monkeypatch):
@@ -374,8 +407,11 @@ def test_uninstall_deregisters_statusline(fake_home, fake_data, monkeypatch):
     assert "statusLine" not in settings
 
 
-def test_uninstall_preserves_custom_statusline(fake_home, fake_data, monkeypatch):
-    """uninstall() leaves a non-Wheeler statusLine in place."""
+def test_uninstall_restores_wrapped_custom_statusline(
+    fake_home, fake_data, monkeypatch
+):
+    """uninstall() unwraps: the user's original statusLine command is
+    restored verbatim."""
     monkeypatch.setattr(installer, "_get_data_path", lambda: fake_data)
 
     settings_path = fake_home / ".claude" / "settings.json"
