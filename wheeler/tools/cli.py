@@ -41,6 +41,15 @@ app.add_typer(graph_app, name="graph")
 dev_app = typer.Typer(help="Developer commands.")
 app.add_typer(dev_app, name="dev")
 
+# External-tool integrations (Asta Paper Finder, etc.). Guarded so a missing
+# integrations package never breaks the rest of the CLI.
+try:
+    from wheeler.integrations.cli import integrate_app
+
+    app.add_typer(integrate_app, name="integrate")
+except ImportError:
+    pass
+
 
 
 # Re-export for backward compatibility and convenience

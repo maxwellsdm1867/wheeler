@@ -241,6 +241,7 @@ TOOL_DEFINITIONS = [
             "authors": {"type": "string", "description": "Author names (comma-separated)", "default": ""},
             "doi": {"type": "string", "description": "DOI if available", "default": ""},
             "year": {"type": "integer", "description": "Publication year", "default": 0},
+            "corpus_id": {"type": "string", "description": "Semantic Scholar / Asta corpus id (dedupe key, indexed)", "default": ""},
         },
         "required": ["title"],
     },
