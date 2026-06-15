@@ -21,8 +21,16 @@ logger = logging.getLogger(__name__)
 integrate_app = typer.Typer(help="Ingest external-tool artifacts into the knowledge graph.")
 
 # Registry of supported tool names (normalized lower-case). Each maps to a
-# marshal-out ingest function dispatched below.
-_INGESTERS = {"paper_finder", "paper-finder", "theorizer"}
+# marshal-out ingest function dispatched below. ``s2`` is a short alias for
+# semantic_scholar.
+_INGESTERS = {
+    "paper_finder",
+    "paper-finder",
+    "theorizer",
+    "semantic_scholar",
+    "semantic-scholar",
+    "s2",
+}
 
 
 @integrate_app.command("ingest")
@@ -32,12 +40,22 @@ def ingest(
     link_to: Optional[str] = typer.Option(
         None, "--link-to", help="Node id (Plan/Question) to link each result RELEVANT_TO."
     ),
+    target: Optional[str] = typer.Option(
+        None,
+        "--target",
+        help=(
+            "Cited paper for a semantic_scholar citations artifact (a corpus_id "
+            "or a P-id). Each citing paper links CITES it. Ignored otherwise."
+        ),
+    ),
 ) -> None:
     """Marshal an external-tool artifact into the Wheeler knowledge graph."""
     tool_key = tool.strip().lower()
     if tool_key not in _INGESTERS:
         typer.echo(
-            f"Unknown tool '{tool}'. Supported: paper_finder, theorizer.", err=True
+            f"Unknown tool '{tool}'. Supported: paper_finder, theorizer, "
+            "semantic_scholar (alias s2).",
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -61,6 +79,18 @@ def ingest(
         report = asyncio.run(
             ingest_theorizer(
                 doc, link_to=link_to, config=config, artifact_path=str(artifact)
+            )
+        )
+    elif tool_key in ("semantic_scholar", "semantic-scholar", "s2"):
+        from wheeler.integrations.asta.semantic_scholar import ingest_semantic_scholar
+
+        report = asyncio.run(
+            ingest_semantic_scholar(
+                doc,
+                link_to=link_to,
+                target=target,
+                config=config,
+                artifact_path=str(artifact),
             )
         )
     else:

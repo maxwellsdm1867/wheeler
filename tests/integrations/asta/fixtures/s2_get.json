@@ -1,0 +1,24 @@
+{
+  "paperId": "30ec6a4886a349d71bdc372917a6c48d85271f16",
+  "corpusId": 210116405,
+  "externalIds": {
+    "DOI": "10.1038/s41593-019-0574-1",
+    "CorpusId": 210116405
+  },
+  "url": "https://www.semanticscholar.org/paper/30ec6a4886a349d71bdc372917a6c48d85271f16",
+  "title": "Causal evidence supporting the proposal that dopamine transients function as temporal difference prediction errors",
+  "venue": "Nature Neuroscience",
+  "year": 2020,
+  "citationCount": 72,
+  "openAccessPdf": {
+    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7007380",
+    "status": "GREEN"
+  },
+  "publicationDate": "2020-01-20",
+  "authors": [
+    {"authorId": "91779836", "name": "Etienne J. P. Maes"},
+    {"authorId": "5496092", "name": "M. Sharpe"},
+    {"authorId": "4192235", "name": "G. Schoenbaum"}
+  ],
+  "abstract": "Reward-evoked dopamine transients are well established as prediction errors. We show that cue-evoked transients function as temporal-difference prediction errors rather than reward predictions."
+}

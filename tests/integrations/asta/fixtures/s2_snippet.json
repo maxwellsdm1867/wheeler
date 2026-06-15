@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "score": 0.8415397355260673,
+      "paper": {
+        "corpusId": "203658198",
+        "title": "Recent advances in understanding the role of phasic dopamine activity",
+        "authors": ["W. Schultz"],
+        "openAccessInfo": {"license": "CCBY", "status": "GOLD"}
+      },
+      "snippet": {
+        "text": "The amazing spectrum and heterogeneity of dopamine relationships to behavioral activation contrast with the rather stereotyped reward prediction error response that varies across neurons in only a single scalar parameter.",
+        "snippetKind": "body"
+      }
+    },
+    {
+      "score": 0.8245207153963409,
+      "paper": {
+        "corpusId": "12580360",
+        "title": "Dopamine reward prediction error coding",
+        "authors": ["W. Schultz"],
+        "openAccessInfo": {"license": "CCBYNCND", "status": "HYBRID"}
+      },
+      "snippet": {
+        "text": "Reward prediction errors consist of the differences between received and predicted rewards. They are crucial for basic forms of learning about rewards. Most dopamine neurons in the midbrain of humans, monkeys, and rodents signal a reward prediction error.",
+        "snippetKind": "abstract"
+      }
+    },
+    {
+      "score": 0.7987582787608547,
+      "paper": {
+        "corpusId": "12580360",
+        "title": "Dopamine reward prediction error coding",
+        "authors": ["W. Schultz"],
+        "openAccessInfo": {"license": "CCBYNCND", "status": "HYBRID"}
+      },
+      "snippet": {
+        "text": "Dopamine reward prediction error signals are not limited to animals, and occur also in humans. Hundreds of human neuroimaging studies demonstrate reward prediction error signals in the main reward structures.",
+        "snippetKind": "body"
+      }
+    }
+  ],
+  "retrievalVersion": "pa1-v1"
+}
