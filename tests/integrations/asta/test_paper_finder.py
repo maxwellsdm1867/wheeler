@@ -203,8 +203,10 @@ def _cleanup_paper_finder(e2e_config, e2e_tag: str) -> None:
     tag and the same corpus_ids, so a service-scoped or corpus_id-scoped delete
     would wipe real user data. Every node this run creates is tagged with the
     per-run unique ``e2e_tag`` (a uuid) right after each ingest, scoped off the
-    run's Execution and its WAS_GENERATED_BY descendants plus the returned node
-    ids, so this delete can only ever match nodes this run created.
+    returned node ids (every Paper, the Execution, the artifact) plus the run's
+    WAS_GENERATED_BY descendants, so this delete can only ever match nodes this
+    run created. Papers are reference entities (no WAS_GENERATED_BY), so they are
+    tagged by the returned ids, not via the fan-in.
     """
     import asyncio
 
@@ -250,18 +252,26 @@ class TestIngestPaperFinderE2E:
     async def _tag_all(self, e2e_config, report):
         """Tag exactly the nodes THIS run created with the per-run e2e tag.
 
-        Scopes strictly off the run's Execution and its WAS_GENERATED_BY fan-in
-        plus the ids the ImportReport returned, so teardown (which deletes ONLY
-        by e2e_tag) can never touch a pre-existing production node that merely
-        shares a service tag or a corpus_id. NEVER tag by service or corpus_id:
-        the e2e config runs on the shared default namespace where production
-        nodes carry the same asta:paper-finder service and the same corpus_ids.
+        Scopes strictly off the ids the ImportReport returned (Execution,
+        artifact, every Paper) plus the run's WAS_GENERATED_BY fan-in, so
+        teardown (which deletes ONLY by e2e_tag) can never touch a pre-existing
+        production node that merely shares a service tag or a corpus_id. NEVER
+        tag by service or corpus_id: the e2e config runs on the shared default
+        namespace where production nodes carry the same asta:paper-finder service
+        and the same corpus_ids.
+
+        Papers are REFERENCE ENTITIES: they no longer carry WAS_GENERATED_BY
+        (per /wh:close, /wh:graph-link), so they are NOT in the Execution fan-in.
+        They are tagged here by ``report.paper_ids`` instead, which keeps the
+        teardown hermetic.
         """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
         # The exact ids this run produced (Execution, artifact, every Paper).
+        # paper_ids is the ONLY thing that tags the papers now: they left the
+        # WAS_GENERATED_BY fan-in when they became reference entities.
         run_ids = [i for i in (report.execution_id, report.artifact) if i]
         run_ids += [pid for pid in report.paper_ids if pid]
         async with driver.session(database=db) as s:
@@ -270,8 +280,9 @@ class TestIngestPaperFinderE2E:
                     "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
                     ids=run_ids, tag=self._e2e_tag,
                 )
-            # Anything WAS_GENERATED_BY this run's Execution (papers, the raw
-            # Dataset artifact): scoped off the Execution id this run owns.
+            # Anything WAS_GENERATED_BY this run's Execution (now just the raw
+            # Dataset artifact; papers are reference entities and excluded):
+            # scoped off the Execution id this run owns.
             if report.execution_id:
                 await s.run(
                     "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
@@ -322,6 +333,27 @@ class TestIngestPaperFinderE2E:
                 xid=run_exec_id,
             )
             gen_by_after_first = (await res.single())["c"]
+
+            # Papers are REFERENCE ENTITIES: they must NOT be in the
+            # WAS_GENERATED_BY fan-in (per /wh:close, /wh:graph-link). This
+            # ingest passes NO artifact_path, so register_output_artifact is
+            # never invoked and no raw Dataset is created either: the fan-in is
+            # legitimately EMPTY (zero Papers AND zero Datasets). The
+            # artifact-bearing fan-in (one Dataset, zero Papers) is asserted
+            # separately in test_output_artifact_registered_and_linked, which
+            # does pass artifact_path.
+            res = await s.run(
+                "MATCH (p:Paper)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "RETURN count(p) AS c",
+                xid=run_exec_id,
+            )
+            assert (await res.single())["c"] == 0
+            res = await s.run(
+                "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "WHERE n:Dataset RETURN count(n) AS c",
+                xid=run_exec_id,
+            )
+            assert (await res.single())["c"] == 0
 
         # Second ingest of the SAME artifact: no new papers.
         report2 = await ingest_paper_finder(doc, link_to=question_id, config=e2e_config)

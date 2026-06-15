@@ -63,10 +63,16 @@ Bucketing (each theory becomes a small provenance subgraph):
     Hypothesis. contradicting papers (PAPER entities annotated under Conflicting
     and Unaccounted Evidence) -> Paper -[CONTRADICTS]-> the parent theory Finding
     (theory level, DECISION 1 default).
-  - Provenance: parent + hypotheses + papers WAS_GENERATED_BY the Execution. If
+  - Provenance: the run Execution is WAS_GENERATED_BY the Wheeler-PRODUCED nodes
+    only: the parent theory Findings, the law Hypotheses, and the raw Document
+    node. Papers are REFERENCE ENTITIES, not produced by Wheeler, so they carry
+    NO WAS_GENERATED_BY (per /wh:close and /wh:graph-link: "Papers are never
+    orphans. They are reference entities, not produced by Wheeler"). Because the
+    theories were DERIVED from the evidence, the run Execution -[USED]-> each
+    supporting/contradicting evidence paper (the paper is a genuine input). If
     ``link_to`` is given, parent -[AROSE_FROM]-> link_to. If ``artifact_path`` is
-    given, the raw output registers as a Document and each generated node links
-    WAS_DERIVED_FROM it (best-effort).
+    given, the raw output registers as a Document and each generated node (incl.
+    papers) links WAS_DERIVED_FROM it (best-effort).
 
 Invariants:
   - Defensive: every step tolerates missing pieces, counts and skips, never
@@ -1290,14 +1296,22 @@ async def _ingest_paper_edge(
     seen_papers: dict[str, str],
     report: ImportReport,
 ) -> None:
-    """Dedupe-or-create one paper, then link Paper -[rel]-> target_id."""
+    """Dedupe-or-create one evidence paper, then wire its edges.
+
+    The paper -[rel]-> target_id is the semantic edge (SUPPORTS the law
+    Hypothesis, or CONTRADICTS the parent theory Finding). Additionally, the run
+    Execution -[USED]-> the paper: the theories were DERIVED from this evidence,
+    so the paper is a genuine INPUT to the produced knowledge. (Papers are
+    reference entities that carry no WAS_GENERATED_BY of their own; the USED edge
+    is the run-side record that the Execution consumed them. See /wh:close and
+    /wh:graph-link.) Both edges are link_once-guarded.
+    """
     paper_id = await _resolve_paper(
         backend=backend,
         execute_tool=execute_tool,
         config=config,
         ref=ref,
         session_id=session_id,
-        exec_id=exec_id,
         artifact_id=artifact_id,
         paper_index=paper_index,
         seen_papers=seen_papers,
@@ -1306,6 +1320,11 @@ async def _ingest_paper_edge(
     if paper_id is None:
         return
     if await _link_once(backend, config, paper_id, rel, target_id):
+        report.linked += 1
+    # Execution -[USED]-> the evidence paper: the theories were derived from it,
+    # so it is an input the run consumed (Paper Finder / Sem Scholar runs do NOT
+    # USE their result-set papers; only Theorizer's evidence is a genuine input).
+    if exec_id and await _link_once(backend, config, exec_id, "USED", paper_id):
         report.linked += 1
 
 
@@ -1316,7 +1335,6 @@ async def _resolve_paper(
     config: WheelerConfig,
     ref: PaperRef,
     session_id: str,
-    exec_id: str,
     artifact_id: str | None,
     paper_index: dict[str, str],
     seen_papers: dict[str, str],
@@ -1368,12 +1386,14 @@ async def _resolve_paper(
         paper_index[cid] = paper_id
         seen_papers[cid] = paper_id
 
-    # Provenance: Paper WAS_GENERATED_BY the run Execution and WAS_DERIVED_FROM
-    # the raw output artifact (link_once-guarded).
-    if exec_id and await _link_once(
-        backend, config, paper_id, "WAS_GENERATED_BY", exec_id
-    ):
-        report.linked += 1
+    # Papers are REFERENCE ENTITIES, not produced by Wheeler (per /wh:close and
+    # /wh:graph-link: "Papers are never orphans. They are reference entities,
+    # not produced by Wheeler"). A Theorizer evidence paper is an INPUT the
+    # theories were derived from, not a node the run produced, so it carries NO
+    # WAS_GENERATED_BY. Its lineage is WAS_DERIVED_FROM the raw output artifact;
+    # the Execution -[USED]-> edge (added by _ingest_paper_edge) records that the
+    # run consumed it; its semantic edges (SUPPORTS/CONTRADICTS) are added by the
+    # caller.
     if artifact_id and await _link_once(
         backend, config, paper_id, "WAS_DERIVED_FROM", artifact_id
     ):

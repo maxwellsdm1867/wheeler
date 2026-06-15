@@ -94,15 +94,34 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
 - **link_once.** Every edge is guarded by an existence check first, because the
   backend's `create_relationship` is a bare `CREATE` that duplicates edges on
   re-ingest. Re-running the same artifact never duplicates papers or edges.
-- **Citations link via CITES + Execution provenance, never RELEVANT_TO the
-  question.** For the Semantic Scholar `citations` sub-kind, a citing paper links
-  ONLY via `citingPaper -[CITES]-> target`, `WAS_GENERATED_BY` the run Execution,
-  and `WAS_DERIVED_FROM` the raw node. A citing paper is NOT relevant to the
-  question, so `link_to` (RELEVANT_TO) is NOT applied to citing papers. Papers are
-  reference entities that are never orphans (per /wh:close and /wh:graph-link):
-  the CITES edge plus Execution provenance is their linkage. RELEVANT_TO is
-  applied only to get / search / snippet results, which ARE relevant to the
-  question.
+- **Papers are reference entities, never `WAS_GENERATED_BY`.** Papers (and
+  Datasets) are REFERENCE ENTITIES, not produced by Wheeler. Per `/wh:close` and
+  `/wh:graph-link`: "Papers are never orphans. They are reference entities, not
+  produced by Wheeler" (the orphan sweep literally excludes `AND NOT n:Paper`). So
+  no adapter ever links a Paper `-[WAS_GENERATED_BY]-> Execution`. The run
+  Execution is `WAS_GENERATED_BY` the WHEELER-PRODUCED nodes ONLY: the raw output
+  node (a Dataset for Paper Finder / Sem Scholar, a Document for Theorizer) plus
+  any Finding/Hypothesis the run produced (Theorizer theory Findings + law
+  Hypotheses; Sem Scholar snippet Findings). Papers keep ONLY their semantic +
+  lineage edges: `RELEVANT_TO` (get / search / snippet results to the question),
+  `CITES` (citations to the target), `SUPPORTS`/`CONTRADICTS` (Theorizer evidence
+  to hypotheses / theory), `APPEARS_IN` (snippet evidence), and `WAS_DERIVED_FROM`
+  the raw node (lineage of the record, not a "produced" claim). Where a paper is a
+  genuine INPUT to produced knowledge, the Execution `USES` it: the **Theorizer**
+  Execution `-[USED]->` each supporting/contradicting evidence Paper (the theories
+  were derived from them, in `_ingest_paper_edge`). Paper Finder and Sem Scholar
+  runs do NOT `USE` their papers (the papers are the result set / references), so
+  no `USED` there. Net effect: `MATCH (p:Paper)-[:WAS_GENERATED_BY]->(:Execution)`
+  returns ZERO; Theorizer evidence papers are reachable via Execution-`USED` and
+  via `SUPPORTS`/`CONTRADICTS`.
+- **Citations link via CITES + lineage, never RELEVANT_TO the question.** For the
+  Semantic Scholar `citations` sub-kind, a citing paper links ONLY via
+  `citingPaper -[CITES]-> target` and `WAS_DERIVED_FROM` the raw node. It carries
+  NO `WAS_GENERATED_BY` (papers are reference entities, see above), and it is NOT
+  relevant to the question, so `link_to` (RELEVANT_TO) is NOT applied to citing
+  papers. The CITES edge plus the lineage `WAS_DERIVED_FROM` is its linkage.
+  RELEVANT_TO is applied only to get / search / snippet results, which ARE
+  relevant to the question.
 - **Sequential writes.** Never `asyncio.gather`. `execute_tool` reuses one
   cached backend singleton and Neo4j forbids concurrent queries.
 - **One Execution per run, idempotent.** Each run gets one Execution (kind

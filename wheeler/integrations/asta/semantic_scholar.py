@@ -41,12 +41,13 @@ MAPPING (service = ``asta:semantic-scholar``):
   - citations(target T) -> each citingPaper -> Paper node (dedupe); citingPaper
     -[CITES]-> T. T is resolved from the passed ``target`` (a corpus_id digit
     string mapped to its Paper, or a P-id used directly). This BUILDS the
-    citation graph. CRITICAL: citing papers link via CITES + WAS_GENERATED_BY
-    the run Execution (and WAS_DERIVED_FROM the raw node) ONLY, NEVER RELEVANT_TO
-    the question: a citing paper is not relevant to the question, and papers are
-    reference entities that are never orphans. ``link_to`` is therefore NOT
-    applied to the citations sub-kind (it is applied to get / search / snippet,
-    whose results ARE relevant to the question).
+    citation graph. CRITICAL: a citing paper is NOT relevant to the question, so
+    it links via CITES + WAS_DERIVED_FROM the raw node ONLY, NEVER RELEVANT_TO.
+    Papers are reference entities, not produced by Wheeler, so they carry NO
+    WAS_GENERATED_BY (per /wh:close and /wh:graph-link: "Papers are never
+    orphans. They are reference entities, not produced by Wheeler"). ``link_to``
+    is therefore NOT applied to the citations sub-kind (it is applied to get /
+    search / snippet, whose results ARE relevant to the question).
   - snippet -> a Finding(artifact_type="snippet", description=snippet.text,
     confidence=score, title=short) -[APPEARS_IN]-> its Paper; the paper -> Paper
     node (corpusId present). Snippet Findings dedupe on a content hash so
@@ -56,9 +57,11 @@ MAPPING (service = ``asta:semantic-scholar``):
     durably to ``.wheeler/asta/raw/asta-semantic-scholar/<sha>.json``. S2 has no
     run_id, so the durable key is a content sha. No cost/time benchmark fields.
   - One Execution per RUN (service ``asta:semantic-scholar``, kind by sub-shape,
-    e.g. ``s2-citations``); generated nodes WAS_GENERATED_BY it; if ``link_to`` is
-    given, RELEVANT_TO links the question to results that are actually relevant
-    (get / search / snippet), but NOT to citing papers (see citations above).
+    e.g. ``s2-citations``); the run Execution is WAS_GENERATED_BY the
+    Wheeler-PRODUCED nodes only (the raw Dataset node + each snippet Finding).
+    Papers are reference entities and carry NO WAS_GENERATED_BY. If ``link_to``
+    is given, RELEVANT_TO links the question to results that are actually
+    relevant (get / search / snippet), but NOT to citing papers (see citations).
 
 Invariants:
   - Defensive: every step tolerates missing fields, counts and skips, never
@@ -643,10 +646,10 @@ async def ingest_semantic_scholar(
             via RELEVANT_TO. Applied to get / search / snippet results (those ARE
             relevant to the question). NOT applied to the ``citations`` sub-kind:
             citing papers are NOT relevant to the question. A citation links via
-            ``citingPaper -[CITES]-> target`` plus ``WAS_GENERATED_BY`` the run
-            Execution and ``WAS_DERIVED_FROM`` the raw node, never RELEVANT_TO the
-            question (papers are reference entities, never orphans; the CITES +
-            Execution provenance is their linkage, per /wh:close, /wh:graph-link).
+            ``citingPaper -[CITES]-> target`` plus ``WAS_DERIVED_FROM`` the raw
+            node, never RELEVANT_TO and never WAS_GENERATED_BY (papers are
+            reference entities, not produced by Wheeler; the CITES + lineage edge
+            is their linkage, per /wh:close, /wh:graph-link).
         target: For a ``citations`` artifact, the paper being cited (the CLI
             argument, NOT in the output). Either a corpus_id (digit string,
             resolved to its Paper) or a P-id (used directly). Each citing paper
@@ -655,8 +658,9 @@ async def ingest_semantic_scholar(
         artifact_path: Optional path to the raw ``-o`` output file. When given it
             is saved durably and registered as a Dataset node (S2 output is
             structured reference records), linked WAS_GENERATED_BY the run
-            Execution, and every generated node links WAS_DERIVED_FROM it.
-            Best-effort: an artifact failure never breaks ingest.
+            Execution (the Dataset is Wheeler-produced), and every generated node
+            (papers, snippet Findings) links WAS_DERIVED_FROM it. Best-effort: an
+            artifact failure never breaks ingest.
 
     Returns:
         An ImportReport with created / deduped / linked / skipped counts.
@@ -743,7 +747,6 @@ async def ingest_semantic_scholar(
                 config=config,
                 record=record,
                 session_id=session_id,
-                exec_id=exec_id,
                 artifact_id=artifact_id,
                 link_to=link_to,
                 paper_index=paper_index,
@@ -766,18 +769,18 @@ async def ingest_semantic_scholar(
             )
         for citation in parsed.citations:
             # CRITICAL: citing papers are NOT relevant to the question. A citation
-            # links via citingPaper -[CITES]-> target plus WAS_GENERATED_BY the
-            # run Execution and WAS_DERIVED_FROM the raw node; it is never
-            # RELEVANT_TO the question. So link_to is forced to None here (papers
-            # are reference entities, never orphans, and the CITES + Execution
-            # provenance is their linkage). See /wh:close and /wh:graph-link.
+            # links via citingPaper -[CITES]-> target plus WAS_DERIVED_FROM the
+            # raw node; it is never RELEVANT_TO the question and never
+            # WAS_GENERATED_BY (papers are reference entities, not produced by
+            # Wheeler). So link_to is forced to None here. See /wh:close and
+            # /wh:graph-link: "Papers are never orphans. They are reference
+            # entities, not produced by Wheeler."
             paper_id = await _ingest_paper(
                 backend=backend,
                 execute_tool=execute_tool,
                 config=config,
                 record=citation.citing,
                 session_id=session_id,
-                exec_id=exec_id,
                 artifact_id=artifact_id,
                 link_to=None,
                 paper_index=paper_index,
@@ -856,7 +859,6 @@ async def _ingest_paper(
     config: WheelerConfig,
     record: S2Paper,
     session_id: str,
-    exec_id: str,
     artifact_id: str | None,
     link_to: str | None,
     paper_index: dict[str, str],
@@ -965,12 +967,13 @@ async def _ingest_paper(
     if run_key:
         seen_papers[run_key] = paper_id
 
-    # Provenance: Paper WAS_GENERATED_BY the run Execution and WAS_DERIVED_FROM
-    # the raw output artifact (link_once-guarded).
-    if exec_id and await _link_once(
-        backend, config, paper_id, "WAS_GENERATED_BY", exec_id
-    ):
-        report.linked += 1
+    # Papers are REFERENCE ENTITIES, not produced by Wheeler (per /wh:close and
+    # /wh:graph-link: "Papers are never orphans. They are reference entities,
+    # not produced by Wheeler"). A Semantic Scholar result (get / search /
+    # snippet / citing paper) is part of the result set, not a node the run
+    # produced, so it carries NO WAS_GENERATED_BY edge. Its lineage is
+    # WAS_DERIVED_FROM the raw output artifact; its semantic edges (RELEVANT_TO,
+    # CITES, APPEARS_IN) are added by the caller.
     if artifact_id and await _link_once(
         backend, config, paper_id, "WAS_DERIVED_FROM", artifact_id
     ):
@@ -1012,7 +1015,6 @@ async def _ingest_snippet(
         config=config,
         record=snippet.paper,
         session_id=session_id,
-        exec_id=exec_id,
         artifact_id=artifact_id,
         link_to=link_to,
         paper_index=paper_index,

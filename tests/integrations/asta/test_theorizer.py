@@ -363,8 +363,10 @@ def _cleanup_theorizer(e2e_config, e2e_tag: str) -> None:
     and the same corpus_ids, so a service-scoped or corpus_id-scoped delete
     would wipe real user data. Every node this run creates is tagged with the
     per-run unique ``e2e_tag`` (a uuid) right after each ingest, scoped off the
-    run's Execution and its WAS_GENERATED_BY descendants plus the returned node
-    ids, so this delete can only ever match nodes this run created.
+    returned node ids (every Paper, the Execution, the artifact) plus the run's
+    WAS_GENERATED_BY descendants, so this delete can only ever match nodes this
+    run created. Papers are reference entities (no WAS_GENERATED_BY), so they are
+    tagged by the returned ids, not via the fan-in.
     """
     import asyncio
 
@@ -412,19 +414,27 @@ class TestIngestTheorizerE2E:
     async def _tag_all(self, e2e_config, report):
         """Tag exactly the nodes THIS run created with the per-run e2e tag.
 
-        Scopes strictly off the run's Execution and its WAS_GENERATED_BY fan-in
-        (every parent Finding, law Hypothesis, Paper, and the raw Document chains
-        back to the run Execution) plus the ids the ImportReport returned, so
-        teardown (which deletes ONLY by e2e_tag) can never touch a pre-existing
-        production node that merely shares a service tag or a corpus_id. NEVER
-        tag by service or corpus_id: the e2e config runs on the shared default
-        namespace where production nodes carry the same asta:theorizer service
-        and the same corpus_ids.
+        Scopes strictly off the ids the ImportReport returned (Execution,
+        artifact, every Paper) plus the run's WAS_GENERATED_BY fan-in (every
+        parent Finding, law Hypothesis, and the raw Document chain back to the run
+        Execution), so teardown (which deletes ONLY by e2e_tag) can never touch a
+        pre-existing production node that merely shares a service tag or a
+        corpus_id. NEVER tag by service or corpus_id: the e2e config runs on the
+        shared default namespace where production nodes carry the same
+        asta:theorizer service and the same corpus_ids.
+
+        Papers are REFERENCE ENTITIES: they no longer carry WAS_GENERATED_BY
+        (per /wh:close, /wh:graph-link), so they are NOT in the Execution fan-in.
+        They are tagged here by ``report.paper_ids`` instead, which keeps the
+        teardown hermetic. (The Execution -[USED]-> evidence-paper edge does not
+        matter for tagging: the paper ids are already covered by paper_ids.)
         """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
+        # paper_ids is the ONLY thing that tags the papers now: they left the
+        # WAS_GENERATED_BY fan-in when they became reference entities.
         run_ids = [i for i in (report.execution_id, report.artifact) if i]
         run_ids += [pid for pid in report.paper_ids if pid]
         async with driver.session(database=db) as s:
@@ -433,9 +443,10 @@ class TestIngestTheorizerE2E:
                     "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
                     ids=run_ids, tag=self._e2e_tag,
                 )
-            # Everything WAS_GENERATED_BY this run's Execution: parent Findings,
-            # law Hypotheses, Papers, and the raw Document node. Scoped off the
-            # Execution id this run owns, never the shared service tag.
+            # Everything WAS_GENERATED_BY this run's Execution: now the parent
+            # Findings, law Hypotheses, and the raw Document node (papers are
+            # reference entities and excluded). Scoped off the Execution id this
+            # run owns, never the shared service tag.
             if report.execution_id:
                 await s.run(
                     "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
@@ -580,9 +591,41 @@ class TestIngestTheorizerE2E:
                 "RETURN count(r) AS c"
             )
             gen_by_after_first = (await res.single())["c"]
-        # parent Findings + Hypotheses + Papers + the raw Document all
-        # WAS_GENERATED_BY the one Execution.
-        assert gen_by_after_first == N_THEORIES + N_HYPOTHESES + N_PAPERS + 1
+        # The run Execution is WAS_GENERATED_BY the Wheeler-PRODUCED nodes only:
+        # the parent theory Findings, the law Hypotheses, and the raw Document.
+        # Papers are REFERENCE ENTITIES and are EXCLUDED from the fan-in (per
+        # /wh:close, /wh:graph-link). N_PAPERS no longer counts here.
+        assert gen_by_after_first == N_THEORIES + N_HYPOTHESES + 1
+
+        # Papers carry NO WAS_GENERATED_BY: zero evidence papers in the fan-in.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:WAS_GENERATED_BY]->(x:Execution {service: 'asta:theorizer'}) "
+                "RETURN count(r) AS c"
+            )
+            assert (await res.single())["c"] == 0
+
+        # Instead, the run Execution -[USED]-> each evidence Paper: the theories
+        # were derived from the supporting/contradicting evidence, so each
+        # distinct evidence paper is a genuine INPUT the run consumed. All
+        # N_PAPERS papers in this fixture are evidence (theorizer papers come only
+        # from law.supporting / theory.contradicting), and link_once collapses a
+        # paper used by several laws to ONE USED edge, so the count is N_PAPERS.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {service: 'asta:theorizer'})-[r:USED]->(p:Paper) "
+                "RETURN count(r) AS c"
+            )
+            assert (await res.single())["c"] == N_PAPERS
+        # The USED targets are exactly the evidence papers (reachable both via
+        # Execution-USED and via SUPPORTS/CONTRADICTS).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {service: 'asta:theorizer'})-[:USED]->(p:Paper) "
+                "WHERE p.corpus_id IN $cids RETURN count(DISTINCT p) AS c",
+                cids=ALL_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == N_PAPERS
 
         # parent AROSE_FROM the seed Question.
         async with driver.session(database=db) as s:
@@ -725,5 +768,12 @@ class TestIngestTheorizerE2E:
                 "RETURN count(r) AS c"
             )
             assert (await res.single())["c"] == gen_by_after_first
+            # The Execution -[USED]-> evidence-paper edges are also link_once
+            # guarded, so re-ingest must NOT grow them: still exactly N_PAPERS.
+            res = await s.run(
+                "MATCH (x:Execution {service: 'asta:theorizer'})-[r:USED]->(p:Paper) "
+                "RETURN count(r) AS c"
+            )
+            assert (await res.single())["c"] == N_PAPERS
         # The report points at the same Execution both runs (reused, not new).
         assert report2.execution_id == report1.execution_id

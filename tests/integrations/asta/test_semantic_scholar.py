@@ -315,9 +315,11 @@ def _cleanup(e2e_config, e2e_tag: str) -> None:
     service tag and the same corpus_ids (including the cited target), so a
     service-scoped or corpus_id-scoped delete would wipe real user data. Every
     node this run creates is tagged with the per-run unique ``e2e_tag`` (a uuid)
-    right after each ingest, scoped off the run's Execution and its
-    WAS_GENERATED_BY descendants plus the returned node ids, so this delete can
-    only ever match nodes this run created.
+    right after each ingest, scoped off the returned node ids (every Paper, the
+    Execution, the artifact) plus the run's WAS_GENERATED_BY descendants, so this
+    delete can only ever match nodes this run created. Papers are reference
+    entities (no WAS_GENERATED_BY), so they are tagged by the returned ids, not
+    via the fan-in.
     """
     import asyncio
 
@@ -362,20 +364,27 @@ class TestIngestSemanticScholarE2E:
     async def _tag_all(self, e2e_config, report):
         """Tag exactly the nodes THIS run created with the per-run e2e tag.
 
-        Scopes strictly off the run's Execution and its WAS_GENERATED_BY fan-in
-        (citing Papers, snippet Findings, the raw Dataset) plus the ids the
-        ImportReport returned, so teardown (which deletes ONLY by e2e_tag) can
-        never touch a pre-existing production node that merely shares a service
-        tag or a corpus_id. NEVER tag by service or corpus_id: the e2e config
-        runs on the shared default namespace where production nodes carry the
-        same asta:semantic-scholar service and the same corpus_ids. The cited
+        Scopes strictly off the ids the ImportReport returned (Execution,
+        artifact, every Paper) plus the run's WAS_GENERATED_BY fan-in (snippet
+        Findings, the raw Dataset), so teardown (which deletes ONLY by e2e_tag)
+        can never touch a pre-existing production node that merely shares a
+        service tag or a corpus_id. NEVER tag by service or corpus_id: the e2e
+        config runs on the shared default namespace where production nodes carry
+        the same asta:semantic-scholar service and the same corpus_ids. The cited
         target Paper (pre-created by the test) and a corpus-id-less paper are
         tagged by their own ids at the call site, not here.
+
+        Papers are REFERENCE ENTITIES: they no longer carry WAS_GENERATED_BY
+        (per /wh:close, /wh:graph-link), so they are NOT in the Execution fan-in.
+        They are tagged here by ``report.paper_ids`` instead, which keeps the
+        teardown hermetic.
         """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
+        # paper_ids is the ONLY thing that tags the papers now: they left the
+        # WAS_GENERATED_BY fan-in when they became reference entities.
         run_ids = [i for i in (report.execution_id, report.artifact) if i]
         run_ids += [pid for pid in report.paper_ids if pid]
         async with driver.session(database=db) as s:
@@ -384,9 +393,10 @@ class TestIngestSemanticScholarE2E:
                     "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
                     ids=run_ids, tag=self._e2e_tag,
                 )
-            # Everything WAS_GENERATED_BY this run's Execution: citing/snippet
-            # Papers, snippet Findings, the raw Dataset. Scoped off the Execution
-            # id this run owns, never the shared service tag.
+            # Everything WAS_GENERATED_BY this run's Execution: now just the
+            # snippet Findings and the raw Dataset (papers are reference entities
+            # and excluded). Scoped off the Execution id this run owns, never the
+            # shared service tag.
             if report.execution_id:
                 await s.run(
                     "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
@@ -460,12 +470,27 @@ class TestIngestSemanticScholarE2E:
             )
             assert (await res.single())["c"] == len(CITATION_CORPUS_IDS)
 
-        # Each citing Paper WAS_GENERATED_BY the run Execution.
+        # Papers are REFERENCE ENTITIES: NO citing Paper carries WAS_GENERATED_BY
+        # (per /wh:close, /wh:graph-link: "Papers are never orphans. They are
+        # reference entities, not produced by Wheeler"). Their linkage is the
+        # CITES edge (asserted above) plus WAS_DERIVED_FROM the raw node (below).
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (p:Paper)-[r:WAS_GENERATED_BY]->(x:Execution {service: $svc}) "
+                "MATCH (p:Paper)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
                 "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
-                svc=SERVICE_TAG,
+                xid=report1.execution_id,
+                cids=CITATION_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == 0
+
+        # Each citing Paper WAS_DERIVED_FROM the raw Dataset node (its lineage,
+        # the record came from that dump). This replaces the old WAS_GENERATED_BY
+        # claim: the raw node is the Wheeler-produced node, the paper is not.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:WAS_DERIVED_FROM]->(d:Dataset {id: $aid}) "
+                "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
+                aid=report1.artifact,
                 cids=CITATION_CORPUS_IDS,
             )
             assert (await res.single())["c"] == len(CITATION_CORPUS_IDS)

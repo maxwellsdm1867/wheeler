@@ -154,7 +154,7 @@ async def ingest_paper_finder(
 
     for record in records:
         paper_id = await _ingest_one_paper(
-            backend, execute_tool, config, record, index, session_id, exec_id, report,
+            backend, execute_tool, config, record, index, session_id, report,
         )
         if paper_id is None:
             report.skipped += 1
@@ -207,7 +207,6 @@ async def _ingest_one_paper(
     record: PaperRecord,
     index: dict[str, str],
     session_id: str,
-    exec_id: str,
     report: ImportReport,
 ) -> str | None:
     """Dedupe-or-create one paper. Returns its node id, or None on failure."""
@@ -252,9 +251,11 @@ async def _ingest_one_paper(
     if record.corpus_id:
         index[record.corpus_id] = paper_id
 
-    # Provenance: Paper WAS_GENERATED_BY the run Execution (link_once-guarded).
-    if exec_id:
-        if await _link_once(backend, config, paper_id, "WAS_GENERATED_BY", exec_id):
-            report.linked += 1
+    # Papers are REFERENCE ENTITIES, not produced by Wheeler (per /wh:close and
+    # /wh:graph-link: "Papers are never orphans. They are reference entities,
+    # not produced by Wheeler"). A Paper Finder result is part of the result set,
+    # not a node the run produced, so it carries NO WAS_GENERATED_BY edge. Its
+    # linkage is the semantic RELEVANT_TO (to the question) and lineage
+    # WAS_DERIVED_FROM (the raw node), both added by the caller.
 
     return paper_id
