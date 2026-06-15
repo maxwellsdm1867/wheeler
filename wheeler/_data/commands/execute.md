@@ -71,6 +71,10 @@ When running from a registered plan (PL-xxxx):
 9. When all WHEELER tasks complete, run **Step 2.5: Honor the contract** if any contract field is set. Otherwise jump straight to checking success criteria.
 10. Call `update_node(node_id=PL-xxxx, status="completed")` (or leave as in-progress if gaps remain). Update plan file frontmatter to mirror.
 
+### External research steps (route through the service router)
+
+When a task needs external research that Wheeler does not do itself (finding literature, generating candidate theories, analyzing data with an outside agent), launch `/wh:asta`, the service router, rather than doing it inline. Do not name or hardcode any specific service: `/wh:asta` reads the service registry (`.wheeler/services.yaml`, else the bundled default) to discover what is available for the current step, suggests the right one, and warns on cost. Stay service-agnostic: the plan only knows "this step needs external work, so route it through the service router." Pass the running plan id as `--link-to PL-xxxx` so the run's Execution is anchored to the Plan (`Execution -[AROSE_FROM]-> Plan`) and its results land RELEVANT_TO it: the Plan, its Asta runs, and their outputs stay one provenance chain readable at `/wh:close`. Surface the launch as a checkpoint when it incurs cost; otherwise proceed and record the run in the SUMMARY.
+
 ### Artifact organization (canonical export directory)
 
 The archive root for a plan-based execute is `analysis_exports/<investigation_slug>_<YYYY-MM-DD>/`. Once Step 2.4 has created the directory, treat this as the source of truth for figure and dataset outputs:

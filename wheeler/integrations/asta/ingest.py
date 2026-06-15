@@ -32,6 +32,7 @@ from ._marshal import (
     ImportReport,
     _find_execution,
     _find_paper_by_corpus_id,
+    _link_execution_to_plan,
     _link_once,
     _load_index,
     _paper_exists,
@@ -133,6 +134,13 @@ async def ingest_paper_finder(
                 )
     report.execution_id = exec_id
 
+    # Plan lifecycle: anchor the run Execution to its Plan. When link_to is a
+    # Plan id (PL-), Execution -[AROSE_FROM]-> Plan, so the run is part of the
+    # plan provenance chain (not just the result Papers RELEVANT_TO it). No-op
+    # for a non-Plan / missing link_to; link_once so re-ingest does not duplicate.
+    if exec_id and await _link_execution_to_plan(backend, config, exec_id, link_to):
+        report.plan_linked += 1
+
     # Input-side provenance: the marshal-in built this request FROM graph nodes
     # (at minimum the link target that motivated the search), so the run USED
     # them. Existence-guarded + link_once, so re-ingest dedupes and a missing id
@@ -209,9 +217,9 @@ async def ingest_paper_finder(
     _save_index(index)
     logger.info(
         "ingest_paper_finder: created=%d deduped=%d linked=%d skipped=%d "
-        "used=%d (exec=%s)",
+        "used=%d plan_linked=%d (exec=%s)",
         report.created, report.deduped, report.linked, report.skipped,
-        report.used, exec_id,
+        report.used, report.plan_linked, exec_id,
     )
     return report
 

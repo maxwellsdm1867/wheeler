@@ -836,3 +836,140 @@ class TestIngestSemanticScholarE2E:
                 xid=exec_id, ids=[question_id, finding_id],
             )
             assert (await res.single())["c"] == 2
+
+    @pytest.mark.asyncio
+    async def test_run_arose_from_plan(self, e2e_config):
+        """Plan lifecycle: the run Execution AROSE_FROM the Plan it was launched for.
+
+        Anchors the Asta run to a Plan node so the run is part of the plan
+        provenance chain (not just the results RELEVANT_TO it). Asserts:
+          - link_to=<PL- id> creates Execution -[AROSE_FROM]-> the Plan exactly once
+            (report.plan_linked == 1), AND the search results still link RELEVANT_TO
+            the Plan as before,
+          - a non-Plan link_to (a Q- id) creates NO AROSE_FROM edge from the run
+            Execution (the Plan anchor is PL-only),
+          - re-ingest does NOT duplicate the AROSE_FROM edge (link_once),
+          - the full chain is queryable: a produced raw Dataset
+            -[WAS_GENERATED_BY]-> Execution -[AROSE_FROM]-> Plan.
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.asta.semantic_scholar import (
+            ingest_semantic_scholar,
+        )
+        from wheeler.tools.graph_tools import execute_tool
+
+        doc = _load(SEARCH_FIXTURE)
+        artifact_path = self._tmp / "s2_plan_raw.json"
+        artifact_path.write_text(json.dumps(doc))
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # Seed a Plan node the run is a step of, plus a non-Plan node (a Question)
+        # that link_to must NOT treat as a plan anchor.
+        plan_result = json.loads(await execute_tool(
+            "add_plan",
+            {"title": "E2E AROSE_FROM: plan that launched this Asta run",
+             "status": "approved"},
+            e2e_config,
+        ))
+        plan_id = plan_result["node_id"]
+        assert plan_id.startswith("PL-")
+        q_result = json.loads(await execute_tool(
+            "add_question",
+            {"question": "E2E AROSE_FROM: non-plan link target", "priority": 5},
+            e2e_config,
+        ))
+        question_id = q_result["node_id"]
+
+        # Tag the seeded nodes so teardown stays hermetic.
+        async with driver.session(database=db) as s:
+            await s.run(
+                "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                ids=[plan_id, question_id], tag=self._e2e_tag,
+            )
+
+        # --- Ingest with link_to = the Plan id ---
+        report1 = await ingest_semantic_scholar(
+            doc,
+            link_to=plan_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+        )
+        await self._tag_all(e2e_config, report1)
+        exec_id = report1.execution_id
+        # Exactly one Execution -[AROSE_FROM]-> Plan edge recorded this run.
+        assert report1.plan_linked == 1
+
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:AROSE_FROM]->(p:Plan {id: $pid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, pid=plan_id,
+            )
+            assert (await res.single())["c"] == 1
+
+        # The results STILL link RELEVANT_TO the Plan, as before (the AROSE_FROM
+        # edge is ADDITIVE, it does not replace the result relevance edges).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:RELEVANT_TO]->(pl:Plan {id: $pid}) "
+                "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
+                pid=plan_id, cids=SEARCH_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == len(SEARCH_CORPUS_IDS)
+
+        # Full chain is queryable: produced raw Dataset -[WAS_GENERATED_BY]->
+        # Execution -[AROSE_FROM]-> Plan.
+        assert report1.artifact
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (d {id: $aid})-[:WAS_GENERATED_BY]->"
+                "(x:Execution {id: $xid})-[:AROSE_FROM]->(p:Plan {id: $pid}) "
+                "RETURN count(p) AS c",
+                aid=report1.artifact, xid=exec_id, pid=plan_id,
+            )
+            assert (await res.single())["c"] == 1
+
+        # --- Re-ingest of the SAME artifact + Plan link_to: AROSE_FROM not duplicated.
+        report2 = await ingest_semantic_scholar(
+            doc,
+            link_to=plan_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+        )
+        await self._tag_all(e2e_config, report2)
+        assert report2.execution_id == exec_id
+        # The edge already existed, so link_once does not re-create it.
+        assert report2.plan_linked == 0
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:AROSE_FROM]->(p:Plan {id: $pid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, pid=plan_id,
+            )
+            assert (await res.single())["c"] == 1
+
+        # --- A NON-Plan link_to (a Question id) creates NO AROSE_FROM from the run.
+        # Use a distinct artifact so it gets its own Execution (its own session_id),
+        # isolating the assertion from the Plan run's Execution above.
+        doc_q = dict(doc)
+        doc_q["offset"] = 999  # perturb the content sha so session_id differs
+        artifact_q = self._tmp / "s2_plan_nonplan_raw.json"
+        artifact_q.write_text(json.dumps(doc_q))
+        report3 = await ingest_semantic_scholar(
+            doc_q,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_q),
+        )
+        await self._tag_all(e2e_config, report3)
+        assert report3.execution_id != exec_id
+        # No Plan anchor: a Q- link_to is not a PL- id, so plan_linked stays 0.
+        assert report3.plan_linked == 0
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:AROSE_FROM]->() "
+                "RETURN count(r) AS c",
+                xid=report3.execution_id,
+            )
+            assert (await res.single())["c"] == 0

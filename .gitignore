@@ -33,6 +33,8 @@ wh-triage-workspace/
 .claude/skills/*
 # except wheeler-brief, which is versioned with the repo
 !.claude/skills/wheeler-brief/
+# except wheeler-service-creator, which is versioned with the repo
+!.claude/skills/wheeler-service-creator/
 # brief HTML/JSON outputs (.plans/ is already ignored; listed for clarity)
 .plans/brief/
 
