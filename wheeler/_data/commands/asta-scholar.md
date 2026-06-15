@@ -31,7 +31,7 @@ Semantic Scholar has four sub-queries. The ingest auto-detects which one from th
 
 ## Choose the sub-query, run it, and ingest
 
-Pick at most one link target: the Question (`Q-...`) or Plan (`PL-...`) this query supports. Each relevant result links `RELEVANT_TO` that node. Omit `--link-to` if there is no clear target. The verb is idempotent: re-running the same artifact creates no duplicate papers, findings, or edges (papers dedupe on `corpus_id`, snippet findings on a content hash, edges are guarded by `link_once`).
+Pick at most one link target: the Question (`Q-...`) or Plan (`PL-...`) this query supports. Each relevant result links `RELEVANT_TO` that node. Omit `--link-to` if there is no clear target. Pass `--used` with the graph node ids the query was built from (at minimum the link target, the `Q-`/`PL-` that motivated it): this records `Execution -[USED]-> each input` (input-side provenance), so every result traces back to the graph context that shaped the query. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate papers, findings, edges, or USED edges (papers dedupe on `corpus_id`, snippet findings on a content hash, edges are guarded by `link_once`).
 
 ### Citations (build the citation graph)
 
@@ -39,28 +39,28 @@ The TARGET paper being cited is the CLI argument, NOT in the output. Pass it to 
 
 ```
 asta papers citations <paperId-or-DOI> --fields corpusId,title,authors,year,venue,citationCount --limit <N> > /tmp/asta-s2.json
-wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --target <corpus_id-or-P-id> --link-to <Q- or PL- id>
+wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --target <corpus_id-or-P-id> --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
 ### Search
 
 ```
 asta papers search "<query>" --fields corpusId,title,authors,year,venue,citationCount --limit <N> > /tmp/asta-s2.json
-wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id>
+wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
 ### Get one paper
 
 ```
 asta papers get <paperId-or-DOI> --fields corpusId,externalIds,title,authors,year,venue,citationCount,openAccessPdf,abstract > /tmp/asta-s2.json
-wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id>
+wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
 ### Snippet search
 
 ```
 asta papers snippet "<query>" --fields corpusId,title,authors --limit <N> > /tmp/asta-s2.json
-wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id>
+wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
 If any CLI command exits non-zero, report the failure and stop. A failed run writes nothing to the graph by design. The short alias `s2` works in place of `semantic_scholar`.

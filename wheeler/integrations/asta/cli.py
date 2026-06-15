@@ -48,6 +48,15 @@ def ingest(
             "or a P-id). Each citing paper links CITES it. Ignored otherwise."
         ),
     ),
+    used: Optional[str] = typer.Option(
+        None,
+        "--used",
+        help=(
+            "Comma-separated graph node ids the request was built FROM (the "
+            "question/plan, the seeded Finding ids). The run Execution USED "
+            "each one that exists in the graph (input-side provenance)."
+        ),
+    ),
 ) -> None:
     """Marshal an external-tool artifact into the Wheeler knowledge graph."""
     tool_key = tool.strip().lower()
@@ -73,12 +82,24 @@ def ingest(
 
     config = load_config()
 
+    # Comma-separated node ids the request was marshalled in FROM. Trimmed and
+    # blanks dropped; the run Execution USED each existing one (input-side
+    # provenance). Normalized to None when the parse yields nothing (whether the
+    # flag was absent, empty, or all-blank like "   " / ",,,"), so the
+    # no-USED-edges path is reached identically rather than passing an empty list.
+    _parsed_used = [i.strip() for i in used.split(",") if i.strip()] if used else []
+    used_inputs = _parsed_used or None
+
     if tool_key == "theorizer":
         from wheeler.integrations.asta.theorizer import ingest_theorizer
 
         report = asyncio.run(
             ingest_theorizer(
-                doc, link_to=link_to, config=config, artifact_path=str(artifact)
+                doc,
+                link_to=link_to,
+                config=config,
+                artifact_path=str(artifact),
+                used_inputs=used_inputs,
             )
         )
     elif tool_key in ("semantic_scholar", "semantic-scholar", "s2"):
@@ -91,6 +112,7 @@ def ingest(
                 target=target,
                 config=config,
                 artifact_path=str(artifact),
+                used_inputs=used_inputs,
             )
         )
     else:
@@ -98,13 +120,17 @@ def ingest(
 
         report = asyncio.run(
             ingest_paper_finder(
-                doc, link_to=link_to, config=config, artifact_path=str(artifact)
+                doc,
+                link_to=link_to,
+                config=config,
+                artifact_path=str(artifact),
+                used_inputs=used_inputs,
             )
         )
 
     typer.echo(
         f"created={report.created} deduped={report.deduped} "
-        f"linked={report.linked} skipped={report.skipped} "
+        f"linked={report.linked} skipped={report.skipped} used={report.used} "
         f"execution={report.execution_id or '-'}"
     )
     if report.paper_ids:

@@ -104,6 +104,7 @@ from wheeler.integrations.asta._marshal import (
     _link_once,
     _load_index,
     _paper_exists,
+    _record_used,
     _save_index,
 )
 from wheeler.integrations.asta.schemas import _normalize_corpus_id
@@ -943,6 +944,7 @@ async def ingest_theorizer(
     link_to: str | None = None,
     config: WheelerConfig,
     artifact_path: str | None = None,
+    used_inputs: list[str] | None = None,
 ) -> ImportReport:
     """Ingest a parsed Asta Theorizer A2A Task into the knowledge graph.
 
@@ -957,9 +959,16 @@ async def ingest_theorizer(
             WAS_GENERATED_BY the run Execution, and every generated node is
             linked WAS_DERIVED_FROM it. Best-effort: an artifact failure never
             breaks theory ingest.
+        used_inputs: Optional graph node ids the marshal-in consumed to build
+            the request: the link target (the Question/Plan that motivated the
+            run) plus the Finding ids seeded into the Theorizer extraction
+            payload. The run Execution -[USED]-> each one that exists in the
+            graph (existence-guarded, link_once): input-side provenance, on top
+            of the per-evidence-paper USED edges. A missing id is skipped and
+            logged, never fabricated.
 
     Returns:
-        An ImportReport with created / deduped / linked / skipped counts.
+        An ImportReport with created / deduped / linked / skipped / used counts.
         ``paper_ids`` collects every Paper touched (created or deduped).
     """
     from wheeler.tools.graph_tools import _get_backend, execute_tool
@@ -1017,6 +1026,15 @@ async def ingest_theorizer(
             await _stamp_custom(execute_tool, config, exec_id, run_meta.custom_bag())
     report.execution_id = exec_id
 
+    # Input-side provenance: the marshal-in built this request FROM graph nodes
+    # (the link target that motivated the run plus the Finding ids seeded into
+    # the extraction payload), so the run USED them. This is on TOP of the
+    # per-evidence-paper USED edges added in _ingest_paper_edge; link_once
+    # collapses any overlap. Existence-guarded, so a missing id is skipped, never
+    # fabricated; re-ingest dedupes.
+    if exec_id and used_inputs:
+        report.used += await _record_used(backend, config, exec_id, used_inputs)
+
     # The raw service output is synthesized WRITING, so it registers as a
     # Document (W-) node (not a Dataset). register_output_artifact copies the
     # ephemeral file into the durable raw store, registers the right node type,
@@ -1069,11 +1087,13 @@ async def ingest_theorizer(
     _save_hyp_index(hyp_index)
     _save_theory_index(theory_index)
     logger.info(
-        "ingest_theorizer: created=%d deduped=%d linked=%d skipped=%d (exec=%s)",
+        "ingest_theorizer: created=%d deduped=%d linked=%d skipped=%d "
+        "used=%d (exec=%s)",
         report.created,
         report.deduped,
         report.linked,
         report.skipped,
+        report.used,
         exec_id,
     )
     return report

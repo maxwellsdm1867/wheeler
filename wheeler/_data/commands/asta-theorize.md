@@ -39,10 +39,10 @@ If the command exits non-zero (including a login or auth failure), report it and
 Marshal the artifact into the graph with the single integrate verb:
 
 ```
-wheeler integrate ingest theorizer /tmp/asta-theorizer.json --link-to <Q- or PL- id>
+wheeler integrate ingest theorizer /tmp/asta-theorizer.json --link-to <Q- or PL- id> --used <Q- or PL- id>,<F-... seeded Finding ids>
 ```
 
-Omit `--link-to` if there is no target. The verb is idempotent: re-running the same artifact creates no duplicate theories, law hypotheses, papers, or edges. Each theory becomes a parent Finding (`artifact_type=theory`); each law becomes a Hypothesis the parent `CONTAINS`; supporting papers link `SUPPORTS` and contradicting papers link `CONTRADICTS` each law Hypothesis. The novelty verdict (established, derivable, new) is parked as `custom_novelty` on each Hypothesis, never in its `status`.
+Omit `--link-to` if there is no target. Pass `--used` with the graph node ids the request was built from: the link target (the `Q-`/`PL-` that motivated the run) AND every Finding id you seeded into the Theorizer extraction payload (the existing results that shaped the theory generation), comma-separated. This records `Execution -[USED]-> each input` (input-side provenance), so every generated theory traces back to the exact graph context it was built from, not just the literature support. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate theories, law hypotheses, papers, edges, or USED edges. Each theory becomes a parent Finding (`artifact_type=theory`); each law becomes a Hypothesis the parent `CONTAINS`; supporting papers link `SUPPORTS` and contradicting papers link `CONTRADICTS` each law Hypothesis. The novelty verdict (established, derivable, new) is parked as `custom_novelty` on each Hypothesis, never in its `status`.
 
 ## Report
 

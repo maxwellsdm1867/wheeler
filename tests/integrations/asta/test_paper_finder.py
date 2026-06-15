@@ -546,6 +546,129 @@ class TestIngestPaperFinderE2E:
             rows = {r["cid"]: r["c"] async for r in result}
         assert rows == {"211234567": 1, "222345678": 1}
 
+    @pytest.mark.asyncio
+    async def test_used_inputs_record_input_provenance(self, e2e_config):
+        """Input-side provenance: Execution -[USED]-> each marshalled-in input.
+
+        Seed an OpenQuestion + a Finding via execute_tool, ingest the fixture
+        with used_inputs=[those ids, plus a fabricated id that does NOT exist],
+        and assert:
+          - Execution -[USED]-> each existing input exactly once,
+          - the missing id is skipped (no error, no edge, report.used counts
+            only the real ones),
+          - re-ingest does NOT duplicate the USED edges,
+          - the full chain is queryable: a produced node (the raw Dataset
+            artifact) -[WAS_GENERATED_BY]-> Execution -[USED]-> the input.
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.asta.ingest import ingest_paper_finder
+        from wheeler.tools.graph_tools import execute_tool
+
+        doc = _load_fixture()
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # Seed two real graph inputs the marshal-in would have consumed.
+        q_result = json.loads(await execute_tool(
+            "add_question",
+            {"question": "E2E USED: which SRM papers shaped this?", "priority": 5},
+            e2e_config,
+        ))
+        question_id = q_result["node_id"]
+        f_result = json.loads(await execute_tool(
+            "add_finding",
+            {"description": "E2E USED: prior SRM result", "confidence": 0.8},
+            e2e_config,
+        ))
+        finding_id = f_result["node_id"]
+        # A fabricated id that does NOT exist in the graph: must be skipped.
+        missing_id = "Q-doesnotexist99"
+
+        # Tag the seeded inputs too so teardown stays hermetic.
+        async with driver.session(database=db) as s:
+            await s.run(
+                "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                ids=[question_id, finding_id], tag=self._e2e_tag,
+            )
+
+        used = [question_id, finding_id, missing_id]
+
+        # First ingest with used_inputs (no artifact path yet; the Execution is
+        # still produced, so USED can attach to it).
+        report1 = await ingest_paper_finder(
+            doc, link_to=question_id, config=e2e_config, used_inputs=used,
+        )
+        await self._tag_all(e2e_config, report1)
+        exec_id = report1.execution_id
+        # Only the two existing ids are linked; the missing id is skipped.
+        assert report1.used == 2
+
+        # Execution -[USED]-> each EXISTING input exactly once.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n) "
+                "WHERE n.id IN $ids RETURN n.id AS id, count(r) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            rows = {r["id"]: r["c"] async for r in res}
+        assert rows == {question_id: 1, finding_id: 1}
+
+        # The missing id has NO USED edge (skipped, never fabricated).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n {id: $mid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, mid=missing_id,
+            )
+            assert (await res.single())["c"] == 0
+            # And no node was fabricated for the missing id.
+            res = await s.run(
+                "MATCH (n {id: $mid}) RETURN count(n) AS c", mid=missing_id,
+            )
+            assert (await res.single())["c"] == 0
+
+        # Re-ingest of the SAME artifact + used_inputs: USED edges not duplicated.
+        report2 = await ingest_paper_finder(
+            doc, link_to=question_id, config=e2e_config, used_inputs=used,
+        )
+        await self._tag_all(e2e_config, report2)
+        assert report2.execution_id == exec_id
+        # Every USED edge already existed, so none is newly created this run.
+        assert report2.used == 0
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n) "
+                "WHERE n.id IN $ids RETURN count(r) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            assert (await res.single())["c"] == 2
+
+        # The full chain is queryable: a produced node -[WAS_GENERATED_BY]->
+        # Execution -[USED]-> the input. Use the raw Dataset artifact (a
+        # Wheeler-produced node) by re-ingesting once with an artifact path. The
+        # cwd is the per-test temp dir (the autouse fixture chdir'd into it), so
+        # a relative path lands in the isolated sandbox.
+        artifact_file = Path("asta_pf_used_chain.json")
+        artifact_file.write_text(json.dumps(doc))
+        report3 = await ingest_paper_finder(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            used_inputs=used,
+            artifact_path=str(artifact_file),
+        )
+        await self._tag_all(e2e_config, report3)
+        assert report3.artifact  # the produced raw Dataset node
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (d {id: $aid})-[:WAS_GENERATED_BY]->"
+                "(x:Execution {id: $xid})-[:USED]->(n) "
+                "WHERE n.id IN $ids RETURN count(DISTINCT n) AS c",
+                aid=report3.artifact, xid=exec_id,
+                ids=[question_id, finding_id],
+            )
+            assert (await res.single())["c"] == 2
+
 
 # ---------------------------------------------------------------------------
 # 4. Live-Neo4j e2e: service tag reaches Neo4j on non-Paper node types

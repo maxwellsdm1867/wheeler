@@ -151,6 +151,26 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   durable save dedupes on path and `ensure_artifact` dedupes on path, so
   re-ingest creates no duplicate node or edges. Artifact registration is
   best-effort and never aborts ingest.
+- **Input-side provenance (`Execution -[USED]-> the marshalled-in inputs`).**
+  The marshal-in synthesizes the tool payload FROM graph nodes (the question,
+  the Findings seeded into the Theorizer extraction payload, the gap that shaped
+  the query). That synthesis means the run USED those nodes, so each ingest fn
+  takes `used_inputs: list[str] | None` and, after the run Execution is created
+  and deduped, records `Execution -[USED]-> id` for each input via
+  `_record_used` (in `_marshal.py`). The CLI `--used` flag carries them
+  (comma-separated); the acts pass at minimum the `--link-to` Question/Plan, and
+  `/wh:asta-theorize` additionally passes the seeded Finding ids. Each id is
+  existence-guarded with the generic, label-agnostic `_node_exists` (a missing
+  id is SKIPPED and logged, never fabricated) and linked with `link_once` (so
+  re-ingest dedupes the USED edge, and a USED edge already recorded by another
+  path, e.g. the Theorizer per-evidence-paper `USED`, is not duplicated).
+  `USED` is the registered input-provenance verb (`graph/schema.py`,
+  `_complete_provenance` in `mutations.py` uses it the same way). NO per-output
+  `WAS_DERIVED_FROM` is needed for this: the chain
+  `output -[WAS_GENERATED_BY]-> Execution -[USED]-> input` is already
+  transitive, so any Asta result traces back to the exact graph context that
+  shaped its request. The linked-USED count surfaces as `ImportReport.used`
+  (`to_dict` + the printed summary).
 - **Failure isolation.** A failed or canceled CLI run writes nothing. Retries,
   auth, and timeouts stay inside the asta CLI.
 

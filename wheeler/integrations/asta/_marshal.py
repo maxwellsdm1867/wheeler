@@ -50,6 +50,7 @@ class ImportReport:
     deduped: int = 0
     linked: int = 0
     skipped: int = 0
+    used: int = 0
     execution_id: str = ""
     artifact: str = ""
     paper_ids: list[str] = field(default_factory=list)
@@ -60,6 +61,7 @@ class ImportReport:
             "deduped": self.deduped,
             "linked": self.linked,
             "skipped": self.skipped,
+            "used": self.used,
             "execution_id": self.execution_id,
             "artifact": self.artifact,
             "paper_ids": list(self.paper_ids),
@@ -218,3 +220,73 @@ async def _link_once(
     )
     result = json.loads(result_str)
     return result.get("status") == "linked"
+
+
+# ---------------------------------------------------------------------------
+# Input-side provenance: Execution -[USED]-> the marshalled-in graph nodes
+# ---------------------------------------------------------------------------
+
+
+async def _node_exists(backend, config: WheelerConfig, node_id: str) -> bool:
+    """Return True if a node with this id (any label) lives in the graph.
+
+    The generic, label-agnostic sibling of ``_paper_exists``: a marshalled-in
+    USED input can be any node type (an OpenQuestion, a Finding, a Plan, a
+    Dataset), so the guard matches on id alone rather than a fixed label. Keyed
+    on the globally-unique id, project-aware (scoped to ``project_tag`` when
+    Community Edition isolation is on, mirroring the read scoping in the query
+    handlers). Used to existence-guard every USED edge so the run never
+    fabricates an input it cannot find: a missing id is skipped, never created.
+    """
+    if not node_id:
+        return False
+    ptag = getattr(config.neo4j, "project_tag", "") or ""
+    if ptag:
+        query = (
+            "MATCH (n {id: $id}) "
+            "WHERE n._wheeler_project = $ptag RETURN n.id AS id LIMIT 1"
+        )
+        params = {"id": node_id, "ptag": ptag}
+    else:
+        query = "MATCH (n {id: $id}) RETURN n.id AS id LIMIT 1"
+        params = {"id": node_id}
+    rows = await backend.run_cypher(query, params)
+    return bool(rows)
+
+
+async def _record_used(
+    backend, config: WheelerConfig, exec_id: str, used_inputs: list[str],
+) -> int:
+    """Record Execution -[USED]-> each existing marshalled-in graph node.
+
+    Input-side provenance: the marshal-in synthesized the tool payload FROM
+    these graph nodes (the question, the Findings seeded into extraction, the
+    gap that shaped the query), so the run USED them. The chain is then
+    transitive without per-output edges:
+    ``output -[WAS_GENERATED_BY]-> Execution -[USED]-> input``.
+
+    Each id is existence-guarded with ``_node_exists`` (a missing id is skipped
+    and logged, never fabricated) and linked with ``_link_once`` (so re-ingest
+    dedupes the edge and a USED already recorded by another path, e.g. the
+    Theorizer evidence-paper USED, is not duplicated). Self-edges (an id equal to
+    the Execution) and blanks are skipped. Returns the count of USED edges newly
+    created this call.
+    """
+    if not exec_id or not used_inputs:
+        return 0
+    linked = 0
+    seen: set[str] = set()
+    for raw_id in used_inputs:
+        node_id = (raw_id or "").strip()
+        if not node_id or node_id == exec_id or node_id in seen:
+            continue
+        seen.add(node_id)
+        if not await _node_exists(backend, config, node_id):
+            logger.warning(
+                "record_used: skipping missing input id %r (not in graph)",
+                node_id,
+            )
+            continue
+        if await _link_once(backend, config, exec_id, "USED", node_id):
+            linked += 1
+    return linked

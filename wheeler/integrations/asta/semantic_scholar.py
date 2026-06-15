@@ -91,6 +91,7 @@ from wheeler.integrations.asta._marshal import (
     _link_once,
     _load_index,
     _paper_exists,
+    _record_used,
     _save_index,
 )
 from wheeler.integrations.asta.schemas import _normalize_corpus_id
@@ -636,6 +637,7 @@ async def ingest_semantic_scholar(
     target: str | None = None,
     config: WheelerConfig,
     artifact_path: str | None = None,
+    used_inputs: list[str] | None = None,
 ) -> ImportReport:
     """Ingest a parsed Asta Semantic Scholar REST artifact into the graph.
 
@@ -661,9 +663,14 @@ async def ingest_semantic_scholar(
             Execution (the Dataset is Wheeler-produced), and every generated node
             (papers, snippet Findings) links WAS_DERIVED_FROM it. Best-effort: an
             artifact failure never breaks ingest.
+        used_inputs: Optional graph node ids the marshal-in consumed to build
+            the request (at minimum the link target that motivated the query).
+            The run Execution -[USED]-> each one that exists in the graph
+            (existence-guarded, link_once): input-side provenance. A missing id
+            is skipped and logged, never fabricated.
 
     Returns:
-        An ImportReport with created / deduped / linked / skipped counts.
+        An ImportReport with created / deduped / linked / skipped / used counts.
     """
     from wheeler.tools.graph_tools import _get_backend, execute_tool
 
@@ -707,6 +714,13 @@ async def ingest_semantic_scholar(
         )
         exec_id = exec_result.get("node_id", "")
     report.execution_id = exec_id
+
+    # Input-side provenance: the marshal-in built this request FROM graph nodes
+    # (at minimum the link target that motivated the query), so the run USED
+    # them. Existence-guarded + link_once, so re-ingest dedupes and a missing id
+    # is skipped, never fabricated.
+    if exec_id and used_inputs:
+        report.used += await _record_used(backend, config, exec_id, used_inputs)
 
     # Every service output is an artifact: the raw S2 dump registers as a Dataset
     # (D-) node (structured reference records, NOT synthesized writing). S2 has no
@@ -817,12 +831,13 @@ async def ingest_semantic_scholar(
     _save_fallback_index(fallback_index)
     logger.info(
         "ingest_semantic_scholar: sub_kind=%s created=%d deduped=%d linked=%d "
-        "skipped=%d (exec=%s)",
+        "skipped=%d used=%d (exec=%s)",
         parsed.sub_kind,
         report.created,
         report.deduped,
         report.linked,
         report.skipped,
+        report.used,
         exec_id,
     )
     return report
