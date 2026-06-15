@@ -121,6 +121,64 @@ async def _find_paper_by_corpus_id(backend, config: WheelerConfig, corpus_id: st
     return None
 
 
+async def _find_execution(
+    backend, config: WheelerConfig, *, service: str, session_id: str
+) -> str | None:
+    """Return an existing Execution id for this (service, session_id), or None.
+
+    Makes the run Execution itself idempotent: re-ingesting the same artifact
+    reuses the existing Execution (keyed on its stable run id = session_id)
+    instead of creating a duplicate node and stale WAS_GENERATED_BY edges. Both
+    fields are needed because session_id alone is not unique across services.
+    Project-aware, mirroring the read scoping in the query handlers.
+    """
+    if not service or not session_id:
+        return None
+    ptag = getattr(config.neo4j, "project_tag", "") or ""
+    if ptag:
+        query = (
+            "MATCH (x:Execution {service: $svc, session_id: $sid}) "
+            "WHERE x._wheeler_project = $ptag RETURN x.id AS id LIMIT 1"
+        )
+        params = {"svc": service, "sid": session_id, "ptag": ptag}
+    else:
+        query = (
+            "MATCH (x:Execution {service: $svc, session_id: $sid}) "
+            "RETURN x.id AS id LIMIT 1"
+        )
+        params = {"svc": service, "sid": session_id}
+    rows = await backend.run_cypher(query, params)
+    if rows:
+        return rows[0].get("id")
+    return None
+
+
+async def _paper_exists(backend, config: WheelerConfig, paper_id: str) -> bool:
+    """Return True if a Paper with this id still lives in the graph.
+
+    Guards the persisted corpus_id index against staleness. A node deleted by a
+    prior teardown (or a pruned graph) leaves a dangling P-id in the on-disk
+    index; trusting it would make a later ``link_once`` target a dead node, and
+    the backend's link would fail and SILENTLY DROP the SUPPORTS/CONTRADICTS
+    edge, losing provenance. Mirrors the Finding/Hypothesis existence guards.
+    Project-aware, matching the read scoping in the query handlers.
+    """
+    if not paper_id:
+        return False
+    ptag = getattr(config.neo4j, "project_tag", "") or ""
+    if ptag:
+        query = (
+            "MATCH (p:Paper {id: $id}) "
+            "WHERE p._wheeler_project = $ptag RETURN p.id AS id LIMIT 1"
+        )
+        params = {"id": paper_id, "ptag": ptag}
+    else:
+        query = "MATCH (p:Paper {id: $id}) RETURN p.id AS id LIMIT 1"
+        params = {"id": paper_id}
+    rows = await backend.run_cypher(query, params)
+    return bool(rows)
+
+
 async def _edge_exists(backend, src_id: str, rel: str, tgt_id: str) -> bool:
     """Return True if a src -[rel]-> tgt edge already exists (link_once guard).
 
@@ -198,22 +256,44 @@ async def ingest_paper_finder(
 
     # One Execution per RUN, tagged with the service. session_id correlates
     # every node written this turn (validate_contract audits on session_id).
+    # The Execution is itself idempotent: re-ingesting the same artifact reuses
+    # the existing Execution (keyed on service + session_id) instead of creating
+    # a duplicate node and stale WAS_GENERATED_BY edges.
     query_text = str(doc.get("query", ""))[:80]
-    session_id = str(doc.get("thread_id") or "") or f"asta-pf-{abs(hash(query_text)) & 0xffffffff:08x}"
-    exec_result_str = await execute_tool(
-        "add_execution",
-        {
-            "kind": "paper-search",
-            "description": f"Asta Paper Finder: {query_text}",
-            "agent_id": "asta",
-            "status": "completed",
-            "session_id": session_id,
-            "service": _SERVICE_TAG,
-        },
-        config,
+    pf_run_id = str(doc.get("thread_id") or "")
+    session_id = pf_run_id or f"asta-pf-{abs(hash(query_text)) & 0xffffffff:08x}"
+    exec_id = await _find_execution(
+        backend, config, service=_SERVICE_TAG, session_id=session_id
     )
-    exec_result = json.loads(exec_result_str)
-    exec_id = exec_result.get("node_id", "")
+    if not exec_id:
+        exec_result_str = await execute_tool(
+            "add_execution",
+            {
+                "kind": "paper-search",
+                "description": f"Asta Paper Finder: {query_text}",
+                "agent_id": "asta",
+                "status": "completed",
+                "session_id": session_id,
+                "service": _SERVICE_TAG,
+            },
+            config,
+        )
+        exec_result = json.loads(exec_result_str)
+        exec_id = exec_result.get("node_id", "")
+        # Stamp the run id onto the Execution custom bag so paper-finder runs are
+        # benchmarkable by the same query shape as theorizer (custom_run_id).
+        if exec_id and pf_run_id:
+            update_result_str = await execute_tool(
+                "update_node",
+                {"node_id": exec_id, "custom": {"run_id": pf_run_id}},
+                config,
+            )
+            update_result = json.loads(update_result_str)
+            if "error" in update_result:
+                logger.warning(
+                    "ingest_paper_finder: run_id stamp failed for %s: %s",
+                    exec_id, update_result,
+                )
     report.execution_id = exec_id
 
     # Every service output is an artifact: register the raw -o JSON dump as a
@@ -222,11 +302,17 @@ async def ingest_paper_finder(
     # an artifact problem cannot break paper ingest.
     from .artifacts import register_output_artifact
 
+    # Paper Finder output is structured reference records, so its raw node is a
+    # Dataset (D-). run_id is the thread_id when present (its closest stable run
+    # key, computed above), else the durable store falls back to a content sha.
     artifact_id = await register_output_artifact(
         artifact_path,
         execution_id=exec_id,
         service=_SERVICE_TAG,
         config=config,
+        node_type="dataset",
+        run_id=pf_run_id,
+        benchmark={"service": _SERVICE_TAG, "run_id": pf_run_id} if pf_run_id else None,
         description=f"{_SERVICE_TAG} raw output",
     )
     if artifact_id:
@@ -295,8 +381,16 @@ async def _ingest_one_paper(
     report: ImportReport,
 ) -> str | None:
     """Dedupe-or-create one paper. Returns its node id, or None on failure."""
-    # Dedupe: prefer the persisted index, then a project-aware graph read.
+    # Dedupe: prefer the persisted index, then a project-aware graph read. The
+    # persisted index hit is only trusted if the node still lives in the graph;
+    # a stale id (deleted/pruned node) is dropped so we fall through to a fresh
+    # corpus_id read or create. Trusting a dead id would make link_once target a
+    # missing node and silently drop the resulting edge.
     existing = index.get(record.corpus_id) if record.corpus_id else None
+    if existing and not await _paper_exists(backend, config, existing):
+        existing = None
+        if record.corpus_id:
+            index.pop(record.corpus_id, None)
     if not existing and record.corpus_id:
         existing = await _find_paper_by_corpus_id(backend, config, record.corpus_id)
 

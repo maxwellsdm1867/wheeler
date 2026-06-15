@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,12 @@ from wheeler.integrations.asta.transport import run_asta
 
 FIXTURE = Path(__file__).parent / "fixtures" / "paper_finder_sample.json"
 
-E2E_TAG = "integrations_e2e_test"
+# Service tag for every node this adapter writes. Teardown keys on it (plus the
+# fixture corpus_ids) so cleanup is hermetic regardless of a per-run e2e tag.
+SERVICE_TAG = "asta:paper-finder"
+
+# Every corpus_id the fixture papers carry (normalized digit-strings).
+PF_CORPUS_IDS = ["211234567", "222345678"]
 
 
 def _load_fixture() -> dict:
@@ -187,39 +193,70 @@ def _reset_driver_singleton():
     drv._async_driver_uri = None
 
 
+def _cleanup_paper_finder(e2e_config, e2e_tag: str) -> None:
+    """Hermetic teardown: delete every node this adapter could have created.
+
+    Crash-safe and independent of any post-success tagging step: it keys on the
+    SERVICE_TAG (set at node creation), on the fixture corpus_ids (papers may
+    pre-exist from another run), and on the per-run e2e tag (the seed Question).
+    Deleting on the shared service tag is safe because the e2e config uses a
+    dedicated project and no production node carries this synthetic service.
+    """
+    import asyncio
+
+    from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
+
+    async def _run():
+        driver = AsyncGraphDatabase.driver(
+            e2e_config.neo4j.uri,
+            auth=(e2e_config.neo4j.username, e2e_config.neo4j.password),
+            notifications_min_severity=NotificationMinimumSeverity.OFF,
+        )
+        try:
+            async with driver.session(database=e2e_config.neo4j.database) as s:
+                await s.run(
+                    "MATCH (n) WHERE n.service = $svc DETACH DELETE n",
+                    svc=SERVICE_TAG,
+                )
+                await s.run(
+                    "MATCH (p:Paper) WHERE p.corpus_id IN $cids DETACH DELETE p",
+                    cids=PF_CORPUS_IDS,
+                )
+                await s.run(
+                    "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
+                    tag=e2e_tag,
+                )
+        finally:
+            await driver.close()
+
+    asyncio.run(_run())
+
+
 class TestIngestPaperFinderE2E:
     @pytest.fixture(autouse=True)
     def _skip_and_cleanup(self, neo4j_available, e2e_config, tmp_path, monkeypatch):
         if not neo4j_available:
             pytest.skip("Neo4j not available -- skipping integrations e2e")
         # Run inside a temp cwd so the on-disk index + knowledge/synthesis
-        # writes land in an isolated sandbox we delete afterward.
+        # writes land in an isolated sandbox we delete afterward. The persisted
+        # corpus_id index is therefore fresh per test, so created-vs-deduped
+        # counts are hermetic and never depend on leftover cross-run state.
         monkeypatch.chdir(tmp_path)
+        # Per-run unique e2e tag (not a shared constant), so this test's
+        # teardown can never DETACH DELETE another test's nodes.
+        self._e2e_tag = f"integrations_e2e_{uuid.uuid4().hex}"
+        # Pre-clean any nodes a prior interrupted run left behind, so the
+        # first-ingest counts start from a clean graph.
+        _cleanup_paper_finder(e2e_config, self._e2e_tag)
         yield
-        # Teardown: delete all nodes this test created.
-        import asyncio
-
-        from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
-
-        async def _cleanup():
-            driver = AsyncGraphDatabase.driver(
-                e2e_config.neo4j.uri,
-                auth=(e2e_config.neo4j.username, e2e_config.neo4j.password),
-                notifications_min_severity=NotificationMinimumSeverity.OFF,
-            )
-            try:
-                async with driver.session(database=e2e_config.neo4j.database) as s:
-                    await s.run(
-                        "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
-                        tag=E2E_TAG,
-                    )
-            finally:
-                await driver.close()
-
-        asyncio.run(_cleanup())
+        _cleanup_paper_finder(e2e_config, self._e2e_tag)
 
     async def _tag_all(self, e2e_config):
-        """Tag every Paper/Execution/Dataset carrying our corpus_ids or service."""
+        """Tag every Paper/Execution/Dataset with the per-run e2e tag.
+
+        Belt-and-braces only: teardown already deletes on the service tag and
+        corpus_ids unconditionally, so a crash before this call still cleans up.
+        """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
@@ -227,18 +264,16 @@ class TestIngestPaperFinderE2E:
         async with driver.session(database=db) as s:
             await s.run(
                 "MATCH (p:Paper) WHERE p.corpus_id IN $cids SET p.e2e_tag = $tag",
-                cids=["211234567", "222345678"], tag=E2E_TAG,
+                cids=PF_CORPUS_IDS, tag=self._e2e_tag,
             )
             await s.run(
-                "MATCH (x:Execution) WHERE x.service = 'asta:paper-finder' "
-                "SET x.e2e_tag = $tag",
-                tag=E2E_TAG,
+                "MATCH (x:Execution) WHERE x.service = $svc SET x.e2e_tag = $tag",
+                svc=SERVICE_TAG, tag=self._e2e_tag,
             )
             # The raw-output artifact is a Dataset tagged with the service.
             await s.run(
-                "MATCH (d:Dataset) WHERE d.service = 'asta:paper-finder' "
-                "SET d.e2e_tag = $tag",
-                tag=E2E_TAG,
+                "MATCH (d:Dataset) WHERE d.service = $svc SET d.e2e_tag = $tag",
+                svc=SERVICE_TAG, tag=self._e2e_tag,
             )
 
     @pytest.mark.asyncio
@@ -262,7 +297,7 @@ class TestIngestPaperFinderE2E:
         async with driver.session(database=db) as s:
             await s.run(
                 "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
-                id=question_id, tag=E2E_TAG,
+                id=question_id, tag=self._e2e_tag,
             )
 
         # First ingest.
@@ -271,11 +306,41 @@ class TestIngestPaperFinderE2E:
         assert report1.created == 2
         assert report1.deduped == 0
 
+        # Snapshot the Execution provenance fan-in after the first ingest, so we
+        # can prove re-ingest neither duplicates the Execution nor grows it.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {service: $svc}) "
+                "RETURN count(r) AS c",
+                svc=SERVICE_TAG,
+            )
+            gen_by_after_first = (await res.single())["c"]
+
         # Second ingest of the SAME artifact: no new papers.
         report2 = await ingest_paper_finder(doc, link_to=question_id, config=e2e_config)
         await self._tag_all(e2e_config)
         assert report2.created == 0
         assert report2.deduped == 2
+
+        # --- Execution provenance is idempotent across re-ingest ---
+        # Re-ingesting the SAME artifact must NOT create a second Execution node,
+        # and must NOT accumulate extra WAS_GENERATED_BY edges. (Regression:
+        # add_execution was previously called unconditionally, duplicating the
+        # Execution and its provenance fan-in on every re-ingest.)
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {service: $svc}) RETURN count(x) AS c",
+                svc=SERVICE_TAG,
+            )
+            assert (await res.single())["c"] == 1
+            res = await s.run(
+                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {service: $svc}) "
+                "RETURN count(r) AS c",
+                svc=SERVICE_TAG,
+            )
+            assert (await res.single())["c"] == gen_by_after_first
+        # The report points at the same Execution both runs (reused, not new).
+        assert report2.execution_id == report1.execution_id
 
         # Exactly one Paper per corpus_id (idempotency).
         async with driver.session(database=db) as s:
@@ -360,17 +425,25 @@ class TestIngestPaperFinderE2E:
         assert artifact_id.startswith("D-")
         exec_id = report1.execution_id
 
-        # The artifact node exists, is a Dataset, and carries the service tag.
+        # The artifact node exists, is a Dataset, carries the service tag, and
+        # points at the DURABLE raw store (not the ephemeral input path). The
+        # run_id (thread_id) is the durable-store key and a queryable custom field.
         async with driver.session(database=db) as s:
             result = await s.run(
                 "MATCH (d:Dataset {id: $aid}) "
-                "RETURN d.service AS service, d.path AS path",
+                "RETURN d.service AS service, d.path AS path, "
+                "d.custom_run_id AS run_id",
                 aid=artifact_id,
             )
             rec = await result.single()
         assert rec is not None
         assert rec["service"] == "asta:paper-finder"
-        assert rec["path"] == str(artifact_file)
+        # Path is the durable store copy, not the ephemeral input file.
+        assert rec["path"] != str(artifact_file)
+        assert ".wheeler/asta/raw/asta-paper-finder/thread-e2e-0001.json" in rec["path"]
+        assert Path(rec["path"]).exists()  # the saved raw output is reachable
+        assert rec["run_id"] == "thread-e2e-0001"
+        durable_path = rec["path"]
 
         # Artifact WAS_GENERATED_BY the run Execution (exactly one edge).
         async with driver.session(database=db) as s:
@@ -401,12 +474,13 @@ class TestIngestPaperFinderE2E:
         await self._tag_all(e2e_config)
         assert report2.artifact == artifact_id
 
-        # Still exactly one Dataset for this service + path.
+        # Still exactly one Dataset for this service + durable path (path-dedupe
+        # in the raw store + ensure_artifact idempotency on re-ingest).
         async with driver.session(database=db) as s:
             result = await s.run(
                 "MATCH (d:Dataset) WHERE d.path = $path AND d.service = $svc "
                 "RETURN count(d) AS c",
-                path=str(artifact_file), svc="asta:paper-finder",
+                path=durable_path, svc="asta:paper-finder",
             )
             rec = await result.single()
         assert rec["c"] == 1
@@ -454,10 +528,15 @@ class TestServiceTagReachesNeo4j:
         if not neo4j_available:
             pytest.skip("Neo4j not available -- skipping integrations e2e")
         monkeypatch.chdir(tmp_path)
+        # Per-run unique e2e tag, so this test's teardown can never DETACH
+        # DELETE another test's nodes.
+        self._e2e_tag = f"integrations_e2e_{uuid.uuid4().hex}"
         yield
         import asyncio
 
         from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
+
+        tag = self._e2e_tag
 
         async def _cleanup():
             driver = AsyncGraphDatabase.driver(
@@ -469,7 +548,7 @@ class TestServiceTagReachesNeo4j:
                 async with driver.session(database=e2e_config.neo4j.database) as s:
                     await s.run(
                         "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
-                        tag=E2E_TAG,
+                        tag=tag,
                     )
             finally:
                 await driver.close()
@@ -503,7 +582,7 @@ class TestServiceTagReachesNeo4j:
         async with driver.session(database=db) as s:
             await s.run(
                 "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
-                id=node_id, tag=E2E_TAG,
+                id=node_id, tag=self._e2e_tag,
             )
 
         # (a) service reached Neo4j and is queryable.
@@ -548,7 +627,7 @@ class TestServiceTagReachesNeo4j:
         async with driver.session(database=db) as s:
             await s.run(
                 "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
-                id=node_id, tag=E2E_TAG,
+                id=node_id, tag=self._e2e_tag,
             )
 
         # (a) service reached Neo4j and is queryable.
