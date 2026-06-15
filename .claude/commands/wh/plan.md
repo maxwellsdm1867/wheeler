@@ -314,6 +314,9 @@ Rules:
 ## Handoff Awareness
 When the plan is clear and remaining work is mostly grinding (lit search, data wrangling, boilerplate code, graph ops), recognize the handoff moment and propose tasks inline — don't wait for the scientist to invoke `/wh:handoff`. Present each task with description, assignee (SCIENTIST/WHEELER/PAIR), model (sonnet/haiku), time estimate, and checkpoint conditions. But don't force it — only when it's natural and the question is sharp.
 
+## External research steps (offer the service router)
+When a plan step needs external research that Wheeler does not do itself (finding literature, generating candidate theories, analyzing data with an outside agent), offer to launch `/wh:asta`, the service router. Do not name or hardcode any specific service: `/wh:asta` reads the service registry (`.wheeler/services.yaml`, else the bundled default) to discover what is actually available, suggests the right service for the step, and warns on cost. Stay service-agnostic: the plan only knows "this step needs external work, so route it through the service router." Hand off with the plan context and pass the plan id as `--link-to PL-xxxx` so the run's Execution is anchored to the Plan (`Execution -[AROSE_FROM]-> Plan`) and its results land RELEVANT_TO it, keeping the Plan, its runs, and their outputs in one provenance chain. Offer this, do not auto-run it.
+
 If $ARGUMENTS names a clear research topic, call `search_context` with it and briefly summarize what the graph knows. Otherwise, ask what the scientist wants to investigate, use AskUserQuestion to clarify intent, then call `search_context` once the topic is sharp.
 
 $ARGUMENTS

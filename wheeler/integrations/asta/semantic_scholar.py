@@ -88,6 +88,7 @@ from wheeler.integrations.asta._marshal import (
     ImportReport,
     _find_execution,
     _find_paper_by_corpus_id,
+    _link_execution_to_plan,
     _link_once,
     _load_index,
     _paper_exists,
@@ -715,6 +716,17 @@ async def ingest_semantic_scholar(
         exec_id = exec_result.get("node_id", "")
     report.execution_id = exec_id
 
+    # Plan lifecycle: anchor the run Execution to its Plan. When link_to is a
+    # Plan id (PL-), Execution -[AROSE_FROM]-> Plan, so the run itself joins the
+    # plan provenance chain. This is an Execution-level edge (the RUN arose from
+    # the plan that prompted it) and so is recorded for EVERY sub-kind, including
+    # citations: the citing papers themselves are not RELEVANT_TO the question
+    # (link_to is withheld from them), but the run still arose from the plan.
+    # No-op for a non-Plan / missing link_to; link_once so re-ingest does not
+    # duplicate.
+    if exec_id and await _link_execution_to_plan(backend, config, exec_id, link_to):
+        report.plan_linked += 1
+
     # Input-side provenance: the marshal-in built this request FROM graph nodes
     # (at minimum the link target that motivated the query), so the run USED
     # them. Existence-guarded + link_once, so re-ingest dedupes and a missing id
@@ -831,13 +843,14 @@ async def ingest_semantic_scholar(
     _save_fallback_index(fallback_index)
     logger.info(
         "ingest_semantic_scholar: sub_kind=%s created=%d deduped=%d linked=%d "
-        "skipped=%d used=%d (exec=%s)",
+        "skipped=%d used=%d plan_linked=%d (exec=%s)",
         parsed.sub_kind,
         report.created,
         report.deduped,
         report.linked,
         report.skipped,
         report.used,
+        report.plan_linked,
         exec_id,
     )
     return report

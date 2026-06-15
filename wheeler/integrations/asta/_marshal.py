@@ -51,6 +51,7 @@ class ImportReport:
     linked: int = 0
     skipped: int = 0
     used: int = 0
+    plan_linked: int = 0
     execution_id: str = ""
     artifact: str = ""
     paper_ids: list[str] = field(default_factory=list)
@@ -62,6 +63,7 @@ class ImportReport:
             "linked": self.linked,
             "skipped": self.skipped,
             "used": self.used,
+            "plan_linked": self.plan_linked,
             "execution_id": self.execution_id,
             "artifact": self.artifact,
             "paper_ids": list(self.paper_ids),
@@ -252,6 +254,51 @@ async def _node_exists(backend, config: WheelerConfig, node_id: str) -> bool:
         params = {"id": node_id}
     rows = await backend.run_cypher(query, params)
     return bool(rows)
+
+
+async def _link_execution_to_plan(
+    backend, config: WheelerConfig, exec_id: str, link_to: str | None,
+) -> bool:
+    """Anchor the run Execution to a Plan: ``Execution -[AROSE_FROM]-> Plan``.
+
+    Plan/session lifecycle integration. When the marshal-in ``link_to`` is a Plan
+    id (``PL-`` prefix), the Asta run is a step OF that plan, so the run Execution
+    -[AROSE_FROM]-> the Plan: the run AROSE FROM the plan that motivated it. This
+    puts the Execution itself into the plan's provenance chain, on top of the
+    results that link RELEVANT_TO the Plan as today. With this edge a Plan, its
+    Asta Executions, and their outputs form one chain (see /wh:plan, /wh:execute,
+    /wh:close).
+
+    Direction rationale: ``AROSE_FROM`` reads as "the run arose from the plan",
+    matching the proven model already used by the Theorizer adapter (a generated
+    parent Finding -[AROSE_FROM]-> its ``link_to`` Plan/Question). ``CONTAINS``
+    (Plan CONTAINS the step) was considered but rejected: CONTAINS is the
+    structural parent/child edge (e.g. a theory Finding CONTAINS its law
+    Hypotheses); AROSE_FROM is the discovery/derivation edge, which is exactly
+    what an Asta run is relative to the plan that prompted it. Keeping the same
+    relationship the Theorizer already uses also makes the plan-side query
+    uniform across adapters.
+
+    No-op (returns False) for a non-Plan ``link_to`` (anything not ``PL-``),
+    a blank id, or a Plan id not in the graph (existence-guarded with
+    ``_node_exists``, so a stale/missing id is skipped, never fabricated).
+    Idempotent via ``_link_once``, so re-ingest does not duplicate the edge.
+    Returns True only when a NEW edge was created.
+    """
+    if not exec_id or not link_to:
+        return False
+    plan_id = link_to.strip()
+    if not plan_id.upper().startswith("PL-"):
+        return False
+    if plan_id == exec_id:
+        return False
+    if not await _node_exists(backend, config, plan_id):
+        logger.warning(
+            "link_execution_to_plan: skipping missing Plan id %r (not in graph)",
+            plan_id,
+        )
+        return False
+    return await _link_once(backend, config, exec_id, "AROSE_FROM", plan_id)
 
 
 async def _record_used(

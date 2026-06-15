@@ -101,6 +101,7 @@ from wheeler.integrations.asta._marshal import (
     ImportReport,
     _find_execution,
     _find_paper_by_corpus_id,
+    _link_execution_to_plan,
     _link_once,
     _load_index,
     _paper_exists,
@@ -1026,6 +1027,14 @@ async def ingest_theorizer(
             await _stamp_custom(execute_tool, config, exec_id, run_meta.custom_bag())
     report.execution_id = exec_id
 
+    # Plan lifecycle: anchor the run Execution to its Plan. When link_to is a
+    # Plan id (PL-), Execution -[AROSE_FROM]-> Plan, so the run itself joins the
+    # plan provenance chain (the theory parent Findings also link AROSE_FROM the
+    # Plan, below). No-op for a non-Plan / missing link_to; link_once so re-ingest
+    # does not duplicate.
+    if exec_id and await _link_execution_to_plan(backend, config, exec_id, link_to):
+        report.plan_linked += 1
+
     # Input-side provenance: the marshal-in built this request FROM graph nodes
     # (the link target that motivated the run plus the Finding ids seeded into
     # the extraction payload), so the run USED them. This is on TOP of the
@@ -1088,12 +1097,13 @@ async def ingest_theorizer(
     _save_theory_index(theory_index)
     logger.info(
         "ingest_theorizer: created=%d deduped=%d linked=%d skipped=%d "
-        "used=%d (exec=%s)",
+        "used=%d plan_linked=%d (exec=%s)",
         report.created,
         report.deduped,
         report.linked,
         report.skipped,
         report.used,
+        report.plan_linked,
         exec_id,
     )
     return report
