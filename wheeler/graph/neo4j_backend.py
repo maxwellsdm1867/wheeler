@@ -30,6 +30,52 @@ from wheeler.graph.schema import (
 
 logger = logging.getLogger(__name__)
 
+# Prefix used to flatten the ``custom`` bag into discrete scalar properties.
+# Neo4j cannot store a nested map as a single property, so a node's
+# ``custom={"k": v}`` is written as ``custom_k = v`` and reassembled on read.
+_CUSTOM_PREFIX = "custom_"
+
+
+def _flatten_custom(props: dict) -> dict:
+    """Expand a ``custom`` dict into discrete ``custom_<key>`` scalar props.
+
+    Returns a new props dict. The original ``custom`` key is removed.
+    Non-scalar values (dict/list/None) are skipped: Neo4j properties must be
+    primitive. Existing nodes with no ``custom`` are unaffected.
+    """
+    custom = props.get("custom")
+    if not isinstance(custom, dict):
+        return props
+    out = {k: v for k, v in props.items() if k != "custom"}
+    for key, value in custom.items():
+        if isinstance(value, bool) or isinstance(value, (str, int, float)):
+            out[f"{_CUSTOM_PREFIX}{key}"] = value
+        else:
+            logger.debug(
+                "Skipping non-scalar custom field %r (type %s)",
+                key, type(value).__name__,
+            )
+    return out
+
+
+def _reassemble_custom(node: dict) -> dict:
+    """Collapse ``custom_<key>`` props back into a single ``custom`` dict.
+
+    Returns a new dict with the flat ``custom_*`` keys removed from the top
+    level and gathered under ``custom``. Nodes without any ``custom_*`` prop
+    round-trip unchanged (no empty ``custom`` injected, so back-compat holds).
+    """
+    custom: dict = {}
+    out: dict = {}
+    for key, value in node.items():
+        if key.startswith(_CUSTOM_PREFIX):
+            custom[key[len(_CUSTOM_PREFIX):]] = value
+        else:
+            out[key] = value
+    if custom:
+        out["custom"] = custom
+    return out
+
 
 class Neo4jBackend(GraphBackend):
     """Neo4j backend using the existing async driver singleton."""
@@ -73,7 +119,9 @@ class Neo4jBackend(GraphBackend):
 
     async def create_node(self, label: str, properties: dict) -> str:
         self._cb.check()
-        props = dict(properties)
+        # Flatten the custom bag into discrete custom_<key> scalar props so
+        # Neo4j can store them (a nested map is not a valid property value).
+        props = _flatten_custom(dict(properties))
         if "id" not in props:
             prefix = LABEL_TO_PREFIX.get(label)
             if not prefix:
@@ -141,13 +189,18 @@ class Neo4jBackend(GraphBackend):
             return None
 
         node = record["n"]
-        return dict(node)
+        # Collapse flattened custom_<key> props back into a single custom dict.
+        return _reassemble_custom(dict(node))
 
     async def update_node(
         self, label: str, node_id: str, properties: dict
     ) -> bool:
         self._cb.check()
-        props = {k: v for k, v in properties.items() if k != "id"}
+        # Flatten any custom bag the same way create_node does, so an update
+        # that carries custom={...} writes discrete custom_<key> scalar props
+        # rather than attempting to SET a nested map (which Neo4j rejects).
+        flattened = _flatten_custom({k: v for k, v in properties.items() if k != "id"})
+        props = flattened
         if not props:
             return False
 
@@ -334,7 +387,7 @@ class Neo4jBackend(GraphBackend):
             self._cb.record_underlying(exc)
             raise
 
-        return [dict(r["n"]) for r in records]
+        return [_reassemble_custom(dict(r["n"])) for r in records]
 
     async def count_all(self) -> dict[str, Any]:
         """Use the existing schema.get_status implementation."""

@@ -1,0 +1,64 @@
+{
+  "query": "spike response model retinal ganglion cells",
+  "results": [
+    {
+      "corpusId": 211234567,
+      "title": "A Spike Response Model for Retinal Ganglion Cell Encoding",
+      "abstract": "We present a four-parameter spike response model that captures linear-rise exponential-decay dynamics in parasol and midget ganglion cells under naturalistic stimuli.",
+      "year": 2021,
+      "authors": [
+        {"name": "Ada Lovelace", "authorId": "1001"},
+        {"name": "Carl Sagan", "authorId": "1002"}
+      ],
+      "venue": "Journal of Neuroscience",
+      "journal": {"name": "J Neurosci", "volume": "41"},
+      "url": "https://example.org/paper/211234567",
+      "publicationDate": "2021-06-15",
+      "citationCount": 142,
+      "categories": ["neuroscience", "computational"],
+      "relevanceScore": 0.93,
+      "relevanceJudgement": {
+        "relevance": 3,
+        "relevanceSummary": "Directly proposes an SRM for RGC encoding.",
+        "relevanceCriteriaJudgements": []
+      },
+      "snippets": [
+        {"text": "The SRM fits VP spike distance loss.", "sectionTitle": "Methods", "sentenceIds": ["s1"]}
+      ],
+      "citationContexts": [
+        {
+          "text": "Our threshold dynamics build on the SRM of Brunel et al.",
+          "sourceCorpusId": 199888777,
+          "withinSnippetOffsetStart": 0,
+          "withinSnippetOffsetEnd": 42,
+          "sourceSentenceIds": ["c1"]
+        }
+      ],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    },
+    {
+      "corpusId": 222345678,
+      "title": "Victor-Purpura Spike Distance for Model Fitting",
+      "abstract": "A cost-based spike-train metric used to fit and evaluate neural encoding models, including spike response models.",
+      "year": 2019,
+      "authors": [
+        {"name": "Grace Hopper", "authorId": "1003"}
+      ],
+      "venue": "NeurIPS",
+      "journal": null,
+      "url": "https://example.org/paper/222345678",
+      "publicationDate": "2019-12-01",
+      "citationCount": 87,
+      "categories": ["machine-learning"],
+      "relevanceScore": 0.81,
+      "relevanceJudgement": null,
+      "snippets": [],
+      "citationContexts": [],
+      "legalToShow": true,
+      "numOfOmittedCitationContextsDueLegal": 0
+    }
+  ],
+  "thread_id": "thread-e2e-0001",
+  "narrative": "Two highly relevant results on spike response models and the VP distance metric."
+}

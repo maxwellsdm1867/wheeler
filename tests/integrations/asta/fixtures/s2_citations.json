@@ -1,0 +1,48 @@
+{
+  "offset": 0,
+  "next": 3,
+  "data": [
+    {
+      "citingPaper": {
+        "paperId": "228f2f9c6fa12e63484981d8b294c32abfbc15ae",
+        "corpusId": 401234001,
+        "title": "Methamphetamine potentiates the use of outcome-specific associations via a hypothalamic-dopamine circuit",
+        "venue": "Neuron",
+        "year": 2026,
+        "citationCount": 0,
+        "authors": [
+          {"authorId": "2106094895", "name": "Ivy B. Hoang"},
+          {"authorId": "2316155917", "name": "Melissa J. Sharpe"}
+        ]
+      }
+    },
+    {
+      "citingPaper": {
+        "paperId": "2aa0790afd18aaab73e6bd4ef7fd16d3dc943b3b",
+        "corpusId": 401234002,
+        "title": "Tachykinin 1 neurons in the lateral habenula signal negative reward prediction error.",
+        "venue": "Current Biology",
+        "year": 2026,
+        "citationCount": 0,
+        "authors": [
+          {"authorId": "2265939462", "name": "Kana E Suzuki"},
+          {"authorId": "2265855455", "name": "Emily L Sylwestrak"}
+        ]
+      }
+    },
+    {
+      "citingPaper": {
+        "paperId": "46cb8e5e684909e753740295a4d93274d1ef162b",
+        "corpusId": 401234003,
+        "title": "Rapid dopaminergic signatures in movement: Reach vigor reflects reward prediction error and learned expectation",
+        "venue": "Science Advances",
+        "year": 2026,
+        "citationCount": 0,
+        "authors": [
+          {"authorId": "2158786090", "name": "Colin C. Korbisch"},
+          {"authorId": "2237410533", "name": "Alaa A. Ahmed"}
+        ]
+      }
+    }
+  ]
+}

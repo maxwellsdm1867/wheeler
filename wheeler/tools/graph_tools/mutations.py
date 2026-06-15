@@ -130,6 +130,7 @@ async def add_finding(backend, args: dict) -> str:
     display_name = (title[:40] if title else args["description"][:40])
     await backend.create_node("Finding", {
         "id": node_id,
+        "service": args.get("service", ""),
         "description": args["description"],
         "confidence": float(args["confidence"]),
         "path": args.get("path", ""),
@@ -158,6 +159,7 @@ async def add_hypothesis(backend, args: dict) -> str:
     display_name = args["statement"][:40]
     await backend.create_node("Hypothesis", {
         "id": node_id,
+        "service": args.get("service", ""),
         "statement": args["statement"],
         "status": args.get("status", "open"),
         "date": _now(),
@@ -179,6 +181,7 @@ async def add_question(backend, args: dict) -> str:
     display_name = args["question"][:40]
     await backend.create_node("OpenQuestion", {
         "id": node_id,
+        "service": args.get("service", ""),
         "question": args["question"],
         "priority": int(args.get("priority", 5)),
         "date_added": _now(),
@@ -233,6 +236,7 @@ async def add_dataset(backend, args: dict) -> str:
         props["size"] = size_val
     if format_details:
         props["format_details"] = format_details
+    props["service"] = args.get("service", "")
 
     await backend.create_node("Dataset", props)
     logger.info("Created Dataset %s: %s", node_id, args["path"])
@@ -312,18 +316,32 @@ async def add_paper(backend, args: dict) -> str:
         display_name = f"{authors.split(',')[0].strip()} et al., {year}"
     else:
         display_name = args["title"][:40]
-    await backend.create_node("Paper", {
+    props: dict = {
         "id": node_id,
         "title": args["title"],
         "authors": authors,
         "doi": args.get("doi", ""),
         "year": year,
+        "corpus_id": args.get("corpus_id", ""),
         "date_added": _now(),
         "tier": "reference",  # Papers are published, always reference
         "stability": default_stability("Paper", "reference"),
         "session_id": args.get("session_id", ""),
         "display_name": display_name,
-    })
+    }
+    # Optional service tag: stamp the provider:service that produced this node
+    # for cheap filtering (e.g. everything from asta:paper-finder). Only set
+    # when supplied so existing callers are unaffected.
+    service = args.get("service", "")
+    if service:
+        props["service"] = service
+    # Optional custom bag: ingest parks any returned scalar that has no
+    # promoted model field here. The backend flattens it to custom_<key>
+    # props. Only forward a non-empty dict so existing callers are unaffected.
+    custom = args.get("custom")
+    if isinstance(custom, dict) and custom:
+        props["custom"] = custom
+    await backend.create_node("Paper", props)
     logger.info("Created Paper %s: %s", node_id, args["title"][:60])
     result = {"node_id": node_id, "label": "Paper", "status": "created"}
     prov = await _complete_provenance(backend, node_id, "Paper", args)
@@ -351,6 +369,7 @@ async def add_document(backend, args: dict) -> str:
     display_name = title[:40] if title else os.path.basename(path) if path else ""
     await backend.create_node("Document", {
         "id": node_id,
+        "service": args.get("service", ""),
         "title": title,
         "path": path,
         "section": args.get("section", ""),
@@ -377,6 +396,7 @@ async def add_note(backend, args: dict) -> str:
     display_name = title[:40] if title else args["content"][:40]
     await backend.create_node("ResearchNote", {
         "id": node_id,
+        "service": args.get("service", ""),
         "title": title,
         "content": args["content"],
         "context": args.get("context", ""),
@@ -400,6 +420,7 @@ async def add_script(backend, args: dict) -> str:
     display_name = os.path.basename(path) if path else ""
     await backend.create_node("Script", {
         "id": node_id,
+        "service": args.get("service", ""),
         "path": path,
         "hash": args.get("hash", ""),
         "language": args.get("language", ""),
@@ -426,6 +447,7 @@ async def add_plan(backend, args: dict) -> str:
     display_name = title[:40] if title else os.path.basename(path) if path else ""
     await backend.create_node("Plan", {
         "id": node_id,
+        "service": args.get("service", ""),
         "title": title,
         "path": path,
         "status": args.get("status", "draft"),
@@ -462,6 +484,7 @@ async def add_execution(backend, args: dict) -> str:
         "id": node_id,
         "kind": kind,
         "agent_id": args.get("agent_id", "wheeler"),
+        "service": args.get("service", ""),
         "status": args.get("status", "completed"),
         "started_at": args["started_at"],
         "ended_at": args.get("ended_at", now),
@@ -482,6 +505,7 @@ async def add_ledger(backend, args: dict) -> str:
     display_name = f"Ledger: {mode}" if mode else "Ledger"
     await backend.create_node("Ledger", {
         "id": node_id,
+        "service": args.get("service", ""),
         "mode": mode,
         "prompt_summary": args.get("prompt_summary", ""),
         "ungrounded": bool(args.get("ungrounded", False)),

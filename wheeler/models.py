@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Discriminator, TypeAdapter, model_validator
 
@@ -32,8 +32,19 @@ class NodeBase(BaseModel):
     stale: bool = False
     stale_since: str = ""
     session_id: str = ""
+    # Provider:service tag stamped by external-tool adapters (e.g.
+    # "asta:paper-finder"). Always written to Neo4j so provenance queries
+    # like MATCH (n) WHERE n.service = ... reliably find adapter-created
+    # nodes. Default empty string keeps existing callers unaffected.
+    service: str = ""
     display_name: str = ""
     change_log: list[ChangeEntry] = []
+    # Generic queryable custom bag for the long tail of fields an external
+    # service returns that have no first-class model field. The Neo4j backend
+    # flattens this to discrete ``custom_<key>`` scalar props on write and
+    # reassembles it from ``custom_*`` props on read (Neo4j cannot store a
+    # nested map as one property). Values must be scalar (str/int/float/bool).
+    custom: dict[str, Any] = {}
 
     @property
     def file_name(self) -> str:
@@ -102,6 +113,7 @@ class PaperModel(NodeBase):
     authors: str = ""
     doi: str = ""
     year: int = 0
+    corpus_id: str = ""  # Semantic Scholar / Asta corpus id; dedupe key, indexed
 
 
 class DocumentModel(NodeBase):
