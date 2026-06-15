@@ -1,24 +1,25 @@
 ---
 name: wheeler-service-creator
 description: >-
-  Scaffold a NEW Wheeler service adapter from a tool, closing the loop with the
-  tool-contract idea. Given a tool (interview the scientist, or read its
-  `--help` / agent card), it drafts (a) the `.wheeler/services.yaml` registry
-  entry (identity, ports, output shape, availability, cost), (b) a marshal-out
-  ingest skeleton `wheeler/integrations/<provider>/<tool>.py` wired to
-  `_marshal.py` helpers + `register_output_artifact` (the only `execute_tool`
-  caller, lazy import), (c) the marshal-in act `/wh:<provider>-<tool>` that reads
-  graph context, passes `--used` source ids, and shells out, and (d) a
-  parse-unit + live-Neo4j e2e test stub following the per-run `e2e_tag`
-  hermetic-teardown convention. Use whenever the user wants to "create a wheeler
+  Scaffold a NEW Wheeler service adapter that integrates an external tool into
+  Wheeler end to end. Reach for this whenever the user wants to "create a wheeler
   service", "add a new tool adapter", "scaffold an integration", "wrap a service
-  for wheeler", "ingest a new tool's output into the graph", or onboard any
-  external research tool (a search API, a generator, an analyzer, an agent card)
-  as a provenance-tracked Wheeler adapter. The skill mostly emits prose
-  instructions and skeleton files; it tells the human to capture one real output,
-  fill the parser against it, then run the adversarial-review workflow to land it.
-  Do NOT trigger for using an EXISTING adapter (that is `/wh:asta-*`), for graph
-  lookups, or for generic coding.
+  for wheeler", "onboard <some CLI/API/agent> into the graph", "ingest a new
+  tool's output", or otherwise connect an external research tool (a search API, a
+  generator, an analyzer, an agent card) to Wheeler so its results land in the
+  knowledge graph with provenance, even if they do not say the word "adapter".
+  Given the tool (interview the scientist, or read its `--help` / agent card), it
+  produces four pieces: (a) the declarative registry contract the router reads
+  (`.wheeler/services.yaml` or the bundled default), (b) a marshal-out ingest
+  module wired to the shared `_marshal.py` helpers with BOTH provenance sides
+  (`Execution -[USED]-> inputs`, produced nodes `-[WAS_GENERATED_BY]->
+  Execution`), (c) the marshal-in act `/wh:<provider>-<tool>` that reads graph
+  context, passes `--used` source ids, and shells out, and (d) a parse-unit +
+  live-Neo4j e2e test stub. A bundled scaffolder emits the skeleton files; the
+  human then captures one real output, fills the parser against it, and runs the
+  adversarial review to land it. Do NOT trigger for RUNNING an existing adapter
+  (that is the `/wh:asta-*` acts), for graph lookups or queries, or for generic
+  coding unrelated to wiring up a new external service.
 allowed-tools:
   - Read
   - Write
@@ -31,8 +32,8 @@ allowed-tools:
 # Wheeler service creator
 
 You scaffold a new Wheeler service adapter from a tool. A tool becomes a
-declarative **contract** (one `.wheeler/services.yaml` entry); a command opts in
-via a flag; a run is a step whose provenance reaches BACK to its graph inputs
+declarative **contract** (one manifest entry the registry reads); a command opts
+in via a flag; a run is a step whose provenance reaches BACK to its graph inputs
 (`USED`) and FORWARD to its graph outputs (`WAS_GENERATED_BY`). The Asta
 adapters are instance #1 and your concrete template. You produce the four
 pieces, then hand the scientist a short to-do list: capture one real output,
@@ -42,6 +43,60 @@ You write SKELETONS, not finished adapters. The parser is tool-specific and can
 only be written against a real captured output, which you do not have at scaffold
 time. Your job is to lay down every piece of the structure correctly so the human
 fills one function (`parse_<tool>`) and reviews.
+
+## Two load-bearing ideas you must get right
+
+Everything below is in service of these two. Read them first.
+
+### The registry reads the contract; the adapter does not hardcode the provider
+
+The contract you write is DATA, read by `wheeler/integrations/registry.py`:
+
+- `load_services(config)` returns every parsed `ServiceContract` (id, provider,
+  name, description, kind, act, cost, available, when, plus opaque `inputs` /
+  `output`). It reads the USER override at `<project_root>/.wheeler/services.yaml`
+  when present, else the bundled default `wheeler/integrations/services.default.yaml`.
+  The user file WINS (it is not merged with the default). Pure read: no graph, no
+  network, never raises; a malformed entry is skipped and logged.
+- `available_services(config)` runs each contract's `available` shell probe and
+  returns only the ones that pass.
+
+The router act `/wh:asta` already consumes this (it lists only available services
+and routes by `when` / `description`, warning on `cost`). So your new service
+becomes routable the moment its contract entry exists and its probe passes. You
+do NOT add the new service to any hardcoded table; you add a contract entry and
+the registry surfaces it. Whether you append to the user `.wheeler/services.yaml`
+or the bundled `services.default.yaml` depends on scope: a project-local service
+goes in the user file; a service that should ship with Wheeler goes in the
+default (and then `sync_data` is not involved, the manifest is package data).
+
+### Provenance is TWO-SIDED, and you wire BOTH
+
+The run Execution sits between the inputs that shaped the request and the outputs
+the parser produced:
+
+```
+input  -[USED]<-  Execution  ->[WAS_GENERATED_BY]  output
+```
+
+- **INPUT side (`USED`)**: the marshal-in built the tool payload FROM graph nodes
+  (the question, seeded Findings, a Dataset path). The act passes those ids as
+  `--used`; the ingest records `Execution -[USED]-> each input` via
+  `_record_used` (existence-guarded, link_once, never fabricates a missing id).
+- **OUTPUT side (`WAS_GENERATED_BY`)**: every node the parser PRODUCED this run
+  (Findings, Hypotheses, the raw artifact node) is generated by the Execution.
+  The raw node is wired by `register_output_artifact`; the produced graph nodes
+  are wired by `_record_generated` (or inline `_link_once(produced_id,
+  "WAS_GENERATED_BY", exec_id)`), which the scaffolded skeleton calls for you.
+
+Because both sides hang off ONE Execution, the chain is transitive:
+`output -[WAS_GENERATED_BY]-> Execution -[USED]-> input`. Any result traces back
+to the exact graph context that shaped its request, with no per-input/per-output
+edges. The ONE exception: **Papers are reference entities** (per `/wh:close`,
+`/wh:graph-link`), so they carry NO `WAS_GENERATED_BY`; a paper the knowledge was
+derived FROM is an INPUT, so it gets `Execution -[USED]-> paper` instead. An
+adapter that wires only one side is incomplete; the adversarial review checks for
+both.
 
 ## When this fires
 
@@ -74,17 +129,58 @@ repo root.
   node `WAS_GENERATED_BY` the run Execution.
 - `wheeler/integrations/asta/cli.py` -- the single `wheeler integrate ingest`
   verb that the act shells out to (`--link-to`, `--used`, `--target`).
+- `wheeler/integrations/registry.py` + `services.default.yaml` -- the registry
+  that reads service contracts (`load_services` / `available_services`) and the
+  bundled default manifest your new entry mirrors.
+- `.claude/commands/wh/asta.md` -- the ROUTER act. It reads the registry (not a
+  hardcoded table) and dispatches the matching service act. Study how it lists
+  only available services and routes by `when` / `cost`; your new service plugs
+  into it for free once its contract exists.
 - `.claude/commands/wh/asta-lit.md`, `asta-theorize.md`, `asta-scholar.md` -- the
   marshal-in acts. Each reads graph context, picks a link target, shells out to
-  the tool CLI, then calls `wheeler integrate ingest ... --used <ids>`.
+  the tool CLI, then calls `wheeler integrate ingest ... --used <ids>` (INPUT
+  side); the ingest wires the OUTPUT side (`WAS_GENERATED_BY`).
 - `tests/integrations/asta/test_theorizer.py` -- the test template: parse-unit
   tests (no live call) PLUS a live-Neo4j e2e class with the per-run `e2e_tag`
-  hermetic-teardown convention.
+  hermetic-teardown convention. Its e2e assertions check BOTH provenance sides
+  (USED edges from the run, WAS_GENERATED_BY edges into it).
 
-If the user has an `assets/` scaffolder available next to this SKILL.md, you MAY
-run it to emit the skeleton files mechanically (see "Optional scaffolder"
-below). Otherwise write them by hand from the templates. Markdown-driven (writing
-the files yourself) is fully acceptable.
+## Two ways to lay down the skeleton
+
+There is a bundled scaffolder, `assets/scaffold_service.py`, that writes all four
+skeleton files deterministically from a contract. Prefer it: hand-copying the
+boilerplate from the templates is slow and easy to get subtly wrong (a dropped
+provenance edge, a missing invariant), and the scaffolder bakes in the
+load-bearing structure (the lazy `execute_tool` import, both provenance helpers,
+the hermetic-teardown test) so you only have to fill the one thing it cannot
+know: the parser.
+
+**Fast path (recommended).** Gather the contract (Step 1), then run the
+scaffolder once. It is stdlib-only, writes nothing it cannot, and is idempotent
+(it appends the registry entry without clobbering, and will not overwrite an
+existing file unless you pass `--overwrite`):
+
+```bash
+# from the repo root; use plain `python` if ./.venv is absent
+./.venv/bin/python .claude/skills/wheeler-service-creator/assets/scaffold_service.py \
+  --provider <provider> --tool <tool> --name "<Name>" \
+  --description "<one line>" --raw-node <document|dataset> \
+  --nodes "<Comma,Separated,NodeTypes>" \
+  --cli '<the exact CLI the act runs, with -o /tmp/<tool>.json>' \
+  --available "<probe command>" --cost "<cost string>" --when "<router phrase>"
+```
+
+Add `--dry-run` first to preview the paths it will touch. It prints one line per
+file (wrote / appended / skipped). Then read each emitted file, confirm it
+matches the contract, and move to the per-file steps below to UNDERSTAND what was
+generated and to fill the gaps (the parser body, the CLI verb wiring in Step 4,
+the `_data` sync in Step 5). The scaffolder does not touch `cli.py` or run
+`sync_data`, so Steps 4 and 5 are still yours.
+
+**Manual path.** If the scaffolder is absent or the tool is unusual enough that
+the skeleton would not fit, write the four files by hand from the templates. The
+per-step sections below are the spec either way: they describe exactly what each
+file must contain, which is also what the scaffolder emits.
 
 ## Step 1: gather the contract
 
@@ -125,11 +221,20 @@ small contract dict. Ask only for what you cannot infer; default the rest.
 Write the contract back to the scientist in one block and confirm it before
 generating. A wrong contract means wrong skeletons.
 
-## Step 2: the `.wheeler/services.yaml` entry
+## Step 2: the service contract (registry entry)
 
-Append (do not overwrite) an entry under `services:`. `services.yaml` is
-user-editable and ships empty; create it with a `services: []` root if absent.
-Mirror the spec's shape exactly:
+Append (do not overwrite) an entry under `services:`. Choose the manifest by
+scope:
+
+- a PROJECT-LOCAL service -> the user override `<project_root>/.wheeler/services.yaml`
+  (create it with a `services: []` root if absent; the user file wins over the
+  default and is not merged with it),
+- a service that should SHIP with Wheeler -> the bundled
+  `wheeler/integrations/services.default.yaml` (package data; no `sync_data`).
+
+Mirror the existing entries exactly (`registry._REQUIRED_FIELDS` are all of `id,
+provider, name, description, kind, act, cost, available, when`; a missing one is
+skipped and logged, so the service silently will not appear):
 
 ```yaml
   - id: <provider>-<tool>
@@ -149,15 +254,23 @@ Mirror the spec's shape exactly:
 ```
 
 This is the contract. Identity + ports + output shape, NOT a field-map language:
-the parser stays tool-specific Python. Leave a comment pointing at the module
-that implements it.
+the parser stays tool-specific Python. `inputs` and `output` are opaque to the
+registry (it does not interpret them; the adapter does), so they are optional for
+routing but valuable as documentation of the marshalling map. Once this entry
+exists and its probe passes, `available_services()` surfaces it and `/wh:asta`
+routes to it: you have NOT touched any hardcoded provider table. Confirm by
+running the registry: `./.venv/bin/python -c "from wheeler.config import
+load_config; from wheeler.integrations.registry import available_services;
+print([c.id for c in available_services(load_config())])"`.
 
 ## Step 3: the marshal-out ingest skeleton
 
 Create `wheeler/integrations/<provider>/<tool>.py` (and an empty
 `wheeler/integrations/<provider>/__init__.py` if the provider package is new).
 Copy the structure of `theorizer.py` (for a node-subgraph output) or `ingest.py`
-(for a flat record output). The skeleton MUST:
+(for a flat record output). The scaffolder emits all of the following; if you are
+writing by hand, this is the checklist (each item exists for a reason given
+inline, so you can adapt it intelligently rather than copy it blindly):
 
 1. Open with a docstring stating the REAL output shape (fill the placeholder once
    a real output is captured), the bucketing/mapping, and the standing
@@ -180,30 +293,40 @@ Copy the structure of `theorizer.py` (for a node-subgraph output) or `ingest.py`
    helpers `_as_str` / `_as_float` / `_first` copied in so the human only writes
    the shape-walk).
 5. Provide `async def ingest_<tool>(doc, *, link_to=None, config, artifact_path=None,
-   used_inputs=None) -> ImportReport`. It MUST, in order:
+   used_inputs=None) -> ImportReport`. The order below matters because each step
+   depends on the Execution id minted at the top:
    - `from wheeler.tools.graph_tools import _get_backend, execute_tool` (lazy,
      function-local: this is the ONLY `execute_tool` caller, so the triple-write
      + write-receipt + trace-id + embedding wiring fires, and `graph_tools/`
      stays adapter-free, mirroring `wheeler/validation/ledger.py`).
    - dedupe-or-create ONE Execution per run via `_find_execution` (idempotent),
      tagged `service=_SERVICE_TAG` with a stable `session_id`.
-   - record input-side provenance: `report.used += await _record_used(backend,
+   - record INPUT-side provenance: `report.used += await _record_used(backend,
      config, exec_id, used_inputs)` (existence-guarded, link_once, never
-     fabricates a missing id).
+     fabricates a missing id). This is half of the two-sided chain.
    - register the raw output via `register_output_artifact(artifact_path,
      execution_id=exec_id, service=_SERVICE_TAG, config=config,
-     node_type=_RAW_NODE_TYPE, ...)` (best-effort, never raises).
+     node_type=_RAW_NODE_TYPE, ...)` (best-effort, never raises). This wires the
+     raw node's OUTPUT-side `WAS_GENERATED_BY` edge.
    - bucket each parsed record into its nodes, every WRITE through
-     `execute_tool`, every edge through `_link_once`.
+     `execute_tool`, every edge through `_link_once`. COLLECT the produced node
+     ids (excluding Papers).
+   - record OUTPUT-side provenance for the produced graph nodes: `await
+     _record_generated(backend, config, exec_id, produced_ids, report)` (or an
+     inline `_link_once(produced_id, "WAS_GENERATED_BY", exec_id)` per node). The
+     scaffolded skeleton already lays down `_record_generated` and the
+     produced_ids loop; do not drop it. Wiring only the input side is a bug.
    - apply the Paper rule when the output references papers: papers dedupe on
-     `corpus_id`, are REFERENCE ENTITIES (NO `WAS_GENERATED_BY`), and if the
-     produced knowledge was DERIVED from a paper, the run `Execution -[USED]->`
-     that paper.
+     `corpus_id`, are REFERENCE ENTITIES (NO `WAS_GENERATED_BY`, so they are NOT
+     in `produced_ids`), and if the produced knowledge was DERIVED from a paper,
+     the run `Execution -[USED]->` that paper (input side).
    - return the `ImportReport` with created / deduped / linked / skipped / used
      counts.
 
 Every graph write routes through `execute_tool`. Never write the backend or the
-files directly.
+files directly. The acceptance bar for the ingest is BOTH provenance sides:
+`Execution -[USED]->` each input AND each produced node `-[WAS_GENERATED_BY]->`
+the Execution.
 
 ## Step 4: register the CLI verb
 
@@ -290,8 +413,12 @@ NEITHER making a live tool call:
      are tagged by `report.paper_ids`, not via the fan-in.
    - One test that ingests the fixture, tags, asserts the bucketing subgraph
      (node counts, edge counts, custom fields) scoped to THIS run's `e2e_tag`,
-     then RE-INGESTS the same artifact and asserts idempotency (identical counts,
-     `created==0` on the second pass).
+     and asserts BOTH provenance sides: at least one `Execution -[USED]-> input`
+     edge (when `used_inputs` were passed) AND each produced node
+     `-[WAS_GENERATED_BY]-> Execution` (and that Papers carry NO
+     `WAS_GENERATED_BY`). Then RE-INGEST the same artifact and assert idempotency
+     (identical counts, `created==0`, no duplicate USED / WAS_GENERATED_BY
+     edges on the second pass).
 
 ## Step 7: hand off to the human
 

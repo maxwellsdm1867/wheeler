@@ -102,12 +102,18 @@ def test_ingest_skeleton_has_the_load_bearing_pieces():
     text = mod.render_ingest(c)
     # Lazy, function-local execute_tool import (the only graph-write chokepoint).
     assert "from wheeler.tools.graph_tools import _get_backend, execute_tool" in text
-    # Input-side provenance + idempotent Execution + raw artifact registration.
+    # INPUT-side provenance + idempotent Execution + raw artifact registration.
     assert "_record_used" in text
     assert "_find_execution" in text
     assert "register_output_artifact" in text
     assert '_SERVICE_TAG = "myorg:paper-finder"' in text
     assert '_RAW_NODE_TYPE = "dataset"' in text
+    # OUTPUT-side provenance: produced nodes WAS_GENERATED_BY the Execution.
+    assert "_record_generated" in text
+    assert "WAS_GENERATED_BY" in text
+    assert "produced_ids" in text
+    # Both sides are explained so the chain is transitive.
+    assert "input  -[USED]<-  Execution  ->[WAS_GENERATED_BY]  output" in text
     # Parser + ingest fn named off the tool ident.
     assert "def parse_paper_finder(" in text
     assert "async def ingest_paper_finder(" in text
@@ -139,6 +145,11 @@ def test_test_stub_follows_e2e_tag_convention():
     assert "class TestIngestPaperFinderE2E" in text
     # Idempotency assertion present.
     assert "report2.created == 0" in text
+    # Both provenance sides are asserted in the e2e stub.
+    assert "[:USED]->" in text  # input side
+    assert "[:WAS_GENERATED_BY]->" in text  # output side
+    assert "used_inputs=[question_id]" in text  # the run is given an input to USE
+    assert "MATCH (p:Paper)-[:WAS_GENERATED_BY]" in text  # papers carry none
 
 
 def test_no_em_dashes_in_any_rendered_file():
