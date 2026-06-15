@@ -1,0 +1,60 @@
+# Wheeler service-extension registry: shipped DEFAULT manifest.
+#
+# This file is bundled with the package and read by
+# wheeler.integrations.registry.load_services when the project has no user
+# override at .wheeler/services.yaml. Copy it there and edit to add or remove
+# services for a project; the user file always wins.
+#
+# Each entry is a declarative service CONTRACT (one manifest entry per tool):
+#   id          stable identifier (kebab-case)
+#   provider    the upstream provider (e.g. asta, local)
+#   name        human-readable display name
+#   description what the service does (one line)
+#   kind        shell-out | local
+#   act         the /wh:* slash command that drives the service
+#   cost        free-text cost/time hint, surfaced as a warning by the router
+#   available   shell probe; non-zero exit or missing binary => unavailable
+#   when        free-text trigger hint ("use this when ...")
+#
+# No em dashes anywhere. The router lists only AVAILABLE services.
+
+services:
+  - id: paper-finder
+    provider: asta
+    name: Paper Finder
+    description: broad semantic literature discovery, relevance-ranked
+    kind: shell-out
+    act: /wh:asta-lit
+    cost: "cheap"
+    available: "asta auth status"
+    when: "broad literature discovery (find papers on X, what is known about Y)"
+
+  - id: theorizer
+    provider: asta
+    name: Theorizer
+    description: literature-grounded theory generation with supporting and contradicting evidence
+    kind: shell-out
+    act: /wh:asta-theorize
+    cost: "expensive (~$7, ~20min)"
+    available: "asta auth status"
+    when: "hypothesis or theory generation (generate theories about X, what could explain Y)"
+
+  - id: semantic-scholar
+    provider: asta
+    name: Semantic Scholar
+    description: precise paper lookup plus the citation graph plus snippet evidence
+    kind: shell-out
+    act: /wh:asta-scholar
+    cost: "cheap"
+    available: "asta auth status"
+    when: "a specific paper, its citations, or snippet evidence (look up Z, what cites Y)"
+
+  - id: graph-status
+    provider: local
+    name: Graph Status
+    description: local read-only summary of the current Wheeler knowledge graph
+    kind: local
+    act: /wh:status
+    cost: "free"
+    available: "wheeler graph status"
+    when: "a quick local snapshot of graph health and recent activity, no external service"
