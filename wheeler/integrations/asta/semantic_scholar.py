@@ -41,7 +41,12 @@ MAPPING (service = ``asta:semantic-scholar``):
   - citations(target T) -> each citingPaper -> Paper node (dedupe); citingPaper
     -[CITES]-> T. T is resolved from the passed ``target`` (a corpus_id digit
     string mapped to its Paper, or a P-id used directly). This BUILDS the
-    citation graph.
+    citation graph. CRITICAL: citing papers link via CITES + WAS_GENERATED_BY
+    the run Execution (and WAS_DERIVED_FROM the raw node) ONLY, NEVER RELEVANT_TO
+    the question: a citing paper is not relevant to the question, and papers are
+    reference entities that are never orphans. ``link_to`` is therefore NOT
+    applied to the citations sub-kind (it is applied to get / search / snippet,
+    whose results ARE relevant to the question).
   - snippet -> a Finding(artifact_type="snippet", description=snippet.text,
     confidence=score, title=short) -[APPEARS_IN]-> its Paper; the paper -> Paper
     node (corpusId present). Snippet Findings dedupe on a content hash so
@@ -52,7 +57,8 @@ MAPPING (service = ``asta:semantic-scholar``):
     run_id, so the durable key is a content sha. No cost/time benchmark fields.
   - One Execution per RUN (service ``asta:semantic-scholar``, kind by sub-shape,
     e.g. ``s2-citations``); generated nodes WAS_GENERATED_BY it; if ``link_to`` is
-    given, relevant nodes link RELEVANT_TO it.
+    given, RELEVANT_TO links the question to results that are actually relevant
+    (get / search / snippet), but NOT to citing papers (see citations above).
 
 Invariants:
   - Defensive: every step tolerates missing fields, counts and skips, never
@@ -633,8 +639,14 @@ async def ingest_semantic_scholar(
     Args:
         doc: The S2 REST artifact dict (auto-detected: get / search / citations /
             snippet).
-        link_to: Optional node id (Plan/Question) every relevant node is linked
-            to via RELEVANT_TO.
+        link_to: Optional node id (Plan/Question) that relevant results link to
+            via RELEVANT_TO. Applied to get / search / snippet results (those ARE
+            relevant to the question). NOT applied to the ``citations`` sub-kind:
+            citing papers are NOT relevant to the question. A citation links via
+            ``citingPaper -[CITES]-> target`` plus ``WAS_GENERATED_BY`` the run
+            Execution and ``WAS_DERIVED_FROM`` the raw node, never RELEVANT_TO the
+            question (papers are reference entities, never orphans; the CITES +
+            Execution provenance is their linkage, per /wh:close, /wh:graph-link).
         target: For a ``citations`` artifact, the paper being cited (the CLI
             argument, NOT in the output). Either a corpus_id (digit string,
             resolved to its Paper) or a P-id (used directly). Each citing paper
@@ -753,6 +765,12 @@ async def ingest_semantic_scholar(
                 target,
             )
         for citation in parsed.citations:
+            # CRITICAL: citing papers are NOT relevant to the question. A citation
+            # links via citingPaper -[CITES]-> target plus WAS_GENERATED_BY the
+            # run Execution and WAS_DERIVED_FROM the raw node; it is never
+            # RELEVANT_TO the question. So link_to is forced to None here (papers
+            # are reference entities, never orphans, and the CITES + Execution
+            # provenance is their linkage). See /wh:close and /wh:graph-link.
             paper_id = await _ingest_paper(
                 backend=backend,
                 execute_tool=execute_tool,
@@ -761,7 +779,7 @@ async def ingest_semantic_scholar(
                 session_id=session_id,
                 exec_id=exec_id,
                 artifact_id=artifact_id,
-                link_to=link_to,
+                link_to=None,
                 paper_index=paper_index,
                 fallback_index=fallback_index,
                 seen_papers=seen_papers,

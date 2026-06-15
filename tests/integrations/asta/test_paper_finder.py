@@ -194,13 +194,17 @@ def _reset_driver_singleton():
 
 
 def _cleanup_paper_finder(e2e_config, e2e_tag: str) -> None:
-    """Hermetic teardown: delete every node this adapter could have created.
+    """Hermetic teardown: delete ONLY the nodes THIS run tagged.
 
-    Crash-safe and independent of any post-success tagging step: it keys on the
-    SERVICE_TAG (set at node creation), on the fixture corpus_ids (papers may
-    pre-exist from another run), and on the per-run e2e tag (the seed Question).
-    Deleting on the shared service tag is safe because the e2e config uses a
-    dedicated project and no production node carries this synthetic service.
+    The teardown is EXACTLY ``MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n``
+    and nothing else. It NEVER deletes by ``service`` or by ``corpus_id``: the
+    e2e config runs against the SHARED default Neo4j namespace (project_tag is
+    empty), and production ingests carry the SAME ``asta:paper-finder`` service
+    tag and the same corpus_ids, so a service-scoped or corpus_id-scoped delete
+    would wipe real user data. Every node this run creates is tagged with the
+    per-run unique ``e2e_tag`` (a uuid) right after each ingest, scoped off the
+    run's Execution and its WAS_GENERATED_BY descendants plus the returned node
+    ids, so this delete can only ever match nodes this run created.
     """
     import asyncio
 
@@ -214,14 +218,6 @@ def _cleanup_paper_finder(e2e_config, e2e_tag: str) -> None:
         )
         try:
             async with driver.session(database=e2e_config.neo4j.database) as s:
-                await s.run(
-                    "MATCH (n) WHERE n.service = $svc DETACH DELETE n",
-                    svc=SERVICE_TAG,
-                )
-                await s.run(
-                    "MATCH (p:Paper) WHERE p.corpus_id IN $cids DETACH DELETE p",
-                    cids=PF_CORPUS_IDS,
-                )
                 await s.run(
                     "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
                     tag=e2e_tag,
@@ -251,30 +247,37 @@ class TestIngestPaperFinderE2E:
         yield
         _cleanup_paper_finder(e2e_config, self._e2e_tag)
 
-    async def _tag_all(self, e2e_config):
-        """Tag every Paper/Execution/Dataset with the per-run e2e tag.
+    async def _tag_all(self, e2e_config, report):
+        """Tag exactly the nodes THIS run created with the per-run e2e tag.
 
-        Belt-and-braces only: teardown already deletes on the service tag and
-        corpus_ids unconditionally, so a crash before this call still cleans up.
+        Scopes strictly off the run's Execution and its WAS_GENERATED_BY fan-in
+        plus the ids the ImportReport returned, so teardown (which deletes ONLY
+        by e2e_tag) can never touch a pre-existing production node that merely
+        shares a service tag or a corpus_id. NEVER tag by service or corpus_id:
+        the e2e config runs on the shared default namespace where production
+        nodes carry the same asta:paper-finder service and the same corpus_ids.
         """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
+        # The exact ids this run produced (Execution, artifact, every Paper).
+        run_ids = [i for i in (report.execution_id, report.artifact) if i]
+        run_ids += [pid for pid in report.paper_ids if pid]
         async with driver.session(database=db) as s:
-            await s.run(
-                "MATCH (p:Paper) WHERE p.corpus_id IN $cids SET p.e2e_tag = $tag",
-                cids=PF_CORPUS_IDS, tag=self._e2e_tag,
-            )
-            await s.run(
-                "MATCH (x:Execution) WHERE x.service = $svc SET x.e2e_tag = $tag",
-                svc=SERVICE_TAG, tag=self._e2e_tag,
-            )
-            # The raw-output artifact is a Dataset tagged with the service.
-            await s.run(
-                "MATCH (d:Dataset) WHERE d.service = $svc SET d.e2e_tag = $tag",
-                svc=SERVICE_TAG, tag=self._e2e_tag,
-            )
+            if run_ids:
+                await s.run(
+                    "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                    ids=run_ids, tag=self._e2e_tag,
+                )
+            # Anything WAS_GENERATED_BY this run's Execution (papers, the raw
+            # Dataset artifact): scoped off the Execution id this run owns.
+            if report.execution_id:
+                await s.run(
+                    "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                    "SET n.e2e_tag = $tag",
+                    xid=report.execution_id, tag=self._e2e_tag,
+                )
 
     @pytest.mark.asyncio
     async def test_ingest_is_idempotent(self, e2e_config):
@@ -302,23 +305,27 @@ class TestIngestPaperFinderE2E:
 
         # First ingest.
         report1 = await ingest_paper_finder(doc, link_to=question_id, config=e2e_config)
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report1)
         assert report1.created == 2
         assert report1.deduped == 0
 
         # Snapshot the Execution provenance fan-in after the first ingest, so we
-        # can prove re-ingest neither duplicates the Execution nor grows it.
+        # can prove re-ingest neither duplicates the Execution nor grows it. The
+        # query is scoped to THIS run's Execution id (not the shared service tag)
+        # so a production asta:paper-finder Execution on the shared namespace
+        # cannot perturb the count.
+        run_exec_id = report1.execution_id
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {service: $svc}) "
+                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
                 "RETURN count(r) AS c",
-                svc=SERVICE_TAG,
+                xid=run_exec_id,
             )
             gen_by_after_first = (await res.single())["c"]
 
         # Second ingest of the SAME artifact: no new papers.
         report2 = await ingest_paper_finder(doc, link_to=question_id, config=e2e_config)
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report2)
         assert report2.created == 0
         assert report2.deduped == 2
 
@@ -326,17 +333,18 @@ class TestIngestPaperFinderE2E:
         # Re-ingesting the SAME artifact must NOT create a second Execution node,
         # and must NOT accumulate extra WAS_GENERATED_BY edges. (Regression:
         # add_execution was previously called unconditionally, duplicating the
-        # Execution and its provenance fan-in on every re-ingest.)
+        # Execution and its provenance fan-in on every re-ingest.) Scoped to this
+        # run's Execution id so the assertion holds on the shared namespace.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: $svc}) RETURN count(x) AS c",
-                svc=SERVICE_TAG,
+                "MATCH (x:Execution {id: $xid}) RETURN count(x) AS c",
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == 1
             res = await s.run(
-                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {service: $svc}) "
+                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
                 "RETURN count(r) AS c",
-                svc=SERVICE_TAG,
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == gen_by_after_first
         # The report points at the same Execution both runs (reused, not new).
@@ -419,7 +427,7 @@ class TestIngestPaperFinderE2E:
         report1 = await ingest_paper_finder(
             doc, link_to=None, config=e2e_config, artifact_path=str(artifact_file),
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report1)
         assert report1.artifact, "ImportReport.artifact should hold the artifact id"
         artifact_id = report1.artifact
         assert artifact_id.startswith("D-")
@@ -471,7 +479,7 @@ class TestIngestPaperFinderE2E:
         report2 = await ingest_paper_finder(
             doc, link_to=None, config=e2e_config, artifact_path=str(artifact_file),
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report2)
         assert report2.artifact == artifact_id
 
         # Still exactly one Dataset for this service + durable path (path-dedupe

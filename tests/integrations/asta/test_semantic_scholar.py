@@ -306,14 +306,18 @@ def _reset_driver_singleton():
 
 
 def _cleanup(e2e_config, e2e_tag: str) -> None:
-    """Hermetic teardown: delete every node this adapter could have created.
+    """Hermetic teardown: delete ONLY the nodes THIS run tagged.
 
-    Crash-safe and independent of any post-success tagging step: it keys on the
-    SERVICE_TAG (set at node creation), on the fixture corpus_ids (papers may
-    pre-exist from another run, including the cited target), and on the per-run
-    e2e tag (the seed nodes). Deleting on the shared service tag is safe because
-    the e2e config uses a dedicated project and no production node carries this
-    synthetic service.
+    The teardown is EXACTLY ``MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n``
+    and nothing else. It NEVER deletes by ``service`` or by ``corpus_id``: the
+    e2e config runs against the SHARED default Neo4j namespace (project_tag is
+    empty), and production ingests carry the SAME ``asta:semantic-scholar``
+    service tag and the same corpus_ids (including the cited target), so a
+    service-scoped or corpus_id-scoped delete would wipe real user data. Every
+    node this run creates is tagged with the per-run unique ``e2e_tag`` (a uuid)
+    right after each ingest, scoped off the run's Execution and its
+    WAS_GENERATED_BY descendants plus the returned node ids, so this delete can
+    only ever match nodes this run created.
     """
     import asyncio
 
@@ -327,14 +331,6 @@ def _cleanup(e2e_config, e2e_tag: str) -> None:
         )
         try:
             async with driver.session(database=e2e_config.neo4j.database) as s:
-                await s.run(
-                    "MATCH (n) WHERE n.service = $svc DETACH DELETE n",
-                    svc=SERVICE_TAG,
-                )
-                await s.run(
-                    "MATCH (p:Paper) WHERE p.corpus_id IN $cids DETACH DELETE p",
-                    cids=ALL_E2E_CORPUS_IDS,
-                )
                 await s.run(
                     "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
                     tag=e2e_tag,
@@ -363,27 +359,40 @@ class TestIngestSemanticScholarE2E:
         yield
         _cleanup(e2e_config, self._e2e_tag)
 
-    async def _tag_all(self, e2e_config):
-        """Tag every node this run touched with the per-run e2e tag.
+    async def _tag_all(self, e2e_config, report):
+        """Tag exactly the nodes THIS run created with the per-run e2e tag.
 
-        Belt-and-braces only: teardown already deletes on the service tag and
-        corpus_ids unconditionally, so a crash before this call still cleans up.
+        Scopes strictly off the run's Execution and its WAS_GENERATED_BY fan-in
+        (citing Papers, snippet Findings, the raw Dataset) plus the ids the
+        ImportReport returned, so teardown (which deletes ONLY by e2e_tag) can
+        never touch a pre-existing production node that merely shares a service
+        tag or a corpus_id. NEVER tag by service or corpus_id: the e2e config
+        runs on the shared default namespace where production nodes carry the
+        same asta:semantic-scholar service and the same corpus_ids. The cited
+        target Paper (pre-created by the test) and a corpus-id-less paper are
+        tagged by their own ids at the call site, not here.
         """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
+        run_ids = [i for i in (report.execution_id, report.artifact) if i]
+        run_ids += [pid for pid in report.paper_ids if pid]
         async with driver.session(database=db) as s:
-            await s.run(
-                "MATCH (n) WHERE n.service = $svc SET n.e2e_tag = $tag",
-                svc=SERVICE_TAG,
-                tag=self._e2e_tag,
-            )
-            await s.run(
-                "MATCH (p:Paper) WHERE p.corpus_id IN $cids SET p.e2e_tag = $tag",
-                cids=ALL_E2E_CORPUS_IDS,
-                tag=self._e2e_tag,
-            )
+            if run_ids:
+                await s.run(
+                    "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                    ids=run_ids, tag=self._e2e_tag,
+                )
+            # Everything WAS_GENERATED_BY this run's Execution: citing/snippet
+            # Papers, snippet Findings, the raw Dataset. Scoped off the Execution
+            # id this run owns, never the shared service tag.
+            if report.execution_id:
+                await s.run(
+                    "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                    "SET n.e2e_tag = $tag",
+                    xid=report.execution_id, tag=self._e2e_tag,
+                )
 
     @pytest.mark.asyncio
     async def test_citations_builds_cites_graph_and_is_idempotent(self, e2e_config):
@@ -428,7 +437,7 @@ class TestIngestSemanticScholarE2E:
             config=e2e_config,
             artifact_path=str(artifact_path),
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report1)
         assert report1.execution_id.startswith("X-")
         # 3 distinct citing papers created (target pre-existed).
         assert report1.created == len(CITATION_CORPUS_IDS)
@@ -461,12 +470,15 @@ class TestIngestSemanticScholarE2E:
             )
             assert (await res.single())["c"] == len(CITATION_CORPUS_IDS)
 
-        # The Execution kind reflects the sub-shape.
+        # The Execution kind reflects the sub-shape. Scoped to THIS run's
+        # Execution id (not the shared service tag) so a production
+        # asta:semantic-scholar Execution on the shared namespace cannot perturb
+        # the count.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: $svc}) "
+                "MATCH (x:Execution {id: $xid}) "
                 "RETURN count(x) AS c, collect(x.kind)[0] AS kind",
-                svc=SERVICE_TAG,
+                xid=report1.execution_id,
             )
             rec = await res.single()
         assert rec["c"] == 1
@@ -490,7 +502,7 @@ class TestIngestSemanticScholarE2E:
             config=e2e_config,
             artifact_path=str(artifact_path),
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report2)
         assert report2.created == 0
         assert report2.deduped == len(CITATION_CORPUS_IDS)
         assert report2.execution_id == report1.execution_id
@@ -504,16 +516,18 @@ class TestIngestSemanticScholarE2E:
             )
             assert (await res.single())["c"] == len(CITATION_CORPUS_IDS)
 
-        # Still exactly one Execution and one raw Dataset.
+        # Still exactly one Execution and one raw Dataset. Scoped to THIS run's
+        # ids (not the shared service tag) so production asta:semantic-scholar
+        # nodes on the shared namespace cannot perturb the counts.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: $svc}) RETURN count(x) AS c",
-                svc=SERVICE_TAG,
+                "MATCH (x:Execution {id: $xid}) RETURN count(x) AS c",
+                xid=report1.execution_id,
             )
             assert (await res.single())["c"] == 1
             res = await s.run(
-                "MATCH (d:Dataset {service: $svc}) RETURN count(d) AS c",
-                svc=SERVICE_TAG,
+                "MATCH (d:Dataset {id: $aid}) RETURN count(d) AS c",
+                aid=report1.artifact,
             )
             assert (await res.single())["c"] == 1
 
@@ -536,7 +550,7 @@ class TestIngestSemanticScholarE2E:
         report1 = await ingest_semantic_scholar(
             doc, config=e2e_config, artifact_path=str(artifact_path)
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report1)
         # 2 distinct papers + 3 snippet Findings created (one paper repeats).
         assert report1.created == len(SNIPPET_CORPUS_IDS) + 3
 
@@ -598,7 +612,7 @@ class TestIngestSemanticScholarE2E:
         report2 = await ingest_semantic_scholar(
             doc, config=e2e_config, artifact_path=str(artifact_path)
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report2)
         assert report2.created == 0
         # 2 papers + 3 snippet Findings all deduped.
         assert report2.deduped == len(SNIPPET_CORPUS_IDS) + 3
@@ -647,7 +661,7 @@ class TestIngestSemanticScholarE2E:
         report1 = await ingest_semantic_scholar(
             doc, config=e2e_config, artifact_path=str(artifact_path)
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report1)
         # Belt-and-braces: tag by the parked s2 paperId too, so teardown reaches
         # this node even though it has no corpus_id.
         async with driver.session(database=db) as s:
@@ -662,7 +676,7 @@ class TestIngestSemanticScholarE2E:
         report2 = await ingest_semantic_scholar(
             doc, config=e2e_config, artifact_path=str(artifact_path)
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report2)
         async with driver.session(database=db) as s:
             await s.run(
                 "MATCH (p:Paper {custom_s2_paper_id: $sid}) SET p.e2e_tag = $tag",

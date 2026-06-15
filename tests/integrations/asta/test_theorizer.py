@@ -354,13 +354,17 @@ def _reset_driver_singleton():
 
 
 def _cleanup_theorizer(e2e_config, e2e_tag: str) -> None:
-    """Hermetic teardown: delete every node this adapter could have created.
+    """Hermetic teardown: delete ONLY the nodes THIS run tagged.
 
-    Crash-safe and independent of any post-success tagging step: it keys on the
-    SERVICE_TAG (set at node creation), on the fixture corpus_ids (papers may
-    pre-exist from another run), and on the per-run e2e tag (the seed Question).
-    Deleting on the shared service tag is safe because the e2e config uses a
-    dedicated project and no production node carries this synthetic service.
+    The teardown is EXACTLY ``MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n``
+    and nothing else. It NEVER deletes by ``service`` or by ``corpus_id``: the
+    e2e config runs against the SHARED default Neo4j namespace (project_tag is
+    empty), and production ingests carry the SAME ``asta:theorizer`` service tag
+    and the same corpus_ids, so a service-scoped or corpus_id-scoped delete
+    would wipe real user data. Every node this run creates is tagged with the
+    per-run unique ``e2e_tag`` (a uuid) right after each ingest, scoped off the
+    run's Execution and its WAS_GENERATED_BY descendants plus the returned node
+    ids, so this delete can only ever match nodes this run created.
     """
     import asyncio
 
@@ -374,14 +378,6 @@ def _cleanup_theorizer(e2e_config, e2e_tag: str) -> None:
         )
         try:
             async with driver.session(database=e2e_config.neo4j.database) as s:
-                await s.run(
-                    "MATCH (n) WHERE n.service = $svc DETACH DELETE n",
-                    svc=SERVICE_TAG,
-                )
-                await s.run(
-                    "MATCH (p:Paper) WHERE p.corpus_id IN $cids DETACH DELETE p",
-                    cids=ALL_CORPUS_IDS,
-                )
                 await s.run(
                     "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
                     tag=e2e_tag,
@@ -413,31 +409,39 @@ class TestIngestTheorizerE2E:
         yield
         _cleanup_theorizer(e2e_config, self._e2e_tag)
 
-    async def _tag_all(self, e2e_config):
-        """Tag every node this run touched with the per-run e2e tag.
+    async def _tag_all(self, e2e_config, report):
+        """Tag exactly the nodes THIS run created with the per-run e2e tag.
 
-        Belt-and-braces only: teardown already deletes on the service tag and
-        corpus_ids unconditionally, so a crash before this call still cleans up.
+        Scopes strictly off the run's Execution and its WAS_GENERATED_BY fan-in
+        (every parent Finding, law Hypothesis, Paper, and the raw Document chains
+        back to the run Execution) plus the ids the ImportReport returned, so
+        teardown (which deletes ONLY by e2e_tag) can never touch a pre-existing
+        production node that merely shares a service tag or a corpus_id. NEVER
+        tag by service or corpus_id: the e2e config runs on the shared default
+        namespace where production nodes carry the same asta:theorizer service
+        and the same corpus_ids.
         """
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
+        run_ids = [i for i in (report.execution_id, report.artifact) if i]
+        run_ids += [pid for pid in report.paper_ids if pid]
         async with driver.session(database=db) as s:
-            # Everything carrying the theorizer service tag (Execution, parent
-            # Findings, Hypotheses, Papers, the raw Document node).
-            await s.run(
-                "MATCH (n) WHERE n.service = $svc SET n.e2e_tag = $tag",
-                svc=SERVICE_TAG,
-                tag=self._e2e_tag,
-            )
-            # Papers key on corpus_id (service was set at create, but tag by
-            # corpus_id too in case a paper pre-existed from another run).
-            await s.run(
-                "MATCH (p:Paper) WHERE p.corpus_id IN $cids SET p.e2e_tag = $tag",
-                cids=ALL_CORPUS_IDS,
-                tag=self._e2e_tag,
-            )
+            if run_ids:
+                await s.run(
+                    "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                    ids=run_ids, tag=self._e2e_tag,
+                )
+            # Everything WAS_GENERATED_BY this run's Execution: parent Findings,
+            # law Hypotheses, Papers, and the raw Document node. Scoped off the
+            # Execution id this run owns, never the shared service tag.
+            if report.execution_id:
+                await s.run(
+                    "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                    "SET n.e2e_tag = $tag",
+                    xid=report.execution_id, tag=self._e2e_tag,
+                )
 
     @pytest.mark.asyncio
     async def test_ingest_buckets_and_is_idempotent(self, e2e_config):
@@ -480,7 +484,7 @@ class TestIngestTheorizerE2E:
             config=e2e_config,
             artifact_path=str(artifact_path),
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report1)
         assert report1.execution_id.startswith("X-")
         # parent Findings + Hypotheses + distinct Papers created.
         assert report1.created == N_THEORIES + N_HYPOTHESES + N_PAPERS
@@ -654,7 +658,7 @@ class TestIngestTheorizerE2E:
             config=e2e_config,
             artifact_path=str(artifact_path),
         )
-        await self._tag_all(e2e_config)
+        await self._tag_all(e2e_config, report2)
         # Nothing new is created; every theory/law/paper is deduped.
         assert report2.created == 0
         assert report2.deduped == N_THEORIES + N_HYPOTHESES + N_PAPERS

@@ -94,6 +94,15 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
 - **link_once.** Every edge is guarded by an existence check first, because the
   backend's `create_relationship` is a bare `CREATE` that duplicates edges on
   re-ingest. Re-running the same artifact never duplicates papers or edges.
+- **Citations link via CITES + Execution provenance, never RELEVANT_TO the
+  question.** For the Semantic Scholar `citations` sub-kind, a citing paper links
+  ONLY via `citingPaper -[CITES]-> target`, `WAS_GENERATED_BY` the run Execution,
+  and `WAS_DERIVED_FROM` the raw node. A citing paper is NOT relevant to the
+  question, so `link_to` (RELEVANT_TO) is NOT applied to citing papers. Papers are
+  reference entities that are never orphans (per /wh:close and /wh:graph-link):
+  the CITES edge plus Execution provenance is their linkage. RELEVANT_TO is
+  applied only to get / search / snippet results, which ARE relevant to the
+  question.
 - **Sequential writes.** Never `asyncio.gather`. `execute_tool` reuses one
   cached backend singleton and Neo4j forbids concurrent queries.
 - **One Execution per run, idempotent.** Each run gets one Execution (kind
