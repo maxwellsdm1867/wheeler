@@ -50,6 +50,15 @@ try:
 except ImportError:
     pass
 
+# Service enable/disable curation (the .wheeler/services/ folder). Guarded the
+# same way so a missing integrations package never breaks the rest of the CLI.
+try:
+    from wheeler.integrations.services_cli import services_app
+
+    app.add_typer(services_app, name="services")
+except ImportError:
+    pass
+
 
 
 # Re-export for backward compatibility and convenience

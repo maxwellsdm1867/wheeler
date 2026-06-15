@@ -3,17 +3,39 @@
 A service is a declarative CONTRACT (one manifest entry). Commands read the
 registry instead of hardcoding providers. This module is a PURE READ: it has no
 graph dependency, imports no LLM-provider SDK, and never raises on a bad
-manifest. A missing file falls back to the bundled default; a malformed entry is
-skipped and logged; the loaders always return a list (possibly empty).
+manifest. A missing folder/file falls back to the bundled default; a malformed
+entry is skipped and logged; the loaders always return a list (possibly empty).
 
-Two manifests exist:
-  - the bundled DEFAULT at ``wheeler/integrations/services.default.yaml``
-    (ships with the package),
-  - an optional USER override at ``<project_root>/.wheeler/services.yaml``
-    (wins when present).
+Two distinct ideas, do not conflate them:
 
-``load_services`` returns every parsed contract. ``available_services`` runs each
-contract's ``available`` shell probe and returns only the ones that pass.
+  - the bundled CATALOG at ``wheeler/integrations/services.default.yaml``
+    (ships with the package): everything that is AVAILABLE to enable.
+  - the ENABLED set: what is actually LOADED and visible to the router and to
+    plan suggestions.
+
+The ENABLE/DISABLE layer is a FOLDER, not a single override file. The folder
+``<project_root>/.wheeler/services/`` is the source of truth for ENABLED
+services: each ``<id>.yaml`` file in it is one enabled contract (same schema as
+a ``services.default.yaml`` entry, either a single mapping or wrapped under a
+``services:`` list, both accepted).
+
+Load precedence (the rule the CLI and the router both rely on):
+
+  - if ``<project_root>/.wheeler/services/`` EXISTS, the folder is truth and
+    ``load_services`` returns only the contracts parsed from its ``*.yaml``
+    files (an empty or all-garbage folder yields an empty enabled set);
+  - if the folder does NOT exist, ``load_services`` falls back to the bundled
+    CATALOG so every default stays enabled until the user starts curating
+    (backward-compat).
+
+``load_services`` returns the ENABLED set. ``catalog_services`` returns the
+bundled catalog (everything available to enable), used by the ``list`` command.
+``available_services`` filters the ENABLED set by each contract's ``available``
+shell probe and returns only the ones that pass.
+
+A legacy single-file override at ``<project_root>/.wheeler/services.yaml`` is
+still honoured for backward-compat, but ONLY when the new
+``.wheeler/services/`` folder is absent: the folder always wins.
 """
 
 from __future__ import annotations
@@ -82,10 +104,23 @@ _REQUIRED_FIELDS = (
 _VALID_KINDS = ("shell-out", "local")
 
 
-def _user_manifest_path(config: WheelerConfig | None) -> Path | None:
-    """Resolve the user override path ``<project_root>/.wheeler/services.yaml``.
+def services_dir(config: WheelerConfig | None) -> Path | None:
+    """Resolve the enabled-services folder ``<project_root>/.wheeler/services/``.
 
-    Returns None when no config is supplied (caller then uses the default only).
+    This folder is the source of truth for ENABLED services. Returns None when no
+    config is supplied (caller then uses the bundled catalog only).
+    """
+    if config is None:
+        return None
+    root = Path(config.project_root).resolve()
+    return root / ".wheeler" / "services"
+
+
+def _user_manifest_path(config: WheelerConfig | None) -> Path | None:
+    """Resolve the legacy single-file override ``.wheeler/services.yaml``.
+
+    Honoured only when the ``.wheeler/services/`` folder is absent. Returns None
+    when no config is supplied (caller then uses the bundled catalog only).
     """
     if config is None:
         return None
@@ -129,6 +164,81 @@ def _read_manifest(path: Path) -> list[dict[str, Any]]:
         return []
 
     return [entry for entry in services if isinstance(entry, dict)]
+
+
+def _read_service_file(path: Path) -> list[dict[str, Any]]:
+    """Read raw service entries from one ``.wheeler/services/<id>.yaml`` file.
+
+    Each enabled-service file holds ONE contract, accepted in either shape:
+      - a bare mapping (the contract fields at the top level), or
+      - the same ``services:`` list shape as the catalog (in which case every
+        list entry is read, so a hand-merged file still works).
+
+    Defensive: a missing/unreadable file, invalid YAML, or a non-mapping
+    top-level document yields an empty list (logged). Never raises.
+    """
+    try:
+        raw = path.read_text()
+    except OSError as exc:
+        logger.warning("registry: could not read service file %s: %s", path, exc)
+        return []
+
+    try:
+        doc = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        logger.warning("registry: service file %s is not valid YAML: %s", path, exc)
+        return []
+
+    if doc is None:
+        return []
+    if not isinstance(doc, dict):
+        logger.warning("registry: service file %s is not a mapping; ignoring", path)
+        return []
+
+    # Allow the catalog-style ``services:`` wrapper as well as a bare mapping.
+    if "services" in doc:
+        services = doc.get("services")
+        if not isinstance(services, list):
+            logger.warning(
+                "registry: 'services' in %s is not a list; ignoring", path
+            )
+            return []
+        return [entry for entry in services if isinstance(entry, dict)]
+
+    return [doc]
+
+
+def _load_enabled_dir(folder: Path) -> list[ServiceContract]:
+    """Parse every ``*.yaml`` in the enabled-services folder into contracts.
+
+    The folder is the source of truth for ENABLED services. Files are read in
+    sorted order for deterministic output; a malformed file is skipped (logged)
+    and never aborts the load. Duplicate ids (same contract id from two files)
+    keep the first seen. Never raises.
+    """
+    contracts: list[ServiceContract] = []
+    seen: set[str] = set()
+    try:
+        files = sorted(folder.glob("*.yaml"))
+    except OSError as exc:
+        logger.warning("registry: could not list %s: %s", folder, exc)
+        return []
+
+    for path in files:
+        for entry in _read_service_file(path):
+            parsed = _parse_entry(entry)
+            if parsed is None:
+                continue
+            if parsed.id in seen:
+                logger.warning(
+                    "registry: duplicate enabled service id %r (%s); keeping first",
+                    parsed.id,
+                    path,
+                )
+                continue
+            seen.add(parsed.id)
+            contracts.append(parsed)
+    return contracts
 
 
 def _parse_entry(entry: dict[str, Any]) -> ServiceContract | None:
@@ -180,23 +290,78 @@ def _parse_entry(entry: dict[str, Any]) -> ServiceContract | None:
     )
 
 
-def load_services(config: WheelerConfig | None = None) -> list[ServiceContract]:
-    """Load service contracts from the user override or the bundled default.
+def contract_to_entry(contract: ServiceContract) -> dict[str, Any]:
+    """Render a ServiceContract back to a plain YAML-serialisable mapping.
 
-    Resolution: if ``<project_root>/.wheeler/services.yaml`` exists, it wins and
-    the default is NOT merged in; otherwise the bundled
-    ``services.default.yaml`` is used. Malformed entries are skipped (logged);
-    a missing or malformed file yields the default or an empty list. Never
-    raises.
+    Used by the ``enable`` CLI to write a faithful ``.wheeler/services/<id>.yaml``
+    entry. The shape round-trips through ``_parse_entry`` unchanged. ``inputs``
+    and ``output`` are only emitted when non-empty to keep files terse.
+    """
+    entry: dict[str, Any] = {
+        "id": contract.id,
+        "provider": contract.provider,
+        "name": contract.name,
+        "description": contract.description,
+        "kind": contract.kind,
+        "act": contract.act,
+        "cost": contract.cost,
+        "available": contract.available,
+        "when": contract.when,
+    }
+    if contract.inputs:
+        entry["inputs"] = contract.inputs
+    if contract.output:
+        entry["output"] = contract.output
+    return entry
+
+
+def catalog_services(
+    config: WheelerConfig | None = None,
+) -> list[ServiceContract]:
+    """Return the bundled CATALOG: every service AVAILABLE to enable.
+
+    This is always the shipped ``services.default.yaml``, independent of what is
+    enabled in ``.wheeler/services/``. The ``list`` command uses it to show what
+    can be enabled. ``config`` is accepted for signature symmetry but is not
+    consulted (the catalog is bundled, not per-project). Never raises.
+
+    Pure read: no graph access, no subprocess, no network.
+    """
+    contracts: list[ServiceContract] = []
+    for entry in _read_manifest(_DEFAULT_MANIFEST):
+        parsed = _parse_entry(entry)
+        if parsed is not None:
+            contracts.append(parsed)
+    return contracts
+
+
+def load_services(config: WheelerConfig | None = None) -> list[ServiceContract]:
+    """Load the ENABLED service contracts (what the router/plan acts see).
+
+    Load precedence:
+      1. If ``<project_root>/.wheeler/services/`` EXISTS, the folder is the
+         source of truth: return only the contracts parsed from its ``*.yaml``
+         files (an empty or all-garbage folder yields an empty enabled set).
+      2. Else if the legacy single-file ``.wheeler/services.yaml`` exists, it
+         wins (backward-compat) and the catalog is NOT merged in.
+      3. Else fall back to the bundled CATALOG so every default stays enabled
+         until the user starts curating (backward-compat).
+
+    Malformed entries/files are skipped (logged); nothing here ever raises.
 
     This is a pure read: no graph access, no subprocess, no network.
     """
+    folder = services_dir(config)
+    if folder is not None and folder.is_dir():
+        logger.info("registry: loading enabled services from folder %s", folder)
+        return _load_enabled_dir(folder)
+
     user_path = _user_manifest_path(config)
     if user_path is not None and user_path.is_file():
-        logger.info("registry: loading user manifest %s", user_path)
+        logger.info("registry: loading legacy user manifest %s", user_path)
         raw_entries = _read_manifest(user_path)
     else:
-        logger.info("registry: loading bundled default manifest %s", _DEFAULT_MANIFEST)
+        logger.info("registry: loading bundled catalog %s", _DEFAULT_MANIFEST)
         raw_entries = _read_manifest(_DEFAULT_MANIFEST)
 
     contracts: list[ServiceContract] = []
