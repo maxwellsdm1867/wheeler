@@ -56,6 +56,22 @@ services:
     available: "asta auth status"
     when: "a specific paper, its citations, or snippet evidence (look up Z, what cites Y)"
 
+  - id: scholar-qa
+    provider: asta
+    name: Asta Literature Reports
+    description: long-form literature review report synthesizing many papers into a written document with citations
+    kind: shell-out
+    act: /wh:asta-report
+    cost: "cheap (literature find + papers lookups)"
+    available: "asta auth status"
+    when: "a written literature review or comprehensive multi-paper report (write a review of X, synthesize the literature on Y)"
+    inputs:
+      - { name: query, source: query, required: true }
+    output:
+      raw_node: document
+      nodes: [Document, Paper]
+    # implemented by wheeler/integrations/asta/scholar_qa.py
+
   - id: graph-status
     provider: local
     name: Graph Status

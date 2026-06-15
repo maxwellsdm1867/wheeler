@@ -34,8 +34,11 @@ from wheeler.integrations.asta.theorizer import (
 # (run_id, cost, time). Structurally faithful, under 200KB.
 FIXTURE = Path(__file__).parent / "fixtures" / "theorizer_real_sample.json"
 
-# Service tag for every node this adapter writes. Teardown keys on it (plus the
-# fixture corpus_ids) so cleanup is hermetic regardless of a per-run e2e tag.
+# Service tag for every node this adapter writes. Teardown does NOT key on it:
+# the hermetic delete is by the per-run uuid ``e2e_tag`` only (see
+# ``_cleanup_theorizer``), never by ``service`` or ``corpus_id``, because the e2e
+# config runs on the shared default namespace where production nodes carry the
+# same service tag and corpus_ids.
 SERVICE_TAG = "asta:theorizer"
 
 # Every distinct corpus_id across supporting + contradicting papers in the

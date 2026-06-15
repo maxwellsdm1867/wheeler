@@ -102,7 +102,12 @@ def _save_raw_durably(
             key = _content_sha(src_path)
         store_dir = Path(_RAW_STORE_REL) / slug
         store_dir.mkdir(parents=True, exist_ok=True)
-        dest = store_dir / f"{key}.json"
+        # Preserve the source extension so a non-JSON deliverable (a markdown
+        # literature report, for example) is not stored under a misleading
+        # ``.json`` name. Existing JSON callers pass ``.json`` files, so their
+        # durable path is unchanged.
+        suffix = src_path.suffix or ".json"
+        dest = store_dir / f"{key}{suffix}"
         if dest.exists():
             # Same run already saved: reuse it (path-dedupe), do not re-copy.
             return dest
