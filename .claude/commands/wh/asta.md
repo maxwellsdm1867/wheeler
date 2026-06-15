@@ -35,13 +35,16 @@ The service list is data, not prose in this file. Load the AVAILABLE services
 ./.venv/bin/python -c "from wheeler.config import load_config; from wheeler.integrations.registry import available_services; import json; print(json.dumps([{'id': c.id, 'name': c.name, 'act': c.act, 'kind': c.kind, 'cost': c.cost, 'when': c.when, 'description': c.description} for c in available_services(load_config())], indent=2))"
 ```
 
-(If `./.venv/bin/python` is not present, use plain `python`.) The registry reads
-the user override at `.wheeler/services.yaml` if it exists, else the bundled
-default. It runs each service's `available` probe (for example `asta auth
-status`) and returns only the ones that pass, so an unauthenticated or
-uninstalled service simply will not appear. Do NOT maintain a service table in
-this file; trust the registry. If the list is empty, tell the user no services
-are available (likely asta is not authenticated: `asta auth status`) and stop.
+(If `./.venv/bin/python` is not present, use plain `python`.) The registry
+returns only ENABLED services. The enabled set is the folder
+`.wheeler/services/` when it exists (each `<id>.yaml` is one enabled contract,
+curated via `wheeler services enable/disable`), else the bundled catalog
+(every default enabled until the user starts curating). It then runs each
+service's `available` probe (for example `asta auth status`) and returns only
+the ones that pass, so a disabled, unauthenticated, or uninstalled service
+simply will not appear. Do NOT maintain a service table in this file; trust the
+registry. If the list is empty, tell the user no services are available (either
+none are enabled, or asta is not authenticated: `asta auth status`) and stop.
 
 ## Routing procedure
 

@@ -1,9 +1,16 @@
-# Wheeler service-extension registry: shipped DEFAULT manifest.
+# Wheeler service-extension registry: shipped CATALOG of services.
 #
-# This file is bundled with the package and read by
-# wheeler.integrations.registry.load_services when the project has no user
-# override at .wheeler/services.yaml. Copy it there and edit to add or remove
-# services for a project; the user file always wins.
+# This file is bundled with the package and is the CATALOG: every service that
+# is AVAILABLE to enable. It does NOT directly decide what is loaded.
+#
+# The ENABLED set (what the router and plan acts actually see) is curated in the
+# folder .wheeler/services/ : each <id>.yaml file there is one enabled contract.
+# Curate it with `wheeler services enable/disable` (or by editing the folder by
+# hand). load_services precedence:
+#   1. if .wheeler/services/ exists, that folder is the source of truth;
+#   2. else the legacy single-file override .wheeler/services.yaml, if present;
+#   3. else this bundled catalog (every default enabled until you start curating).
+# The folder always wins over the single-file override.
 #
 # Each entry is a declarative service CONTRACT (one manifest entry per tool):
 #   id          stable identifier (kebab-case)
