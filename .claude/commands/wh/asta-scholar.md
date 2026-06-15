@@ -8,6 +8,9 @@ allowed-tools:
   - Bash(wheeler integrate:*)
   - mcp__wheeler_core__search_context
   - mcp__wheeler_query__query_papers
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_query__query_findings
+  - mcp__wheeler_mutations__link_nodes
 
 ---
 
@@ -64,6 +67,15 @@ wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL-
 ```
 
 If any CLI command exits non-zero, report the failure and stop. A failed run writes nothing to the graph by design. The short alias `s2` works in place of `semantic_scholar`.
+
+## Wire semantics to the existing graph
+
+The ingest is structurally complete (each result `USED` the request inputs, snippet Findings `WAS_GENERATED_BY` the run and `APPEAR_IN` their papers, and a citations run wired the `CITES` edges to the `--target`). It does NOT connect the new papers and snippet Findings to what was ALREADY in the graph, because that is a judgment call (compare the new records against the current graph), so it lives here in the act, not in the mechanical parser. Do this after ingest, lightly:
+
+1. Read the new Paper and Finding ids from the ingest report. Read the existing graph with `mcp__wheeler_query__query_open_questions` (open Questions these papers or snippets might bear on) and `mcp__wheeler_query__query_findings` (existing results a new paper might cite or relate to), and `mcp__wheeler_core__search_context` on the topic.
+2. Identify the edges between NEW records and EXISTING nodes: a new Paper or snippet Finding `RELEVANT_TO` an open Question it addresses; a new Paper `CITES` an existing Paper or Finding where the citation is real and known.
+3. Confirm each judgment call with the scientist before writing.
+4. Apply the confirmed edges via `mcp__wheeler_mutations__link_nodes` (for example `link_nodes(<new P->, <open Q->, "RELEVANT_TO")`). Skip any edge the scientist does not endorse.
 
 ## Report
 

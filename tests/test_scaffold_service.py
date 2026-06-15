@@ -133,6 +133,29 @@ def test_act_is_a_marshal_in_prompt():
     assert "wheeler integrate ingest paper_finder" in text
 
 
+def test_act_has_the_semantic_wiring_step():
+    """Part 3 of the three-part model: the generated act must carry a post-ingest
+    semantic-wiring step that links NEW outputs to the EXISTING graph (judgment in
+    the act, via link_nodes, NOT in the mechanical parser)."""
+    mod = _load_module()
+    c = _contract(mod)
+    text = mod.render_act(c)
+    # The step exists and is explicitly post-ingest / judgment.
+    assert "Wire semantics to the existing graph" in text
+    # It uses the mutation link tool, granted in allowed-tools.
+    assert "mcp__wheeler_mutations__link_nodes" in text
+    # It reads the existing graph to find the edges.
+    assert "mcp__wheeler_query__query_open_questions" in text
+    assert "mcp__wheeler_query__query_hypotheses" in text
+    # It names the Wheeler semantic relationships that wire new -> existing.
+    assert "SUPPORTS" in text
+    assert "CONTRADICTS" in text
+    assert "RELEVANT_TO" in text
+    assert "CITES" in text
+    # It is judgment, not mechanical: confirmed with the scientist.
+    assert "judgment" in text.lower()
+
+
 def test_test_stub_follows_e2e_tag_convention():
     mod = _load_module()
     c = _contract(mod)

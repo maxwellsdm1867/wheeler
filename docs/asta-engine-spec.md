@@ -32,6 +32,38 @@ Implementation:
   extraction_results; for analyze-data, the Dataset ids).
 - This is the INPUT half of the contract earning its keep (the output half already buckets).
 
+## 1b. The three-part wiring model (structural x2 + semantic)
+
+A service call is ONE Execution. Its wiring has THREE parts. An adapter that does only the
+first two is incomplete:
+
+1. **Structural input** (`Execution -[USED]-> input`): each graph node the marshal-in
+   synthesized into the payload. Wired by the deterministic ingest via `--used` / `_record_used`
+   (section 1). Mechanical.
+2. **Structural output** (`output -[WAS_GENERATED_BY]-> Execution`): every node the parser
+   produced this run. Wired by the deterministic ingest (`register_output_artifact` for the raw
+   node, `_record_generated` for the rest). Mechanical. Exception: Papers are reference entities
+   (NO `WAS_GENERATED_BY`); a paper the knowledge was derived FROM is an INPUT
+   (`Execution -[USED]-> paper`).
+3. **Semantic wiring** (the Wheeler relationships: `SUPPORTS`, `CONTRADICTS`, `RELEVANT_TO`,
+   `CITES`, ...): the new outputs connected to what was ALREADY in the graph, a result
+   `SUPPORTS`/`CONTRADICTS` an existing Hypothesis, a new Hypothesis `CONTRADICTS` one already in
+   the graph, a Finding `RELEVANT_TO` an open Question, a Paper `CITES`. This is JUDGMENT (compare
+   the new outputs against the current graph), so it lives in the marshal-in ACT, post-ingest, via
+   `link_nodes`, NOT in the mechanical parser.
+
+The line between part 2 and part 3 is sharp and load-bearing: the deterministic parser DOES wire
+the edges KNOWN FROM THE SERVICE OUTPUT (the Theorizer states which papers support vs contradict
+ITS OWN laws; a citations run knows its `--target`), because those are asserted by the artifact
+itself. The parser does NOT wire the new outputs to PRIOR graph nodes the service never saw: no
+parser can know whether a freshly generated law agrees with a Hypothesis already in the graph. That
+comparison is judgment, so the act reads the new ids (from the ingest report) plus the existing
+graph (`search_context` / `query_hypotheses` / `query_open_questions` / `query_findings`), identifies
+the `SUPPORTS` / `CONTRADICTS` / `RELEVANT_TO` / `CITES` edges between NEW and EXISTING nodes,
+confirms the calls with the scientist, and applies them via `link_nodes`. The `/wh:asta-*` acts each
+carry a "Wire semantics to the existing graph" step that does exactly this; the skill-creator
+scaffolds it into every generated marshal-in act.
+
 ## 2. The service registry / engine
 
 A declarative manifest of available services; commands read it, never hardcode providers.

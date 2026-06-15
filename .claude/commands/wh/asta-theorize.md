@@ -8,6 +8,9 @@ allowed-tools:
   - Bash(wheeler integrate:*)
   - mcp__wheeler_core__search_context
   - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_mutations__link_nodes
 
 ---
 
@@ -43,6 +46,15 @@ wheeler integrate ingest theorizer /tmp/asta-theorizer.json --link-to <Q- or PL-
 ```
 
 Omit `--link-to` if there is no target. Pass `--used` with the graph node ids the request was built from: the link target (the `Q-`/`PL-` that motivated the run) AND every Finding id you seeded into the Theorizer extraction payload (the existing results that shaped the theory generation), comma-separated. This records `Execution -[USED]-> each input` (input-side provenance), so every generated theory traces back to the exact graph context it was built from, not just the literature support. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate theories, law hypotheses, papers, edges, or USED edges. Each theory becomes a parent Finding (`artifact_type=theory`); each law becomes a Hypothesis the parent `CONTAINS`; supporting papers link `SUPPORTS` and contradicting papers link `CONTRADICTS` each law Hypothesis. The novelty verdict (established, derivable, new) is parked as `custom_novelty` on each Hypothesis, never in its `status`.
+
+## Wire semantics to the existing graph
+
+The ingest is structurally complete (each new theory `USED` its graph inputs and `WAS_GENERATED_BY` the run; the literature `SUPPORTS`/`CONTRADICTS` edges the Theorizer itself stated are wired). It does NOT connect the new outputs to what was ALREADY in the graph, because that is a judgment call (compare the new theories against the current graph), so it lives here in the act, not in the mechanical parser. Do this after ingest:
+
+1. Read the new node ids from the ingest report (the parent theory Findings and the law Hypotheses). Read the existing graph with `mcp__wheeler_query__query_hypotheses` (the Hypotheses already in the graph), `mcp__wheeler_query__query_open_questions` (open Questions this theory might address), and `mcp__wheeler_core__search_context` on the question to surface related Findings.
+2. Identify the semantic edges between NEW outputs and EXISTING nodes: a new law Hypothesis that agrees with an existing Hypothesis `SUPPORTS` it, one that conflicts `CONTRADICTS` it; the parent theory Finding is `RELEVANT_TO` an open Question it addresses.
+3. Confirm each judgment call with the scientist before writing (these are claims about how the new theory relates to prior work, never auto-applied).
+4. Apply the confirmed edges via `mcp__wheeler_mutations__link_nodes` (for example `link_nodes(<new H->, <existing H->, "SUPPORTS")`, `link_nodes(<theory F->, <open Q->, "RELEVANT_TO")`). Skip any edge the scientist does not endorse.
 
 ## Report
 
