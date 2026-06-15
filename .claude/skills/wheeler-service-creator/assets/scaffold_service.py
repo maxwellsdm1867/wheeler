@@ -483,6 +483,9 @@ allowed-tools:
   - Bash(wheeler integrate:*)
   - mcp__wheeler_core__search_context
   - mcp__wheeler_query__query_findings
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_mutations__link_nodes
 
 ---
 
@@ -517,6 +520,15 @@ wheeler integrate ingest {c.tool_ident} /tmp/{c.tool_slug}.json --link-to <Q- or
 ```
 
 Omit `--link-to` if there is no target. Pass `--used` with the graph node ids the request was built FROM (at minimum the link target, plus any seeded source ids): this records `Execution -[USED]-> each input` (input-side provenance), so every result traces back to the graph context that shaped the request, not just what the tool returned. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate nodes, edges, or USED edges.
+
+## Wire semantics to the existing graph
+
+The ingest is STRUCTURALLY complete (each output `USED` its inputs and `WAS_GENERATED_BY` the run, plus the edges the tool itself stated). It does NOT connect the new outputs to what was ALREADY in the graph, because that is a judgment call (compare the new outputs against the current graph), so it lives here in the act, not in the mechanical parser. Do this after ingest:
+
+1. Read the new node ids from the ingest report. Read the existing graph with `mcp__wheeler_query__query_open_questions`, `mcp__wheeler_query__query_hypotheses`, and `mcp__wheeler_query__query_findings`, plus `mcp__wheeler_core__search_context` on the request.
+2. Identify the semantic edges between NEW outputs and EXISTING nodes: a new result `SUPPORTS`/`CONTRADICTS` an existing Hypothesis; a new Hypothesis `CONTRADICTS` one already in the graph; a new Finding or Paper `RELEVANT_TO` an open Question it addresses; a new Paper `CITES` an existing one. Keep only the edges that fit THIS tool's output types.
+3. Confirm each judgment call with the scientist before writing.
+4. Apply the confirmed edges via `mcp__wheeler_mutations__link_nodes` (for example `link_nodes(<new id>, <existing id>, "SUPPORTS")`). Skip any edge the scientist does not endorse.
 
 ## Report
 
