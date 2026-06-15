@@ -28,8 +28,8 @@ This module is a marshal-out caller: it imports ``execute_tool`` lazily
 (function-local), mirroring ``wheeler/validation/ledger.py`` and ``ingest.py``.
 Every graph write routes through ``execute_tool`` so the triple-write, write
 receipt, trace id, and embedding wiring all fire. Edge creation reuses the
-``_link_once`` / ``_edge_exists`` helpers in ``ingest.py`` so re-registering the
-same artifact never duplicates the ``WAS_GENERATED_BY`` edge.
+``_link_once`` / ``_edge_exists`` helpers in ``_marshal.py`` so re-registering
+the same artifact never duplicates the ``WAS_GENERATED_BY`` edge.
 
 Invariants:
   - Best-effort. ANY failure returns ``None`` and logs a warning, never raises:
@@ -51,7 +51,7 @@ from typing import Any
 
 from wheeler.config import WheelerConfig
 
-from .ingest import _link_once
+from ._marshal import _link_once
 
 logger = logging.getLogger(__name__)
 

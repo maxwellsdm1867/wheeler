@@ -4,7 +4,7 @@ A marshal-out module, mirroring ``ingest.py`` and ``artifacts.py``: it imports
 ``execute_tool`` lazily (function-local), so every graph write routes through
 the triple-write + write-receipt + trace-id + embedding wiring. Reads (paper
 dedupe by corpus_id, edge existence for ``link_once``) reuse the same cached
-backend the dispatch path uses, and reuse the shared helpers in ``ingest.py``
+backend the dispatch path uses, and reuse the shared helpers in ``_marshal.py``
 (``_link_once`` / ``_edge_exists`` / ``_find_paper_by_corpus_id`` and the
 persisted corpus_id index) plus ``register_output_artifact`` in ``artifacts.py``.
 
@@ -91,7 +91,7 @@ from pathlib import Path
 from typing import Any
 
 from wheeler.config import WheelerConfig
-from wheeler.integrations.asta.ingest import (
+from wheeler.integrations.asta._marshal import (
     ImportReport,
     _find_execution,
     _find_paper_by_corpus_id,

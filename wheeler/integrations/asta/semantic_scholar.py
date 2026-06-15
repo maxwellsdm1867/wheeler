@@ -10,9 +10,9 @@ A marshal-out module, mirroring ``ingest.py`` / ``theorizer.py``: it imports
 the triple-write + write-receipt + trace-id + embedding wiring. Reads (paper
 dedupe by corpus_id, edge existence for ``link_once``, execution dedupe) reuse
 the same cached backend the dispatch path uses, and reuse the shared helpers in
-``ingest.py`` (``_link_once`` / ``_edge_exists`` / ``_find_paper_by_corpus_id`` /
-``_paper_exists`` / ``_find_execution`` + the persisted corpus_id index) plus the
-corpus_id normalization in ``schemas.py``.
+``_marshal.py`` (``_link_once`` / ``_edge_exists`` / ``_find_paper_by_corpus_id``
+/ ``_paper_exists`` / ``_find_execution`` + the persisted corpus_id index) plus
+the corpus_id normalization in ``schemas.py``.
 
 REAL Semantic Scholar REST output shapes (not A2A), captured live. The parser
 AUTO-DETECTS the sub-kind by keys, since all four are distinguishable:
@@ -75,7 +75,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from wheeler.config import WheelerConfig
-from wheeler.integrations.asta.ingest import (
+from wheeler.integrations.asta._marshal import (
     ImportReport,
     _find_execution,
     _find_paper_by_corpus_id,

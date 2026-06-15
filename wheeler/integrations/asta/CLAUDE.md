@@ -16,11 +16,23 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   splits each paper into promoted fields (corpus_id, title, authors, year),
   custom scalars (relevance_score, venue, url, citation_count, abstract), and
   structured payloads (snippets, citationContexts) used for edges. No graph import.
+- `_marshal.py` -- the neutral home for the genuinely-shared marshal-out
+  helpers, so the adapters import them from one place instead of reaching into
+  the Paper Finder module (`ingest.py`). Holds `ImportReport` (the ingest-run
+  outcome dataclass), the persisted corpus_id index load/save helpers
+  (`_INDEX_REL_PATH` / `_index_path` / `_load_index` / `_save_index`), the
+  project-aware read helpers (`_find_paper_by_corpus_id` / `_find_execution` /
+  `_paper_exists`), and the edge-existence / `link_once` write helpers
+  (`_edge_exists` / `_link_once`). Like the adapters, it imports `execute_tool`
+  lazily (function-local) inside `_link_once` only. No Paper-Finder-,
+  Theorizer-, or S2-specific logic lives here.
 - `ingest.py` -- `ingest_paper_finder(doc, *, link_to, config, artifact_path=None)
   -> ImportReport`. A marshal-out module that imports `execute_tool` (lazily,
   function-local, mirroring `wheeler/validation/ledger.py`). Writes route through
-  `execute_tool` for triple-write; reads use the same cached backend. Owns the
-  shared `_link_once` / `_edge_exists` helpers (artifacts.py imports them). When
+  `execute_tool` for triple-write; reads use the same cached backend. Imports the
+  shared `_link_once` / `_edge_exists` / index / read helpers from `_marshal.py`
+  and keeps only Paper-Finder-specific logic (`ingest_paper_finder`,
+  `_ingest_one_paper`, the `asta:paper-finder` service tag). When
   `artifact_path` is given it calls `register_output_artifact` and links each
   Paper `WAS_DERIVED_FROM` the artifact (best-effort, link_once-guarded).
 - `artifacts.py` -- `register_output_artifact(path, *, execution_id, service,
@@ -30,7 +42,7 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   service `run_id` when present, else a content sha; path-dedupe, never
   re-copies), then (2) registers the SAVED file as a graph node via
   `ensure_artifact` (function-local `execute_tool` import) and links it
-  `WAS_GENERATED_BY` the run Execution (reusing `_link_once` from ingest.py). The
+  `WAS_GENERATED_BY` the run Execution (reusing `_link_once` from `_marshal.py`). The
   node TYPE is per-adapter, declared by the caller via `node_type` and routed
   through `ensure_artifact`'s `artifact_type` override (a `.json` dump has no
   extension rule, so it would default to Document without the override):
@@ -53,7 +65,7 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   Hypothesis, conflicting papers `CONTRADICTS` the theory Finding; predictions
   land in `custom_predictions`. Theories/hypotheses dedupe on a content hash,
   papers on `corpus_id`. Imports `execute_tool` lazily (function-local) and
-  reuses ingest.py's `_link_once` / `_find_paper_by_corpus_id` /
+  reuses `_marshal.py`'s `_link_once` / `_find_paper_by_corpus_id` /
   `_paper_exists` / `_find_execution` helpers + the shared corpus_id index.
 - `cli.py` -- `integrate_app` Typer sub-app, one verb: `ingest <tool> <artifact>
   [--link-to ID]`. Registered in `wheeler/tools/cli.py` guarded by try/except.
@@ -63,9 +75,14 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
 ## Invariants
 
 - **Chokepoint.** The marshal-out modules (`ingest.py`, `theorizer.py`,
-  `artifacts.py`) are the only callers of `execute_tool`, and each imports it
-  lazily (function-local). This keeps `graph_tools/` asta-free and preserves
-  strict layering. `transport.py` and `schemas.py` have no graph dependency.
+  `semantic_scholar.py`, `artifacts.py`) plus the shared `_marshal.py` are the
+  only callers of `execute_tool`, and each imports it lazily (function-local).
+  `_marshal.py` holds the shared read/link/dedupe helpers (`_load_index` /
+  `_save_index` / `_find_paper_by_corpus_id` / `_find_execution` /
+  `_paper_exists` / `_edge_exists` / `_link_once` + `ImportReport`); the four
+  adapters import them from there rather than from `ingest.py`. This keeps
+  `graph_tools/` asta-free and preserves strict layering. `transport.py` and
+  `schemas.py` have no graph dependency.
 - **corpus_id normalization.** Dedupe keys on `corpus_id`, always coerced to a
   digit-string (`str(int(...))`), so an int or a digit-string artifact value map
   to the same Paper. The key is INDEXED on `Paper.corpus_id` and promoted onto

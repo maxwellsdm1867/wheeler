@@ -16,8 +16,9 @@ imports anthropic.
 
 from __future__ import annotations
 
+from ._marshal import ImportReport
 from .artifacts import register_output_artifact
-from .ingest import ImportReport, ingest_paper_finder
+from .ingest import ingest_paper_finder
 from .semantic_scholar import ingest_semantic_scholar
 from .theorizer import ingest_theorizer
 
