@@ -30,6 +30,7 @@ from wheeler.config import WheelerConfig
 
 from ._marshal import (
     ImportReport,
+    JobOutcome,
     _find_execution,
     _find_paper_by_corpus_id,
     _link_execution_to_plan,
@@ -38,6 +39,9 @@ from ._marshal import (
     _paper_exists,
     _record_used,
     _save_index,
+    job_outcome,
+    mark_execution_completed,
+    mark_execution_failed,
 )
 from .schemas import PaperRecord, parse_paper_finder
 
@@ -85,9 +89,12 @@ async def ingest_paper_finder(
 
     report = ImportReport()
     records: list[PaperRecord] = parse_paper_finder(doc)
-    if not records:
-        logger.warning("ingest_paper_finder: no parseable papers in artifact")
-        return report
+    # Failsafe gate: did the external search job actually return a usable
+    # artifact? A LiteratureSearchResult has no A2A status block, so this is ok
+    # for any present result dict (the transport already rejected the non-zero /
+    # missing / empty cases); the gate is uniform across adapters and the empty /
+    # partial-ingest handling below still applies.
+    outcome = job_outcome(doc)
 
     backend = await _get_backend(config)
     index = _load_index()
@@ -103,6 +110,7 @@ async def ingest_paper_finder(
     exec_id = await _find_execution(
         backend, config, service=_SERVICE_TAG, session_id=session_id
     )
+    reused = bool(exec_id)
     if not exec_id:
         exec_result_str = await execute_tool(
             "add_execution",
@@ -110,7 +118,7 @@ async def ingest_paper_finder(
                 "kind": "paper-search",
                 "description": f"Asta Paper Finder: {query_text}",
                 "agent_id": "asta",
-                "status": "completed",
+                "status": "completed" if outcome.ok else "failed",
                 "session_id": session_id,
                 "service": _SERVICE_TAG,
             },
@@ -170,49 +178,93 @@ async def ingest_paper_finder(
     if artifact_id:
         report.artifact = artifact_id
 
-    # corpus_id -> P-id for papers seen this run (so a citing paper can be
-    # linked to a cited paper that was just created in the same run).
-    seen_this_run: dict[str, str] = {}
-
-    for record in records:
-        paper_id = await _ingest_one_paper(
-            backend, execute_tool, config, record, index, session_id, report,
+    # Failsafe gate: if the search job did not return a usable artifact, STOP
+    # here. The Execution exists (status="failed", reason in its custom bag) and
+    # the raw artifact is saved, so the attempt is visible, but no Paper nodes are
+    # fabricated. (Reachable only for a malformed artifact: the transport gates
+    # the rest.)
+    if not outcome.ok:
+        await mark_execution_failed(config, exec_id, outcome)
+        report.failed = True
+        report.job_state = outcome.state
+        logger.warning(
+            "ingest_paper_finder: job did not complete (state=%s): %s",
+            outcome.state,
+            outcome.detail,
         )
-        if paper_id is None:
-            report.skipped += 1
-            continue
-        if record.corpus_id:
-            seen_this_run[record.corpus_id] = paper_id
+        return report
+    # Reused Execution from a PRIOR failed attempt: a now-successful retry must
+    # not inherit the stale "failed" status. Reset before any output is written.
+    if reused:
+        await mark_execution_completed(config, exec_id)
+    # A completed search with zero results is a legitimate empty result: the
+    # Execution stays completed and visible, there is just nothing to bucket.
+    if not records:
+        logger.warning("ingest_paper_finder: no parseable papers in completed artifact")
+        _save_index(index)
+        return report
 
-        # Paper WAS_DERIVED_FROM the raw output artifact (link_once-guarded),
-        # so every paper chains back through the artifact to the service run.
-        if artifact_id:
-            if await _link_once(
-                backend, config, paper_id, "WAS_DERIVED_FROM", artifact_id,
-            ):
-                report.linked += 1
+    try:
+        # corpus_id -> P-id for papers seen this run (so a citing paper can be
+        # linked to a cited paper that was just created in the same run).
+        seen_this_run: dict[str, str] = {}
 
-        # Paper RELEVANT_TO the link target (e.g. the Question/Plan that
-        # prompted the search).
-        if link_to:
-            if await _link_once(backend, config, paper_id, "RELEVANT_TO", link_to):
-                report.linked += 1
-
-    # Second pass: citation contexts -> CITES edges. Done after all papers
-    # exist so a cited corpus_id created this run is resolvable.
-    for record in records:
-        if not record.cited_corpus_ids:
-            continue
-        src_paper_id = seen_this_run.get(record.corpus_id) or index.get(record.corpus_id)
-        if not src_paper_id:
-            continue
-        for cited_corpus in record.cited_corpus_ids:
-            tgt_paper_id = seen_this_run.get(cited_corpus) or index.get(cited_corpus)
-            if not tgt_paper_id:
-                # Cited paper not in our graph; skip (no orphan stub creation).
+        for record in records:
+            paper_id = await _ingest_one_paper(
+                backend, execute_tool, config, record, index, session_id, report,
+            )
+            if paper_id is None:
+                report.skipped += 1
                 continue
-            if await _link_once(backend, config, src_paper_id, "CITES", tgt_paper_id):
-                report.linked += 1
+            if record.corpus_id:
+                seen_this_run[record.corpus_id] = paper_id
+
+            # Paper WAS_DERIVED_FROM the raw output artifact (link_once-guarded),
+            # so every paper chains back through the artifact to the service run.
+            if artifact_id:
+                if await _link_once(
+                    backend, config, paper_id, "WAS_DERIVED_FROM", artifact_id,
+                ):
+                    report.linked += 1
+
+            # Paper RELEVANT_TO the link target (e.g. the Question/Plan that
+            # prompted the search).
+            if link_to:
+                if await _link_once(backend, config, paper_id, "RELEVANT_TO", link_to):
+                    report.linked += 1
+
+        # Second pass: citation contexts -> CITES edges. Done after all papers
+        # exist so a cited corpus_id created this run is resolvable.
+        for record in records:
+            if not record.cited_corpus_ids:
+                continue
+            src_paper_id = seen_this_run.get(record.corpus_id) or index.get(record.corpus_id)
+            if not src_paper_id:
+                continue
+            for cited_corpus in record.cited_corpus_ids:
+                tgt_paper_id = seen_this_run.get(cited_corpus) or index.get(cited_corpus)
+                if not tgt_paper_id:
+                    # Cited paper not in our graph; skip (no orphan stub creation).
+                    continue
+                if await _link_once(backend, config, src_paper_id, "CITES", tgt_paper_id):
+                    report.linked += 1
+    except Exception:
+        # Partial-ingest failsafe: bucketing raised partway. Mark the run failed
+        # (no destructive rollback: provenance stays reachable; consistency_check
+        # reconciles). Persist the index so created papers keep their dedupe key.
+        logger.error(
+            "ingest_paper_finder: output bucketing raised partway; marking run failed",
+            exc_info=True,
+        )
+        await mark_execution_failed(
+            config,
+            exec_id,
+            JobOutcome(ok=False, state="ingest-error", detail="output bucketing raised"),
+        )
+        report.failed = True
+        report.job_state = "ingest-error"
+        _save_index(index)
+        return report
 
     _save_index(index)
     logger.info(

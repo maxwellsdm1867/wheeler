@@ -200,6 +200,28 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   (`to_dict` + the printed summary).
 - **Failure isolation.** A failed or canceled CLI run writes nothing. Retries,
   auth, and timeouts stay inside the asta CLI.
+- **External-call failsafe (honest Execution status, no fabricated outputs).**
+  Every external-service call is one Execution that must TRUTHFULLY record whether
+  the job ran. `job_outcome(doc)` in `_marshal.py` is the gate: it trusts an A2A
+  Task's own `status.state` (only "completed" is success; failed / canceled /
+  rejected / working / input-required are NOT), and treats any non-Task result
+  dict (LiteratureSearchResult, S2 response, report) as ok (the transport already
+  rejected the missing / empty / unparseable cases). Each ingest creates the run
+  Execution with `status="completed"` ONLY when `job_outcome().ok`, else `"failed"`,
+  and on a failed job it stamps the job state + reason into the queryable custom
+  bag (`custom_job_state` / `custom_error` via `mark_execution_failed`), registers
+  the raw artifact for debugging, records USED inputs, and RETURNS EARLY: a failed
+  or partial remote job NEVER has fabricated Findings / Hypotheses / Papers, so it
+  cannot masquerade as a clean run (`ImportReport.failed` / `job_state` surface it;
+  the CLI prints a FAILED line). The output-bucketing loop is wrapped so a
+  partial-ingest exception marks the Execution failed too. There is NO destructive
+  rollback (provenance must stay reachable, per /wh:close); nodes already written
+  stay, and `graph_consistency_check` reconciles any triple-write drift. When the
+  CLI produces NO artifact at all (non-zero exit, the transport returns None and
+  the ingest is never reached), the marshal-in act calls
+  `wheeler integrate record-failure <tool> --reason ... --link-to ... --used ...`
+  (-> `record_failed_execution`) so the attempt is still a visible, queryable
+  failed Execution wired to its inputs, rather than leaving no trace.
 
 ## Conventions
 

@@ -42,7 +42,13 @@ Run the paper finder, writing its results to a temp file (this JSON also enriche
 asta literature find "$TOPIC" -o /tmp/find.json
 ```
 
-Supplement with targeted `asta papers search` / `asta papers get` / `asta papers citations` calls as needed. If `asta literature find` exits non-zero (including a login or auth failure), report it and stop.
+Supplement with targeted `asta papers search` / `asta papers get` / `asta papers citations` calls as needed. If `asta literature find` exits non-zero (including a login or auth failure), FIRST record the failed attempt so it is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
+
+```
+wheeler integrate record-failure scholar-qa --reason "<short stderr>" --link-to <Q- or PL- id> --used <Q- or PL- id>
+```
+
+This writes a failed Execution (status "failed", the reason in custom_error) wired to its inputs (USED) and Plan (AROSE_FROM). Then report it and stop. A failed search fabricates NO report or papers by design.
 
 (If the asta-plugins `literature-report` skill is installed, you may invoke it to do the search-and-synthesize loop; otherwise do the steps here directly.)
 

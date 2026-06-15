@@ -34,7 +34,13 @@ Run the CLI, writing the artifact to a temp file:
 asta literature find "$QUERY" -o /tmp/asta-paper-finder.json
 ```
 
-If the command exits non-zero, report the failure and stop. A failed run writes nothing to the graph by design.
+If the command exits non-zero, FIRST record the failed attempt so it is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
+
+```
+wheeler integrate record-failure paper_finder --reason "<short stderr>" --link-to <Q- or PL- id> --used <Q- or PL- id>
+```
+
+This writes a failed Execution (status "failed", the reason in custom_error) wired to its inputs (USED) and Plan (AROSE_FROM). Then report the failure and stop. A failed run fabricates NO Paper nodes by design.
 
 ## Ingest
 

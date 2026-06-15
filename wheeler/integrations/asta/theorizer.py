@@ -99,6 +99,7 @@ from typing import Any
 from wheeler.config import WheelerConfig
 from wheeler.integrations.asta._marshal import (
     ImportReport,
+    JobOutcome,
     _find_execution,
     _find_paper_by_corpus_id,
     _link_execution_to_plan,
@@ -107,6 +108,9 @@ from wheeler.integrations.asta._marshal import (
     _paper_exists,
     _record_used,
     _save_index,
+    job_outcome,
+    mark_execution_completed,
+    mark_execution_failed,
 )
 from wheeler.integrations.asta.schemas import _normalize_corpus_id
 
@@ -976,9 +980,11 @@ async def ingest_theorizer(
 
     report = ImportReport()
     theories, run_meta = parse_theorizer(doc)
-    if not theories:
-        logger.warning("ingest_theorizer: no parseable theories in artifact")
-        return report
+    # Failsafe gate: did the external Theorizer job actually complete? A failed /
+    # canceled A2A Task (or a missing artifact) must NOT have its partial output
+    # ingested as if real. We still record a (failed) Execution below so the
+    # attempt is visible; we just never fabricate theories/hypotheses for it.
+    outcome = job_outcome(doc)
 
     backend = await _get_backend(config)
     paper_index = _load_index()
@@ -1005,6 +1011,7 @@ async def ingest_theorizer(
     exec_id = await _find_execution(
         backend, config, service=_SERVICE_TAG, session_id=session_id
     )
+    reused = bool(exec_id)
     if not exec_id:
         exec_result = json.loads(
             await execute_tool(
@@ -1013,7 +1020,10 @@ async def ingest_theorizer(
                     "kind": "theory-generation",
                     "description": f"Asta Theorizer: {state_msg or run_meta.run_id}",
                     "agent_id": "asta",
-                    "status": "completed",
+                    # Honest status: only "completed" when the job verifiably
+                    # completed (job_outcome), else "failed" (the gate below stops
+                    # before any theory is fabricated).
+                    "status": "completed" if outcome.ok else "failed",
                     "session_id": session_id,
                     "service": _SERVICE_TAG,
                 },
@@ -1071,26 +1081,78 @@ async def ingest_theorizer(
     if artifact_id:
         report.artifact = artifact_id
 
+    # Failsafe gate: if the Theorizer job did not complete, STOP here. The
+    # Execution exists (status="failed", with the job's state + reason in its
+    # custom bag) and the raw artifact is saved for debugging, so the failed
+    # attempt is visible and queryable, but we fabricate NO theories/hypotheses
+    # for it (a failed run must never masquerade as a clean completed one).
+    if not outcome.ok:
+        await mark_execution_failed(config, exec_id, outcome)
+        report.failed = True
+        report.job_state = outcome.state
+        logger.warning(
+            "ingest_theorizer: job did not complete (state=%s): %s",
+            outcome.state,
+            outcome.detail,
+        )
+        return report
+    # Reused Execution from a PRIOR failed attempt: a now-successful retry must
+    # not inherit the stale "failed" status (the dedupe keys on service+session_id,
+    # not status). Reset it before any output is written.
+    if reused:
+        await mark_execution_completed(config, exec_id)
+    # A completed job with no parseable theories is a legitimate empty result:
+    # the Execution stays completed and visible, there is just nothing to bucket.
+    if not theories:
+        logger.warning(
+            "ingest_theorizer: no parseable theories in completed artifact"
+        )
+        return report
+
     # corpus_id -> P-id for papers touched this run, so a paper cited by two
     # laws is created once and reused across both.
     seen_papers: dict[str, str] = {}
 
-    for theory in theories:
-        await _ingest_one_theory(
-            backend=backend,
-            execute_tool=execute_tool,
-            config=config,
-            theory=theory,
-            link_to=link_to,
-            session_id=session_id,
-            exec_id=exec_id,
-            artifact_id=artifact_id,
-            paper_index=paper_index,
-            hyp_index=hyp_index,
-            theory_index=theory_index,
-            seen_papers=seen_papers,
-            report=report,
+    try:
+        for theory in theories:
+            await _ingest_one_theory(
+                backend=backend,
+                execute_tool=execute_tool,
+                config=config,
+                theory=theory,
+                link_to=link_to,
+                session_id=session_id,
+                exec_id=exec_id,
+                artifact_id=artifact_id,
+                paper_index=paper_index,
+                hyp_index=hyp_index,
+                theory_index=theory_index,
+                seen_papers=seen_papers,
+                report=report,
+            )
+    except Exception:
+        # Partial-ingest failsafe: bucketing raised partway. Mark the run failed
+        # so it does not read as clean. The nodes already written stay reachable
+        # (no destructive rollback: provenance must stay reachable, per /wh:close),
+        # and graph_consistency_check reconciles any triple-write drift. Persist
+        # the indices we have so created nodes are not orphaned from dedupe.
+        logger.error(
+            "ingest_theorizer: output bucketing raised partway; marking run failed",
+            exc_info=True,
         )
+        await mark_execution_failed(
+            config,
+            exec_id,
+            JobOutcome(
+                ok=False, state="ingest-error", detail="output bucketing raised"
+            ),
+        )
+        report.failed = True
+        report.job_state = "ingest-error"
+        _save_index(paper_index)
+        _save_hyp_index(hyp_index)
+        _save_theory_index(theory_index)
+        return report
 
     _save_index(paper_index)
     _save_hyp_index(hyp_index)
