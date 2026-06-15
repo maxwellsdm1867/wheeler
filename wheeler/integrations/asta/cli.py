@@ -30,7 +30,15 @@ _INGESTERS = {
     "semantic_scholar",
     "semantic-scholar",
     "s2",
+    "scholar_qa",
+    "scholar-qa",
+    "literature-report",
 }
+
+# Tools whose deliverable is a MARKDOWN document, not a JSON ``-o`` artifact. The
+# ingest verb reads these as text (not json.loads) and dispatches to the markdown
+# ingest path. Asta Literature Reports is the first such tool.
+_MARKDOWN_TOOLS = {"scholar_qa", "scholar-qa", "literature-report"}
 
 
 @integrate_app.command("ingest")
@@ -57,25 +65,28 @@ def ingest(
             "each one that exists in the graph (input-side provenance)."
         ),
     ),
+    find_results: Optional[Path] = typer.Option(
+        None,
+        "--find-results",
+        help=(
+            "For a literature report (scholar-qa): the underlying "
+            "LiteratureSearchResult JSON (asta literature find -o), used to "
+            "enrich each cited paper's metadata by corpus_id. Ignored otherwise."
+        ),
+    ),
 ) -> None:
     """Marshal an external-tool artifact into the Wheeler knowledge graph."""
     tool_key = tool.strip().lower()
     if tool_key not in _INGESTERS:
         typer.echo(
             f"Unknown tool '{tool}'. Supported: paper_finder, theorizer, "
-            "semantic_scholar (alias s2).",
+            "semantic_scholar (alias s2), scholar_qa (alias literature-report).",
             err=True,
         )
         raise typer.Exit(code=2)
 
     if not artifact.exists():
         typer.echo(f"Artifact not found: {artifact}", err=True)
-        raise typer.Exit(code=2)
-
-    try:
-        doc = json.loads(artifact.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        typer.echo(f"Could not read artifact {artifact}: {exc}", err=True)
         raise typer.Exit(code=2)
 
     from wheeler.config import load_config
@@ -89,6 +100,59 @@ def ingest(
     # no-USED-edges path is reached identically rather than passing an empty list.
     _parsed_used = [i.strip() for i in used.split(",") if i.strip()] if used else []
     used_inputs = _parsed_used or None
+
+    # A literature report is MARKDOWN, not a JSON artifact: read it as text and
+    # dispatch to the markdown ingest path. The optional --find-results JSON is
+    # parsed for paper-metadata enrichment.
+    if tool_key in _MARKDOWN_TOOLS:
+        try:
+            report_markdown = artifact.read_text()
+        except OSError as exc:
+            typer.echo(f"Could not read report {artifact}: {exc}", err=True)
+            raise typer.Exit(code=2)
+        find_doc = None
+        if find_results is not None:
+            if not find_results.exists():
+                typer.echo(
+                    f"--find-results file not found: {find_results}", err=True
+                )
+                raise typer.Exit(code=2)
+            try:
+                find_doc = json.loads(find_results.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                typer.echo(
+                    f"Could not read --find-results {find_results}: {exc}", err=True
+                )
+                raise typer.Exit(code=2)
+
+        from wheeler.integrations.asta.scholar_qa import ingest_scholar_qa
+
+        report = asyncio.run(
+            ingest_scholar_qa(
+                report_markdown,
+                report_path=str(artifact),
+                find_results=find_doc,
+                link_to=link_to,
+                config=config,
+                used_inputs=used_inputs,
+            )
+        )
+        typer.echo(
+            f"created={report.created} deduped={report.deduped} "
+            f"linked={report.linked} skipped={report.skipped} used={report.used} "
+            f"execution={report.execution_id or '-'}"
+        )
+        if report.artifact:
+            typer.echo(f"report: {report.artifact}")
+        if report.paper_ids:
+            typer.echo("papers: " + ", ".join(report.paper_ids))
+        return
+
+    try:
+        doc = json.loads(artifact.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        typer.echo(f"Could not read artifact {artifact}: {exc}", err=True)
+        raise typer.Exit(code=2)
 
     if tool_key == "theorizer":
         from wheeler.integrations.asta.theorizer import ingest_theorizer

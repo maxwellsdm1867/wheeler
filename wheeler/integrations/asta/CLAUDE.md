@@ -52,9 +52,12 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   forwards neither `service` nor `custom`, so the service tag and the benchmark
   bag (`run_id`, `cost`, `time`, `model`) are stamped via a follow-up
   `update_node` (service is a first-class NodeBase field; benchmark scalars
-  flatten to queryable `custom_<key>` props). Best-effort: ANY failure returns
-  `None` and logs a warning, never raises, so an artifact problem cannot break
-  ingest. Returns the artifact node id.
+  flatten to queryable `custom_<key>` props). The durable-store filename
+  PRESERVES the source extension (`<key>.json` for a JSON `-o` dump, `<key>.md`
+  for a markdown literature report), so a non-JSON deliverable is not stored
+  under a misleading `.json` name; existing JSON callers are unchanged. Best-effort:
+  ANY failure returns `None` and logs a warning, never raises, so an artifact
+  problem cannot break ingest. Returns the artifact node id.
 - `theorizer.py` -- `parse_theorizer(doc) -> (list[TheoryRecord], RunMeta)` and
   `ingest_theorizer(doc, *, link_to, config, artifact_path=None) -> ImportReport`.
   A marshal-out module parsing the REAL Theorizer A2A-Task shape (artifacts
@@ -67,10 +70,34 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   papers on `corpus_id`. Imports `execute_tool` lazily (function-local) and
   reuses `_marshal.py`'s `_link_once` / `_find_paper_by_corpus_id` /
   `_paper_exists` / `_find_execution` helpers + the shared corpus_id index.
+- `scholar_qa.py` -- `parse_scholar_qa(report_markdown, find_results=None) ->
+  (ReportRecord, RunMeta)` and `ingest_scholar_qa(report_markdown, *, report_path,
+  find_results, link_to, config, used_inputs) -> ImportReport`. The Asta Literature
+  Report (scholar-qa) adapter. UNLIKE the other three adapters (one A2A call, one
+  JSON `-o` artifact), the deliverable is a MARKDOWN literature review: the
+  `literature-report` skill orchestrates `asta literature find` + `asta papers` and
+  Claude synthesizes the report. The parser keys on the skill's citation
+  convention: `[[Key]]` reference entries paired with `[Key]: <url>` link
+  definitions, lifting the corpus_id from the `/p/<id>` or `CorpusId:<id>` url, and
+  enriching title/authors/year/venue from the optional `LiteratureSearchResult`
+  JSON by a corpus_id join (reusing `parse_paper_finder`; text fallback when
+  absent). Bucketing: the report markdown registers as a Document (`W-`, synthesized
+  writing) `WAS_GENERATED_BY` the run Execution (kind `literature-report`, service
+  `asta:scholar-qa`); each cited paper -> add_paper (dedupe by corpus_id), the
+  Document `-[CITES]-> Paper` and the Execution `-[USED]-> Paper` (the review was
+  derived from it). Papers are reference entities (NO `WAS_GENERATED_BY`, and NOT
+  `WAS_DERIVED_FROM` the report, since a cited paper predates the review). The
+  Execution `session_id` AND the durable raw-store key are BOTH the same
+  path-derived `run_key`, so one report path = one run = one Document even when the
+  report is re-synthesized with edited text (no second Document accrues).
 - `cli.py` -- `integrate_app` Typer sub-app, one verb: `ingest <tool> <artifact>
-  [--link-to ID]`. Registered in `wheeler/tools/cli.py` guarded by try/except.
-  Note: the generic `integrate` CLI currently lives here and moves up to
-  `wheeler/integrations/` when the contract engine is extracted (Phase 3).
+  [--link-to ID] [--used IDS] [--target ID] [--find-results JSON]`. Registered in
+  `wheeler/tools/cli.py` guarded by try/except. The `scholar-qa` /
+  `literature-report` tool is the first MARKDOWN deliverable: its artifact is read
+  as TEXT (not `json.loads`), and `--find-results` carries the optional
+  `LiteratureSearchResult` JSON for paper enrichment. Note: the generic `integrate`
+  CLI currently lives here and moves up to `wheeler/integrations/` when the contract
+  engine is extracted (Phase 3).
 
 ## Invariants
 

@@ -1,0 +1,49 @@
+{
+  "query": "dopamine reward prediction error",
+  "thread_id": "fixture-thread",
+  "narrative": "Trimmed LiteratureSearchResult fixture: three of the five report-cited papers, for the corpus_id enrichment join. Schultz1997 and Cooper2011 are deliberately absent so the text-fallback path is exercised.",
+  "results": [
+    {
+      "corpusId": 91676903,
+      "title": "Causal evidence supporting the proposal that dopamine transients function as temporal difference prediction errors",
+      "year": 2020,
+      "venue": "Nature Neuroscience",
+      "url": "https://doi.org/10.1038/s41593-019-0574-1",
+      "citationCount": 142,
+      "relevanceScore": 0.94,
+      "authors": [
+        {"name": "Etienne J. P. Maes"},
+        {"name": "M. Sharpe"},
+        {"name": "Alexandra A. Usypchuk"},
+        {"name": "G. Schoenbaum"}
+      ]
+    },
+    {
+      "corpusId": 260988593,
+      "title": "Reward prediction error in learning-related behaviors",
+      "year": 2023,
+      "venue": "Frontiers in Neuroscience",
+      "url": "https://api.semanticscholar.org/CorpusId:260988593",
+      "citationCount": 7,
+      "relevanceScore": 0.88,
+      "authors": [
+        {"name": "Yujun Deng"},
+        {"name": "Da Song"},
+        {"name": "Zhenzhen Quan"}
+      ]
+    },
+    {
+      "corpusId": 53024913,
+      "title": "The timing of action determines reward prediction signals in identified midbrain dopamine neurons",
+      "year": 2018,
+      "venue": "Nature Neuroscience",
+      "url": "https://doi.org/10.1038/s41593-018-0245-7",
+      "citationCount": 61,
+      "relevanceScore": 0.9,
+      "authors": [
+        {"name": "Luke T. Coddington"},
+        {"name": "J. Dudman"}
+      ]
+    }
+  ]
+}
