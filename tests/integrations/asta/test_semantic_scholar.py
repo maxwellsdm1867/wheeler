@@ -720,3 +720,119 @@ class TestIngestSemanticScholarE2E:
                 sid=s2_paper_id,
             )
             assert (await res.single())["c"] == 1
+
+    @pytest.mark.asyncio
+    async def test_used_inputs_record_input_provenance(self, e2e_config):
+        """Input-side provenance: Execution -[USED]-> each marshalled-in input.
+
+        Seed an OpenQuestion + a Finding via execute_tool, ingest the search
+        fixture with used_inputs=[those ids, plus a fabricated missing id], and
+        assert:
+          - Execution -[USED]-> each existing input exactly once,
+          - the missing id is skipped (no error, no edge, no fabricated node),
+          - re-ingest does NOT duplicate the USED edges,
+          - the full chain is queryable: a produced node (the raw Dataset
+            artifact) -[WAS_GENERATED_BY]-> Execution -[USED]-> the input.
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.asta.semantic_scholar import (
+            ingest_semantic_scholar,
+        )
+        from wheeler.tools.graph_tools import execute_tool
+
+        doc = _load(SEARCH_FIXTURE)
+        artifact_path = self._tmp / "s2_used_raw.json"
+        artifact_path.write_text(json.dumps(doc))
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # Seed two real graph inputs the marshal-in would have consumed.
+        q_result = json.loads(await execute_tool(
+            "add_question",
+            {"question": "E2E USED s2: what shaped this search?", "priority": 5},
+            e2e_config,
+        ))
+        question_id = q_result["node_id"]
+        f_result = json.loads(await execute_tool(
+            "add_finding",
+            {"description": "E2E USED s2: prior result", "confidence": 0.7},
+            e2e_config,
+        ))
+        finding_id = f_result["node_id"]
+        missing_id = "Q-doesnotexist99"
+
+        # Tag the seeded inputs too so teardown stays hermetic.
+        async with driver.session(database=db) as s:
+            await s.run(
+                "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                ids=[question_id, finding_id], tag=self._e2e_tag,
+            )
+
+        used = [question_id, finding_id, missing_id]
+
+        report1 = await ingest_semantic_scholar(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=used,
+        )
+        await self._tag_all(e2e_config, report1)
+        exec_id = report1.execution_id
+        # Only the two existing ids are linked; the missing id is skipped.
+        assert report1.used == 2
+
+        # Execution -[USED]-> each EXISTING input exactly once.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n) "
+                "WHERE n.id IN $ids RETURN n.id AS id, count(r) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            rows = {r["id"]: r["c"] async for r in res}
+        assert rows == {question_id: 1, finding_id: 1}
+
+        # The missing id has NO USED edge and was NOT fabricated.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n {id: $mid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, mid=missing_id,
+            )
+            assert (await res.single())["c"] == 0
+            res = await s.run(
+                "MATCH (n {id: $mid}) RETURN count(n) AS c", mid=missing_id,
+            )
+            assert (await res.single())["c"] == 0
+
+        # The full chain is queryable: produced raw Dataset -[WAS_GENERATED_BY]->
+        # Execution -[USED]-> the input.
+        assert report1.artifact
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (d {id: $aid})-[:WAS_GENERATED_BY]->"
+                "(x:Execution {id: $xid})-[:USED]->(n) "
+                "WHERE n.id IN $ids RETURN count(DISTINCT n) AS c",
+                aid=report1.artifact, xid=exec_id,
+                ids=[question_id, finding_id],
+            )
+            assert (await res.single())["c"] == 2
+
+        # Re-ingest of the SAME artifact + used_inputs: USED edges not duplicated.
+        report2 = await ingest_semantic_scholar(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=used,
+        )
+        await self._tag_all(e2e_config, report2)
+        assert report2.execution_id == exec_id
+        assert report2.used == 0
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n) "
+                "WHERE n.id IN $ids RETURN count(r) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            assert (await res.single())["c"] == 2

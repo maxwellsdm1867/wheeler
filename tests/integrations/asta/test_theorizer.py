@@ -497,14 +497,21 @@ class TestIngestTheorizerE2E:
         )
         await self._tag_all(e2e_config, report1)
         assert report1.execution_id.startswith("X-")
+        run_exec_id = report1.execution_id
+        tag = self._e2e_tag
         # parent Findings + Hypotheses + distinct Papers created.
         assert report1.created == N_THEORIES + N_HYPOTHESES + N_PAPERS
 
-        # Parent Finding(artifact_type=theory) exists, one per theory.
+        # Parent Finding(artifact_type=theory) exists, one per theory. Scoped to
+        # THIS run's e2e_tag (not the shared asta:theorizer service tag): the e2e
+        # config runs on the shared default namespace, so a leaked node from a
+        # prior interrupted run would otherwise inflate a by-service count and
+        # cascade-fail the next run. Every node this run created carries the tag.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (f:Finding {artifact_type: 'theory', service: 'asta:theorizer'}) "
-                "RETURN count(f) AS c"
+                "MATCH (f:Finding {artifact_type: 'theory'}) "
+                "WHERE f.e2e_tag = $tag RETURN count(f) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_THEORIES
 
@@ -512,7 +519,8 @@ class TestIngestTheorizerE2E:
         async with driver.session(database=db) as s:
             res = await s.run(
                 "MATCH (f:Finding {artifact_type: 'theory'})-[r:CONTAINS]->(h:Hypothesis) "
-                "WHERE f.service = 'asta:theorizer' RETURN count(r) AS c"
+                "WHERE f.e2e_tag = $tag RETURN count(r) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_HYPOTHESES
 
@@ -520,7 +528,8 @@ class TestIngestTheorizerE2E:
         async with driver.session(database=db) as s:
             res = await s.run(
                 "MATCH (p:Paper)-[r:SUPPORTS]->(h:Hypothesis) "
-                "WHERE h.service = 'asta:theorizer' RETURN count(r) AS c"
+                "WHERE h.e2e_tag = $tag RETURN count(r) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_SUPPORTS
 
@@ -528,26 +537,30 @@ class TestIngestTheorizerE2E:
         async with driver.session(database=db) as s:
             res = await s.run(
                 "MATCH (p:Paper)-[r:CONTRADICTS]->(f:Finding {artifact_type: 'theory'}) "
-                "WHERE f.service = 'asta:theorizer' RETURN count(r) AS c"
+                "WHERE f.e2e_tag = $tag RETURN count(r) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_CONTRADICTS
 
         # novelty parked in custom_novelty and queryable (NOT in status).
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (h:Hypothesis {service: 'asta:theorizer'}) "
-                "WHERE h.custom_novelty = 'established' RETURN count(h) AS c"
+                "MATCH (h:Hypothesis) WHERE h.e2e_tag = $tag "
+                "AND h.custom_novelty = 'established' RETURN count(h) AS c",
+                tag=tag,
             )
             est_count = (await res.single())["c"]
             res = await s.run(
-                "MATCH (h:Hypothesis {service: 'asta:theorizer'}) "
-                "WHERE h.custom_novelty = 'derivable' RETURN count(h) AS c"
+                "MATCH (h:Hypothesis) WHERE h.e2e_tag = $tag "
+                "AND h.custom_novelty = 'derivable' RETURN count(h) AS c",
+                tag=tag,
             )
             der_count = (await res.single())["c"]
             # status must stay on the open/supported/rejected enum, never novelty.
             res = await s.run(
-                "MATCH (h:Hypothesis {service: 'asta:theorizer'}) "
-                "RETURN collect(DISTINCT h.status) AS statuses"
+                "MATCH (h:Hypothesis) WHERE h.e2e_tag = $tag "
+                "RETURN collect(DISTINCT h.status) AS statuses",
+                tag=tag,
             )
             statuses = (await res.single())["statuses"]
         assert est_count == 1  # one law has novelty="established"
@@ -559,21 +572,25 @@ class TestIngestTheorizerE2E:
         # Verify the novelty landed on the RIGHT Hypothesis (the EWGT law 2).
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (h:Hypothesis {service: 'asta:theorizer'}) "
-                "WHERE h.custom_novelty = 'established' "
-                "RETURN h.statement AS stmt LIMIT 1"
+                "MATCH (h:Hypothesis) WHERE h.e2e_tag = $tag "
+                "AND h.custom_novelty = 'established' "
+                "RETURN h.statement AS stmt LIMIT 1",
+                tag=tag,
             )
             stmt = (await res.single())["stmt"]
         assert stmt.startswith("Biochemical gate & nonlinearity law")
 
-        # service-tagged Execution, exactly one per run, carrying benchmark fields.
+        # The run Execution, exactly one, carrying benchmark fields. Scoped to
+        # this run's Execution id (not the shared service tag) so a production
+        # asta:theorizer Execution on the shared namespace cannot perturb it.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: 'asta:theorizer'}) "
+                "MATCH (x:Execution {id: $xid}) "
                 "RETURN count(x) AS c, collect(x.kind)[0] AS kind, "
                 "collect(x.custom_run_id)[0] AS run_id, "
                 "collect(x.custom_cost)[0] AS cost, "
-                "collect(x.custom_time)[0] AS time"
+                "collect(x.custom_time)[0] AS time",
+                xid=run_exec_id,
             )
             rec = await res.single()
         assert rec["c"] == 1
@@ -584,11 +601,13 @@ class TestIngestTheorizerE2E:
 
         # Snapshot the WAS_GENERATED_BY fan-in to the Execution after the first
         # ingest. Re-ingest must NOT grow this (the Execution is idempotent and
-        # link_once guards every provenance edge), so we re-check it below.
+        # link_once guards every provenance edge), so we re-check it below. Scoped
+        # to this run's Execution id so the shared namespace cannot perturb it.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {service: 'asta:theorizer'}) "
-                "RETURN count(r) AS c"
+                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "RETURN count(r) AS c",
+                xid=run_exec_id,
             )
             gen_by_after_first = (await res.single())["c"]
         # The run Execution is WAS_GENERATED_BY the Wheeler-PRODUCED nodes only:
@@ -600,8 +619,9 @@ class TestIngestTheorizerE2E:
         # Papers carry NO WAS_GENERATED_BY: zero evidence papers in the fan-in.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (p:Paper)-[r:WAS_GENERATED_BY]->(x:Execution {service: 'asta:theorizer'}) "
-                "RETURN count(r) AS c"
+                "MATCH (p:Paper)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "RETURN count(r) AS c",
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == 0
 
@@ -613,17 +633,18 @@ class TestIngestTheorizerE2E:
         # paper used by several laws to ONE USED edge, so the count is N_PAPERS.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: 'asta:theorizer'})-[r:USED]->(p:Paper) "
-                "RETURN count(r) AS c"
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(p:Paper) "
+                "RETURN count(r) AS c",
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == N_PAPERS
         # The USED targets are exactly the evidence papers (reachable both via
         # Execution-USED and via SUPPORTS/CONTRADICTS).
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: 'asta:theorizer'})-[:USED]->(p:Paper) "
+                "MATCH (x:Execution {id: $xid})-[:USED]->(p:Paper) "
                 "WHERE p.corpus_id IN $cids RETURN count(DISTINCT p) AS c",
-                cids=ALL_CORPUS_IDS,
+                xid=run_exec_id, cids=ALL_CORPUS_IDS,
             )
             assert (await res.single())["c"] == N_PAPERS
 
@@ -631,8 +652,8 @@ class TestIngestTheorizerE2E:
         async with driver.session(database=db) as s:
             res = await s.run(
                 "MATCH (f:Finding {artifact_type: 'theory'})-[r:AROSE_FROM]->(q {id: $qid}) "
-                "WHERE f.service = 'asta:theorizer' RETURN count(r) AS c",
-                qid=question_id,
+                "WHERE f.e2e_tag = $tag RETURN count(r) AS c",
+                qid=question_id, tag=tag,
             )
             assert (await res.single())["c"] == N_THEORIES
 
@@ -661,12 +682,13 @@ class TestIngestTheorizerE2E:
         assert float(raw_node["custom"]["cost"]) == pytest.approx(RUN_COST)
         assert float(raw_node["custom"]["time"]) == pytest.approx(RUN_TIME)
 
-        # raw Document WAS_GENERATED_BY the Execution.
+        # raw Document WAS_GENERATED_BY the run Execution (scoped to this run's
+        # Document id and Execution id, so the shared namespace cannot perturb it).
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (w:Document {id: $wid})-[r:WAS_GENERATED_BY]->(x:Execution) "
-                "WHERE x.service = 'asta:theorizer' RETURN count(r) AS c",
-                wid=report1.artifact,
+                "MATCH (w:Document {id: $wid})-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "RETURN count(r) AS c",
+                wid=report1.artifact, xid=run_exec_id,
             )
             assert (await res.single())["c"] == 1
 
@@ -684,8 +706,9 @@ class TestIngestTheorizerE2E:
         # custom bag round-trips through the Pydantic model on read.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (h:Hypothesis {service: 'asta:theorizer'}) "
-                "WHERE h.custom_novelty = 'established' RETURN h.id AS id LIMIT 1"
+                "MATCH (h:Hypothesis) WHERE h.e2e_tag = $tag "
+                "AND h.custom_novelty = 'established' RETURN h.id AS id LIMIT 1",
+                tag=tag,
             )
             hyp_id = (await res.single())["id"]
         node = await backend.get_node("Hypothesis", hyp_id)
@@ -706,15 +729,18 @@ class TestIngestTheorizerE2E:
         assert report2.created == 0
         assert report2.deduped == N_THEORIES + N_HYPOTHESES + N_PAPERS
 
-        # Still exactly the same node counts.
+        # Still exactly the same node counts (scoped to this run's e2e_tag /
+        # Execution id so the shared default namespace cannot perturb them).
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (f:Finding {artifact_type: 'theory', service: 'asta:theorizer'}) "
-                "RETURN count(f) AS c"
+                "MATCH (f:Finding {artifact_type: 'theory'}) "
+                "WHERE f.e2e_tag = $tag RETURN count(f) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_THEORIES
             res = await s.run(
-                "MATCH (h:Hypothesis {service: 'asta:theorizer'}) RETURN count(h) AS c"
+                "MATCH (h:Hypothesis) WHERE h.e2e_tag = $tag RETURN count(h) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_HYPOTHESES
             res = await s.run(
@@ -725,7 +751,8 @@ class TestIngestTheorizerE2E:
             assert (await res.single())["c"] == N_PAPERS
             # Still exactly one raw Document node (path-dedupe in the store).
             res = await s.run(
-                "MATCH (w:Document {service: 'asta:theorizer'}) RETURN count(w) AS c"
+                "MATCH (w:Document {id: $wid}) RETURN count(w) AS c",
+                wid=report1.artifact,
             )
             assert (await res.single())["c"] == 1
 
@@ -733,23 +760,26 @@ class TestIngestTheorizerE2E:
         async with driver.session(database=db) as s:
             res = await s.run(
                 "MATCH (f:Finding {artifact_type: 'theory'})-[r:CONTAINS]->(h:Hypothesis) "
-                "WHERE f.service = 'asta:theorizer' RETURN count(r) AS c"
+                "WHERE f.e2e_tag = $tag RETURN count(r) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_HYPOTHESES
             res = await s.run(
                 "MATCH (p:Paper)-[r:SUPPORTS]->(h:Hypothesis) "
-                "WHERE h.service = 'asta:theorizer' RETURN count(r) AS c"
+                "WHERE h.e2e_tag = $tag RETURN count(r) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_SUPPORTS
             res = await s.run(
                 "MATCH (p:Paper)-[r:CONTRADICTS]->(f:Finding {artifact_type: 'theory'}) "
-                "WHERE f.service = 'asta:theorizer' RETURN count(r) AS c"
+                "WHERE f.e2e_tag = $tag RETURN count(r) AS c",
+                tag=tag,
             )
             assert (await res.single())["c"] == N_CONTRADICTS
             res = await s.run(
                 "MATCH (f:Finding {artifact_type: 'theory'})-[r:AROSE_FROM]->(q {id: $qid}) "
-                "WHERE f.service = 'asta:theorizer' RETURN count(r) AS c",
-                qid=question_id,
+                "WHERE f.e2e_tag = $tag RETURN count(r) AS c",
+                qid=question_id, tag=tag,
             )
             assert (await res.single())["c"] == N_THEORIES
 
@@ -757,23 +787,191 @@ class TestIngestTheorizerE2E:
         # Re-ingesting the SAME artifact must NOT create a second Execution node,
         # and must NOT accumulate extra WAS_GENERATED_BY edges. (Regression:
         # add_execution was previously called unconditionally, so a re-ingest
-        # duplicated the Execution and its provenance fan-in.)
+        # duplicated the Execution and its provenance fan-in.) Scoped to this
+        # run's Execution id so the shared namespace cannot perturb the counts.
         async with driver.session(database=db) as s:
             res = await s.run(
-                "MATCH (x:Execution {service: 'asta:theorizer'}) RETURN count(x) AS c"
+                "MATCH (x:Execution {id: $xid}) RETURN count(x) AS c",
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == 1
             res = await s.run(
-                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {service: 'asta:theorizer'}) "
-                "RETURN count(r) AS c"
+                "MATCH (n)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "RETURN count(r) AS c",
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == gen_by_after_first
             # The Execution -[USED]-> evidence-paper edges are also link_once
             # guarded, so re-ingest must NOT grow them: still exactly N_PAPERS.
             res = await s.run(
-                "MATCH (x:Execution {service: 'asta:theorizer'})-[r:USED]->(p:Paper) "
-                "RETURN count(r) AS c"
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(p:Paper) "
+                "RETURN count(r) AS c",
+                xid=run_exec_id,
             )
             assert (await res.single())["c"] == N_PAPERS
         # The report points at the same Execution both runs (reused, not new).
         assert report2.execution_id == report1.execution_id
+
+    @pytest.mark.asyncio
+    async def test_used_inputs_record_input_provenance(self, e2e_config):
+        """Input-side provenance: Execution -[USED]-> the marshalled-in inputs.
+
+        On TOP of the per-evidence-paper USED edges, seed an OpenQuestion + a
+        Finding (the prose-consulted inputs, e.g. the Finding ids seeded into
+        extraction_results) and pass them as used_inputs with a fabricated
+        missing id. Assert:
+          - Execution -[USED]-> each existing seeded input exactly once,
+          - the missing id is skipped (no error, no edge, no fabricated node),
+          - link_once collapses overlap (no extra USED to the evidence papers),
+          - re-ingest does NOT duplicate the USED edges,
+          - the full chain is queryable: a produced node (a parent theory
+            Finding) -[WAS_GENERATED_BY]-> Execution -[USED]-> the seeded input.
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.asta.theorizer import ingest_theorizer
+        from wheeler.tools.graph_tools import execute_tool
+
+        doc = _load_fixture()
+        artifact_path = self._tmp / "theorizer_used_raw.json"
+        artifact_path.write_text(json.dumps(doc))
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # Seed two real graph inputs the marshal-in would have consumed (the
+        # question that motivated the run + a Finding seeded into extraction).
+        q_result = json.loads(await execute_tool(
+            "add_question",
+            {"question": "E2E USED th: what governs the rate?", "priority": 5},
+            e2e_config,
+        ))
+        question_id = q_result["node_id"]
+        f_result = json.loads(await execute_tool(
+            "add_finding",
+            {"description": "E2E USED th: seeded extraction result", "confidence": 0.8},
+            e2e_config,
+        ))
+        finding_id = f_result["node_id"]
+        missing_id = "Q-doesnotexist99"
+
+        # Tag the seeded inputs too so teardown stays hermetic.
+        async with driver.session(database=db) as s:
+            await s.run(
+                "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                ids=[question_id, finding_id], tag=self._e2e_tag,
+            )
+
+        used = [question_id, finding_id, missing_id]
+
+        report1 = await ingest_theorizer(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=used,
+        )
+        await self._tag_all(e2e_config, report1)
+        exec_id = report1.execution_id
+        # Only the two existing seeded ids are linked by _record_used; the
+        # missing id is skipped. (The evidence-paper USED edges are counted in
+        # report.linked, not report.used.)
+        assert report1.used == 2
+
+        # Execution -[USED]-> each EXISTING seeded input exactly once.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n) "
+                "WHERE n.id IN $ids RETURN n.id AS id, count(r) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            rows = {r["id"]: r["c"] async for r in res}
+        assert rows == {question_id: 1, finding_id: 1}
+
+        # The missing id has NO USED edge and was NOT fabricated.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n {id: $mid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, mid=missing_id,
+            )
+            assert (await res.single())["c"] == 0
+            res = await s.run(
+                "MATCH (n {id: $mid}) RETURN count(n) AS c", mid=missing_id,
+            )
+            assert (await res.single())["c"] == 0
+
+        # The evidence-paper USED edges are untouched (link_once collapses any
+        # overlap; the seeded inputs are not papers, so still exactly N_PAPERS).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(p:Paper) "
+                "RETURN count(r) AS c",
+                xid=exec_id,
+            )
+            assert (await res.single())["c"] == N_PAPERS
+
+        # The full chain is queryable: a produced parent theory Finding
+        # -[WAS_GENERATED_BY]-> Execution -[USED]-> the seeded input.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (f:Finding {artifact_type: 'theory'})"
+                "-[:WAS_GENERATED_BY]->(x:Execution {id: $xid})-[:USED]->(n) "
+                "WHERE n.id IN $ids RETURN count(DISTINCT n) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            assert (await res.single())["c"] == 2
+
+        # Re-ingest of the SAME artifact + used_inputs: USED edges not duplicated.
+        report2 = await ingest_theorizer(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=used,
+        )
+        await self._tag_all(e2e_config, report2)
+        assert report2.execution_id == exec_id
+        assert report2.used == 0
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(n) "
+                "WHERE n.id IN $ids RETURN count(r) AS c",
+                xid=exec_id, ids=[question_id, finding_id],
+            )
+            assert (await res.single())["c"] == 2
+
+        # --- Direct overlap path: a used_input that is ALSO an evidence paper ---
+        # _ingest_paper_edge already created Execution -[USED]-> each evidence
+        # paper. Passing one of those P-ids back as a used_input must collapse via
+        # link_once: _record_used sees the edge already exists, so report.used
+        # counts it as NOT newly linked (0), and the total USED-to-Paper count
+        # does not grow. This exercises the overlap branch directly (the seeded
+        # Question/Finding above are non-papers, so they never hit it).
+        assert report1.paper_ids, "fixture should have at least one evidence paper"
+        evidence_paper_id = report1.paper_ids[0]
+        report3 = await ingest_theorizer(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=[evidence_paper_id],
+        )
+        await self._tag_all(e2e_config, report3)
+        assert report3.execution_id == exec_id
+        # The evidence paper was already USED by _ingest_paper_edge, so the
+        # explicit used_input adds NO new USED edge (link_once collapse).
+        assert report3.used == 0
+        async with driver.session(database=db) as s:
+            # That paper still has exactly one USED edge from the Execution.
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(p:Paper {id: $pid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, pid=evidence_paper_id,
+            )
+            assert (await res.single())["c"] == 1
+            # And the total Execution-USED-Paper fan-out is unchanged (N_PAPERS).
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(p:Paper) "
+                "RETURN count(r) AS c",
+                xid=exec_id,
+            )
+            assert (await res.single())["c"] == N_PAPERS

@@ -35,6 +35,7 @@ from ._marshal import (
     _link_once,
     _load_index,
     _paper_exists,
+    _record_used,
     _save_index,
 )
 from .schemas import PaperRecord, parse_paper_finder
@@ -55,6 +56,7 @@ async def ingest_paper_finder(
     link_to: str | None,
     config: WheelerConfig,
     artifact_path: str | None = None,
+    used_inputs: list[str] | None = None,
 ) -> ImportReport:
     """Ingest a parsed Asta Paper Finder artifact into the knowledge graph.
 
@@ -68,9 +70,14 @@ async def ingest_paper_finder(
             artifact), linked WAS_GENERATED_BY the run Execution, and every
             Paper is linked WAS_DERIVED_FROM it. Best-effort: an artifact
             failure never breaks paper ingest.
+        used_inputs: Optional graph node ids the marshal-in consumed to build
+            the request (at minimum the link target that motivated the search).
+            The run Execution -[USED]-> each one that exists in the graph
+            (existence-guarded, link_once): input-side provenance. A missing id
+            is skipped and logged, never fabricated.
 
     Returns:
-        An ImportReport with created / deduped / linked / skipped counts.
+        An ImportReport with created / deduped / linked / skipped / used counts.
     """
     from wheeler.tools.graph_tools import execute_tool
     from wheeler.tools.graph_tools import _get_backend
@@ -125,6 +132,13 @@ async def ingest_paper_finder(
                     exec_id, update_result,
                 )
     report.execution_id = exec_id
+
+    # Input-side provenance: the marshal-in built this request FROM graph nodes
+    # (at minimum the link target that motivated the search), so the run USED
+    # them. Existence-guarded + link_once, so re-ingest dedupes and a missing id
+    # is skipped, never fabricated.
+    if exec_id and used_inputs:
+        report.used += await _record_used(backend, config, exec_id, used_inputs)
 
     # Every service output is an artifact: register the raw -o JSON dump as a
     # Dataset node, linked WAS_GENERATED_BY the run Execution. Best-effort:
@@ -194,8 +208,10 @@ async def ingest_paper_finder(
 
     _save_index(index)
     logger.info(
-        "ingest_paper_finder: created=%d deduped=%d linked=%d skipped=%d (exec=%s)",
-        report.created, report.deduped, report.linked, report.skipped, exec_id,
+        "ingest_paper_finder: created=%d deduped=%d linked=%d skipped=%d "
+        "used=%d (exec=%s)",
+        report.created, report.deduped, report.linked, report.skipped,
+        report.used, exec_id,
     )
     return report
 

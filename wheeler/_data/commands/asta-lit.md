@@ -38,10 +38,10 @@ If the command exits non-zero, report the failure and stop. A failed run writes 
 Marshal the artifact into the graph with the single integrate verb:
 
 ```
-wheeler integrate ingest paper_finder /tmp/asta-paper-finder.json --link-to <Q- or PL- id>
+wheeler integrate ingest paper_finder /tmp/asta-paper-finder.json --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
-Omit `--link-to` if there is no target. The verb is idempotent: re-running the same artifact creates no duplicate papers or edges (dedupe is on `corpus_id`, edges are guarded by `link_once`).
+Omit `--link-to` if there is no target. Pass `--used` with the graph node ids the request was built from (at minimum the link target, the `Q-`/`PL-` that motivated the search): this records `Execution -[USED]-> each input` (input-side provenance), so every result traces back to the graph context that shaped the query, not just the literature returned. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate papers, edges, or USED edges (dedupe is on `corpus_id`, edges are guarded by `link_once`).
 
 ## Report
 
