@@ -16,12 +16,29 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   splits each paper into promoted fields (corpus_id, title, authors, year),
   custom scalars (relevance_score, venue, url, citation_count, abstract), and
   structured payloads (snippets, citationContexts) used for edges. No graph import.
-- `ingest.py` -- `ingest_paper_finder(doc, *, link_to, config) -> ImportReport`.
-  The ONLY module that imports `execute_tool` (lazily, function-local, mirroring
-  `wheeler/validation/ledger.py`). Writes route through `execute_tool` for
-  triple-write; reads use the same cached backend.
+- `ingest.py` -- `ingest_paper_finder(doc, *, link_to, config, artifact_path=None)
+  -> ImportReport`. A marshal-out module that imports `execute_tool` (lazily,
+  function-local, mirroring `wheeler/validation/ledger.py`). Writes route through
+  `execute_tool` for triple-write; reads use the same cached backend. Owns the
+  shared `_link_once` / `_edge_exists` helpers (artifacts.py imports them). When
+  `artifact_path` is given it calls `register_output_artifact` and links each
+  Paper `WAS_DERIVED_FROM` the artifact (best-effort, link_once-guarded).
+- `artifacts.py` -- `register_output_artifact(path, *, execution_id, service,
+  config, description="") -> str | None`. A marshal-out module: registers a
+  service's raw `-o` output file as a graph node via `ensure_artifact`
+  (function-local `execute_tool` import) and links it `WAS_GENERATED_BY` the run
+  Execution (reusing `_link_once` from ingest.py). A `.json` results dump lands
+  as a Dataset (the data bucket): `.json` has no extension rule in
+  `ensure_artifact`, so `artifact_type="dataset"` routes it to the Dataset label
+  instead of the Document default. `ensure_artifact` does not forward `service`,
+  so the tag is stamped via a follow-up `update_node` (service is a first-class
+  NodeBase field, so update_node's model-derived allow-list accepts it).
+  Best-effort: ANY failure returns `None` and logs a warning, never raises, so an
+  artifact problem cannot break paper ingest. Returns the artifact node id.
 - `cli.py` -- `integrate_app` Typer sub-app, one verb: `ingest <tool> <artifact>
   [--link-to ID]`. Registered in `wheeler/tools/cli.py` guarded by try/except.
+  Note: the generic `integrate` CLI currently lives here and moves up to
+  `wheeler/integrations/` when the contract engine is extracted (Phase 3).
 
 ## Invariants
 
@@ -43,6 +60,14 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   cached backend singleton and Neo4j forbids concurrent queries.
 - **One Execution per run** (kind `paper-search`, service `asta:paper-finder`),
   not per output node. `session_id` correlates everything written in one turn.
+- **Every service output is an artifact.** The raw `-o` JSON dump is registered
+  as a Dataset node (service-tagged) via `register_output_artifact`. Edges added:
+  `Artifact -[WAS_GENERATED_BY]-> Execution` (the run that produced it) and each
+  `Paper -[WAS_DERIVED_FROM]-> Artifact` (so every paper chains back through the
+  raw output to the service run). Both are `link_once`-guarded; the artifact node
+  itself dedupes on path via `ensure_artifact`, so re-ingest creates no
+  duplicate node or edges. Artifact registration is best-effort and never aborts
+  paper ingest.
 - **Failure isolation.** A failed or canceled CLI run writes nothing. Retries,
   auth, and timeouts stay inside the asta CLI.
 

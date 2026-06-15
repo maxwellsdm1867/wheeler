@@ -45,6 +45,7 @@ class ImportReport:
     linked: int = 0
     skipped: int = 0
     execution_id: str = ""
+    artifact: str = ""
     paper_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,6 +55,7 @@ class ImportReport:
             "linked": self.linked,
             "skipped": self.skipped,
             "execution_id": self.execution_id,
+            "artifact": self.artifact,
             "paper_ids": list(self.paper_ids),
         }
 
@@ -164,6 +166,7 @@ async def ingest_paper_finder(
     *,
     link_to: str | None,
     config: WheelerConfig,
+    artifact_path: str | None = None,
 ) -> ImportReport:
     """Ingest a parsed Asta Paper Finder artifact into the knowledge graph.
 
@@ -172,6 +175,11 @@ async def ingest_paper_finder(
         link_to: Optional node id (Plan/Question) every paper is linked to
             via RELEVANT_TO.
         config: Active Wheeler config.
+        artifact_path: Optional path to the raw ``-o`` output file. When given,
+            it is registered as a Dataset node (every service output is an
+            artifact), linked WAS_GENERATED_BY the run Execution, and every
+            Paper is linked WAS_DERIVED_FROM it. Best-effort: an artifact
+            failure never breaks paper ingest.
 
     Returns:
         An ImportReport with created / deduped / linked / skipped counts.
@@ -208,6 +216,22 @@ async def ingest_paper_finder(
     exec_id = exec_result.get("node_id", "")
     report.execution_id = exec_id
 
+    # Every service output is an artifact: register the raw -o JSON dump as a
+    # Dataset node, linked WAS_GENERATED_BY the run Execution. Best-effort:
+    # register_output_artifact returns None on any failure and never raises, so
+    # an artifact problem cannot break paper ingest.
+    from .artifacts import register_output_artifact
+
+    artifact_id = await register_output_artifact(
+        artifact_path,
+        execution_id=exec_id,
+        service=_SERVICE_TAG,
+        config=config,
+        description=f"{_SERVICE_TAG} raw output",
+    )
+    if artifact_id:
+        report.artifact = artifact_id
+
     # corpus_id -> P-id for papers seen this run (so a citing paper can be
     # linked to a cited paper that was just created in the same run).
     seen_this_run: dict[str, str] = {}
@@ -221,6 +245,14 @@ async def ingest_paper_finder(
             continue
         if record.corpus_id:
             seen_this_run[record.corpus_id] = paper_id
+
+        # Paper WAS_DERIVED_FROM the raw output artifact (link_once-guarded),
+        # so every paper chains back through the artifact to the service run.
+        if artifact_id:
+            if await _link_once(
+                backend, config, paper_id, "WAS_DERIVED_FROM", artifact_id,
+            ):
+                report.linked += 1
 
         # Paper RELEVANT_TO the link target (e.g. the Question/Plan that
         # prompted the search).

@@ -1,17 +1,12 @@
-"""External-tool integrations (marshal-in act prose, marshal-out Python).
+"""External-tool integration namespace.
 
-Public surface:
-  - ``ingest_paper_finder``: deterministic marshal-out for Asta Paper Finder.
-  - ``ImportReport``: the outcome of one ingest run.
+This is the generic namespace package for external-tool adapters. Each tool
+lives in its own self-contained sub-package (for example ``asta`` for the Asta
+Paper Finder and Theorizer slices). A future generic contract engine will live
+at this top level; for now the only sub-package is ``asta``.
 
-The chokepoint rule: ``ingest`` is the only module that imports
-``execute_tool`` (lazily), and ``transport`` is the only module that shells
-out to the asta CLI. ``transport`` has no graph dependency; nothing here
-imports anthropic.
+No exports here on purpose: import from the concrete sub-package, for example
+``from wheeler.integrations.asta import ImportReport, ingest_paper_finder``.
 """
 
 from __future__ import annotations
-
-from .ingest import ImportReport, ingest_paper_finder
-
-__all__ = ["ImportReport", "ingest_paper_finder"]

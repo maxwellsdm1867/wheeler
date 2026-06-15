@@ -114,6 +114,13 @@ backend singleton and Neo4j forbids concurrent queries). Steps:
    turn correlate in `request_log.jsonl`. Stamp a `service` property on generated nodes for cheap
    filtering ("everything from asta:theorizer").
 
+5. Every service output is an artifact. Register the raw -o JSON file as a node via
+   `ensure_artifact` (a Dataset for a data dump), tag it with `service`, link it
+   `WAS_GENERATED_BY` the run Execution, and link each generated node `WAS_DERIVED_FROM` the
+   artifact. The raw output is then itself traceable and every generated node chains back
+   through it to the service run. Bucket parsed outputs into the right entity types (Paper,
+   Hypothesis). This completes the output end of the sandwich.
+
 Edge directions (Paper Finder): Paper `RELEVANT_TO` the linked Plan/Question; citation contexts
 -> `CITES`. (Theorizer): Paper `SUPPORTS`/`CONTRADICTS` Hypothesis.
 

@@ -15,14 +15,13 @@ The e2e class is skipped automatically when Neo4j is not reachable.
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
-from wheeler.integrations.schemas import parse_paper_finder
-from wheeler.integrations.transport import run_asta
+from wheeler.integrations.asta.schemas import parse_paper_finder
+from wheeler.integrations.asta.transport import run_asta
 
 FIXTURE = Path(__file__).parent / "fixtures" / "paper_finder_sample.json"
 
@@ -220,7 +219,7 @@ class TestIngestPaperFinderE2E:
         asyncio.run(_cleanup())
 
     async def _tag_all(self, e2e_config):
-        """Tag every Paper/Execution/Question carrying our corpus_ids or session."""
+        """Tag every Paper/Execution/Dataset carrying our corpus_ids or service."""
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
@@ -235,11 +234,17 @@ class TestIngestPaperFinderE2E:
                 "SET x.e2e_tag = $tag",
                 tag=E2E_TAG,
             )
+            # The raw-output artifact is a Dataset tagged with the service.
+            await s.run(
+                "MATCH (d:Dataset) WHERE d.service = 'asta:paper-finder' "
+                "SET d.e2e_tag = $tag",
+                tag=E2E_TAG,
+            )
 
     @pytest.mark.asyncio
     async def test_ingest_is_idempotent(self, e2e_config):
         from wheeler.graph.driver import get_async_driver
-        from wheeler.integrations.ingest import ingest_paper_finder
+        from wheeler.integrations.asta.ingest import ingest_paper_finder
 
         doc = _load_fixture()
 
@@ -321,6 +326,111 @@ class TestIngestPaperFinderE2E:
         assert node is not None
         assert node["custom"]["relevance_score"] == 0.93
         assert node["custom"]["venue"] == "Journal of Neuroscience"
+
+    @pytest.mark.asyncio
+    async def test_output_artifact_registered_and_linked(self, e2e_config, tmp_path):
+        """Every service output is an artifact: register, link, dedupe on re-run.
+
+        Pass artifact_path and assert:
+          - a Dataset artifact node exists for that file, tagged with service,
+          - it is WAS_GENERATED_BY the run Execution,
+          - each Paper is WAS_DERIVED_FROM it,
+          - re-ingest does NOT duplicate the artifact node or these edges.
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.asta.ingest import ingest_paper_finder
+
+        doc = _load_fixture()
+
+        # Write the raw -o output to a real file so ensure_artifact (which
+        # requires the path to exist) can register it. Lives under the temp cwd.
+        artifact_file = tmp_path / "asta_paper_finder_output.json"
+        artifact_file.write_text(json.dumps(doc))
+
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # First ingest with the artifact path.
+        report1 = await ingest_paper_finder(
+            doc, link_to=None, config=e2e_config, artifact_path=str(artifact_file),
+        )
+        await self._tag_all(e2e_config)
+        assert report1.artifact, "ImportReport.artifact should hold the artifact id"
+        artifact_id = report1.artifact
+        assert artifact_id.startswith("D-")
+        exec_id = report1.execution_id
+
+        # The artifact node exists, is a Dataset, and carries the service tag.
+        async with driver.session(database=db) as s:
+            result = await s.run(
+                "MATCH (d:Dataset {id: $aid}) "
+                "RETURN d.service AS service, d.path AS path",
+                aid=artifact_id,
+            )
+            rec = await result.single()
+        assert rec is not None
+        assert rec["service"] == "asta:paper-finder"
+        assert rec["path"] == str(artifact_file)
+
+        # Artifact WAS_GENERATED_BY the run Execution (exactly one edge).
+        async with driver.session(database=db) as s:
+            result = await s.run(
+                "MATCH (d:Dataset {id: $aid})-[r:WAS_GENERATED_BY]->(x {id: $xid}) "
+                "RETURN count(r) AS c",
+                aid=artifact_id, xid=exec_id,
+            )
+            rec = await result.single()
+        assert rec["c"] == 1
+
+        # Each Paper is WAS_DERIVED_FROM the artifact (one edge per paper).
+        async with driver.session(database=db) as s:
+            result = await s.run(
+                "MATCH (p:Paper)-[r:WAS_DERIVED_FROM]->(d:Dataset {id: $aid}) "
+                "WHERE p.corpus_id IN $cids "
+                "RETURN p.corpus_id AS cid, count(r) AS c",
+                aid=artifact_id, cids=["211234567", "222345678"],
+            )
+            rows = {r["cid"]: r["c"] async for r in result}
+        assert rows == {"211234567": 1, "222345678": 1}
+
+        # Second ingest of the SAME artifact: no duplicate artifact node, no
+        # duplicate edges (link_once + ensure_artifact path idempotency).
+        report2 = await ingest_paper_finder(
+            doc, link_to=None, config=e2e_config, artifact_path=str(artifact_file),
+        )
+        await self._tag_all(e2e_config)
+        assert report2.artifact == artifact_id
+
+        # Still exactly one Dataset for this service + path.
+        async with driver.session(database=db) as s:
+            result = await s.run(
+                "MATCH (d:Dataset) WHERE d.path = $path AND d.service = $svc "
+                "RETURN count(d) AS c",
+                path=str(artifact_file), svc="asta:paper-finder",
+            )
+            rec = await result.single()
+        assert rec["c"] == 1
+
+        # WAS_GENERATED_BY still exactly one edge.
+        async with driver.session(database=db) as s:
+            result = await s.run(
+                "MATCH (d:Dataset {id: $aid})-[r:WAS_GENERATED_BY]->(x {id: $xid}) "
+                "RETURN count(r) AS c",
+                aid=artifact_id, xid=exec_id,
+            )
+            rec = await result.single()
+        assert rec["c"] == 1
+
+        # WAS_DERIVED_FROM still exactly one edge per paper.
+        async with driver.session(database=db) as s:
+            result = await s.run(
+                "MATCH (p:Paper)-[r:WAS_DERIVED_FROM]->(d:Dataset {id: $aid}) "
+                "WHERE p.corpus_id IN $cids "
+                "RETURN p.corpus_id AS cid, count(r) AS c",
+                aid=artifact_id, cids=["211234567", "222345678"],
+            )
+            rows = {r["cid"]: r["c"] async for r in result}
+        assert rows == {"211234567": 1, "222345678": 1}
 
 
 # ---------------------------------------------------------------------------
