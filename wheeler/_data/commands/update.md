@@ -125,30 +125,28 @@ $WHEELER_BIN/wheeler update --yes
 
 Show the result. If the source is "editable", note that `git pull` will run first.
 
-## Step 5: Refresh the cache so the update badge clears
+## Step 5: Clear the cache so the update badge disappears
 
-`wheeler update` deletes the version-check cache, but the statusline badge
-(`⬆ /wh:update`) only clears once the cache says no update is pending. Do not
-rely on deletion alone: rewrite the cache against the now-updated install so the
-badge disappears immediately, then confirm the version:
+The statusline badge (`⬆ /wh:update`) is driven entirely by the cache file
+`~/.cache/wheeler/version-check.json`: an absent cache, or a cache with
+`update_available: false`, shows no badge. `wheeler update` already deletes it,
+but delete it explicitly so the badge drops immediately on the next statusline
+render. Do NOT use `$WHEELER_BIN/python` for this: a uv-tool install puts the
+`wheeler` shim in `$WHEELER_BIN` but its python elsewhere, so that path may not
+exist. A plain `rm -f` works for every install type:
 
 ```bash
-$WHEELER_BIN/python -c "from wheeler.installer import check_version_cached; print(check_version_cached())"
+rm -f ~/.cache/wheeler/version-check.json
 $WHEELER_BIN/wheeler version
 ```
 
-The first command re-checks the updated install and rewrites
-`~/.cache/wheeler/version-check.json`; because the installed version changed, it
-writes `update_available: false` (it never keeps a stale true across an upgrade),
-which the statusline reads on its next render to drop the badge.
-
-If the badge still shows after this, the SessionStart check hook is tracking a
-DIFFERENT Wheeler install than the one you just updated (the hook probes `wheeler`
-on PATH, then `~/.local/bin/wheeler`). Tell the user which install you updated
-(`$WHEELER_BIN`) and that the badge reflects whatever `wheeler` resolves to on
-their PATH: if those differ, that other install is genuinely still outdated and
-should be updated too (or removed). For a single-install user they are the same
-and the badge clears.
+The badge stays gone as long as the install the SessionStart check hook finds is
+current. That hook probes `wheeler` on PATH, then `~/.local/bin/wheeler`. If the
+badge returns after a restart, the hook is tracking a DIFFERENT Wheeler install
+than the one you just updated (`$WHEELER_BIN`): tell the user that other install
+(whatever `which wheeler` resolves to) is genuinely still outdated and should be
+updated too, or removed. For a single-install user they are the same and the
+badge stays cleared.
 
 Report the version transition and suggest restarting the session if slash commands changed.
 
