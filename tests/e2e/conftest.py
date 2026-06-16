@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 
@@ -92,9 +93,8 @@ def sandbox(e2e_config) -> Path:
     return SANDBOX_DIR
 
 
-@pytest.fixture(scope="session")
-def neo4j_available(e2e_config) -> bool:
-    """Check if Neo4j is reachable."""
+def _probe_neo4j(e2e_config) -> bool:
+    """Return True if Neo4j answers RETURN 1, else False. Never raises."""
     import asyncio
     from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
 
@@ -103,6 +103,7 @@ def neo4j_available(e2e_config) -> bool:
             e2e_config.neo4j.uri,
             auth=(e2e_config.neo4j.username, e2e_config.neo4j.password),
             notifications_min_severity=NotificationMinimumSeverity.OFF,
+            connection_acquisition_timeout=5,
         )
         try:
             async with driver.session(database=e2e_config.neo4j.database) as session:
@@ -113,14 +114,30 @@ def neo4j_available(e2e_config) -> bool:
         finally:
             await driver.close()
 
-    return asyncio.run(_check())
+    try:
+        return asyncio.run(_check())
+    except Exception:
+        return False
+
+
+@pytest.fixture(scope="function")
+def neo4j_available(e2e_config) -> bool:
+    """Whether Neo4j is reachable RIGHT NOW (re-checked per test).
+
+    Function-scoped on purpose: a session-scoped check caches the start-of-session
+    result, so a transient Neo4j outage mid-session (common under full-suite load)
+    would leave tests trusting a stale True and ERRORING on their own connection
+    instead of skipping cleanly. Re-probing per test turns a mid-run outage into
+    deterministic skips, never errors.
+    """
+    return _probe_neo4j(e2e_config)
 
 
 @pytest.fixture(autouse=True)
 def skip_without_neo4j(neo4j_available):
-    """Skip e2e tests if Neo4j is not running."""
+    """Skip e2e tests if Neo4j is not reachable for this test."""
     if not neo4j_available:
-        pytest.skip("Neo4j not available — skipping e2e tests")
+        pytest.skip("Neo4j not available -- skipping e2e test")
 
 
 @pytest.fixture(autouse=True)
@@ -140,36 +157,49 @@ def reset_driver_singleton():
 
 @pytest.fixture(autouse=True)
 async def cleanup_test_nodes(e2e_config, neo4j_available):
-    """Clean up e2e test nodes after each test."""
+    """Clean up e2e test nodes after each test (best-effort).
+
+    Tolerant of a transient Neo4j failure during teardown: a hiccup here must not
+    turn a passing test into an ERROR, so the cleanup is wrapped and logged.
+    """
     yield
     if not neo4j_available:
         return
-    from wheeler.graph.driver import get_async_driver
-    driver = get_async_driver(e2e_config)
-    async with driver.session(database=e2e_config.neo4j.database) as session:
-        await session.run(
-            "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
-            tag=E2E_TAG,
+    try:
+        from wheeler.graph.driver import get_async_driver
+        driver = get_async_driver(e2e_config)
+        async with driver.session(database=e2e_config.neo4j.database) as session:
+            await session.run(
+                "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n",
+                tag=E2E_TAG,
+            )
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "e2e cleanup_test_nodes: Neo4j unavailable during teardown (best-effort)",
+            exc_info=True,
         )
 
 
 @pytest.fixture(scope="session", autouse=True)
-def cleanup_graph(e2e_config, neo4j_available):
-    """Clean up all e2e test nodes after the test session."""
-    yield  # Run tests first
+def cleanup_graph(e2e_config):
+    """Clean up all e2e test nodes after the test session (best-effort).
 
-    if not neo4j_available:
-        return
+    Session-scoped, so it does its OWN Neo4j probe (it cannot depend on the
+    function-scoped ``neo4j_available``) and never raises: a teardown-time outage
+    must not fail the session.
+    """
+    yield  # Run tests first
 
     import asyncio
     from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
 
     async def _cleanup():
-        # Create a fresh driver — can't reuse singleton across event loops
+        # Create a fresh driver -- can't reuse the singleton across event loops.
         driver = AsyncGraphDatabase.driver(
             e2e_config.neo4j.uri,
             auth=(e2e_config.neo4j.username, e2e_config.neo4j.password),
             notifications_min_severity=NotificationMinimumSeverity.OFF,
+            connection_acquisition_timeout=5,
         )
         try:
             async with driver.session(database=e2e_config.neo4j.database) as session:
@@ -180,4 +210,10 @@ def cleanup_graph(e2e_config, neo4j_available):
         finally:
             await driver.close()
 
-    asyncio.run(_cleanup())
+    try:
+        asyncio.run(_cleanup())
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "e2e cleanup_graph: Neo4j unavailable at session teardown (best-effort)",
+            exc_info=True,
+        )

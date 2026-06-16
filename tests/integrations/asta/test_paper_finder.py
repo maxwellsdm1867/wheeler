@@ -227,7 +227,12 @@ def _cleanup_paper_finder(e2e_config, e2e_tag: str) -> None:
         finally:
             await driver.close()
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception:
+        # Best-effort teardown: a transient Neo4j blip must not turn a
+        # passing test into an ERROR. Orphans carry a per-run uuid e2e_tag.
+        pass
 
 
 class TestIngestPaperFinderE2E:
