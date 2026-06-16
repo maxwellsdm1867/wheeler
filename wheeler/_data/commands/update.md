@@ -125,29 +125,48 @@ $WHEELER_BIN/wheeler update --yes
 
 Show the result. If the source is "editable", note that `git pull` will run first.
 
-## Step 5: Clear the cache so the update badge disappears
+## Step 5: Make the update badge disappear (and stay gone)
 
-The statusline badge (`⬆ /wh:update`) is driven entirely by the cache file
+The statusline badge (`⬆ /wh:update`) is driven ENTIRELY by the cache file
 `~/.cache/wheeler/version-check.json`: an absent cache, or a cache with
-`update_available: false`, shows no badge. `wheeler update` already deletes it,
-but delete it explicitly so the badge drops immediately on the next statusline
-render. Do NOT use `$WHEELER_BIN/python` for this: a uv-tool install puts the
-`wheeler` shim in `$WHEELER_BIN` but its python elsewhere, so that path may not
-exist. A plain `rm -f` works for every install type:
+`update_available: false`, shows no badge. But it is recomputed at every
+SessionStart by `wheeler-check-update.js`, which runs with a MINIMAL PATH and so
+probes a fixed list of installs in order: `wheeler` (often missing on the minimal
+PATH), then `~/.local/bin/wheeler`, then the uv-tools path. The badge reflects the
+FIRST that responds, which is usually `~/.local/bin/wheeler`, NOT the session's
+install. So clearing the cache alone is not enough: if the install the hook probes
+is still stale, the next SessionStart re-flags the badge. This is the bug a
+multi-install machine hits (a fresh dev checkout at the new version, a uv-tool
+install at the old one).
+
+Fix it for real: bring EVERY badge-tracked install up to date, then clear the
+cache. Do NOT use `$WHEELER_BIN/python` (a uv-tool install has no python beside its
+`wheeler` shim); use the `wheeler` binaries directly.
 
 ```bash
+NEW=$($WHEELER_BIN/wheeler version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+# Update each install the SessionStart hook probes if it is behind $NEW. These
+# are the canonical user installs (uv-tool / pip --user), safe to update; the
+# bare editable dev checkout is deliberately NOT swept here.
+for w in "$HOME/.local/bin/wheeler" "$HOME/.local/share/uv/tools/wheeler/bin/wheeler"; do
+  [ -x "$w" ] || continue
+  cur=$("$w" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  if [ -n "$cur" ] && [ -n "$NEW" ] && [ "$cur" != "$NEW" ]; then
+    echo "Badge-tracked install $w is $cur, updating to $NEW"
+    "$w" update --yes 2>&1 | tail -2
+  fi
+done
+# Clear the cache so the badge drops immediately; with every probed install now
+# current, the next SessionStart re-check writes update_available=false and it
+# stays gone.
 rm -f ~/.cache/wheeler/version-check.json
 $WHEELER_BIN/wheeler version
 ```
 
-The badge stays gone as long as the install the SessionStart check hook finds is
-current. That hook probes `wheeler` on PATH, then `~/.local/bin/wheeler`. If the
-badge returns after a restart, the hook is tracking a DIFFERENT Wheeler install
-than the one you just updated (`$WHEELER_BIN`): tell the user that other install
-(whatever `which wheeler` resolves to) is genuinely still outdated and should be
-updated too, or removed. For a single-install user they are the same and the
-badge stays cleared.
-
-Report the version transition and suggest restarting the session if slash commands changed.
+Then confirm to the user: report the version transition, that the badge cache is
+cleared, and which installs were brought current. If `which wheeler` still differs
+from `~/.local/bin/wheeler` and one is intentionally pinned (e.g. an editable dev
+checkout), say so plainly. Suggest restarting the session if slash commands
+changed.
 
 $ARGUMENTS
