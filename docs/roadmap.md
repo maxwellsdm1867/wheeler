@@ -82,6 +82,14 @@ Build the adversarial and task-completion test suite flagged in PROJECT-SPEC.
   and the `wheeler-service-creator` skill (scaffold + audit a new adapter). See
   ARCHITECTURE.md "Service Integrations" and docs/asta-engine-spec.md. (The older
   agent-baselines bridge in docs/asta-integration.md remains a separate future idea.)
+- **Deeper external-service integration**: keep integrating into Asta's services
+  (and other research agents) so they read and act on Wheeler's work and context,
+  not just return results. Bring more services into the graph (DataVoyager /
+  analyze-data, AutoDiscovery), let an Asta agent be seeded with the relevant
+  graph context as it runs, and feed its outputs back through provenance so the
+  graph becomes the shared, trackable workspace between Wheeler and external
+  agents. The provider-agnostic registry + `wheeler-service-creator` make adding
+  each new service a contained workflow.
 - **Domain skills**: electrophysiology, statistics, or other domain-specific
   extensions
 - **Metrics dashboard**: aggregated per-tool latency, error rates, provenance

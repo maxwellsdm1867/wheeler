@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.13-blue" alt="v0.9.13">
+  <img src="https://img.shields.io/badge/v0.9.14-blue" alt="v0.9.14">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -199,6 +199,15 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.9.14</b> (2026-06-15): the update badge actually clears</summary>
+
+- **The update badge reliably clears**: `/wh:update` now updates every install the badge checker tracks (the SessionStart hook probes `~/.local/bin/wheeler` and the uv-tools path, not just the session's install), then clears the cache, so the `⬆ /wh:update` indicator disappears after updating and stays gone on a multi-install machine.
+- **Integrations, framed**: a dedicated README "Integrations" section and a forward-looking roadmap entry describe the Asta integration and where it is headed (external research services reading and acting on Wheeler's graph and context).
+- **Resilient e2e tests**: the live-Neo4j test suite now degrades to clean skips on a transient Neo4j outage instead of erroring, so a database hiccup no longer blocks a commit.
+
+</details>
+
+<details>
 <summary><b>v0.9.13</b> (2026-06-15): update fixes + integration docs</summary>
 
 - **`/wh:update` resolves split-server installs**: the update flow looked for the obsolete single `wheeler` MCP key and failed on modern installs; it now resolves any Wheeler MCP server (split or legacy), preferring the install serving the session.
@@ -215,14 +224,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **Three-part provenance**: each run records the graph nodes it `USED`, the nodes it `WAS_GENERATED_BY`, and the semantic edges (`SUPPORTS`/`CONTRADICTS`/`CITES`/`RELEVANT_TO`) wiring new results into the existing graph, and anchors to its Plan.
 - **Build adapters from a contract**: a swappable service registry (`wheeler services enable/disable`) plus the `wheeler-service-creator` skill that scaffolds a new adapter, bakes in the failsafe, and ships a deterministic auditor that checks data-safety, provenance, and conventions before it lands.
 - **Test suite at 1929** (was 1734 in v0.9.11).
-
-</details>
-
-<details>
-<summary><b>v0.9.11</b> (2026-06-11): badge composes with any statusline</summary>
-
-- **Update badge composes with custom statuslines**: a pre-existing statusLine (e.g. GSD's) is wrapped rather than skipped; the wrapper runs the original command unchanged and prepends the yellow `/wh:update` badge only when an update is pending. Reinstall never double-wraps, and uninstall restores the original command verbatim.
-- **Test suite at 1734** (was 1733 in v0.9.10).
 
 </details>
 
@@ -307,6 +308,12 @@ If you use Wheeler in your research, please cite it:
   url       = {https://doi.org/10.5281/zenodo.20498885}
 }
 ```
+
+## Integrations
+
+Wheeler integrates with external research services so their output lands in the knowledge graph as provenance-tracked nodes, and so those services can act on Wheeler's own work and context. The first integration is [AllenAI Asta](https://github.com/allenai/asta-plugins): Wheeler ships tools (adapters) for four Asta services, **Paper Finder**, **Semantic Scholar**, **Theorizer**, and **Literature Reports**, routed by `/wh:asta`. Each call reads the current graph to shape the request, runs the Asta service, and writes the result back with full provenance (what it `USED`, what it `WAS_GENERATED_BY`, and how the new results connect to the existing graph). A failed call is recorded as failed rather than silently lost.
+
+The integration layer is provider-agnostic and growing. Adding a new external tool is its own workflow: the `wheeler-service-creator` skill scaffolds the adapter, bakes in the provenance and failsafe wiring, and audits it before it lands. See [ARCHITECTURE.md](ARCHITECTURE.md) "Service Integrations" for the design, and the [roadmap](docs/roadmap.md) for where this is headed.
 
 ## Acknowledgments
 
