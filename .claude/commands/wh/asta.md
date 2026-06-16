@@ -9,15 +9,22 @@ allowed-tools:
   - Bash(asta auth status)
   - Bash(./.venv/bin/python -c *)
   - Bash(python -c *)
+  - mcp__wheeler_core__search_context
+  - mcp__wheeler_core__graph_context
+  - mcp__wheeler_query__query_papers
+  - mcp__wheeler_query__query_open_questions
+  - mcp__wheeler_query__query_hypotheses
+  - mcp__wheeler_query__query_findings
 ---
 
 # Asta / Service Router
 
 Pick the right service for the user's research intent and dispatch the matching
 `/wh:*` act. The available services come from the registry (a declarative
-manifest), not a hardcoded table. If the user gave no intent, ASK them what they
-want first: do not read the graph (it cannot tell you what the user wants to do).
-Confirm before anything paid.
+manifest), not a hardcoded table. Intent comes first: if the user gave none, ASK
+them what they want BEFORE touching the graph (the graph cannot tell you what the
+user wants to do). Once you have the intent, you MAY read the graph to sharpen the
+request and decide which service fits. Confirm before anything paid.
 
 ## Read the registry first
 
@@ -43,14 +50,18 @@ none are enabled, or asta is not authenticated: `asta auth status`) and stop.
 
 1. Load the available services from the registry (above).
 2. If `$ARGUMENTS` is non-empty, treat it as the intent and skip to step 4.
-3. If `$ARGUMENTS` is empty: do NOT read the graph, and do NOT guess. ASK the user
-   what they want to do FIRST, with AskUserQuestion: offer 2-4 concrete options
-   drawn from the AVAILABLE services (for example "find papers on a topic",
-   "look up a specific paper or its citations", "generate theories", "write a
-   literature review"), plus the always-present "Other" for a free-text intent.
-   Their answer IS the intent. The graph cannot tell you what the user wants, so
-   asking it first is wasted work: the chosen service's own act reads the graph
-   when it actually needs context.
+3. If `$ARGUMENTS` is empty: do NOT read the graph yet, and do NOT guess. ASK the
+   user what they want to do FIRST, with AskUserQuestion: offer 2-4 concrete
+   options drawn from the AVAILABLE services (for example "find papers on a
+   topic", "look up a specific paper or its citations", "generate theories",
+   "write a literature review"), plus the always-present "Other" for a free-text
+   intent. Their answer IS the intent.
+3a. Now that you have the intent, you MAY read the graph (`search_context`,
+   `graph_context`) to sharpen the request and decide which service fits, for
+   example to see what is already known on the topic, which papers are recorded,
+   or which question this serves. This is optional: skip it for an unambiguous
+   intent, use it when the request needs grounding. The chosen service's own act
+   reads the graph again when it needs context, so do not over-read here.
 4. Match the intent to one of the AVAILABLE services using its `when` and
    `description` fields. Do not offer a service that is not in the list.
 5. Warn on `cost`. Before dispatching any service whose `cost` is not "free" or
