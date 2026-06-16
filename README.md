@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.12-blue" alt="v0.9.12">
+  <img src="https://img.shields.io/badge/v0.9.13-blue" alt="v0.9.13">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -199,6 +199,15 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.9.13</b> (2026-06-15): update fixes + integration docs</summary>
+
+- **`/wh:update` resolves split-server installs**: the update flow looked for the obsolete single `wheeler` MCP key and failed on modern installs; it now resolves any Wheeler MCP server (split or legacy), preferring the install serving the session.
+- **The update badge clears after updating**: `wheeler update` reliably drops the `⬆ /wh:update` statusline badge by clearing the version-check cache in a way that works for every install type, including uv tool.
+- **Service integrations documented**: ARCHITECTURE.md, the README, CLAUDE.md, the tech stack, and the getting-started guide now cover the Asta adapters, the external-call failsafe, and how to add a new service with the `wheeler-service-creator` skill.
+
+</details>
+
+<details>
 <summary><b>v0.9.12</b> (2026-06-15): Asta integration + external-call failsafe</summary>
 
 - **Asta research tools land in the graph**: four adapters (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) marshal output from [Ai2's Asta toolkit](https://github.com/allenai/asta-plugins) into the knowledge graph as typed, deduplicated, provenance-tracked nodes, driven by a `/wh:asta` router and one deterministic `wheeler integrate` verb.
@@ -214,16 +223,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 
 - **Update badge composes with custom statuslines**: a pre-existing statusLine (e.g. GSD's) is wrapped rather than skipped; the wrapper runs the original command unchanged and prepends the yellow `/wh:update` badge only when an update is pending. Reinstall never double-wraps, and uninstall restores the original command verbatim.
 - **Test suite at 1734** (was 1733 in v0.9.10).
-
-</details>
-
-<details>
-<summary><b>v0.9.10</b> (2026-06-11): update chain hardened</summary>
-
-- **Updates apply fully on the first run**: `wheeler update` reinstalls files by re-executing the freshly upgraded wheeler, so registrations that are new in the version just installed (like the status bar badge) take effect immediately and the manifest records the correct version.
-- **Version check works without pip**: the PyPI check uses the JSON API via urllib instead of shelling out to pip (uv tool venvs have no pip); the GitHub check sends a proper User-Agent.
-- **The badge never lies**: the session hook probes known install locations when run with a minimal PATH, never claims an update when the installed version cannot be determined, and the CLI now accepts the hook-written cache instead of re-checking the network on every invocation.
-- **Test suite at 1733** (was 1730 in v0.9.9).
 
 </details>
 
