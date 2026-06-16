@@ -3,7 +3,9 @@
 Given a small CONTRACT dict, emit the four skeleton files the
 ``wheeler-service-creator`` skill describes:
 
-  1. a ``.wheeler/services.yaml`` entry (appended, never overwriting),
+  1. the service CONTRACT as its own enabled-folder file
+     ``.wheeler/services/<id>.yaml`` (the folder-based registry: one file per
+     enabled service, so writing it here ENABLES the service),
   2. a marshal-out ingest skeleton ``wheeler/integrations/<provider>/<tool>.py``,
   3. a marshal-in act ``.claude/commands/wh/<provider>-<tool>.md``,
   4. a parse-unit + live-Neo4j e2e test stub
@@ -16,9 +18,15 @@ TODO returning ``([], RunMeta())``. The skill's prose is the source of truth; th
 helper just saves the human from hand-copying boilerplate. Markdown-driven
 scaffolding (the model writing the files itself) is equally valid.
 
-Stdlib only (no PyYAML): the services.yaml entry is emitted as hand-rolled YAML
-text, mirroring the shape in ``docs/asta-engine-spec.md`` section 2. Pure I/O;
-no graph dependency, no LLM-provider import.
+A service that should SHIP with Wheeler goes in the bundled catalog
+``wheeler/integrations/services.default.yaml`` instead: use
+``render_services_entry`` for that list-item shape and append it by hand.
+
+Stdlib only (no PyYAML): the contract YAML is emitted as hand-rolled text,
+mirroring the entries in ``services.default.yaml``. Pure I/O; no graph
+dependency, no LLM-provider import. Asta (the four shipped adapters) is the work
+of the Allen Institute for AI (Ai2), https://asta.allen.ai; Wheeler shells out to
+its ``asta`` CLI and does not vendor it.
 
 Run as a module for a smoke scaffold::
 
@@ -169,6 +177,46 @@ def render_services_entry(c: ServiceContract) -> str:
         f"      raw_node: {c.raw_node}",
         f"      nodes: [{node_list}]",
         f"    # implemented by wheeler/integrations/{c.provider_slug}/{c.tool_ident}.py",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def render_service_file(c: ServiceContract) -> str:
+    """Render one ENABLED-folder file ``.wheeler/services/<id>.yaml``.
+
+    A bare top-level mapping (no ``services:`` wrapper), which is the natural
+    shape the registry's per-id folder loader reads. This is the folder-based,
+    extraction-friendly home for a contract: one file per enabled service, so a
+    single contract can be pulled out, diffed, or moved between projects in
+    isolation. The registry also accepts the catalog-style ``services:`` wrapper,
+    but the bare mapping keeps the per-id file terse.
+    """
+    inputs = c.inputs or [{"name": "query", "source": "query", "required": True}]
+    lines = [
+        f"id: {c.service_id}",
+        f"provider: {c.provider_slug}",
+        f"name: {c.display_name}",
+        f"description: {c.description or c.display_name}",
+        f"kind: {c.kind}",
+        f"act: /{c.act_name}",
+        f'cost: "{c.cost}"',
+        f'available: "{c.available or c.tool_slug + " --version"}"',
+        f'when: "{c.when or c.description or c.display_name}"',
+        "inputs:",
+    ]
+    for port in inputs:
+        name = port.get("name", "query")
+        source = port.get("source", "query")
+        required = "true" if port.get("required") else "false"
+        lines.append(
+            f"  - {{ name: {name}, source: {source}, required: {required} }}"
+        )
+    node_list = ", ".join(c.nodes) if c.nodes else "Paper"
+    lines += [
+        "output:",
+        f"  raw_node: {c.raw_node}",
+        f"  nodes: [{node_list}]",
+        f"# implemented by wheeler/integrations/{c.provider_slug}/{c.tool_ident}.py",
     ]
     return "\n".join(lines) + "\n"
 
@@ -816,32 +864,6 @@ def _write(path: Path, text: str, *, overwrite: bool, dry_run: bool) -> str:
     return f"wrote          {path}"
 
 
-def _append_service_entry(
-    path: Path, entry: str, *, dry_run: bool
-) -> str:
-    """Append a services.yaml entry, creating the file with a root if absent.
-
-    Idempotent on the entry id: if an entry with the same ``id:`` line already
-    exists, it is left untouched.
-    """
-    id_line = entry.splitlines()[0].strip()  # "- id: <provider>-<tool>"
-    existing = path.read_text() if path.exists() else ""
-    if id_line in existing:
-        return f"skip (entry exists)  {path}"
-    if not existing.strip():
-        body = "services:\n" + entry
-    elif "services:" in existing:
-        sep = "" if existing.endswith("\n") else "\n"
-        body = existing + sep + entry
-    else:
-        body = existing.rstrip("\n") + "\nservices:\n" + entry
-    if dry_run:
-        return f"would append   {path}"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body)
-    return f"appended       {path}"
-
-
 def scaffold(
     contract: ServiceContract,
     repo_root: Path,
@@ -851,19 +873,29 @@ def scaffold(
 ) -> list[str]:
     """Emit all four skeleton files under ``repo_root``; return action notes.
 
-    The ingest module, act, and test are written; the services.yaml entry is
-    appended (never overwriting other services). The empty package ``__init__``
-    files are created when the provider package is new.
+    The ingest module, act, and test are written; the service contract is written
+    as its own ENABLED-folder file ``.wheeler/services/<id>.yaml`` (the
+    folder-based, extraction-friendly home: one file per enabled service). The
+    empty package ``__init__`` files are created when the provider package is new.
+
+    Placing the contract in the per-id folder ENABLES the service directly (the
+    folder is the registry's source of truth for the enabled set). If instead the
+    service should SHIP with Wheeler, append ``render_services_entry(contract)`` to
+    the bundled catalog ``wheeler/integrations/services.default.yaml`` by hand.
     """
     notes: list[str] = []
     provider = contract.provider_slug
     tool = contract.tool_ident
 
-    # 1. services.yaml entry (append).
+    # 1. service contract -> the ENABLED folder, one file per service. This is
+    # the folder-based registry home: the folder is the source of truth for the
+    # enabled set, so writing the file here ENABLES the service. Do not overwrite
+    # an existing curated file unless --overwrite was passed.
     notes.append(
-        _append_service_entry(
-            repo_root / ".wheeler" / "services.yaml",
-            render_services_entry(contract),
+        _write(
+            repo_root / ".wheeler" / "services" / f"{contract.service_id}.yaml",
+            render_service_file(contract),
+            overwrite=overwrite,
             dry_run=dry_run,
         )
     )

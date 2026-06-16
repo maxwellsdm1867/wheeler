@@ -180,6 +180,7 @@ def test_no_em_dashes_in_any_rendered_file():
     c = _contract(mod)
     for text in (
         mod.render_services_entry(c),
+        mod.render_service_file(c),
         mod.render_ingest(c),
         mod.render_act(c),
         mod.render_test(c),
@@ -192,50 +193,66 @@ def test_no_em_dashes_in_any_rendered_file():
 # ---------------------------------------------------------------------------
 
 
+def test_service_file_is_a_bare_mapping():
+    mod = _load_module()
+    c = _contract(mod)
+    text = mod.render_service_file(c)
+    # Bare top-level mapping (no services: wrapper): the per-id folder shape.
+    assert "services:" not in text
+    assert text.startswith("id: myorg-paper-finder")
+    assert "act: /wh:myorg-paper-finder" in text
+    assert "raw_node: dataset" in text
+    assert "nodes: [Paper]" in text
+
+
 def test_scaffold_writes_all_four_pieces(tmp_path: Path):
     mod = _load_module()
     c = _contract(mod, provider="acme", tool="widget", raw_node="document")
     notes = mod.scaffold(c, tmp_path)
-    assert any("services.yaml" in n for n in notes)
+    # The contract lands as its own enabled-folder file (folder-based registry).
+    assert any(".wheeler/services/acme-widget.yaml" in n for n in notes)
 
-    services = tmp_path / ".wheeler" / "services.yaml"
+    service = tmp_path / ".wheeler" / "services" / "acme-widget.yaml"
     ingest = tmp_path / "wheeler" / "integrations" / "acme" / "widget.py"
     act = tmp_path / ".claude" / "commands" / "wh" / "acme-widget.md"
     test = tmp_path / "tests" / "integrations" / "acme" / "test_widget.py"
 
-    for path in (services, ingest, act, test):
+    for path in (service, ingest, act, test):
         assert path.exists(), f"missing {path}"
 
     # Provider package __init__ files created.
     assert (tmp_path / "wheeler" / "integrations" / "acme" / "__init__.py").exists()
     assert (tmp_path / "tests" / "integrations" / "acme" / "__init__.py").exists()
 
-    assert "services:" in services.read_text()
-    assert "id: acme-widget" in services.read_text()
+    # One file per service, bare mapping (no services: wrapper).
+    service_text = service.read_text()
+    assert service_text.startswith("id: acme-widget")
+    assert "services:" not in service_text
     assert '_RAW_NODE_TYPE = "document"' in ingest.read_text()
 
 
-def test_scaffold_services_entry_is_idempotent(tmp_path: Path):
+def test_scaffold_service_file_not_overwritten_without_flag(tmp_path: Path):
     mod = _load_module()
     c = _contract(mod, provider="acme", tool="widget")
     mod.scaffold(c, tmp_path)
-    first = (tmp_path / ".wheeler" / "services.yaml").read_text()
-    # Re-scaffold: the services entry must not be duplicated.
+    service = tmp_path / ".wheeler" / "services" / "acme-widget.yaml"
+    first = service.read_text()
+    # Re-scaffold: a curated enabled file is not clobbered without --overwrite.
     notes = mod.scaffold(c, tmp_path)
-    second = (tmp_path / ".wheeler" / "services.yaml").read_text()
-    assert first == second
-    assert second.count("id: acme-widget") == 1
-    assert any("entry exists" in n for n in notes)
+    assert service.read_text() == first
+    assert any("skip (exists)" in n for n in notes)
 
 
-def test_scaffold_appends_second_service_without_clobber(tmp_path: Path):
+def test_scaffold_each_service_is_its_own_file(tmp_path: Path):
     mod = _load_module()
     mod.scaffold(_contract(mod, provider="acme", tool="widget"), tmp_path)
     mod.scaffold(_contract(mod, provider="acme", tool="gadget"), tmp_path)
-    text = (tmp_path / ".wheeler" / "services.yaml").read_text()
-    assert "id: acme-widget" in text
-    assert "id: acme-gadget" in text
-    assert text.count("services:") == 1
+    folder = tmp_path / ".wheeler" / "services"
+    # One file per service: enabling/disabling one never touches the other.
+    assert (folder / "acme-widget.yaml").exists()
+    assert (folder / "acme-gadget.yaml").exists()
+    assert (folder / "acme-widget.yaml").read_text().startswith("id: acme-widget")
+    assert (folder / "acme-gadget.yaml").read_text().startswith("id: acme-gadget")
 
 
 def test_dry_run_writes_nothing(tmp_path: Path):
@@ -244,7 +261,7 @@ def test_dry_run_writes_nothing(tmp_path: Path):
     notes = mod.scaffold(c, tmp_path, dry_run=True)
     assert any("would" in n for n in notes)
     assert not (tmp_path / "wheeler" / "integrations" / "acme" / "widget.py").exists()
-    assert not (tmp_path / ".wheeler" / "services.yaml").exists()
+    assert not (tmp_path / ".wheeler" / "services" / "acme-widget.yaml").exists()
 
 
 def test_existing_file_not_overwritten_without_flag(tmp_path: Path):
