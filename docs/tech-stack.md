@@ -17,7 +17,7 @@
 | Component | Detail |
 |-----------|--------|
 | MCP servers | 5 (core, query, mutations, ops, legacy monolith). 50 tools total |
-| Slash commands | 22 acts in `.claude/commands/wh/*.md` |
+| Slash commands | 35 acts in `.claude/commands/wh/*.md` (incl. the `/wh:asta-*` adapters + `/wh:asta` router) |
 | Graph protocol | W3C PROV-DM (6 standard + 8 Wheeler semantic relationship types) |
 | Storage | Triple-write: Neo4j + knowledge/*.json + synthesis/*.md |
 | Search | 4-channel RRF: semantic + keyword + temporal + fulltext |
@@ -34,13 +34,24 @@
 | Change log | `models.ChangeEntry` (field-level diffs on mutations) |
 | Task contracts | `contracts.py` (handoff output validation) |
 
+## Service integrations
+
+| Component | Detail |
+|-----------|--------|
+| Package | `wheeler/integrations/` (provider-agnostic; Asta is instance #1) |
+| Adapters | Paper Finder, Semantic Scholar, Theorizer, Literature Reports (Ai2 Asta), routed by `/wh:asta` |
+| Model | Sandwich: marshal-in act -> tool CLI -> deterministic marshal-out ingest (the only `execute_tool` caller) |
+| Registry | `registry.py` reads the catalog `services.default.yaml` + the `.wheeler/services/` enabled folder (`wheeler services enable/disable`) |
+| Failsafe | Honest Execution status (`job_outcome` gate); a failed job is recorded failed with NO fabricated outputs; `wheeler integrate record-failure` |
+| Add a service | The `wheeler-service-creator` skill scaffolds the adapter (failsafe baked in) + a deterministic auditor; do not hand-write |
+
 ## Testing
 
 | Layer | Count | Notes |
 |-------|-------|-------|
-| Unit + integration | ~1370 | All pass, <10s |
+| Unit + integration | ~1929 | All pass, <35s |
 | E2E (live Neo4j) | ~20 | Skipped without Neo4j |
-| Surface parity | 1 | Monolith = split server tool sets |
+| Surface parity | retired | Split servers are canonical; the monolith parity test is skipped |
 | Pre-commit hook | API safety, test suite, lint |
 | Pre-push hook | Full test suite |
 

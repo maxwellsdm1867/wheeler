@@ -14,6 +14,7 @@ graph/*                <- models + config
 provenance.py          <- config + graph.driver (stability, invalidation)
   ^
 tools/graph_tools/*    <- graph + knowledge (lazy imports)
+integrations/*         <- config + lazy execute_tool (external-service adapters; Asta)
 mcp_core.py, mcp_query.py, mcp_mutations.py, mcp_ops.py   <- four split MCP servers (canonical surface)
 mcp_server.py          <- DEPRECATED legacy monolith (scheduled for removal)
 ```
@@ -28,6 +29,7 @@ mcp_server.py          <- DEPRECATED legacy monolith (scheduled for removal)
 - `workspace.py` -- File discovery + context formatting for system prompts
 - `depscanner.py` -- AST-based dependency scanner (imports, data files)
 - `request_log.py` -- Append-only JSONL request logging
+- `integrations/` -- external-service adapters (Asta first). The marshal-out ingest modules are the only `execute_tool` callers here (lazy, function-local). To add a NEW external service, use the `wheeler-service-creator` skill (it scaffolds the adapter with the external-call failsafe baked in and an auditor), do NOT hand-write one. See `integrations/asta/CLAUDE.md`.
 
 ## Config (`wheeler.yaml`)
 

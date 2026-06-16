@@ -197,6 +197,13 @@ You can also just describe your task and Wheeler will auto-route to the right co
 | `/wh:status` | Check investigation progress |
 | `/wh:dream` | Consolidate the graph (promote tiers, link orphans, detect duplicates) |
 | `/wh:compile` | Generate synthesis documents from the graph |
+| `/wh:asta` | Route a research task to an external Asta service (literature, citations, theories) and ingest the result with provenance |
+
+### External research services (Asta)
+
+Wheeler can pull external research tools into the graph as provenance-tracked nodes. The AllenAI [Asta](https://github.com/allenai/asta-plugins) services (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) ship enabled: install the `asta` CLI and run `asta auth login`, then `/wh:asta` routes a task to the right one (or use `/wh:asta-lit`, `/wh:asta-scholar`, `/wh:asta-theorize`, `/wh:asta-report` directly). Each run is recorded as one Execution with its inputs and outputs wired into the graph; a failed call is recorded as failed rather than silently lost. Curate which services are enabled with `wheeler services list` / `wheeler services enable <id>` / `wheeler services disable <id>`.
+
+To integrate a NEW external tool (yours or a third party), use the `wheeler-service-creator` skill: it scaffolds the adapter, bakes in the provenance and failsafe wiring, and audits it before it lands. Do not hand-write an adapter.
 
 ### Example: Ingesting an existing project
 
