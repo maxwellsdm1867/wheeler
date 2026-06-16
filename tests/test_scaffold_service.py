@@ -292,3 +292,113 @@ def test_main_dry_run_smoke(tmp_path: Path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "would" in out
+
+
+# ---------------------------------------------------------------------------
+# External-call failsafe is baked into the generated ingest (both modes)
+# ---------------------------------------------------------------------------
+
+
+def test_json_ingest_bakes_in_the_failsafe():
+    mod = _load_module()
+    text = mod.render_ingest(_contract(mod, provider="acme", tool="widget"))
+    import ast
+
+    ast.parse(text)  # the generated skeleton compiles
+    assert "job_outcome(doc)" in text  # the gate
+    assert 'if not outcome.ok:' in text
+    assert "mark_execution_failed" in text  # honest status on a bad run
+    assert "mark_execution_completed" in text  # reused-retry reset
+    assert "reused = bool(exec_id)" in text
+    assert '"status": "completed" if outcome.ok else "failed"' in text
+    # partial-ingest guard
+    assert "ingest-error" in text
+    assert "report.failed = True" in text
+
+
+def test_act_records_failure_on_nonzero_exit():
+    mod = _load_module()
+    text = mod.render_act(_contract(mod, provider="acme", tool="widget"))
+    assert "wheeler integrate record-failure widget" in text
+    assert "must be visible, not absent" in text
+
+
+# ---------------------------------------------------------------------------
+# Markdown-deliverable mode (--raw-format md)
+# ---------------------------------------------------------------------------
+
+
+def test_md_mode_emits_a_markdown_ingest_skeleton():
+    mod = _load_module()
+    c = _contract(mod, provider="acme", tool="report-gen", raw_format="md",
+                  nodes=["Document", "Paper"])
+    # md auto-defaults raw_node to document (a report is synthesized writing).
+    assert c.raw_node == "document"
+    assert c.is_markdown is True
+    text = mod.render_ingest(c)
+    import ast
+
+    ast.parse(text)
+    # The md ingest takes the report TEXT, not a doc dict, and registers a Document.
+    assert "report_markdown: str" in text
+    assert "ReportRecord" in text
+    assert "register_output_artifact" in text
+    assert "scholar_qa" in text  # points at the worked example
+    # The failsafe is present in md mode too (partial-ingest guard + reset).
+    assert "mark_execution_failed" in text
+    assert "mark_execution_completed" in text
+
+
+def test_invalid_raw_format_rejected():
+    mod = _load_module()
+    with pytest.raises(ValueError):
+        _contract(mod, raw_format="xml")
+
+
+# ---------------------------------------------------------------------------
+# id / act overrides and the shipped-vs-folder registry target
+# ---------------------------------------------------------------------------
+
+
+def test_id_and_act_overrides():
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="scholar-qa",
+                  id_override="scholar-qa", act_override="asta-report")
+    assert c.service_id == "scholar-qa"  # bare id, not asta-scholar-qa
+    assert c.act_slug == "asta-report"
+    assert c.act_name == "wh:asta-report"
+
+
+def test_act_override_drives_the_act_filename(tmp_path: Path):
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="scholar-qa",
+                  act_override="asta-report")
+    mod.scaffold(c, tmp_path)
+    assert (tmp_path / ".claude" / "commands" / "wh" / "asta-report.md").exists()
+    # NOT the mechanical asta-scholar-qa.md
+    assert not (
+        tmp_path / ".claude" / "commands" / "wh" / "asta-scholar-qa.md"
+    ).exists()
+
+
+def test_shipped_appends_to_the_bundled_catalog(tmp_path: Path):
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="newsvc", shipped=True)
+    mod.scaffold(c, tmp_path)
+    catalog = tmp_path / "wheeler" / "integrations" / "services.default.yaml"
+    assert catalog.exists()
+    text = catalog.read_text()
+    assert text.startswith("services:")
+    assert "id: asta-newsvc" in text
+    # The enabled-folder file is NOT written for a shipped service.
+    assert not (tmp_path / ".wheeler" / "services" / "asta-newsvc.yaml").exists()
+
+
+def test_default_is_folder_not_catalog(tmp_path: Path):
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="localsvc")  # shipped defaults False
+    mod.scaffold(c, tmp_path)
+    assert (tmp_path / ".wheeler" / "services" / "asta-localsvc.yaml").exists()
+    assert not (
+        tmp_path / "wheeler" / "integrations" / "services.default.yaml"
+    ).exists()

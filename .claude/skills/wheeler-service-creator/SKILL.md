@@ -27,6 +27,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - AskUserQuestion
 ---
 
 # Wheeler service creator
@@ -207,26 +208,38 @@ There is a bundled scaffolder, `assets/scaffold_service.py`, that writes all fou
 skeleton files deterministically from a contract. Prefer it: hand-copying the
 boilerplate from the templates is slow and easy to get subtly wrong (a dropped
 provenance edge, a missing invariant), and the scaffolder bakes in the
-load-bearing structure (the lazy `execute_tool` import, both provenance helpers,
-the hermetic-teardown test) so you only have to fill the one thing it cannot
-know: the parser.
+load-bearing structure so you only have to fill the one thing it cannot know: the
+parser. What it bakes in: the lazy `execute_tool` import, BOTH provenance sides,
+the external-call FAILSAFE (the `job_outcome` gate, honest Execution status,
+`mark_execution_failed` on a bad run, `mark_execution_completed` on a reused
+retry, the partial-ingest try/except), the record-failure act step, and the
+per-run-uuid hermetic-teardown test.
 
 **Fast path (recommended).** Gather the contract (Step 1), then run the
 scaffolder once. It is stdlib-only, writes nothing it cannot, and will not
-overwrite an existing file unless you pass `--overwrite`. It writes the contract
-as its own enabled-folder file `.wheeler/services/<id>.yaml` (which ENABLES the
-service); if the service should instead SHIP with Wheeler, append it to the
-bundled catalog `services.default.yaml` by hand afterwards:
+overwrite an existing file unless you pass `--overwrite`. By default it writes the
+contract as its own enabled-folder file `.wheeler/services/<id>.yaml` (which
+ENABLES the service); `--shipped` appends it to the bundled catalog
+`services.default.yaml` instead (ships with Wheeler, enabled-by-default):
 
 ```bash
 # from the repo root; use plain `python` if ./.venv is absent
 ./.venv/bin/python .claude/skills/wheeler-service-creator/assets/scaffold_service.py \
   --provider <provider> --tool <tool> --name "<Name>" \
   --description "<one line>" --raw-node <document|dataset> \
+  --raw-format <json|md> \
   --nodes "<Comma,Separated,NodeTypes>" \
   --cli '<the exact CLI the act runs, with -o /tmp/<tool>.json>' \
-  --available "<probe command>" --cost "<cost string>" --when "<router phrase>"
+  --available "<probe command>" --cost "<cost string>" --when "<router phrase>" \
+  [--id <registry-id>] [--act <act-slug>] [--shipped]
 ```
+
+Flags worth knowing: `--raw-format md` emits a MARKDOWN-deliverable skeleton (the
+ingest reads the report text and registers a Document, modeled on `scholar_qa.py`)
+instead of the JSON skeleton; `--id` / `--act` override the mechanical
+`<provider>-<tool>` derivation (use them to avoid a collision, e.g.
+`--act asta-report` so it does not clash with `asta-scholar`); `--shipped`
+registers in the bundled catalog.
 
 Add `--dry-run` first to preview the paths it will touch. It prints one line per
 file (wrote / appended / skipped). Then read each emitted file, confirm it
@@ -240,10 +253,48 @@ the skeleton would not fit, write the four files by hand from the templates. The
 per-step sections below are the spec either way: they describe exactly what each
 file must contain, which is also what the scaffolder emits.
 
-## Step 1: gather the contract
+## Step 1: understand the codebase, then gather the contract
 
-Interview the scientist, or read the tool's `--help` / agent card. You need a
-small contract dict. Ask only for what you cannot infer; default the rest.
+Do NOT scaffold blind. First UNDERSTAND, then ASK, then generate.
+
+**Understand the codebase.** Read the template adapters and the load-bearing
+invariants (the files under "The template you are copying", plus
+`wheeler/integrations/asta/CLAUDE.md` and `docs/asta-engine-spec.md`) so you know
+the conventions a new adapter must follow: the three-part provenance model, the
+Paper reference-entity rule, the external-call failsafe (honest Execution status,
+no fabricated outputs on a failed job), the per-run-uuid hermetic teardown. The
+scaffolder bakes these in, but you must understand them to fill the parser and to
+answer the scientist's questions correctly.
+
+**Ask the scientist the critical design / integration decisions.** A contract has
+genuine forks that only the scientist can settle, and a wrong choice means wrong
+skeletons. Where you do not KNOW or the choice is load-bearing, ASK (use
+AskUserQuestion for a clean multiple-choice; do not guess silently). The decisions
+worth asking about:
+
+- **What is the deliverable?** One JSON `-o` artifact (an A2A Task or a REST
+  response) or a synthesized MARKDOWN document (a written report, like the Asta
+  literature report)? This sets `--raw-format json|md` and changes the whole
+  ingest shape. If unsure, ask, or read one real run.
+- **`raw_node`: document or dataset?** Synthesized WRITING (a report, theories)
+  is a `document`; structured reference RECORDS (papers, rows) is a `dataset`.
+  Never call everything a Dataset. (md deliverables default to document.)
+- **What node types does the output bucket into**, and what are the SEMANTIC edges
+  to the existing graph (SUPPORTS / CONTRADICTS / CITES / RELEVANT_TO)? This is the
+  part-3 wiring the act will do; the scientist owns the judgment.
+- **What graph nodes are the USED inputs** (the marshal-in synthesizes the request
+  FROM them: the question, seeded Findings, dataset paths)?
+- **Cost / auth**: is it paid or slow (so the router must warn and confirm)? does
+  it need a login before any test run?
+- **Ships with Wheeler or project-local?** (`--shipped` -> the bundled catalog;
+  else a `.wheeler/services/<id>.yaml` enabled file.)
+- **id / act name**: does the mechanical `<provider>-<tool>` collide with an
+  existing act or read awkwardly? (e.g. `asta-scholar-qa` collides with
+  `asta-scholar`; use `--act asta-report`.) Offer a cleaner name.
+
+Write the resolved contract back to the scientist in one block and confirm it
+before generating. Then gather the rest (interview, or read the tool's `--help` /
+agent card); ask only for what you cannot infer, default the rest.
 
 - **provider**: the family (e.g. `asta`, `s2`, `myorg`). Lower-case, slug-safe.
 - **tool**: the specific tool (e.g. `paper-finder`, `theorizer`, `datavoyager`).
@@ -502,27 +553,54 @@ NEITHER making a live tool call:
      (identical counts, `created==0`, no duplicate USED / WAS_GENERATED_BY
      edges on the second pass).
 
-## Step 7: hand off to the human
+## Step 7: AUDIT the filled adapter (mechanical checks before review)
+
+Before the human review, run the bundled AUDITOR. It is the mechanical half of
+the adversarial review, codified so every new adapter is held to the same bar:
+data safety (the teardown deletes ONLY by per-run e2e_tag, never by service /
+corpus_id; run-unique corpus_ids), provenance (both sides wired, the Paper
+reference-entity rule), the external-call failsafe (the `job_outcome` gate, honest
+status, `mark_execution_failed`, the partial-ingest guard), and the house
+conventions (no anthropic import, no em dashes, the lazy `execute_tool` import,
+the act's semantic-wiring + record-failure steps, a complete registry contract).
+
+```bash
+./.venv/bin/python .claude/skills/wheeler-service-creator/assets/audit_service.py \
+  --provider <provider> --tool <tool> --verbose
+```
+
+It exits non-zero if any BLOCKER fired. Fix every BLOCKER and look at each WARN
+before landing. The audit is deterministic and conservative: a PASS is necessary,
+not sufficient (it does not replace the live e2e or the human review), but it
+catches the mistakes that recur (an unsafe teardown, a missing failsafe gate, a
+Paper wired `WAS_GENERATED_BY`, an em dash, an incomplete contract). Run it again
+after any fix.
+
+## Step 8: hand off to the human
 
 You scaffolded the structure; the parser is the one thing only a real output can
 teach. Tell the scientist, in this order:
 
 1. **Capture one real output**: run the tool once for real
-   (`<cli_invocation>`), save the `-o` JSON, and drop a trimmed copy under
-   `tests/integrations/<provider>/fixtures/<tool>_real_sample.json`.
+   (`<cli_invocation>`), save the `-o` JSON (or the markdown report, for a `md`
+   deliverable), and drop a trimmed copy under
+   `tests/integrations/<provider>/fixtures/`.
 2. **Fill the parser**: write `parse_<tool>` against that captured shape, and
    fill the fixture path + expected-count constants in the test. The skeleton's
-   defensive helpers and invariants are already in place; only the shape-walk is
-   missing.
-3. **Run the tests**: `./.venv/bin/python -m pytest
+   defensive helpers, the failsafe, and the invariants are already in place; only
+   the shape-walk is missing. For a paper-producing e2e, derive RUN-UNIQUE
+   synthetic corpus_ids from the per-run uuid (see `test_scholar_qa.py`) so the
+   test can never dedupe into and then delete a production Paper.
+3. **Run the audit** (Step 7) and fix every BLOCKER.
+4. **Run the tests**: `./.venv/bin/python -m pytest
    tests/integrations/<provider>/test_<tool>.py -q` (the e2e class needs a live
    Neo4j; it skips otherwise).
-4. **Adversarial review**: run the repo's adversarial-review workflow on the
+5. **Adversarial review**: run the repo's adversarial-review workflow on the
    adapter (a fresh reviewer agent re-checks every claim: provenance edges, the
-   Paper reference-entity rule, the `--used` input provenance, idempotency, the
-   hermetic teardown) before landing. Adding a service is then: run the creator
-   -> fill the parser -> review -> land.
+   Paper reference-entity rule, the `--used` input provenance, the failsafe,
+   idempotency, the hermetic teardown) before landing. Adding a service is then:
+   run the creator -> fill the parser -> audit -> review -> land.
 
 Report back the four files you created (the `.wheeler/services/<id>.yaml` contract
 or catalog entry, the ingest skeleton, the act, the test stub) plus the CLI verb
-wiring, and the exact to-do list above. Never use em dashes.
+wiring, the audit result, and the exact to-do list above. Never use em dashes.
