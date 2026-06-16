@@ -378,6 +378,59 @@ Every MCP call goes through the `@_logged` decorator in `mcp_shared.py`. The dec
 
 ---
 
+## Service Integrations (v0.9.12)
+
+`wheeler/integrations/` turns external research tools into graph-native, provenance-tracked nodes. It is NOT an agent framework or a workflow engine: Claude Code is the orchestrator, the external tool owns its own auth and retries, and the integration is only the plumbing that shapes the request from the graph and writes the result back. AllenAI Asta (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) is instance #1; the layer is provider-agnostic.
+
+### The sandwich
+
+Every call has three steps. The two slices are graph-aware; the meat owns failure.
+
+```
+marshal-in (act prose)  ->  the tool CLI  ->  marshal-out (deterministic Python)
+shapes the request           shells out         writes the graph via execute_tool
+FROM graph context           owns auth/retry    (the only graph writer)
+```
+
+- **Marshal-in** is the `/wh:<provider>-<tool>` act (a system prompt, judgment): it reads graph context (`search_context`, `query_*`), shapes the tool input, and passes the graph node ids the request was built FROM as `--used`. This is a skill, not Python.
+- **Transport** (`integrations/asta/transport.py`) is the single subprocess boundary: it runs the CLI with a timeout and returns the `-o` artifact, or `None` on any failure (non-zero exit, timeout, missing/empty/unparseable output). A failed run writes nothing. Zero graph dependency, no LLM-provider SDK.
+- **Marshal-out** (one ingest module per tool, e.g. `theorizer.py`, `scholar_qa.py`) is deterministic Python and the ONLY caller of `execute_tool`, so every write routes through the triple-write + receipt + trace-id + embedding wiring. Shared helpers live in `integrations/asta/_marshal.py`.
+
+### The four Asta adapters
+
+| Service | Act | Raw node | Output buckets into |
+|---------|-----|----------|---------------------|
+| Paper Finder | `/wh:asta-lit` | Dataset (records) | Paper (corpus_id dedupe), CITES citation contexts |
+| Semantic Scholar | `/wh:asta-scholar` | Dataset (records) | Paper, the CITES citation graph, snippet Findings |
+| Theorizer | `/wh:asta-theorize` | Document (writing) | theory Finding, law Hypothesis (CONTAINS), SUPPORTS/CONTRADICTS evidence Papers |
+| Literature Reports | `/wh:asta-report` | Document (writing) | the report Document, cited Papers (CITES) |
+
+Literature Reports is the first MARKDOWN-deliverable service: its output is a synthesized review, not a single JSON artifact, so the ingest reads the report text and registers a Document rather than parsing a `doc` dict.
+
+### Three-part provenance
+
+A service call is ONE Execution, and its wiring has three parts:
+
+1. **Structural input** (`Execution -[USED]-> input`): each graph node the marshal-in synthesized into the request (the question, seeded Findings). Mechanical (`_record_used` from `--used`).
+2. **Structural output** (`output -[WAS_GENERATED_BY]-> Execution`): each node the parser produced. Mechanical. EXCEPTION: Papers are reference entities (per `/wh:close`), so they carry NO `WAS_GENERATED_BY`; a paper the knowledge was derived from is an input (`Execution -[USED]-> paper`).
+3. **Semantic wiring** (`SUPPORTS`/`CONTRADICTS`/`CITES`/`RELEVANT_TO` connecting NEW outputs to the EXISTING graph): JUDGMENT, so it lives in the act post-ingest (`link_nodes`), not the mechanical parser. The parser only wires edges KNOWN FROM THE SERVICE OUTPUT (the Theorizer states which papers support its own laws).
+
+The chain is transitive off the one Execution: `output -[WAS_GENERATED_BY]-> Execution -[USED]-> input`. Runs anchor to their Plan (`Execution -[AROSE_FROM]-> Plan`).
+
+### External-call failsafe
+
+Every external job is one Execution whose status must be TRUTHFUL. `job_outcome(doc)` is the gate: an A2A Task is success only when `status.state == "completed"` (failed/canceled/working are not); a non-Task result dict is ok (the transport already rejected the empty cases). On a not-ok job the ingest marks the Execution `failed` (with the reason in `custom_error`), saves the raw artifact for debugging, records USED inputs, and returns early with NO fabricated outputs, so a failed run can never masquerade as a clean one. The bucketing is wrapped so a partial-ingest exception marks the run failed too; a successful retry that reuses a prior failed Execution resets it to completed. When the CLI returns no artifact at all, the act calls `wheeler integrate record-failure` so the attempt is still a visible, queryable failed Execution. There is no destructive rollback (provenance stays reachable; `graph_consistency_check` reconciles drift).
+
+### The service registry
+
+A declarative manifest, read by `integrations/registry.py`, so commands never hardcode providers. The CATALOG (`integrations/services.default.yaml`, package data) lists every available service; the ENABLED set is the folder `.wheeler/services/` (one `<id>.yaml` per enabled service, curated via `wheeler services enable/disable`), falling back to the catalog. `available_services()` filters the enabled set by each contract's availability probe (e.g. `asta auth status`). `/wh:asta` reads this and routes by `when`/`description`, warning on `cost`. Commands stay provider-agnostic via an optional `--service` flag.
+
+### The wheeler-service-creator skill
+
+`.claude/skills/wheeler-service-creator/` scaffolds a new adapter from a contract: the registry entry, the marshal-out ingest skeleton (with the failsafe baked in), the marshal-in act (with the semantic-wiring + record-failure steps), and a parse-unit + live-Neo4j test stub. Its Step 1 reads the codebase and asks the scientist the genuine design decisions (deliverable shape, node mapping, USED inputs, naming) rather than scaffolding blind. A bundled deterministic AUDITOR (`assets/audit_service.py`) is the mechanical half of the adversarial review: it checks data safety (the e2e teardown deletes only by per-run `e2e_tag`, never by service/corpus_id; run-unique corpus_ids), two-sided provenance + the Paper reference-entity rule, the failsafe, and the house conventions, exiting non-zero on any blocker. Adding a service is then: run the creator -> fill the parser -> audit -> review -> land. Literature Reports was the first adapter built this way (dogfooding the skill surfaced the v0.9.12 refinements).
+
+---
+
 ## How the Layers Connect
 
 ### Triple-Write: Act creates knowledge
@@ -441,6 +494,9 @@ validation/citations   <- config + graph.schema + graph.provenance (lazy)
 validation/ledger      <- config + validation.citations + tools (lazy)
   ^
 tools/graph_tools/*    <- graph + knowledge (lazy imports)
+  ^
+integrations/*         <- config + a lazy execute_tool (marshal-out chokepoint,
+                          like validation/ledger; transport/schemas have no graph dep)
   ^
 mcp_server.py          <- everything
 tools/cli.py           <- everything
@@ -875,8 +931,24 @@ wheeler/
 |       +-- _common.py           # _now() timestamp helper
 |       +-- mutations.py         # add_*, link_nodes, unlink_nodes, delete_node, set_tier
 |       +-- queries.py           # query_*, graph_gaps
++-- integrations/                # External-service adapters (Asta first)
+|   +-- registry.py              # ServiceContract loader (catalog + .wheeler/services/ folder)
+|   +-- services.default.yaml    # Bundled service CATALOG
+|   +-- services_cli.py          # `wheeler services list/enable/disable`
+|   +-- asta/
+|       +-- transport.py         # The subprocess boundary (run the CLI, return -o or None)
+|       +-- _marshal.py          # Shared marshal-out helpers: ImportReport, link_once,
+|       |                        #   _record_used, job_outcome, mark_execution_failed/completed
+|       +-- artifacts.py         # register_output_artifact (durable raw store + node)
+|       +-- schemas.py           # parse_paper_finder (LiteratureSearchResult)
+|       +-- ingest.py            # Paper Finder marshal-out
+|       +-- semantic_scholar.py  # Semantic Scholar marshal-out (get/search/citations/snippet)
+|       +-- theorizer.py         # Theorizer marshal-out (A2A Task -> theory subgraph)
+|       +-- scholar_qa.py        # Literature Reports marshal-out (markdown -> Document + CITES)
+|       +-- cli.py               # `wheeler integrate ingest|record-failure`
 
-.claude/commands/wh/*.md         # Slash commands (25 acts)
+.claude/commands/wh/*.md         # Slash commands (acts, incl. /wh:asta-* + /wh:asta router)
+.claude/skills/                  # wheeler-service-creator (scaffold + audit an adapter), brief
 bin/wh                           # Headless task runner
 wheeler.yaml                     # Project config
 .mcp.json                        # MCP server definitions (1 monolith + 4 split + neo4j)

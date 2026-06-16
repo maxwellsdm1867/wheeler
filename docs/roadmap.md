@@ -76,8 +76,12 @@ Build the adversarial and task-completion test suite flagged in PROJECT-SPEC.
 
 - **Dataset metadata enrichment** (issue #17): structured schema, source,
   parent_dataset fields on add_dataset
-- **Asta integration**: AllenAI agent-baselines using Wheeler's graph
-  (docs/asta-integration.md, 850-line plan)
+- ~~**Asta integration**~~ **SHIPPED v0.9.12**: AllenAI Asta tools (Paper Finder,
+  Semantic Scholar, Theorizer, Literature Reports) marshal into the graph via
+  `wheeler/integrations/`, with a service registry, the external-call failsafe,
+  and the `wheeler-service-creator` skill (scaffold + audit a new adapter). See
+  ARCHITECTURE.md "Service Integrations" and docs/asta-engine-spec.md. (The older
+  agent-baselines bridge in docs/asta-integration.md remains a separate future idea.)
 - **Domain skills**: electrophysiology, statistics, or other domain-specific
   extensions
 - **Metrics dashboard**: aggregated per-tool latency, error rates, provenance

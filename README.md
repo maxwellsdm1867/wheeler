@@ -188,6 +188,12 @@ The graph is an index over files, not a document store. Each node stores an ID, 
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module dependency map, PROV schema, MCP tool listing, hardening patterns, design decisions.
 
+### Service integrations
+
+External research tools land in the graph as provenance-tracked nodes. The model is a sandwich: an act reads graph context and shapes the request, the tool's own CLI runs (owning its auth and retries), and one deterministic Python ingest writes the result back through the triple-write. Every call is one Execution whose status is truthful: a failed or incomplete job is recorded as failed with no fabricated outputs (the external-call failsafe), never masquerading as a clean run. Four [Ai2 Asta](https://github.com/allenai/asta-plugins) services ship today (Paper Finder, Semantic Scholar, Theorizer, Literature Reports), routed by `/wh:asta`.
+
+Adding a new service is its own loop: the **`wheeler-service-creator`** skill scaffolds the adapter (registry contract, ingest, act, and test) with the failsafe baked in, then a bundled auditor checks data-safety, provenance, and conventions before it lands. See ARCHITECTURE.md "Service Integrations".
+
 ---
 
 ## What's New
