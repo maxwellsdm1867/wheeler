@@ -49,7 +49,15 @@ none are enabled, or asta is not authenticated: `asta auth status`) and stop.
 ## Routing procedure
 
 1. Load the available services from the registry (above).
-2. If `$ARGUMENTS` is non-empty, treat it as the intent and skip to step 4.
+2. If `$ARGUMENTS` DIRECTLY NAMES an available service (its `id`, its `name`, or an
+   obvious alias: "paper finder", "semantic scholar", "theorizer", "literature
+   report" / "review"), the user has already chosen. That IS the service: skip the
+   intent-matching and disambiguation entirely and go straight to the cost check
+   (step 5) and dispatch (step 6). This is the easy path, you just say which
+   service you want, which is exactly how a plan step that already knows should
+   invoke it (for example `/wh:asta paper-finder` or `/wh:asta theorizer`).
+2b. Otherwise, if `$ARGUMENTS` is a non-empty INTENT (a task, not a service name),
+   treat it as the intent and go to step 4 to match it to a service.
 3. If `$ARGUMENTS` is empty: do NOT read the graph yet, and do NOT guess. ASK the
    user what they want to do FIRST, with AskUserQuestion: offer 2-4 concrete
    options drawn from the AVAILABLE services (for example "find papers on a
@@ -62,13 +70,24 @@ none are enabled, or asta is not authenticated: `asta auth status`) and stop.
    or which question this serves. This is optional: skip it for an unambiguous
    intent, use it when the request needs grounding. The chosen service's own act
    reads the graph again when it needs context, so do not over-read here.
-4. Match the intent to one of the AVAILABLE services using its `when` and
-   `description` fields. Do not offer a service that is not in the list.
+4. Match the intent to the AVAILABLE services using their `when` and `description`
+   fields. If EXACTLY ONE service clearly fits, choose it. If MORE THAN ONE could
+   fit, or the intent is broad or ambiguous (for example "look into X" could be
+   Paper Finder, Semantic Scholar, or a Literature Report), use AskUserQuestion to
+   help the user nail down the right one: offer the 2-4 candidate services as
+   options, each labeled with its one-line `description` and its `cost`, so the
+   user picks deliberately. Never silently guess between comparable services, and
+   never offer a service that is not in the list.
 5. Warn on `cost`. Before dispatching any service whose `cost` is not "free" or
    "cheap" (for example Theorizer at about 7 dollars, about 20 minutes), confirm
-   cost and time with the user. For free or cheap services, dispatch directly.
-6. Invoke the chosen service's `act` via the Skill tool, prefixed with a
-   one-line explanation of the routing choice.
+   cost and time with the user (AskUserQuestion is a good way to confirm a paid
+   run). For free or cheap services, dispatch directly.
+6. Invoke the chosen service's `act` via the Skill tool. PASS the intent AND the
+   link target so the run anchors to the right node: if the request carries a
+   `PL-` plan id (for example dispatched from `/wh:plan` or `/wh:execute`) or a
+   `Q-` question id, forward it so the service uses it as `--link-to` and its
+   Execution links `AROSE_FROM` that Plan or `RELEVANT_TO` that Question. Prefix
+   the dispatch with a one-line explanation of the routing choice.
 7. If the intent is not served by any available service (for example
    "analyze my CSV" when DataVoyager is not built or not authenticated), say so
    plainly: name the missing capability, do not pretend to run it, and offer the
