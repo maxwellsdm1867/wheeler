@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.14-blue" alt="v0.9.14">
+  <img src="https://img.shields.io/badge/v0.9.15-blue" alt="v0.9.15">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -199,6 +199,16 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.9.15</b> (2026-06-15): Asta router, three ways in</summary>
+
+- **Name a service, give an intent, or be asked**: `/wh:asta` now takes three routes in: name a service directly (`/wh:asta paper-finder`) and it dispatches straightaway, hand it a task and it matches the right adapter, or invoke it bare and it asks what you want before doing anything.
+- **It asks to nail down the right service**: when more than one adapter could fit a request, the router uses AskUserQuestion to offer the candidate services (each labeled with its description and cost) instead of silently guessing.
+- **Intent first, graph second**: with no intent it asks you before touching the graph (the graph cannot tell it what you want), then reads the graph only once it knows the task, so it never grounds on the wrong thing.
+- **Plan and execute route through it**: a `/wh:plan` or `/wh:execute` step can call the router and forward its plan id, so the dispatched run anchors `AROSE_FROM` the right plan, and the service descriptions it routes on now match the shipped adapters exactly.
+
+</details>
+
+<details>
 <summary><b>v0.9.14</b> (2026-06-15): the update badge actually clears</summary>
 
 - **The update badge reliably clears**: `/wh:update` now updates every install the badge checker tracks (the SessionStart hook probes `~/.local/bin/wheeler` and the uv-tools path, not just the session's install), then clears the cache, so the `⬆ /wh:update` indicator disappears after updating and stays gone on a multi-install machine.
@@ -213,17 +223,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **`/wh:update` resolves split-server installs**: the update flow looked for the obsolete single `wheeler` MCP key and failed on modern installs; it now resolves any Wheeler MCP server (split or legacy), preferring the install serving the session.
 - **The update badge clears after updating**: `wheeler update` reliably drops the `⬆ /wh:update` statusline badge by clearing the version-check cache in a way that works for every install type, including uv tool.
 - **Service integrations documented**: ARCHITECTURE.md, the README, CLAUDE.md, the tech stack, and the getting-started guide now cover the Asta adapters, the external-call failsafe, and how to add a new service with the `wheeler-service-creator` skill.
-
-</details>
-
-<details>
-<summary><b>v0.9.12</b> (2026-06-15): Asta integration + external-call failsafe</summary>
-
-- **Asta research tools land in the graph**: four adapters (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) marshal output from [Ai2's Asta toolkit](https://github.com/allenai/asta-plugins) into the knowledge graph as typed, deduplicated, provenance-tracked nodes, driven by a `/wh:asta` router and one deterministic `wheeler integrate` verb.
-- **External-call failsafe**: every external-service call is one Execution whose status is truthful; a failed or incomplete job is recorded as failed with no fabricated outputs, and `wheeler integrate record-failure` makes a no-artifact attempt visible rather than silently lost.
-- **Three-part provenance**: each run records the graph nodes it `USED`, the nodes it `WAS_GENERATED_BY`, and the semantic edges (`SUPPORTS`/`CONTRADICTS`/`CITES`/`RELEVANT_TO`) wiring new results into the existing graph, and anchors to its Plan.
-- **Build adapters from a contract**: a swappable service registry (`wheeler services enable/disable`) plus the `wheeler-service-creator` skill that scaffolds a new adapter, bakes in the failsafe, and ships a deterministic auditor that checks data-safety, provenance, and conventions before it lands.
-- **Test suite at 1929** (was 1734 in v0.9.11).
 
 </details>
 
