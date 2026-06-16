@@ -1,30 +1,23 @@
 ---
 name: wh:asta
-description: Route a research task to the right Asta service (Paper Finder, Semantic Scholar, Theorizer, or DataVoyager) and suggest the most useful next Asta action from the graph state. Use for "use asta", "which asta tool", "find/look up/theorize/analyze with asta", or when unsure which Asta adapter fits.
-argument-hint: "[describe your task, or leave blank for a graph-aware suggestion]"
+description: Route a research task to the right Asta service (Paper Finder, Semantic Scholar, Theorizer, or DataVoyager) and dispatch its act. Use for "use asta", "which asta tool", "find/look up/theorize/analyze with asta", or when unsure which Asta adapter fits.
+argument-hint: "[describe your task, or leave blank to be asked]"
 allowed-tools:
   - Read
   - AskUserQuestion
   - Skill
   - Bash(asta auth status)
-  - Bash(wheeler graph status)
   - Bash(./.venv/bin/python -c *)
   - Bash(python -c *)
-  - mcp__wheeler_core__graph_context
-  - mcp__wheeler_core__search_context
-  - mcp__wheeler_core__graph_gaps
-  - mcp__wheeler_query__query_papers
-  - mcp__wheeler_query__query_open_questions
-  - mcp__wheeler_query__query_hypotheses
-  - mcp__wheeler_query__query_findings
 ---
 
 # Asta / Service Router
 
 Pick the right service for the user's research intent and dispatch the matching
 `/wh:*` act. The available services come from the registry (a declarative
-manifest), not a hardcoded table. Read the graph first, then suggest. Confirm
-before anything paid.
+manifest), not a hardcoded table. If the user gave no intent, ASK them what they
+want first: do not read the graph (it cannot tell you what the user wants to do).
+Confirm before anything paid.
 
 ## Read the registry first
 
@@ -50,10 +43,14 @@ none are enabled, or asta is not authenticated: `asta auth status`) and stop.
 
 1. Load the available services from the registry (above).
 2. If `$ARGUMENTS` is non-empty, treat it as the intent and skip to step 4.
-3. If `$ARGUMENTS` is empty: read the graph (`graph_context`, `graph_gaps`) and
-   propose the highest-value next action from the graph state (see Graph-aware
-   suggestions), then confirm with the user via AskUserQuestion (offer 2-4
-   concrete options drawn from the available services).
+3. If `$ARGUMENTS` is empty: do NOT read the graph, and do NOT guess. ASK the user
+   what they want to do FIRST, with AskUserQuestion: offer 2-4 concrete options
+   drawn from the AVAILABLE services (for example "find papers on a topic",
+   "look up a specific paper or its citations", "generate theories", "write a
+   literature review"), plus the always-present "Other" for a free-text intent.
+   Their answer IS the intent. The graph cannot tell you what the user wants, so
+   asking it first is wasted work: the chosen service's own act reads the graph
+   when it actually needs context.
 4. Match the intent to one of the AVAILABLE services using its `when` and
    `description` fields. Do not offer a service that is not in the list.
 5. Warn on `cost`. Before dispatching any service whose `cost` is not "free" or
@@ -66,26 +63,6 @@ none are enabled, or asta is not authenticated: `asta auth status`) and stop.
    plainly: name the missing capability, do not pretend to run it, and offer the
    closest available service (literature discovery often helps) or point the
    user to `/wh:start` for general Wheeler routing.
-
-## Graph-aware suggestions
-
-Use the graph state to suggest the highest-value next action, not just a keyword
-match. Read `graph_gaps` and `search_context`, then look for these patterns and
-map each to an AVAILABLE service (skip the suggestion if the matching service is
-not in the registry list):
-
-- An OpenQuestion with linked Papers but no Hypotheses -> suggest the theory
-  service (Theorizer) if available. Warn on its cost.
-- A Finding or Hypothesis with no supporting literature -> suggest a literature
-  service (Paper Finder or Semantic Scholar) if available.
-- A Paper with no CITES edges -> suggest the citation lookup (Semantic Scholar
-  `papers citations`) if available.
-- A Dataset with an open analysis question -> suggest a data-analysis service
-  (DataVoyager) if it appears in the available list; otherwise say it is not
-  available and offer literature instead.
-
-Surface the trade-offs from each service's `description` when you suggest, and
-always state the `cost` for paid services.
 
 ## Style
 
