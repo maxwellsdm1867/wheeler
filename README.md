@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.11-blue" alt="v0.9.11">
+  <img src="https://img.shields.io/badge/v0.9.12-blue" alt="v0.9.12">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -193,6 +193,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 ## What's New
 
 <details open>
+<summary><b>v0.9.12</b> (2026-06-15): Asta integration + external-call failsafe</summary>
+
+- **Asta research tools land in the graph**: four adapters (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) marshal output from [Ai2's Asta toolkit](https://github.com/allenai/asta-plugins) into the knowledge graph as typed, deduplicated, provenance-tracked nodes, driven by a `/wh:asta` router and one deterministic `wheeler integrate` verb.
+- **External-call failsafe**: every external-service call is one Execution whose status is truthful; a failed or incomplete job is recorded as failed with no fabricated outputs, and `wheeler integrate record-failure` makes a no-artifact attempt visible rather than silently lost.
+- **Three-part provenance**: each run records the graph nodes it `USED`, the nodes it `WAS_GENERATED_BY`, and the semantic edges (`SUPPORTS`/`CONTRADICTS`/`CITES`/`RELEVANT_TO`) wiring new results into the existing graph, and anchors to its Plan.
+- **Build adapters from a contract**: a swappable service registry (`wheeler services enable/disable`) plus the `wheeler-service-creator` skill that scaffolds a new adapter, bakes in the failsafe, and ships a deterministic auditor that checks data-safety, provenance, and conventions before it lands.
+- **Test suite at 1929** (was 1734 in v0.9.11).
+
+</details>
+
+<details>
 <summary><b>v0.9.11</b> (2026-06-11): badge composes with any statusline</summary>
 
 - **Update badge composes with custom statuslines**: a pre-existing statusLine (e.g. GSD's) is wrapped rather than skipped; the wrapper runs the original command unchanged and prepends the yellow `/wh:update` badge only when an update is pending. Reinstall never double-wraps, and uninstall restores the original command verbatim.
@@ -207,16 +218,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module d
 - **Version check works without pip**: the PyPI check uses the JSON API via urllib instead of shelling out to pip (uv tool venvs have no pip); the GitHub check sends a proper User-Agent.
 - **The badge never lies**: the session hook probes known install locations when run with a minimal PATH, never claims an update when the installed version cannot be determined, and the CLI now accepts the hook-written cache instead of re-checking the network on every invocation.
 - **Test suite at 1733** (was 1730 in v0.9.9).
-
-</details>
-
-<details>
-<summary><b>v0.9.9</b> (2026-06-11): update path fixed end to end</summary>
-
-- **uv tool installs can update**: `wheeler update` now detects uv-managed installs and upgrades via `uv tool upgrade wheeler` instead of failing on the missing pip (#69).
-- **Update badge actually appears**: `wheeler install` now registers the statusline hook as the top-level `statusLine` settings key, so the yellow `⬆ /wh:update` badge renders when an update is available; a custom statusLine is never overwritten (#70).
-- **Offline checks keep the badge**: a failed network check no longer overwrites a cached `update_available: true`, so the badge survives offline session starts.
-- **Test suite at 1730** (was 1713 in v0.9.8).
 
 </details>
 
@@ -264,7 +265,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1734 tests
+tests/                        # 1929 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -276,7 +277,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1734 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (1929 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
@@ -301,6 +302,10 @@ If you use Wheeler in your research, please cite it:
   url       = {https://doi.org/10.5281/zenodo.20498885}
 }
 ```
+
+## Acknowledgments
+
+Wheeler's Asta integration shells out to the [Asta toolkit](https://github.com/allenai/asta-plugins) from the [Allen Institute for AI (Ai2)](https://allenai.org). The Paper Finder, Semantic Scholar, Theorizer, and Literature Reports services are Ai2's work ([asta.allen.ai](https://asta.allen.ai)); Wheeler does not vendor or reimplement them, it invokes the upstream `asta` CLI and marshals the results into the knowledge graph with provenance. Credit and thanks to the Ai2 Asta team.
 
 ## License
 

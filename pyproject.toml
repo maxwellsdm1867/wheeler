@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wheeler"
-version = "0.9.11"
+version = "0.9.12"
 description = "Reliable, trustworthy, trackable AI workflows for science. A Claude Code-native research assistant with a provenance-tracked knowledge graph."
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,6 +24,7 @@ keywords = [
     "provenance",
     "mcp",
     "reproducibility",
+    "asta",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
