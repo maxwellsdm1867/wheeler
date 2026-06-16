@@ -1,6 +1,6 @@
 ---
 name: wh:asta
-description: Route a research task to the right Asta service (Paper Finder, Semantic Scholar, Theorizer, or DataVoyager) and dispatch its act. Use for "use asta", "which asta tool", "find/look up/theorize/analyze with asta", or when unsure which Asta adapter fits.
+description: Route a research task to the right Asta service (Paper Finder, Semantic Scholar, Theorizer, or Literature Reports) and dispatch its act. Use for "use asta", "which asta tool", "find/look up/theorize/review with asta", or when unsure which Asta adapter fits.
 argument-hint: "[describe your task, or leave blank to be asked]"
 allowed-tools:
   - Read
