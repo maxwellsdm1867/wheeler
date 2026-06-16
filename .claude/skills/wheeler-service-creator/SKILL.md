@@ -27,6 +27,7 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
+  - AskUserQuestion
 ---
 
 # Wheeler service creator
@@ -52,25 +53,47 @@ Everything below is in service of these two. Read them first.
 
 ### The registry reads the contract; the adapter does not hardcode the provider
 
-The contract you write is DATA, read by `wheeler/integrations/registry.py`:
+The contract you write is DATA, read by `wheeler/integrations/registry.py`.
+There are THREE distinct sets, do not conflate them:
 
-- `load_services(config)` returns every parsed `ServiceContract` (id, provider,
-  name, description, kind, act, cost, available, when, plus opaque `inputs` /
-  `output`). It reads the USER override at `<project_root>/.wheeler/services.yaml`
-  when present, else the bundled default `wheeler/integrations/services.default.yaml`.
-  The user file WINS (it is not merged with the default). Pure read: no graph, no
-  network, never raises; a malformed entry is skipped and logged.
-- `available_services(config)` runs each contract's `available` shell probe and
-  returns only the ones that pass.
+1. **CATALOG** (`wheeler/integrations/services.default.yaml`): everything
+   AVAILABLE to enable. Ships with the package. `catalog_services()` returns it.
+   A service that should ship with Wheeler belongs here.
+2. **ENABLED set**: what is actually LOADED and visible to the router and plan
+   acts. The source of truth is a FOLDER, `<project_root>/.wheeler/services/`,
+   with one `<id>.yaml` file per enabled contract (same schema as a catalog
+   entry: a bare mapping, or wrapped under `services:`). `load_services()`
+   returns this. Precedence: if the folder exists it IS the enabled set (an empty
+   folder means nothing is enabled); else the legacy single-file
+   `.wheeler/services.yaml` (backward-compat); else the full catalog (every
+   default stays on until the user starts curating).
+3. **AVAILABLE**: the enabled contracts whose `available` shell probe passes.
+   `available_services()` filters the enabled set by the probe. This is what the
+   router actually offers.
 
-The router act `/wh:asta` already consumes this (it lists only available services
-and routes by `when` / `description`, warning on `cost`). So your new service
-becomes routable the moment its contract entry exists and its probe passes. You
-do NOT add the new service to any hardcoded table; you add a contract entry and
-the registry surfaces it. Whether you append to the user `.wheeler/services.yaml`
-or the bundled `services.default.yaml` depends on scope: a project-local service
-goes in the user file; a service that should ship with Wheeler goes in the
-default (and then `sync_data` is not involved, the manifest is package data).
+Curate the enabled set with the CLI (it writes ONLY under `.wheeler/services/`,
+never the graph or network):
+
+```bash
+wheeler services list          # enabled set + catalog services not yet enabled
+wheeler services enable <id>   # copy catalog entry -> .wheeler/services/<id>.yaml
+wheeler services disable <id>  # remove .wheeler/services/<id>.yaml
+```
+
+The first `enable`/`disable` SEEDS the folder with the whole catalog (so existing
+defaults stay on) and then applies the change. So a shipped catalog service is
+enabled-by-default until someone curates; a project-local service is one the user
+`enable`s (or drops a `<id>.yaml` into the folder by hand: the folder also accepts
+contracts the catalog never shipped).
+
+The router act `/wh:asta` already consumes this: it lists only AVAILABLE services
+and routes by `when` / `description`, warning on `cost`. Your new service becomes
+routable the moment (a) its contract is in the enabled set (in the catalog and
+not disabled, or `wheeler services enable`d) and (b) its probe passes. You do NOT
+touch any hardcoded provider table; you add a contract and the registry surfaces
+it. The per-id folder layout is also the EXTRACTION hook: because each enabled
+service is its own `<id>.yaml`, a single contract can be pulled out, diffed,
+templated, or moved between projects in isolation.
 
 ### Wiring has THREE parts, and a complete adapter does all three
 
@@ -130,6 +153,16 @@ act itself), for graph queries, or for generic coding.
 
 ## The template you are copying
 
+The four shipped adapters all wrap **Asta**, the open research toolkit from the
+**Allen Institute for AI (Ai2)**: Paper Finder, Semantic Scholar, Theorizer, and
+the literature-report (Scholar QA) services, driven by the `asta` CLI. Wheeler
+does not vendor or reimplement Asta; it shells out to the upstream `asta` tool and
+marshals the result into the graph. Credit and docs upstream: Asta
+(https://asta.allen.ai) and Ai2 (https://allenai.org); the `asta` CLI and agent
+toolkit are Ai2's work. When you scaffold a NEW provider, keep the same posture:
+shell out to the upstream tool, attribute it in the adapter docstring and the
+service `description`, and never claim its output as Wheeler's own.
+
 Study these before you scaffold. They are the canonical example; mirror their
 structure, their docstrings, and their invariants. All paths are relative to the
 repo root.
@@ -175,24 +208,38 @@ There is a bundled scaffolder, `assets/scaffold_service.py`, that writes all fou
 skeleton files deterministically from a contract. Prefer it: hand-copying the
 boilerplate from the templates is slow and easy to get subtly wrong (a dropped
 provenance edge, a missing invariant), and the scaffolder bakes in the
-load-bearing structure (the lazy `execute_tool` import, both provenance helpers,
-the hermetic-teardown test) so you only have to fill the one thing it cannot
-know: the parser.
+load-bearing structure so you only have to fill the one thing it cannot know: the
+parser. What it bakes in: the lazy `execute_tool` import, BOTH provenance sides,
+the external-call FAILSAFE (the `job_outcome` gate, honest Execution status,
+`mark_execution_failed` on a bad run, `mark_execution_completed` on a reused
+retry, the partial-ingest try/except), the record-failure act step, and the
+per-run-uuid hermetic-teardown test.
 
 **Fast path (recommended).** Gather the contract (Step 1), then run the
-scaffolder once. It is stdlib-only, writes nothing it cannot, and is idempotent
-(it appends the registry entry without clobbering, and will not overwrite an
-existing file unless you pass `--overwrite`):
+scaffolder once. It is stdlib-only, writes nothing it cannot, and will not
+overwrite an existing file unless you pass `--overwrite`. By default it writes the
+contract as its own enabled-folder file `.wheeler/services/<id>.yaml` (which
+ENABLES the service); `--shipped` appends it to the bundled catalog
+`services.default.yaml` instead (ships with Wheeler, enabled-by-default):
 
 ```bash
 # from the repo root; use plain `python` if ./.venv is absent
 ./.venv/bin/python .claude/skills/wheeler-service-creator/assets/scaffold_service.py \
   --provider <provider> --tool <tool> --name "<Name>" \
   --description "<one line>" --raw-node <document|dataset> \
+  --raw-format <json|md> \
   --nodes "<Comma,Separated,NodeTypes>" \
   --cli '<the exact CLI the act runs, with -o /tmp/<tool>.json>' \
-  --available "<probe command>" --cost "<cost string>" --when "<router phrase>"
+  --available "<probe command>" --cost "<cost string>" --when "<router phrase>" \
+  [--id <registry-id>] [--act <act-slug>] [--shipped]
 ```
+
+Flags worth knowing: `--raw-format md` emits a MARKDOWN-deliverable skeleton (the
+ingest reads the report text and registers a Document, modeled on `scholar_qa.py`)
+instead of the JSON skeleton; `--id` / `--act` override the mechanical
+`<provider>-<tool>` derivation (use them to avoid a collision, e.g.
+`--act asta-report` so it does not clash with `asta-scholar`); `--shipped`
+registers in the bundled catalog.
 
 Add `--dry-run` first to preview the paths it will touch. It prints one line per
 file (wrote / appended / skipped). Then read each emitted file, confirm it
@@ -206,10 +253,48 @@ the skeleton would not fit, write the four files by hand from the templates. The
 per-step sections below are the spec either way: they describe exactly what each
 file must contain, which is also what the scaffolder emits.
 
-## Step 1: gather the contract
+## Step 1: understand the codebase, then gather the contract
 
-Interview the scientist, or read the tool's `--help` / agent card. You need a
-small contract dict. Ask only for what you cannot infer; default the rest.
+Do NOT scaffold blind. First UNDERSTAND, then ASK, then generate.
+
+**Understand the codebase.** Read the template adapters and the load-bearing
+invariants (the files under "The template you are copying", plus
+`wheeler/integrations/asta/CLAUDE.md` and `docs/asta-engine-spec.md`) so you know
+the conventions a new adapter must follow: the three-part provenance model, the
+Paper reference-entity rule, the external-call failsafe (honest Execution status,
+no fabricated outputs on a failed job), the per-run-uuid hermetic teardown. The
+scaffolder bakes these in, but you must understand them to fill the parser and to
+answer the scientist's questions correctly.
+
+**Ask the scientist the critical design / integration decisions.** A contract has
+genuine forks that only the scientist can settle, and a wrong choice means wrong
+skeletons. Where you do not KNOW or the choice is load-bearing, ASK (use
+AskUserQuestion for a clean multiple-choice; do not guess silently). The decisions
+worth asking about:
+
+- **What is the deliverable?** One JSON `-o` artifact (an A2A Task or a REST
+  response) or a synthesized MARKDOWN document (a written report, like the Asta
+  literature report)? This sets `--raw-format json|md` and changes the whole
+  ingest shape. If unsure, ask, or read one real run.
+- **`raw_node`: document or dataset?** Synthesized WRITING (a report, theories)
+  is a `document`; structured reference RECORDS (papers, rows) is a `dataset`.
+  Never call everything a Dataset. (md deliverables default to document.)
+- **What node types does the output bucket into**, and what are the SEMANTIC edges
+  to the existing graph (SUPPORTS / CONTRADICTS / CITES / RELEVANT_TO)? This is the
+  part-3 wiring the act will do; the scientist owns the judgment.
+- **What graph nodes are the USED inputs** (the marshal-in synthesizes the request
+  FROM them: the question, seeded Findings, dataset paths)?
+- **Cost / auth**: is it paid or slow (so the router must warn and confirm)? does
+  it need a login before any test run?
+- **Ships with Wheeler or project-local?** (`--shipped` -> the bundled catalog;
+  else a `.wheeler/services/<id>.yaml` enabled file.)
+- **id / act name**: does the mechanical `<provider>-<tool>` collide with an
+  existing act or read awkwardly? (e.g. `asta-scholar-qa` collides with
+  `asta-scholar`; use `--act asta-report`.) Offer a cleaner name.
+
+Write the resolved contract back to the scientist in one block and confirm it
+before generating. Then gather the rest (interview, or read the tool's `--help` /
+agent card); ask only for what you cannot infer, default the rest.
 
 - **provider**: the family (e.g. `asta`, `s2`, `myorg`). Lower-case, slug-safe.
 - **tool**: the specific tool (e.g. `paper-finder`, `theorizer`, `datavoyager`).
@@ -247,15 +332,8 @@ generating. A wrong contract means wrong skeletons.
 
 ## Step 2: the service contract (registry entry)
 
-Append (do not overwrite) an entry under `services:`. Choose the manifest by
-scope:
-
-- a PROJECT-LOCAL service -> the user override `<project_root>/.wheeler/services.yaml`
-  (create it with a `services: []` root if absent; the user file wins over the
-  default and is not merged with it),
-- a service that should SHIP with Wheeler -> the bundled
-  `wheeler/integrations/services.default.yaml` (package data; no `sync_data`).
-
+Write the contract once; WHERE it goes follows the catalog-vs-folder split from
+"The registry reads the contract" above. The entry shape is the same either way.
 Mirror the existing entries exactly (`registry._REQUIRED_FIELDS` are all of `id,
 provider, name, description, kind, act, cost, available, when`; a missing one is
 skipped and logged, so the service silently will not appear):
@@ -277,15 +355,31 @@ skipped and logged, so the service silently will not appear):
       nodes: [<NodeType>, ...]
 ```
 
+Then place it:
+
+- **Ships with Wheeler** -> append the entry under `services:` in the bundled
+  CATALOG `wheeler/integrations/services.default.yaml` (package data; no
+  `sync_data`). It is then enabled-by-default (until someone curates) and a user
+  can `wheeler services enable <id>` it explicitly after curating.
+- **Project-local only** -> drop it as its own file in the ENABLED folder
+  `<project_root>/.wheeler/services/<id>.yaml` (a bare mapping is fine, no
+  `services:` wrapper needed), or add it to the catalog and run `wheeler services
+  enable <id>`. Either way the per-id file is what the folder loads.
+
 This is the contract. Identity + ports + output shape, NOT a field-map language:
 the parser stays tool-specific Python. `inputs` and `output` are opaque to the
 registry (it does not interpret them; the adapter does), so they are optional for
-routing but valuable as documentation of the marshalling map. Once this entry
-exists and its probe passes, `available_services()` surfaces it and `/wh:asta`
-routes to it: you have NOT touched any hardcoded provider table. Confirm by
-running the registry: `./.venv/bin/python -c "from wheeler.config import
-load_config; from wheeler.integrations.registry import available_services;
-print([c.id for c in available_services(load_config())])"`.
+routing but valuable as documentation of the marshalling map. Confirm the service
+is now ENABLED and AVAILABLE:
+
+```bash
+wheeler services list   # your <id> appears under "Loaded services (enabled)"
+# and, probe permitting, in available_services():
+./.venv/bin/python -c "from wheeler.config import load_config; from wheeler.integrations.registry import available_services; print([c.id for c in available_services(load_config())])"
+```
+
+You have NOT touched any hardcoded provider table; `/wh:asta` routes to it as soon
+as it is enabled and its probe passes.
 
 ## Step 3: the marshal-out ingest skeleton
 
@@ -459,27 +553,54 @@ NEITHER making a live tool call:
      (identical counts, `created==0`, no duplicate USED / WAS_GENERATED_BY
      edges on the second pass).
 
-## Step 7: hand off to the human
+## Step 7: AUDIT the filled adapter (mechanical checks before review)
+
+Before the human review, run the bundled AUDITOR. It is the mechanical half of
+the adversarial review, codified so every new adapter is held to the same bar:
+data safety (the teardown deletes ONLY by per-run e2e_tag, never by service /
+corpus_id; run-unique corpus_ids), provenance (both sides wired, the Paper
+reference-entity rule), the external-call failsafe (the `job_outcome` gate, honest
+status, `mark_execution_failed`, the partial-ingest guard), and the house
+conventions (no anthropic import, no em dashes, the lazy `execute_tool` import,
+the act's semantic-wiring + record-failure steps, a complete registry contract).
+
+```bash
+./.venv/bin/python .claude/skills/wheeler-service-creator/assets/audit_service.py \
+  --provider <provider> --tool <tool> --verbose
+```
+
+It exits non-zero if any BLOCKER fired. Fix every BLOCKER and look at each WARN
+before landing. The audit is deterministic and conservative: a PASS is necessary,
+not sufficient (it does not replace the live e2e or the human review), but it
+catches the mistakes that recur (an unsafe teardown, a missing failsafe gate, a
+Paper wired `WAS_GENERATED_BY`, an em dash, an incomplete contract). Run it again
+after any fix.
+
+## Step 8: hand off to the human
 
 You scaffolded the structure; the parser is the one thing only a real output can
 teach. Tell the scientist, in this order:
 
 1. **Capture one real output**: run the tool once for real
-   (`<cli_invocation>`), save the `-o` JSON, and drop a trimmed copy under
-   `tests/integrations/<provider>/fixtures/<tool>_real_sample.json`.
+   (`<cli_invocation>`), save the `-o` JSON (or the markdown report, for a `md`
+   deliverable), and drop a trimmed copy under
+   `tests/integrations/<provider>/fixtures/`.
 2. **Fill the parser**: write `parse_<tool>` against that captured shape, and
    fill the fixture path + expected-count constants in the test. The skeleton's
-   defensive helpers and invariants are already in place; only the shape-walk is
-   missing.
-3. **Run the tests**: `./.venv/bin/python -m pytest
+   defensive helpers, the failsafe, and the invariants are already in place; only
+   the shape-walk is missing. For a paper-producing e2e, derive RUN-UNIQUE
+   synthetic corpus_ids from the per-run uuid (see `test_scholar_qa.py`) so the
+   test can never dedupe into and then delete a production Paper.
+3. **Run the audit** (Step 7) and fix every BLOCKER.
+4. **Run the tests**: `./.venv/bin/python -m pytest
    tests/integrations/<provider>/test_<tool>.py -q` (the e2e class needs a live
    Neo4j; it skips otherwise).
-4. **Adversarial review**: run the repo's adversarial-review workflow on the
+5. **Adversarial review**: run the repo's adversarial-review workflow on the
    adapter (a fresh reviewer agent re-checks every claim: provenance edges, the
-   Paper reference-entity rule, the `--used` input provenance, idempotency, the
-   hermetic teardown) before landing. Adding a service is then: run the creator
-   -> fill the parser -> review -> land.
+   Paper reference-entity rule, the `--used` input provenance, the failsafe,
+   idempotency, the hermetic teardown) before landing. Adding a service is then:
+   run the creator -> fill the parser -> audit -> review -> land.
 
-Report back the four files you created (the `services.yaml` entry, the ingest
-skeleton, the act, the test stub) plus the CLI verb wiring, and the exact to-do
-list above. Never use em dashes.
+Report back the four files you created (the `.wheeler/services/<id>.yaml` contract
+or catalog entry, the ingest skeleton, the act, the test stub) plus the CLI verb
+wiring, the audit result, and the exact to-do list above. Never use em dashes.

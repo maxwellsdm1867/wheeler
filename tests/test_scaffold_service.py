@@ -180,6 +180,7 @@ def test_no_em_dashes_in_any_rendered_file():
     c = _contract(mod)
     for text in (
         mod.render_services_entry(c),
+        mod.render_service_file(c),
         mod.render_ingest(c),
         mod.render_act(c),
         mod.render_test(c),
@@ -192,50 +193,66 @@ def test_no_em_dashes_in_any_rendered_file():
 # ---------------------------------------------------------------------------
 
 
+def test_service_file_is_a_bare_mapping():
+    mod = _load_module()
+    c = _contract(mod)
+    text = mod.render_service_file(c)
+    # Bare top-level mapping (no services: wrapper): the per-id folder shape.
+    assert "services:" not in text
+    assert text.startswith("id: myorg-paper-finder")
+    assert "act: /wh:myorg-paper-finder" in text
+    assert "raw_node: dataset" in text
+    assert "nodes: [Paper]" in text
+
+
 def test_scaffold_writes_all_four_pieces(tmp_path: Path):
     mod = _load_module()
     c = _contract(mod, provider="acme", tool="widget", raw_node="document")
     notes = mod.scaffold(c, tmp_path)
-    assert any("services.yaml" in n for n in notes)
+    # The contract lands as its own enabled-folder file (folder-based registry).
+    assert any(".wheeler/services/acme-widget.yaml" in n for n in notes)
 
-    services = tmp_path / ".wheeler" / "services.yaml"
+    service = tmp_path / ".wheeler" / "services" / "acme-widget.yaml"
     ingest = tmp_path / "wheeler" / "integrations" / "acme" / "widget.py"
     act = tmp_path / ".claude" / "commands" / "wh" / "acme-widget.md"
     test = tmp_path / "tests" / "integrations" / "acme" / "test_widget.py"
 
-    for path in (services, ingest, act, test):
+    for path in (service, ingest, act, test):
         assert path.exists(), f"missing {path}"
 
     # Provider package __init__ files created.
     assert (tmp_path / "wheeler" / "integrations" / "acme" / "__init__.py").exists()
     assert (tmp_path / "tests" / "integrations" / "acme" / "__init__.py").exists()
 
-    assert "services:" in services.read_text()
-    assert "id: acme-widget" in services.read_text()
+    # One file per service, bare mapping (no services: wrapper).
+    service_text = service.read_text()
+    assert service_text.startswith("id: acme-widget")
+    assert "services:" not in service_text
     assert '_RAW_NODE_TYPE = "document"' in ingest.read_text()
 
 
-def test_scaffold_services_entry_is_idempotent(tmp_path: Path):
+def test_scaffold_service_file_not_overwritten_without_flag(tmp_path: Path):
     mod = _load_module()
     c = _contract(mod, provider="acme", tool="widget")
     mod.scaffold(c, tmp_path)
-    first = (tmp_path / ".wheeler" / "services.yaml").read_text()
-    # Re-scaffold: the services entry must not be duplicated.
+    service = tmp_path / ".wheeler" / "services" / "acme-widget.yaml"
+    first = service.read_text()
+    # Re-scaffold: a curated enabled file is not clobbered without --overwrite.
     notes = mod.scaffold(c, tmp_path)
-    second = (tmp_path / ".wheeler" / "services.yaml").read_text()
-    assert first == second
-    assert second.count("id: acme-widget") == 1
-    assert any("entry exists" in n for n in notes)
+    assert service.read_text() == first
+    assert any("skip (exists)" in n for n in notes)
 
 
-def test_scaffold_appends_second_service_without_clobber(tmp_path: Path):
+def test_scaffold_each_service_is_its_own_file(tmp_path: Path):
     mod = _load_module()
     mod.scaffold(_contract(mod, provider="acme", tool="widget"), tmp_path)
     mod.scaffold(_contract(mod, provider="acme", tool="gadget"), tmp_path)
-    text = (tmp_path / ".wheeler" / "services.yaml").read_text()
-    assert "id: acme-widget" in text
-    assert "id: acme-gadget" in text
-    assert text.count("services:") == 1
+    folder = tmp_path / ".wheeler" / "services"
+    # One file per service: enabling/disabling one never touches the other.
+    assert (folder / "acme-widget.yaml").exists()
+    assert (folder / "acme-gadget.yaml").exists()
+    assert (folder / "acme-widget.yaml").read_text().startswith("id: acme-widget")
+    assert (folder / "acme-gadget.yaml").read_text().startswith("id: acme-gadget")
 
 
 def test_dry_run_writes_nothing(tmp_path: Path):
@@ -244,7 +261,7 @@ def test_dry_run_writes_nothing(tmp_path: Path):
     notes = mod.scaffold(c, tmp_path, dry_run=True)
     assert any("would" in n for n in notes)
     assert not (tmp_path / "wheeler" / "integrations" / "acme" / "widget.py").exists()
-    assert not (tmp_path / ".wheeler" / "services.yaml").exists()
+    assert not (tmp_path / ".wheeler" / "services" / "acme-widget.yaml").exists()
 
 
 def test_existing_file_not_overwritten_without_flag(tmp_path: Path):
@@ -275,3 +292,113 @@ def test_main_dry_run_smoke(tmp_path: Path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "would" in out
+
+
+# ---------------------------------------------------------------------------
+# External-call failsafe is baked into the generated ingest (both modes)
+# ---------------------------------------------------------------------------
+
+
+def test_json_ingest_bakes_in_the_failsafe():
+    mod = _load_module()
+    text = mod.render_ingest(_contract(mod, provider="acme", tool="widget"))
+    import ast
+
+    ast.parse(text)  # the generated skeleton compiles
+    assert "job_outcome(doc)" in text  # the gate
+    assert 'if not outcome.ok:' in text
+    assert "mark_execution_failed" in text  # honest status on a bad run
+    assert "mark_execution_completed" in text  # reused-retry reset
+    assert "reused = bool(exec_id)" in text
+    assert '"status": "completed" if outcome.ok else "failed"' in text
+    # partial-ingest guard
+    assert "ingest-error" in text
+    assert "report.failed = True" in text
+
+
+def test_act_records_failure_on_nonzero_exit():
+    mod = _load_module()
+    text = mod.render_act(_contract(mod, provider="acme", tool="widget"))
+    assert "wheeler integrate record-failure widget" in text
+    assert "must be visible, not absent" in text
+
+
+# ---------------------------------------------------------------------------
+# Markdown-deliverable mode (--raw-format md)
+# ---------------------------------------------------------------------------
+
+
+def test_md_mode_emits_a_markdown_ingest_skeleton():
+    mod = _load_module()
+    c = _contract(mod, provider="acme", tool="report-gen", raw_format="md",
+                  nodes=["Document", "Paper"])
+    # md auto-defaults raw_node to document (a report is synthesized writing).
+    assert c.raw_node == "document"
+    assert c.is_markdown is True
+    text = mod.render_ingest(c)
+    import ast
+
+    ast.parse(text)
+    # The md ingest takes the report TEXT, not a doc dict, and registers a Document.
+    assert "report_markdown: str" in text
+    assert "ReportRecord" in text
+    assert "register_output_artifact" in text
+    assert "scholar_qa" in text  # points at the worked example
+    # The failsafe is present in md mode too (partial-ingest guard + reset).
+    assert "mark_execution_failed" in text
+    assert "mark_execution_completed" in text
+
+
+def test_invalid_raw_format_rejected():
+    mod = _load_module()
+    with pytest.raises(ValueError):
+        _contract(mod, raw_format="xml")
+
+
+# ---------------------------------------------------------------------------
+# id / act overrides and the shipped-vs-folder registry target
+# ---------------------------------------------------------------------------
+
+
+def test_id_and_act_overrides():
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="scholar-qa",
+                  id_override="scholar-qa", act_override="asta-report")
+    assert c.service_id == "scholar-qa"  # bare id, not asta-scholar-qa
+    assert c.act_slug == "asta-report"
+    assert c.act_name == "wh:asta-report"
+
+
+def test_act_override_drives_the_act_filename(tmp_path: Path):
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="scholar-qa",
+                  act_override="asta-report")
+    mod.scaffold(c, tmp_path)
+    assert (tmp_path / ".claude" / "commands" / "wh" / "asta-report.md").exists()
+    # NOT the mechanical asta-scholar-qa.md
+    assert not (
+        tmp_path / ".claude" / "commands" / "wh" / "asta-scholar-qa.md"
+    ).exists()
+
+
+def test_shipped_appends_to_the_bundled_catalog(tmp_path: Path):
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="newsvc", shipped=True)
+    mod.scaffold(c, tmp_path)
+    catalog = tmp_path / "wheeler" / "integrations" / "services.default.yaml"
+    assert catalog.exists()
+    text = catalog.read_text()
+    assert text.startswith("services:")
+    assert "id: asta-newsvc" in text
+    # The enabled-folder file is NOT written for a shipped service.
+    assert not (tmp_path / ".wheeler" / "services" / "asta-newsvc.yaml").exists()
+
+
+def test_default_is_folder_not_catalog(tmp_path: Path):
+    mod = _load_module()
+    c = _contract(mod, provider="asta", tool="localsvc")  # shipped defaults False
+    mod.scaffold(c, tmp_path)
+    assert (tmp_path / ".wheeler" / "services" / "asta-localsvc.yaml").exists()
+    assert not (
+        tmp_path / "wheeler" / "integrations" / "services.default.yaml"
+    ).exists()

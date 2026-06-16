@@ -3,7 +3,9 @@
 Given a small CONTRACT dict, emit the four skeleton files the
 ``wheeler-service-creator`` skill describes:
 
-  1. a ``.wheeler/services.yaml`` entry (appended, never overwriting),
+  1. the service CONTRACT as its own enabled-folder file
+     ``.wheeler/services/<id>.yaml`` (the folder-based registry: one file per
+     enabled service, so writing it here ENABLES the service),
   2. a marshal-out ingest skeleton ``wheeler/integrations/<provider>/<tool>.py``,
   3. a marshal-in act ``.claude/commands/wh/<provider>-<tool>.md``,
   4. a parse-unit + live-Neo4j e2e test stub
@@ -16,9 +18,15 @@ TODO returning ``([], RunMeta())``. The skill's prose is the source of truth; th
 helper just saves the human from hand-copying boilerplate. Markdown-driven
 scaffolding (the model writing the files itself) is equally valid.
 
-Stdlib only (no PyYAML): the services.yaml entry is emitted as hand-rolled YAML
-text, mirroring the shape in ``docs/asta-engine-spec.md`` section 2. Pure I/O;
-no graph dependency, no LLM-provider import.
+A service that should SHIP with Wheeler goes in the bundled catalog
+``wheeler/integrations/services.default.yaml`` instead: use
+``render_services_entry`` for that list-item shape and append it by hand.
+
+Stdlib only (no PyYAML): the contract YAML is emitted as hand-rolled text,
+mirroring the entries in ``services.default.yaml``. Pure I/O; no graph
+dependency, no LLM-provider import. Asta (the four shipped adapters) is the work
+of the Allen Institute for AI (Ai2), https://asta.allen.ai; Wheeler shells out to
+its ``asta`` CLI and does not vendor it.
 
 Run as a module for a smoke scaffold::
 
@@ -37,6 +45,11 @@ from pathlib import Path
 # (W-), dataset = structured reference RECORDS (D-). Never call everything a
 # Dataset; reserve it for genuine data / records.
 _RAW_NODE_TYPES = {"document", "dataset"}
+
+# How the service's deliverable arrives. ``json`` = one JSON ``-o`` artifact (the
+# common case, an A2A Task or a REST response). ``md`` = a synthesized MARKDOWN
+# document the ingest reads as text (the Asta literature report shape).
+_RAW_FORMATS = {"json", "md"}
 
 
 def _slug(value: str) -> str:
@@ -76,6 +89,23 @@ class ServiceContract:
     raw_node: str = "dataset"
     nodes: list[str] = field(default_factory=lambda: ["Paper"])
     inputs: list[dict] = field(default_factory=list)
+    # ``json`` (one JSON ``-o`` artifact, the common case) or ``md`` (the
+    # deliverable is a synthesized MARKDOWN document, like the Asta literature
+    # report: the ingest reads the report text, not a JSON dict). Drives the
+    # ingest / act / test shape.
+    raw_format: str = "json"
+    # Optional explicit overrides so the mechanical ``<provider>-<tool>`` derivation
+    # does not force an awkward id / act name. ``id_override`` sets the registry id
+    # (the shipped Asta catalog uses bare tool ids like ``scholar-qa``, not
+    # ``asta-scholar-qa``); ``act_override`` sets the act slug (so ``asta-report``
+    # can avoid colliding with the existing ``asta-scholar``). Both default to the
+    # derived value.
+    id_override: str = ""
+    act_override: str = ""
+    # Where the contract is REGISTERED. True -> the bundled CATALOG
+    # ``services.default.yaml`` (ships with Wheeler, enabled-by-default). False ->
+    # a per-id file in the project's ENABLED folder ``.wheeler/services/<id>.yaml``.
+    shipped: bool = False
 
     # --- derived identity ---
     @property
@@ -96,15 +126,27 @@ class ServiceContract:
 
     @property
     def service_id(self) -> str:
-        return f"{self.provider_slug}-{self.tool_slug}"
+        return _slug(self.id_override) if self.id_override else (
+            f"{self.provider_slug}-{self.tool_slug}"
+        )
 
     @property
     def service_tag(self) -> str:
         return f"{self.provider_slug}:{self.tool_slug}"
 
     @property
+    def act_slug(self) -> str:
+        return _slug(self.act_override) if self.act_override else (
+            f"{self.provider_slug}-{self.tool_slug}"
+        )
+
+    @property
     def act_name(self) -> str:
-        return f"wh:{self.provider_slug}-{self.tool_slug}"
+        return f"wh:{self.act_slug}"
+
+    @property
+    def is_markdown(self) -> bool:
+        return (self.raw_format or "json").lower() == "md"
 
     @property
     def display_name(self) -> str:
@@ -129,6 +171,17 @@ class ServiceContract:
                 f"got {self.raw_node!r}"
             )
         self.raw_node = self.raw_node.lower()
+        if (self.raw_format or "json").lower() not in _RAW_FORMATS:
+            raise ValueError(
+                f"raw_format must be one of {sorted(_RAW_FORMATS)}, "
+                f"got {self.raw_format!r}"
+            )
+        self.raw_format = (self.raw_format or "json").lower()
+        # A markdown deliverable is synthesized WRITING, so its raw node is a
+        # Document; gently default raw_node to document when md is chosen and the
+        # caller left the dataset default (a markdown Dataset would be wrong).
+        if self.is_markdown and self.raw_node == "dataset":
+            self.raw_node = "document"
         # Reject a blank provider/tool BEFORE the slug fallback masks it: an empty
         # or whitespace-only input is a genuine error, not a "provider"/"tool"
         # default.
@@ -173,7 +226,272 @@ def render_services_entry(c: ServiceContract) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_service_file(c: ServiceContract) -> str:
+    """Render one ENABLED-folder file ``.wheeler/services/<id>.yaml``.
+
+    A bare top-level mapping (no ``services:`` wrapper), which is the natural
+    shape the registry's per-id folder loader reads. This is the folder-based,
+    extraction-friendly home for a contract: one file per enabled service, so a
+    single contract can be pulled out, diffed, or moved between projects in
+    isolation. The registry also accepts the catalog-style ``services:`` wrapper,
+    but the bare mapping keeps the per-id file terse.
+    """
+    inputs = c.inputs or [{"name": "query", "source": "query", "required": True}]
+    lines = [
+        f"id: {c.service_id}",
+        f"provider: {c.provider_slug}",
+        f"name: {c.display_name}",
+        f"description: {c.description or c.display_name}",
+        f"kind: {c.kind}",
+        f"act: /{c.act_name}",
+        f'cost: "{c.cost}"',
+        f'available: "{c.available or c.tool_slug + " --version"}"',
+        f'when: "{c.when or c.description or c.display_name}"',
+        "inputs:",
+    ]
+    for port in inputs:
+        name = port.get("name", "query")
+        source = port.get("source", "query")
+        required = "true" if port.get("required") else "false"
+        lines.append(
+            f"  - {{ name: {name}, source: {source}, required: {required} }}"
+        )
+    node_list = ", ".join(c.nodes) if c.nodes else "Paper"
+    lines += [
+        "output:",
+        f"  raw_node: {c.raw_node}",
+        f"  nodes: [{node_list}]",
+        f"# implemented by wheeler/integrations/{c.provider_slug}/{c.tool_ident}.py",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def render_ingest(c: ServiceContract) -> str:
+    """Render the marshal-out ingest skeleton (parser left a TODO stub).
+
+    Dispatches on the deliverable format: a JSON ``-o`` artifact (the common case)
+    or a synthesized MARKDOWN document (the Asta literature-report shape).
+    """
+    if c.is_markdown:
+        return _render_ingest_md(c)
+    return _render_ingest_json(c)
+
+
+def _render_ingest_md(c: ServiceContract) -> str:
+    """Render a MARKDOWN-deliverable ingest skeleton (modeled on scholar_qa.py).
+
+    The deliverable is a synthesized markdown report, not a JSON dict: the ingest
+    takes the report TEXT (not ``doc``), registers it as a Document, and wires
+    Document -[CITES]-> each cited Paper. Fill ``parse_{c.tool_ident}`` against one
+    real report. The CLI reads the report as TEXT via its ``_MARKDOWN_TOOLS`` path.
+    """
+    return f'''"""Marshal-out (deterministic): ingest a {c.display_name} markdown report.
+
+SCAFFOLD (markdown deliverable). The closest filled example is
+``wheeler/integrations/asta/scholar_qa.py``: study it, then fill
+``parse_{c.tool_ident}`` against ONE real captured report. UNLIKE a JSON adapter,
+the deliverable is a synthesized MARKDOWN document (a literature review), so the
+ingest takes the report TEXT and the optional underlying records JSON, not a
+single ``doc`` dict. The CLI reads the report as TEXT (its ``_MARKDOWN_TOOLS``
+path), not ``json.loads``.
+
+Bucketing: the report markdown registers as a Document (W-) WAS_GENERATED_BY the
+run Execution; each cited paper -> add_paper (dedupe by corpus_id), the Document
+-[CITES]-> Paper and the run Execution -[USED]-> Paper (derived from). Papers are
+REFERENCE ENTITIES (NO WAS_GENERATED_BY; NOT WAS_DERIVED_FROM the report).
+
+Invariants: defensive (never raises); sequential writes only; link_once on every
+edge; one Execution per RUN tagged service ``{c.service_tag}``; the partial-ingest
+failsafe marks the run failed if bucketing raises.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+from wheeler.config import WheelerConfig
+from wheeler.integrations.{c.provider_slug}._marshal import (  # type: ignore[import-not-found]
+    ImportReport,
+    JobOutcome,
+    _find_execution,
+    _link_once,
+    _record_used,
+    mark_execution_completed,
+    mark_execution_failed,
+)
+
+logger = logging.getLogger(__name__)
+
+_SERVICE_TAG = "{c.service_tag}"
+_RAW_NODE_TYPE = "document"  # a report is synthesized WRITING
+
+
+@dataclass
+class CitedPaper:
+    """One paper the report cites (becomes a Paper node, CITES from the doc)."""
+
+    corpus_id: str
+    title: str
+    authors: str = ""
+    year: int = 0
+    custom: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ReportRecord:
+    """A parsed report: its identity + the papers it cites."""
+
+    title: str
+    query: str
+    papers: list[CitedPaper] = field(default_factory=list)
+
+
+@dataclass
+class RunMeta:
+    run_id: str = ""
+
+    def custom_bag(self) -> dict[str, Any]:
+        return {{"service": _SERVICE_TAG}}
+
+
+def parse_{c.tool_ident}(
+    report_markdown: Any, find_results: dict[str, Any] | None = None
+) -> tuple[ReportRecord | None, RunMeta]:
+    """Parse a {c.display_name} markdown report into a ReportRecord + run meta.
+
+    TODO: fill against a real captured report (see scholar_qa.parse_scholar_qa for
+    a worked example: pair each ``[[Key]]`` reference with its ``[Key]: <url>``
+    link def, lift the corpus_id from the url, enrich from find_results). Defensive:
+    a non-string / empty report yields ``(None, RunMeta())``.
+    """
+    if not isinstance(report_markdown, str) or not report_markdown.strip():
+        return None, RunMeta()
+    # TODO: walk the report into a ReportRecord (title + cited papers).
+    return ReportRecord(title="", query="", papers=[]), RunMeta()
+
+
+async def ingest_{c.tool_ident}(
+    report_markdown: str,
+    *,
+    report_path: str | None = None,
+    find_results: dict[str, Any] | None = None,
+    link_to: str | None = None,
+    config: WheelerConfig,
+    used_inputs: list[str] | None = None,
+) -> ImportReport:
+    """Ingest a {c.display_name} markdown report into the knowledge graph."""
+    from wheeler.tools.graph_tools import _get_backend, execute_tool
+
+    report = ImportReport()
+    record, run_meta = parse_{c.tool_ident}(report_markdown, find_results)
+    if record is None:
+        logger.warning("ingest_{c.tool_ident}: report not parseable")
+        return report
+
+    backend = await _get_backend(config)
+
+    # One stable run key from the report's IDENTITY (its path), used for BOTH the
+    # Execution session_id AND the durable raw-store key (see scholar_qa.py), so
+    # one report path = one run = one Document even across edits.
+    key_src = report_path or report_markdown[:512]
+    session_id = run_meta.run_id or (
+        "{c.tool_slug}-" + hashlib.sha256(key_src.encode()).hexdigest()[:16]
+    )
+    exec_id = await _find_execution(
+        backend, config, service=_SERVICE_TAG, session_id=session_id
+    )
+    reused = bool(exec_id)
+    if not exec_id:
+        import json
+
+        exec_result = json.loads(
+            await execute_tool(
+                "add_execution",
+                {{
+                    "kind": "{c.tool_slug}",
+                    "description": f"{c.display_name}: {{record.title or record.query}}"[:200],
+                    "agent_id": "{c.provider_slug}",
+                    "status": "completed",
+                    "session_id": session_id,
+                    "service": _SERVICE_TAG,
+                }},
+                config,
+            )
+        )
+        exec_id = exec_result.get("node_id", "")
+    report.execution_id = exec_id
+
+    if exec_id and used_inputs:
+        report.used += await _record_used(backend, config, exec_id, used_inputs)
+
+    # The report registers as a Document (W-), the run's primary produced node.
+    doc_id: str | None = None
+    try:
+        from wheeler.integrations.{c.provider_slug}.artifacts import (  # type: ignore[import-not-found]
+            register_output_artifact,
+        )
+
+        doc_id = await register_output_artifact(
+            report_path,
+            execution_id=exec_id,
+            service=_SERVICE_TAG,
+            config=config,
+            node_type=_RAW_NODE_TYPE,
+            run_id=session_id,
+            benchmark=run_meta.custom_bag(),
+            description=f"{c.display_name}: {{record.title or record.query}}"[:200],
+        )
+    except Exception:
+        logger.warning(
+            "ingest_{c.tool_ident}: artifact registration raised (best-effort)",
+            exc_info=True,
+        )
+    if doc_id:
+        report.artifact = doc_id
+        if link_to and await _link_once(backend, config, doc_id, "AROSE_FROM", link_to):
+            report.linked += 1
+
+    # Reused Execution from a prior failed attempt: a successful retry resets it.
+    if reused:
+        await mark_execution_completed(config, exec_id)
+
+    try:
+        for _paper in record.papers:
+            # TODO: dedupe-or-create the Paper (corpus_id), then wire
+            #   Document -[CITES]-> Paper  AND  Execution -[USED]-> Paper.
+            # Papers are reference entities: NO WAS_GENERATED_BY. See
+            # scholar_qa._ingest_cited_paper / _resolve_paper for a worked example.
+            pass
+    except Exception:
+        logger.error(
+            "ingest_{c.tool_ident}: output bucketing raised partway; marking run failed",
+            exc_info=True,
+        )
+        await mark_execution_failed(
+            config,
+            exec_id,
+            JobOutcome(ok=False, state="ingest-error", detail="output bucketing raised"),
+        )
+        report.failed = True
+        report.job_state = "ingest-error"
+        return report
+
+    logger.info(
+        "ingest_{c.tool_ident}: created=%d deduped=%d linked=%d used=%d (exec=%s)",
+        report.created,
+        report.deduped,
+        report.linked,
+        report.used,
+        exec_id,
+    )
+    return report
+'''
+
+
+def _render_ingest_json(c: ServiceContract) -> str:
     """Render the marshal-out ingest skeleton (parser left a TODO stub)."""
     return f'''"""Marshal-out (deterministic): ingest a {c.display_name} artifact.
 
@@ -226,9 +544,13 @@ from typing import Any
 from wheeler.config import WheelerConfig
 from wheeler.integrations.{c.provider_slug}._marshal import (  # type: ignore[import-not-found]
     ImportReport,
+    JobOutcome,
     _find_execution,
     _link_once,
     _record_used,
+    job_outcome,
+    mark_execution_completed,
+    mark_execution_failed,
 )
 
 logger = logging.getLogger(__name__)
@@ -361,9 +683,13 @@ async def ingest_{c.tool_ident}(
 
     report = ImportReport()
     records, run_meta = parse_{c.tool_ident}(doc)
-    if not records:
-        logger.warning("ingest_{c.tool_ident}: no parseable records in artifact")
-        return report
+    # FAILSAFE gate: did the external job actually complete? An A2A Task is
+    # success ONLY when status.state == "completed" (failed / canceled / working /
+    # input-required are NOT); a non-Task result dict has no status block and is ok
+    # (the transport already rejected the missing / empty / unparseable cases). A
+    # NOT-ok job records a FAILED Execution below but fabricates NO outputs, so a
+    # failed run can never masquerade as a clean one.
+    outcome = job_outcome(doc)
 
     backend = await _get_backend(config)
 
@@ -373,6 +699,7 @@ async def ingest_{c.tool_ident}(
     exec_id = await _find_execution(
         backend, config, service=_SERVICE_TAG, session_id=session_id
     )
+    reused = bool(exec_id)
     if not exec_id:
         import json
 
@@ -383,7 +710,9 @@ async def ingest_{c.tool_ident}(
                     "kind": "{c.tool_slug}",
                     "description": f"{c.display_name}: {{run_meta.run_id}}",
                     "agent_id": "{c.provider_slug}",
-                    "status": "completed",
+                    # Honest status: "completed" ONLY when the job verifiably
+                    # completed, else "failed" (the gate below stops first).
+                    "status": "completed" if outcome.ok else "failed",
                     "session_id": session_id,
                     "service": _SERVICE_TAG,
                 }},
@@ -422,38 +751,78 @@ async def ingest_{c.tool_ident}(
             exc_info=True,
         )
 
-    # Bucket each record into its nodes. Every WRITE goes through execute_tool;
-    # every edge through _link_once. Collect the ids of the nodes THIS run
-    # PRODUCES (NOT Papers: they are reference entities) so the output side of
-    # provenance can be wired in one pass below.
-    produced_ids: list[str] = []
-    for _record in records:
-        # TODO: create this record's node(s) and wire its semantic edges.
-        #
-        #   import json
-        #   created = json.loads(await execute_tool("add_finding", {{...,
-        #       "session_id": session_id, "service": _SERVICE_TAG}}, config))
-        #   node_id = created.get("node_id")
-        #   if node_id:
-        #       report.created += 1
-        #       produced_ids.append(node_id)        # OUTPUT side, wired below
-        #       if link_to:                         # the request's link target
-        #           if await _link_once(backend, config, node_id,
-        #                                "AROSE_FROM", link_to):
-        #               report.linked += 1
-        #
-        # If the output references papers: dedupe on corpus_id, create with
-        # add_paper, then paper -[SUPPORTS|CONTRADICTS|CITES]-> the produced node.
-        # Papers carry NO WAS_GENERATED_BY; instead the run Execution -[USED]->
-        # a paper the knowledge was derived from:
-        #   if await _link_once(backend, config, exec_id, "USED", paper_id):
-        #       report.linked += 1
-        pass
+    # FAILSAFE: if the job did not complete, STOP. The Execution exists
+    # (status="failed", reason in custom_error) and the raw artifact is saved, so
+    # the attempt is visible and queryable, but NO output nodes are fabricated.
+    if not outcome.ok:
+        await mark_execution_failed(config, exec_id, outcome)
+        report.failed = True
+        report.job_state = outcome.state
+        logger.warning(
+            "ingest_{c.tool_ident}: job did not complete (state=%s): %s",
+            outcome.state,
+            outcome.detail,
+        )
+        return report
+    # A reused Execution from a PRIOR failed attempt: a now-successful retry must
+    # not inherit the stale "failed" status (dedupe keys on service+session_id).
+    if reused:
+        await mark_execution_completed(config, exec_id)
+    # A completed job with no parseable records is a legitimate empty result: the
+    # Execution stays completed and visible, there is just nothing to bucket.
+    if not records:
+        logger.warning("ingest_{c.tool_ident}: no parseable records in completed artifact")
+        return report
 
-    # OUTPUT-side provenance: every produced node -[WAS_GENERATED_BY]-> the run
-    # Execution (the mirror of the input-side USED edges above). Papers are
-    # excluded by construction (they are never appended to produced_ids).
-    await _record_generated(backend, config, exec_id, produced_ids, report)
+    try:
+        # Bucket each record into its nodes. Every WRITE goes through execute_tool;
+        # every edge through _link_once. Collect the ids of the nodes THIS run
+        # PRODUCES (NOT Papers: they are reference entities) so the output side of
+        # provenance can be wired in one pass below.
+        produced_ids: list[str] = []
+        for _record in records:
+            # TODO: create this record's node(s) and wire its semantic edges.
+            #
+            #   import json
+            #   created = json.loads(await execute_tool("add_finding", {{...,
+            #       "session_id": session_id, "service": _SERVICE_TAG}}, config))
+            #   node_id = created.get("node_id")
+            #   if node_id:
+            #       report.created += 1
+            #       produced_ids.append(node_id)        # OUTPUT side, wired below
+            #       if link_to:                         # the request's link target
+            #           if await _link_once(backend, config, node_id,
+            #                                "AROSE_FROM", link_to):
+            #               report.linked += 1
+            #
+            # If the output references papers: dedupe on corpus_id, create with
+            # add_paper, then paper -[SUPPORTS|CONTRADICTS|CITES]-> the produced
+            # node. Papers carry NO WAS_GENERATED_BY; instead the run Execution
+            # -[USED]-> a paper the knowledge was derived from:
+            #   if await _link_once(backend, config, exec_id, "USED", paper_id):
+            #       report.linked += 1
+            pass
+
+        # OUTPUT-side provenance: every produced node -[WAS_GENERATED_BY]-> the run
+        # Execution (the mirror of the input-side USED edges above). Papers are
+        # excluded by construction (they are never appended to produced_ids).
+        await _record_generated(backend, config, exec_id, produced_ids, report)
+    except Exception:
+        # Partial-ingest failsafe: bucketing raised partway. Mark the run failed
+        # so it does not read as clean (no destructive rollback: provenance stays
+        # reachable; graph_consistency_check reconciles).
+        logger.error(
+            "ingest_{c.tool_ident}: output bucketing raised partway; marking run failed",
+            exc_info=True,
+        )
+        await mark_execution_failed(
+            config,
+            exec_id,
+            JobOutcome(ok=False, state="ingest-error", detail="output bucketing raised"),
+        )
+        report.failed = True
+        report.job_state = "ingest-error"
+        return report
 
     logger.info(
         "ingest_{c.tool_ident}: created=%d deduped=%d linked=%d skipped=%d "
@@ -509,7 +878,13 @@ Run the CLI, writing the artifact to a temp file:
 {cli}
 ```
 
-If the command exits non-zero (including a login or auth failure), report it and stop. A failed run writes nothing to the graph by design.
+If the command exits non-zero (including a login or auth failure), FIRST record the failed attempt so it is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
+
+```
+wheeler integrate record-failure {c.tool_ident} --reason "<short stderr>" --link-to <Q- or PL- id> --used <Q- or PL- id>
+```
+
+This writes a failed Execution (status "failed", the reason in custom_error) wired to its inputs (USED) and Plan (AROSE_FROM). Then report it and stop. A failed run fabricates NO nodes by design. (When an artifact IS returned but the job's own status is not "completed", the ingest applies the same gate: it records a failed Execution and fabricates no outputs, so a partial or failed remote job never masquerades as a clean one.)
 
 ## Ingest
 
@@ -537,7 +912,19 @@ Relay the printed summary (`created`, `deduped`, `linked`, `skipped`, the run Ex
 
 
 def render_test(c: ServiceContract) -> str:
-    """Render the parse-unit + live-Neo4j e2e test stub for the new tool."""
+    """Render the parse-unit + live-Neo4j e2e test stub for the new tool.
+
+    Dispatches on the deliverable format so the generated test MATCHES the
+    generated ingest's signature (a json ``parse_<tool>(doc)`` vs a markdown
+    ``parse_<tool>(report_markdown)``).
+    """
+    if c.is_markdown:
+        return _render_test_md(c)
+    return _render_test_json(c)
+
+
+def _render_test_json(c: ServiceContract) -> str:
+    """Render the parse-unit + live-Neo4j e2e test stub (JSON adapter)."""
     cleanup = f"_cleanup_{c.tool_ident}"
     return f'''"""Tests for the {c.display_name} adapter.
 
@@ -800,6 +1187,249 @@ class TestIngest{c.tool_camel}E2E:
 '''
 
 
+def _render_test_md(c: ServiceContract) -> str:
+    """Render the test stub for a MARKDOWN-deliverable adapter.
+
+    Matches the md ingest's signature: ``parse_<tool>(report_markdown)`` returns
+    ``(ReportRecord | None, RunMeta)``, and ``ingest_<tool>(report_markdown, *,
+    report_path, ...)``. The e2e builds a report with RUN-UNIQUE synthetic
+    corpus_ids (so it can never dedupe into and then delete a production Paper)
+    and is gated on a captured fixture. Mirrors ``test_scholar_qa.py``.
+    """
+    cleanup = f"_cleanup_{c.tool_ident}"
+    return f'''"""Tests for the {c.display_name} adapter (markdown deliverable).
+
+SCAFFOLD. Two layers, NEITHER making a live {c.tool_slug} call:
+  1. parse_{c.tool_ident}: defensive cases for the markdown parser (a non-string /
+     empty report yields ``(None, RunMeta())``; a report with no references yields
+     a ReportRecord with an empty paper list). Fill the real-fixture assertions.
+  2. live-Neo4j e2e: ingest a report with RUN-UNIQUE synthetic corpus_ids (so it
+     can never dedupe into and then delete a production Paper), assert the Document
+     + CITES subgraph, then re-ingest and assert idempotency. Skipped when Neo4j
+     is not reachable.
+
+Run: python -m pytest tests/integrations/{c.provider_slug}/test_{c.tool_ident}.py -q
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path
+
+import pytest
+
+from wheeler.integrations.{c.provider_slug}.{c.tool_ident} import (  # type: ignore[import-not-found]
+    ReportRecord,
+    RunMeta,
+    parse_{c.tool_ident},
+)
+
+# Trimmed REAL report captured from one live run (TODO: capture + commit a .md).
+FIXTURE = Path(__file__).parent / "fixtures" / "{c.tool_ident}_real_sample.md"
+SERVICE_TAG = "{c.service_tag}"
+
+
+# ---------------------------------------------------------------------------
+# 1. Defensive parse (matches the markdown parser signature)
+# ---------------------------------------------------------------------------
+
+
+class TestParse{c.tool_camel}:
+    def test_non_string_is_none(self):
+        record, run_meta = parse_{c.tool_ident}(123)
+        assert record is None
+        assert isinstance(run_meta, RunMeta)
+
+    def test_empty_string_is_none(self):
+        record, _ = parse_{c.tool_ident}("   \\n  ")
+        assert record is None
+
+    def test_minimal_report_parses_to_a_record(self):
+        record, run_meta = parse_{c.tool_ident}("# A Title\\n\\nbody, no refs.")
+        assert isinstance(record, ReportRecord)
+        assert isinstance(run_meta, RunMeta)
+        # The stub returns an empty paper list; once the parser is filled this
+        # asserts the cited papers. TODO: tighten against a real captured report.
+        assert record.papers == []
+
+    @pytest.mark.skipif(not FIXTURE.exists(), reason="real fixture not captured yet")
+    def test_real_fixture(self):
+        record, _ = parse_{c.tool_ident}(FIXTURE.read_text())
+        assert record is not None
+        # TODO: assert the cited-paper count + corpus_ids against the fixture.
+        assert record.papers is not None
+
+
+# ---------------------------------------------------------------------------
+# 2. Live-Neo4j e2e (per-run e2e_tag, run-unique corpus_ids)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def e2e_config():
+    from wheeler.config import Neo4jConfig, ProjectMeta, WheelerConfig
+
+    return WheelerConfig(
+        neo4j=Neo4jConfig(
+            uri="bolt://localhost:7687",
+            username="neo4j",
+            password="research-graph",
+            database="neo4j",
+        ),
+        project=ProjectMeta(name="Integrations-E2E-Test"),
+    )
+
+
+@pytest.fixture(scope="module")
+def neo4j_available(e2e_config) -> bool:
+    import asyncio
+
+    from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
+
+    async def _check():
+        driver = AsyncGraphDatabase.driver(
+            e2e_config.neo4j.uri,
+            auth=(e2e_config.neo4j.username, e2e_config.neo4j.password),
+            notifications_min_severity=NotificationMinimumSeverity.OFF,
+        )
+        try:
+            async with driver.session(database=e2e_config.neo4j.database) as s:
+                await s.run("RETURN 1")
+            return True
+        except Exception:
+            return False
+        finally:
+            await driver.close()
+
+    return asyncio.run(_check())
+
+
+@pytest.fixture(autouse=True)
+def _reset_driver_singleton():
+    import wheeler.graph.driver as drv
+
+    drv._async_driver = None
+    drv._async_driver_uri = None
+    yield
+    drv._async_driver = None
+    drv._async_driver_uri = None
+
+
+def {cleanup}(e2e_config, e2e_tag: str) -> None:
+    """Hermetic teardown: delete ONLY the nodes THIS run tagged. EXACTLY the
+    e2e_tag delete, never by service / corpus_id (the e2e config is the shared
+    namespace where production nodes carry the same service tag)."""
+    import asyncio
+
+    from neo4j import AsyncGraphDatabase, NotificationMinimumSeverity
+
+    async def _run():
+        driver = AsyncGraphDatabase.driver(
+            e2e_config.neo4j.uri,
+            auth=(e2e_config.neo4j.username, e2e_config.neo4j.password),
+            notifications_min_severity=NotificationMinimumSeverity.OFF,
+        )
+        try:
+            async with driver.session(database=e2e_config.neo4j.database) as s:
+                await s.run(
+                    "MATCH (n) WHERE n.e2e_tag = $tag DETACH DELETE n", tag=e2e_tag
+                )
+        finally:
+            await driver.close()
+
+    asyncio.run(_run())
+
+
+class TestIngest{c.tool_camel}E2E:
+    @pytest.fixture(autouse=True)
+    def _skip_and_cleanup(self, neo4j_available, e2e_config, tmp_path, monkeypatch):
+        if not neo4j_available:
+            pytest.skip("Neo4j not available -- skipping integrations e2e")
+        monkeypatch.chdir(tmp_path)
+        self._tmp = tmp_path
+        self._e2e_tag = f"integrations_e2e_{{uuid.uuid4().hex}}"
+        # Run-unique numeric corpus_ids derived from the per-run uuid, so they
+        # cannot collide with a production Paper or a prior interrupted run.
+        base = int(self._e2e_tag.rsplit("_", 1)[-1][:12], 16)
+        self._cids = [str(base + i) for i in range(3)]
+        {cleanup}(e2e_config, self._e2e_tag)
+        yield
+        {cleanup}(e2e_config, self._e2e_tag)
+
+    async def _tag_all(self, e2e_config, report):
+        from wheeler.graph.driver import get_async_driver
+
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+        run_ids = [i for i in (report.execution_id, report.artifact) if i]
+        run_ids += [pid for pid in report.paper_ids if pid]
+        async with driver.session(database=db) as s:
+            if run_ids:
+                await s.run(
+                    "MATCH (n) WHERE n.id IN $ids SET n.e2e_tag = $tag",
+                    ids=run_ids, tag=self._e2e_tag,
+                )
+            if report.execution_id:
+                await s.run(
+                    "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {{id: $xid}}) "
+                    "SET n.e2e_tag = $tag",
+                    xid=report.execution_id, tag=self._e2e_tag,
+                )
+
+    @pytest.mark.asyncio
+    async def test_ingest_and_idempotent(self, e2e_config):
+        from wheeler.integrations.{c.provider_slug}.{c.tool_ident} import (  # type: ignore[import-not-found]
+            ingest_{c.tool_ident},
+        )
+
+        # TODO: build a report markdown that cites the run-unique corpus_ids in
+        # self._cids using THIS tool's citation convention, so the filled parser
+        # extracts them. (See test_scholar_qa._build_report for a worked example.)
+        report_path = self._tmp / "report.md"
+        report_path.write_text("# E2E Report\\n\\nTODO: cite self._cids here.\\n")
+
+        from wheeler.tools.graph_tools import execute_tool  # type: ignore[import-not-found]
+
+        q = json.loads(
+            await execute_tool(
+                "add_question",
+                {{"question": "E2E: what does {c.display_name} address?", "priority": 5}},
+                e2e_config,
+            )
+        )
+        question_id = q["node_id"]
+
+        report1 = await ingest_{c.tool_ident}(
+            report_path.read_text(),
+            report_path=str(report_path),
+            link_to=question_id,
+            config=e2e_config,
+            used_inputs=[question_id],
+        )
+        await self._tag_all(e2e_config, report1)
+        assert report1.execution_id
+        assert not report1.failed  # the run succeeded
+        # The report registers as a Document (W-), WAS_GENERATED_BY the run.
+        if report1.artifact:
+            assert report1.artifact.startswith("W-")
+        # TODO: once the parser is filled, assert the cited-Paper count, the
+        # Document -[CITES]-> Paper edges, and that Papers carry NO
+        # WAS_GENERATED_BY (scope every count to self._e2e_tag).
+
+        # Re-ingest the SAME report: idempotent.
+        report2 = await ingest_{c.tool_ident}(
+            report_path.read_text(),
+            report_path=str(report_path),
+            link_to=question_id,
+            config=e2e_config,
+            used_inputs=[question_id],
+        )
+        await self._tag_all(e2e_config, report2)
+        assert report2.created == 0  # nothing new on the second pass
+'''
+
+
 # ---------------------------------------------------------------------------
 # Writers (idempotent-ish file emission)
 # ---------------------------------------------------------------------------
@@ -816,15 +1446,16 @@ def _write(path: Path, text: str, *, overwrite: bool, dry_run: bool) -> str:
     return f"wrote          {path}"
 
 
-def _append_service_entry(
-    path: Path, entry: str, *, dry_run: bool
-) -> str:
-    """Append a services.yaml entry, creating the file with a root if absent.
+def _append_catalog_entry(path: Path, entry: str, *, dry_run: bool) -> str:
+    """Append an entry under ``services:`` in the bundled catalog, idempotently.
 
-    Idempotent on the entry id: if an entry with the same ``id:`` line already
-    exists, it is left untouched.
+    For a SHIPPED service (``--shipped``): the bundled catalog
+    ``wheeler/integrations/services.default.yaml`` is package data with a
+    ``services:`` list root, so the entry is appended (never overwriting other
+    services). Idempotent on the entry id: an entry with the same ``id:`` line is
+    left untouched.
     """
-    id_line = entry.splitlines()[0].strip()  # "- id: <provider>-<tool>"
+    id_line = entry.splitlines()[0].strip()  # "- id: <id>"
     existing = path.read_text() if path.exists() else ""
     if id_line in existing:
         return f"skip (entry exists)  {path}"
@@ -851,22 +1482,37 @@ def scaffold(
 ) -> list[str]:
     """Emit all four skeleton files under ``repo_root``; return action notes.
 
-    The ingest module, act, and test are written; the services.yaml entry is
-    appended (never overwriting other services). The empty package ``__init__``
-    files are created when the provider package is new.
+    The ingest module, act, and test are written; the service contract goes either
+    to the bundled CATALOG (``--shipped``) or to a per-id ENABLED-folder file
+    ``.wheeler/services/<id>.yaml`` (the default, folder-based, extraction-friendly
+    home: one file per enabled service). The empty package ``__init__`` files are
+    created when the provider package is new.
     """
     notes: list[str] = []
     provider = contract.provider_slug
     tool = contract.tool_ident
 
-    # 1. services.yaml entry (append).
-    notes.append(
-        _append_service_entry(
-            repo_root / ".wheeler" / "services.yaml",
-            render_services_entry(contract),
-            dry_run=dry_run,
+    # 1. service contract. WHERE depends on scope:
+    #   - shipped -> the bundled CATALOG services.default.yaml (enabled-by-default).
+    #   - else    -> the ENABLED folder, one file per service (writing it ENABLES
+    #     the service; the folder is the registry's source of truth).
+    if contract.shipped:
+        notes.append(
+            _append_catalog_entry(
+                repo_root / "wheeler" / "integrations" / "services.default.yaml",
+                render_services_entry(contract),
+                dry_run=dry_run,
+            )
         )
-    )
+    else:
+        notes.append(
+            _write(
+                repo_root / ".wheeler" / "services" / f"{contract.service_id}.yaml",
+                render_service_file(contract),
+                overwrite=overwrite,
+                dry_run=dry_run,
+            )
+        )
 
     # 2. ingest skeleton + package __init__.
     pkg_init = repo_root / "wheeler" / "integrations" / provider / "__init__.py"
@@ -881,11 +1527,12 @@ def scaffold(
         )
     )
 
-    # 3. marshal-in act.
+    # 3. marshal-in act. The file name follows the act slug (so an --act override
+    # like ``asta-report`` lands at .claude/commands/wh/asta-report.md, not the
+    # mechanical ``<provider>-<tool>``).
     notes.append(
         _write(
-            repo_root / ".claude" / "commands" / "wh"
-            / f"{provider}-{contract.tool_slug}.md",
+            repo_root / ".claude" / "commands" / "wh" / f"{contract.act_slug}.md",
             render_act(contract),
             overwrite=overwrite,
             dry_run=dry_run,
@@ -920,7 +1567,32 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--when", default="")
     p.add_argument("--raw-node", dest="raw_node", default="dataset")
     p.add_argument(
+        "--raw-format",
+        dest="raw_format",
+        default="json",
+        choices=sorted(_RAW_FORMATS),
+        help="json (one JSON -o artifact) or md (a synthesized markdown report)",
+    )
+    p.add_argument(
         "--nodes", default="Paper", help="comma-separated node types"
+    )
+    p.add_argument(
+        "--id",
+        dest="id_override",
+        default="",
+        help="override the registry id (default <provider>-<tool>)",
+    )
+    p.add_argument(
+        "--act",
+        dest="act_override",
+        default="",
+        help="override the act slug (default <provider>-<tool>)",
+    )
+    p.add_argument(
+        "--shipped",
+        action="store_true",
+        help="register in the bundled catalog services.default.yaml (else a "
+        ".wheeler/services/<id>.yaml enabled-folder file)",
     )
     p.add_argument(
         "--repo-root", default=".", help="repo root to scaffold under"
@@ -944,6 +1616,10 @@ def main(argv: list[str] | None = None) -> int:
         when=args.when,
         raw_node=args.raw_node,
         nodes=[n.strip() for n in args.nodes.split(",") if n.strip()],
+        raw_format=args.raw_format,
+        id_override=args.id_override,
+        act_override=args.act_override,
+        shipped=args.shipped,
     )
     notes = scaffold(
         contract,
