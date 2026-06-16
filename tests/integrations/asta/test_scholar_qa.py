@@ -210,6 +210,8 @@ class TestScholarQaCliVerb:
             execution_id = "X-stub"
             artifact = "W-stub"
             paper_ids = ["P-stub"]
+            failed = False
+            job_state = ""
 
         monkeypatch.setattr(cli_mod, "load_config", lambda: object(), raising=False)
         monkeypatch.setattr(
@@ -225,7 +227,7 @@ class TestScholarQaCliVerb:
         report = tmp_path / "report.md"
         report.write_text("# Not JSON\n\n[[A]] x\n\n[A]: https://semanticscholar.org/p/1\n")
         result, captured = self._run(
-            ["scholar-qa", str(report), "--link-to", "Q-1"], monkeypatch
+            ["ingest", "scholar-qa", str(report), "--link-to", "Q-1"], monkeypatch
         )
         assert result.exit_code == 0, result.output
         # The raw markdown reached the ingest verbatim (not parsed as JSON).
@@ -233,7 +235,7 @@ class TestScholarQaCliVerb:
         assert captured["report_path"] == str(report)
         assert captured["link_to"] == "Q-1"
         assert captured["find_results"] is None
-        assert "report: W-stub" in result.output
+        assert "artifact: W-stub" in result.output
 
     def test_find_results_parsed_and_forwarded(self, tmp_path, monkeypatch):
         report = tmp_path / "report.md"
@@ -241,7 +243,7 @@ class TestScholarQaCliVerb:
         find = tmp_path / "find.json"
         find.write_text(json.dumps({"query": "q", "results": []}))
         result, captured = self._run(
-            ["scholar-qa", str(report), "--find-results", str(find)],
+            ["ingest", "scholar-qa", str(report), "--find-results", str(find)],
             monkeypatch,
         )
         assert result.exit_code == 0, result.output
@@ -251,7 +253,7 @@ class TestScholarQaCliVerb:
         report = tmp_path / "report.md"
         report.write_text("# R\n")
         result, captured = self._run(
-            ["scholar-qa", str(report), "--used", "Q-1, , F-2"],
+            ["ingest", "scholar-qa", str(report), "--used", "Q-1, , F-2"],
             monkeypatch,
         )
         assert result.exit_code == 0, result.output
@@ -261,7 +263,7 @@ class TestScholarQaCliVerb:
         report = tmp_path / "report.md"
         report.write_text("# R\n")
         result, _ = self._run(
-            ["literature-report", str(report)], monkeypatch
+            ["ingest", "literature-report", str(report)], monkeypatch
         )
         assert result.exit_code == 0, result.output
 
@@ -277,7 +279,7 @@ class TestScholarQaCliVerb:
         )
         result = CliRunner().invoke(
             cli_mod.integrate_app,
-            ["scholar-qa", str(report), "--find-results", str(tmp_path / "nope.json")],
+            ["ingest", "scholar-qa", str(report), "--find-results", str(tmp_path / "nope.json")],
         )
         assert result.exit_code == 2
         assert "not found" in result.output

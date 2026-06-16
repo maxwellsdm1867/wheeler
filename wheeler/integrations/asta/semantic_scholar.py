@@ -86,6 +86,7 @@ from typing import Any
 from wheeler.config import WheelerConfig
 from wheeler.integrations.asta._marshal import (
     ImportReport,
+    JobOutcome,
     _find_execution,
     _find_paper_by_corpus_id,
     _link_execution_to_plan,
@@ -94,6 +95,9 @@ from wheeler.integrations.asta._marshal import (
     _paper_exists,
     _record_used,
     _save_index,
+    job_outcome,
+    mark_execution_completed,
+    mark_execution_failed,
 )
 from wheeler.integrations.asta.schemas import _normalize_corpus_id
 
@@ -677,14 +681,13 @@ async def ingest_semantic_scholar(
 
     report = ImportReport()
     parsed = parse_semantic_scholar(doc)
-    if parsed.sub_kind == "unknown" or not (
-        parsed.papers or parsed.citations or parsed.snippets
-    ):
-        logger.warning(
-            "ingest_semantic_scholar: nothing parseable (sub_kind=%s)",
-            parsed.sub_kind,
-        )
-        return report
+    # Failsafe gate: did the external job return a usable artifact? An S2 REST
+    # response has no A2A status block, so this is ok for any present dict (the
+    # transport already gated the non-zero / missing / empty cases). The
+    # parse-quality check (unknown sub_kind / nothing parseable) is handled after
+    # the Execution is created, so even an undetectable artifact leaves a visible
+    # run record.
+    outcome = job_outcome(doc)
 
     backend = await _get_backend(config)
     paper_index = _load_index()
@@ -698,6 +701,7 @@ async def ingest_semantic_scholar(
     exec_id = await _find_execution(
         backend, config, service=_SERVICE_TAG, session_id=session_id
     )
+    reused = bool(exec_id)
     if not exec_id:
         exec_result = json.loads(
             await execute_tool(
@@ -706,7 +710,7 @@ async def ingest_semantic_scholar(
                     "kind": _kind_for_sub(parsed.sub_kind),
                     "description": f"Asta Semantic Scholar: {parsed.sub_kind}",
                     "agent_id": "asta",
-                    "status": "completed",
+                    "status": "completed" if outcome.ok else "failed",
                     "session_id": session_id,
                     "service": _SERVICE_TAG,
                 },
@@ -761,82 +765,134 @@ async def ingest_semantic_scholar(
     if artifact_id:
         report.artifact = artifact_id
 
-    # corpus_id (or fallback key) -> P-id for papers touched this run, so the
-    # same paper appearing twice in one artifact is created once.
-    seen_papers: dict[str, str] = {}
+    # Failsafe gate: if the job did not return a usable artifact, STOP here. The
+    # Execution exists (status="failed", reason in its custom bag) and the raw
+    # artifact is saved, so the attempt is visible, but no nodes are fabricated.
+    if not outcome.ok:
+        await mark_execution_failed(config, exec_id, outcome)
+        report.failed = True
+        report.job_state = outcome.state
+        logger.warning(
+            "ingest_semantic_scholar: job did not complete (state=%s): %s",
+            outcome.state,
+            outcome.detail,
+        )
+        return report
+    # Reused Execution from a PRIOR failed attempt: a now-successful retry must
+    # not inherit the stale "failed" status. Reset before any output is written.
+    if reused:
+        await mark_execution_completed(config, exec_id)
+    # A completed job whose shape we could not detect (or which had no records) is
+    # a visible empty run: the Execution stays completed, there is nothing to
+    # bucket. (An undetectable shape is a parse limitation, not a remote-job
+    # failure, so the run is honestly "completed", not "failed".)
+    if parsed.sub_kind == "unknown" or not (
+        parsed.papers or parsed.citations or parsed.snippets
+    ):
+        logger.warning(
+            "ingest_semantic_scholar: nothing parseable in completed artifact "
+            "(sub_kind=%s)",
+            parsed.sub_kind,
+        )
+        return report
 
-    if parsed.sub_kind in ("get", "search"):
-        for record in parsed.papers:
-            await _ingest_paper(
-                backend=backend,
-                execute_tool=execute_tool,
-                config=config,
-                record=record,
-                session_id=session_id,
-                artifact_id=artifact_id,
-                link_to=link_to,
-                paper_index=paper_index,
-                fallback_index=fallback_index,
-                seen_papers=seen_papers,
-                report=report,
-            )
+    try:
+        # corpus_id (or fallback key) -> P-id for papers touched this run, so the
+        # same paper appearing twice in one artifact is created once.
+        seen_papers: dict[str, str] = {}
 
-    elif parsed.sub_kind == "citations":
-        # Resolve the cited target (the CLI argument, NOT in the artifact). A
-        # P-id is used directly; a corpus_id (digit string) is mapped to its
-        # Paper. If the target cannot be resolved, the papers are still created
-        # but no CITES edge is built (counted via report; logged once).
-        target_id = await _resolve_target(backend, config, target)
-        if target is not None and target_id is None:
-            logger.warning(
-                "ingest_semantic_scholar: citation target %r did not resolve to a "
-                "node; citing papers will be created without CITES edges",
-                target,
-            )
-        for citation in parsed.citations:
-            # CRITICAL: citing papers are NOT relevant to the question. A citation
-            # links via citingPaper -[CITES]-> target plus WAS_DERIVED_FROM the
-            # raw node; it is never RELEVANT_TO the question and never
-            # WAS_GENERATED_BY (papers are reference entities, not produced by
-            # Wheeler). So link_to is forced to None here. See /wh:close and
-            # /wh:graph-link: "Papers are never orphans. They are reference
-            # entities, not produced by Wheeler."
-            paper_id = await _ingest_paper(
-                backend=backend,
-                execute_tool=execute_tool,
-                config=config,
-                record=citation.citing,
-                session_id=session_id,
-                artifact_id=artifact_id,
-                link_to=None,
-                paper_index=paper_index,
-                fallback_index=fallback_index,
-                seen_papers=seen_papers,
-                report=report,
-            )
-            # citingPaper -[CITES]-> target (the cited paper). Builds the
-            # citation graph. link_once-guarded so re-ingest never duplicates.
-            if paper_id and target_id:
-                if await _link_once(backend, config, paper_id, "CITES", target_id):
-                    report.linked += 1
+        if parsed.sub_kind in ("get", "search"):
+            for record in parsed.papers:
+                await _ingest_paper(
+                    backend=backend,
+                    execute_tool=execute_tool,
+                    config=config,
+                    record=record,
+                    session_id=session_id,
+                    artifact_id=artifact_id,
+                    link_to=link_to,
+                    paper_index=paper_index,
+                    fallback_index=fallback_index,
+                    seen_papers=seen_papers,
+                    report=report,
+                )
 
-    elif parsed.sub_kind == "snippet":
-        for snippet in parsed.snippets:
-            await _ingest_snippet(
-                backend=backend,
-                execute_tool=execute_tool,
-                config=config,
-                snippet=snippet,
-                session_id=session_id,
-                exec_id=exec_id,
-                artifact_id=artifact_id,
-                link_to=link_to,
-                paper_index=paper_index,
-                fallback_index=fallback_index,
-                snippet_index=snippet_index,
-                seen_papers=seen_papers,
-                report=report,
-            )
+        elif parsed.sub_kind == "citations":
+            # Resolve the cited target (the CLI argument, NOT in the artifact). A
+            # P-id is used directly; a corpus_id (digit string) is mapped to its
+            # Paper. If the target cannot be resolved, the papers are still created
+            # but no CITES edge is built (counted via report; logged once).
+            target_id = await _resolve_target(backend, config, target)
+            if target is not None and target_id is None:
+                logger.warning(
+                    "ingest_semantic_scholar: citation target %r did not resolve to a "
+                    "node; citing papers will be created without CITES edges",
+                    target,
+                )
+            for citation in parsed.citations:
+                # CRITICAL: citing papers are NOT relevant to the question. A
+                # citation links via citingPaper -[CITES]-> target plus
+                # WAS_DERIVED_FROM the raw node; it is never RELEVANT_TO the
+                # question and never WAS_GENERATED_BY (papers are reference
+                # entities, not produced by Wheeler). So link_to is forced to None
+                # here. See /wh:close and /wh:graph-link: "Papers are never
+                # orphans. They are reference entities, not produced by Wheeler."
+                paper_id = await _ingest_paper(
+                    backend=backend,
+                    execute_tool=execute_tool,
+                    config=config,
+                    record=citation.citing,
+                    session_id=session_id,
+                    artifact_id=artifact_id,
+                    link_to=None,
+                    paper_index=paper_index,
+                    fallback_index=fallback_index,
+                    seen_papers=seen_papers,
+                    report=report,
+                )
+                # citingPaper -[CITES]-> target (the cited paper). Builds the
+                # citation graph. link_once-guarded so re-ingest never duplicates.
+                if paper_id and target_id:
+                    if await _link_once(backend, config, paper_id, "CITES", target_id):
+                        report.linked += 1
+
+        elif parsed.sub_kind == "snippet":
+            for snippet in parsed.snippets:
+                await _ingest_snippet(
+                    backend=backend,
+                    execute_tool=execute_tool,
+                    config=config,
+                    snippet=snippet,
+                    session_id=session_id,
+                    exec_id=exec_id,
+                    artifact_id=artifact_id,
+                    link_to=link_to,
+                    paper_index=paper_index,
+                    fallback_index=fallback_index,
+                    snippet_index=snippet_index,
+                    seen_papers=seen_papers,
+                    report=report,
+                )
+    except Exception:
+        # Partial-ingest failsafe: bucketing raised partway. Mark the run failed
+        # (no destructive rollback: provenance stays reachable; consistency_check
+        # reconciles). Persist the indices so created nodes keep their dedupe keys.
+        logger.error(
+            "ingest_semantic_scholar: output bucketing raised partway; marking "
+            "run failed",
+            exc_info=True,
+        )
+        await mark_execution_failed(
+            config,
+            exec_id,
+            JobOutcome(ok=False, state="ingest-error", detail="output bucketing raised"),
+        )
+        report.failed = True
+        report.job_state = "ingest-error"
+        _save_index(paper_index)
+        _save_snippet_index(snippet_index)
+        _save_fallback_index(fallback_index)
+        return report
 
     _save_index(paper_index)
     _save_snippet_index(snippet_index)

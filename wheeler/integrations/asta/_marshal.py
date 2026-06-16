@@ -44,7 +44,15 @@ _INDEX_REL_PATH = ".wheeler/integrations/paper_finder_index.json"
 
 @dataclass
 class ImportReport:
-    """Outcome of one ingest run."""
+    """Outcome of one ingest run.
+
+    ``failed`` / ``job_state`` carry the external-job lifecycle outcome: an
+    ingest only fabricates output nodes when the job VERIFIABLY succeeded. A
+    failed or incomplete job still leaves a (failed) Execution so the attempt is
+    visible (``failed=True``, ``job_state`` = the job's own state), but no
+    fabricated Findings/Hypotheses/Papers, so a failed run never masquerades as a
+    clean completed one.
+    """
 
     created: int = 0
     deduped: int = 0
@@ -55,6 +63,8 @@ class ImportReport:
     execution_id: str = ""
     artifact: str = ""
     paper_ids: list[str] = field(default_factory=list)
+    failed: bool = False
+    job_state: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -67,6 +77,8 @@ class ImportReport:
             "execution_id": self.execution_id,
             "artifact": self.artifact,
             "paper_ids": list(self.paper_ids),
+            "failed": self.failed,
+            "job_state": self.job_state,
         }
 
 
@@ -337,3 +349,207 @@ async def _record_used(
         if await _link_once(backend, config, exec_id, "USED", node_id):
             linked += 1
     return linked
+
+
+# ---------------------------------------------------------------------------
+# External-job lifecycle: did the job actually run, and the Execution status
+# ---------------------------------------------------------------------------
+
+
+# A2A Task.status.state values that mean the job did NOT finish successfully.
+# Anything other than "completed" means the outputs (if any) are partial or
+# absent, so we must not ingest them as if real. "completed" is the only success.
+_A2A_TERMINAL_OK = "completed"
+
+
+@dataclass
+class JobOutcome:
+    """Whether an external-service job VERIFIABLY produced a usable artifact.
+
+    ``ok`` gates whether the ingest fabricates output nodes. ``state`` is the
+    job's own reported state (an A2A Task ``status.state``, or a synthetic token
+    for non-Task shapes), surfaced onto the Execution so a failed run is visible
+    and queryable. ``detail`` is a short human reason for a failure.
+    """
+
+    ok: bool
+    state: str
+    detail: str = ""
+
+
+def _a2a_status_message(doc: dict[str, Any]) -> str:
+    """Best-effort human text from an A2A Task status.message.parts[0].text."""
+    status = doc.get("status")
+    if not isinstance(status, dict):
+        return ""
+    msg = status.get("message")
+    if not isinstance(msg, dict):
+        return ""
+    parts = msg.get("parts")
+    if isinstance(parts, list) and parts and isinstance(parts[0], dict):
+        text = parts[0].get("text")
+        if isinstance(text, str):
+            return text.strip()[:300]
+    return ""
+
+
+def job_outcome(doc: Any) -> JobOutcome:
+    """Decide whether an external job's artifact represents a SUCCESSFUL run.
+
+    The failsafe gate before any output is ingested. We do NOT trust the mere
+    presence of an artifact: an A2A Task can come back ``status.state="failed"``
+    (or canceled / rejected / input-required / working) with a partial or empty
+    artifacts list, and ingesting that as if real would forge a record. So:
+
+      - ``None`` (the transport returned nothing: non-zero exit, timeout, missing
+        / empty / unparseable artifact) -> NOT ok, state "missing".
+      - a non-dict -> NOT ok, state "invalid".
+      - an A2A Task (has a ``status`` dict with a ``state``): ok IFF
+        ``state == "completed"``; otherwise NOT ok, state = the reported state.
+      - any other dict (a LiteratureSearchResult, a report envelope: no A2A
+        status block): ok (the transport already rejected the empty / unparseable
+        cases, so a present dict is a usable artifact). state "completed".
+
+    Defensive: never raises.
+    """
+    if doc is None:
+        return JobOutcome(ok=False, state="missing", detail="no artifact returned")
+    if not isinstance(doc, dict):
+        return JobOutcome(
+            ok=False, state="invalid", detail=f"artifact is {type(doc).__name__}, not an object"
+        )
+    status = doc.get("status")
+    if isinstance(status, dict) and status.get("state") is not None:
+        state = str(status.get("state")).strip().lower()
+        if state == _A2A_TERMINAL_OK:
+            return JobOutcome(ok=True, state=state)
+        return JobOutcome(
+            ok=False,
+            state=state or "unknown",
+            detail=_a2a_status_message(doc) or f"job state was {state!r}, not completed",
+        )
+    # No A2A status block: a plain result dict. The transport already guarantees
+    # it is a non-empty parseable object, so the job produced a usable artifact.
+    return JobOutcome(ok=True, state="completed")
+
+
+async def mark_execution_failed(
+    config: WheelerConfig, exec_id: str, outcome: JobOutcome
+) -> None:
+    """Mark a run Execution as failed and stamp the job-failure diagnostic.
+
+    The failsafe write: set ``status="failed"`` (so nothing downstream reads the
+    run as clean) and park the job's own state + reason in the queryable custom
+    bag (``custom_job_state`` / ``custom_error``). Best-effort: a failure here
+    never raises, so the surrounding ingest's early-return is unaffected.
+    """
+    if not exec_id:
+        return
+    from wheeler.tools.graph_tools import execute_tool
+
+    custom: dict[str, Any] = {"job_state": outcome.state}
+    if outcome.detail:
+        custom["error"] = outcome.detail
+    try:
+        await execute_tool(
+            "update_node",
+            {"node_id": exec_id, "status": "failed", "custom": custom},
+            config,
+        )
+    except Exception:
+        logger.warning(
+            "mark_execution_failed: could not mark %s failed (best-effort)",
+            exec_id,
+            exc_info=True,
+        )
+
+
+async def mark_execution_completed(config: WheelerConfig, exec_id: str) -> None:
+    """Reset a REUSED Execution to completed, clearing any prior failure marks.
+
+    The mirror of ``mark_execution_failed``. The run Execution dedupes on
+    (service, session_id), so a retry REUSES the node a prior attempt created. If
+    that prior attempt left it ``status="failed"`` (a failed remote job, or a
+    partial-ingest error), a now-SUCCESSFUL retry must not inherit the stale
+    "failed" status, or the graph would lie that a successful run failed. Sets
+    ``status="completed"`` and clears ``custom_job_state`` / ``custom_error``.
+    Only call on the success path for a REUSED Execution (a freshly created one is
+    already stamped with the right status). Best-effort: never raises.
+    """
+    if not exec_id:
+        return
+    from wheeler.tools.graph_tools import execute_tool
+
+    try:
+        await execute_tool(
+            "update_node",
+            {
+                "node_id": exec_id,
+                "status": "completed",
+                "custom": {"job_state": "completed", "error": ""},
+            },
+            config,
+        )
+    except Exception:
+        logger.warning(
+            "mark_execution_completed: could not reset %s to completed "
+            "(best-effort)",
+            exec_id,
+            exc_info=True,
+        )
+
+
+async def record_failed_execution(
+    backend,
+    config: WheelerConfig,
+    *,
+    service: str,
+    session_id: str,
+    kind: str,
+    description: str,
+    reason: str,
+    link_to: str | None = None,
+    used_inputs: list[str] | None = None,
+) -> ImportReport:
+    """Create (or reuse) a FAILED Execution for a job that produced no artifact.
+
+    The visibility half of the failsafe: when the external CLI exits non-zero or
+    returns no usable artifact, the transport returns None and the ingest is never
+    called, so without this the attempt would leave NO trace ("you would not know
+    it ran"). The marshal-in act calls this on a non-zero exit so the failed
+    attempt is a queryable Execution (``status="failed"``, service-tagged, with
+    the reason in ``custom_error``), wired to its inputs (USED) and Plan
+    (AROSE_FROM) just like a successful run. Idempotent on (service, session_id).
+    """
+    from wheeler.tools.graph_tools import execute_tool
+
+    report = ImportReport(failed=True, job_state="missing")
+    exec_id = await _find_execution(
+        backend, config, service=service, session_id=session_id
+    )
+    if not exec_id:
+        result = json.loads(
+            await execute_tool(
+                "add_execution",
+                {
+                    "kind": kind,
+                    "description": description[:200],
+                    "agent_id": service.split(":", 1)[0] if service else "",
+                    "status": "failed",
+                    "session_id": session_id,
+                    "service": service,
+                },
+                config,
+            )
+        )
+        exec_id = result.get("node_id", "")
+    report.execution_id = exec_id
+    if exec_id:
+        await mark_execution_failed(
+            config, exec_id, JobOutcome(ok=False, state="missing", detail=reason)
+        )
+        if await _link_execution_to_plan(backend, config, exec_id, link_to):
+            report.plan_linked += 1
+        if used_inputs:
+            report.used += await _record_used(backend, config, exec_id, used_inputs)
+    return report

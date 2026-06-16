@@ -70,6 +70,7 @@ from typing import Any
 from wheeler.config import WheelerConfig
 from wheeler.integrations.asta._marshal import (
     ImportReport,
+    JobOutcome,
     _find_execution,
     _find_paper_by_corpus_id,
     _link_execution_to_plan,
@@ -78,6 +79,8 @@ from wheeler.integrations.asta._marshal import (
     _paper_exists,
     _record_used,
     _save_index,
+    mark_execution_completed,
+    mark_execution_failed,
 )
 from wheeler.integrations.asta.schemas import (
     _normalize_corpus_id,
@@ -385,6 +388,7 @@ async def ingest_scholar_qa(
     exec_id = await _find_execution(
         backend, config, service=_SERVICE_TAG, session_id=session_id
     )
+    reused = bool(exec_id)
     if not exec_id:
         import json
 
@@ -452,22 +456,47 @@ async def ingest_scholar_qa(
         ):
             report.linked += 1
 
+    # Reused Execution from a PRIOR failed attempt (e.g. an earlier partial-ingest
+    # error at the same report path): a now-successful retry must not inherit the
+    # stale "failed" status. Reset before any output is written.
+    if reused:
+        await mark_execution_completed(config, exec_id)
+
     # corpus_id -> P-id for papers touched this run (a paper cited by two keys is
     # resolved once).
     seen_papers: dict[str, str] = {}
-    for paper in record.papers:
-        await _ingest_cited_paper(
-            backend=backend,
-            execute_tool=execute_tool,
-            config=config,
-            paper=paper,
-            doc_id=doc_id,
-            exec_id=exec_id,
-            session_id=session_id,
-            paper_index=paper_index,
-            seen_papers=seen_papers,
-            report=report,
+    try:
+        for paper in record.papers:
+            await _ingest_cited_paper(
+                backend=backend,
+                execute_tool=execute_tool,
+                config=config,
+                paper=paper,
+                doc_id=doc_id,
+                exec_id=exec_id,
+                session_id=session_id,
+                paper_index=paper_index,
+                seen_papers=seen_papers,
+                report=report,
+            )
+    except Exception:
+        # Partial-ingest failsafe: bucketing raised partway. Mark the run failed
+        # so it does not read as clean (no destructive rollback: provenance stays
+        # reachable; consistency_check reconciles). Persist the index so created
+        # papers keep their dedupe key.
+        logger.error(
+            "ingest_scholar_qa: output bucketing raised partway; marking run failed",
+            exc_info=True,
         )
+        await mark_execution_failed(
+            config,
+            exec_id,
+            JobOutcome(ok=False, state="ingest-error", detail="output bucketing raised"),
+        )
+        report.failed = True
+        report.job_state = "ingest-error"
+        _save_index(paper_index)
+        return report
 
     _save_index(paper_index)
     logger.info(

@@ -35,7 +35,15 @@ Run the CLI, writing the artifact to a temp file. This requires an Asta login:
 asta generate-theories literature-theory-generation "$QUESTION" -o /tmp/asta-theorizer.json
 ```
 
-If the command exits non-zero (including a login or auth failure), report it and stop. A failed run writes nothing to the graph by design.
+If the command exits non-zero (including a login or auth failure), FIRST record the failed attempt so the expensive run is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
+
+```
+wheeler integrate record-failure theorizer --reason "<short stderr>" --link-to <Q- or PL- id> --used <Q- or PL- id>,<seeded Finding ids>
+```
+
+This writes a failed Execution (status "failed", the reason in custom_error) wired to its inputs (USED) and Plan (AROSE_FROM). Then report it and stop. A failed run fabricates NO theories or hypotheses by design.
+
+The ingest applies the same gate even when an artifact IS returned: a Theorizer Task whose `status.state` is not "completed" is marshalled as a failed Execution with no fabricated theories, so a partial or failed remote job never masquerades as a clean one.
 
 ## Ingest
 

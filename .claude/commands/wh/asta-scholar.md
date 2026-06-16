@@ -66,7 +66,13 @@ asta papers snippet "<query>" --fields corpusId,title,authors --limit <N> > /tmp
 wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
-If any CLI command exits non-zero, report the failure and stop. A failed run writes nothing to the graph by design. The short alias `s2` works in place of `semantic_scholar`.
+If any CLI command exits non-zero, FIRST record the failed attempt so it is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
+
+```
+wheeler integrate record-failure semantic_scholar --reason "<short stderr>" --link-to <Q- or PL- id> --used <Q- or PL- id>
+```
+
+This writes a failed Execution (status "failed", the reason in custom_error) wired to its inputs (USED) and Plan (AROSE_FROM). Then report the failure and stop. A failed run fabricates NO nodes by design. The short alias `s2` works in place of `semantic_scholar`.
 
 ## Wire semantics to the existing graph
 
