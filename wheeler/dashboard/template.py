@@ -96,6 +96,24 @@ section.zone {
 .node-id.t-Q { color: var(--q); border-color: var(--q); }
 .node-id.t-P { color: var(--pl); border-color: var(--pl); }
 .node-id.t-F { color: var(--f); border-color: var(--f); }
+.node-id[data-nodeid] { cursor: pointer; }
+.node-id[data-nodeid]:hover { filter: brightness(1.12); }
+#toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px;
+  font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 80;
+}
+#toast.show { opacity: 1; }
+.nodemenu {
+  position: absolute; display: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: var(--shadow); z-index: 90; min-width: 170px; padding: 4px;
+}
+.nodemenu.open { display: block; }
+.nodemenu button {
+  display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--ink);
+  padding: 7px 10px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.nodemenu button:hover { background: var(--pill-bg); }
 .pill { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--pill-bg); }
 .pill-in-progress { background: #fde9d0; color: #8a4b00; }
 .pill-approved { background: #d6f0e4; color: #0a6b4f; }
@@ -195,6 +213,13 @@ $HERO_HTML
   <img id="lightbox-img" src="" alt="">
 </div>
 
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div class="nodemenu" id="nodemenu" role="menu" aria-label="Node actions">
+  <button type="button" data-copy="ref" role="menuitem">Copy reference [id]</button>
+  <button type="button" data-copy="id" role="menuitem">Copy node id</button>
+</div>
+
 <div class="canvas-overlay" id="canvas" role="dialog" aria-modal="true" aria-label="Figure canvas">
   <div class="canvas-bar">
     <span class="title">Figure canvas</span>
@@ -215,6 +240,61 @@ $HERO_HTML
   "use strict";
   var PROJECT = $PROJECT_JSON;
   var noteKey = function (id) { return "wh-note:" + PROJECT + ":" + id; };
+
+  // --- clipboard + toast ---
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t);
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  }
+  var toastEl = document.getElementById("toast");
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add("show");
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(function () { toastEl.classList.remove("show"); }, 1400);
+  }
+
+  // --- copyable node badges: click/Enter copies [ID]; right-click for options ---
+  function badgeOf(t) { return t && t.closest ? t.closest(".node-id[data-nodeid]") : null; }
+  document.addEventListener("click", function (ev) {
+    var b = badgeOf(ev.target);
+    if (!b) return;
+    var id = b.getAttribute("data-nodeid");
+    copyText("[" + id + "]"); toast("Copied [" + id + "]");
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var b = ev.target;
+    if (!b.classList || !b.classList.contains("node-id") || !b.getAttribute("data-nodeid")) return;
+    ev.preventDefault();
+    var id = b.getAttribute("data-nodeid");
+    copyText("[" + id + "]"); toast("Copied [" + id + "]");
+  });
+  var nodemenu = document.getElementById("nodemenu");
+  var menuId = null;
+  document.addEventListener("contextmenu", function (ev) {
+    var b = badgeOf(ev.target);
+    if (!b) return;
+    ev.preventDefault();
+    menuId = b.getAttribute("data-nodeid");
+    nodemenu.style.left = ev.pageX + "px";
+    nodemenu.style.top = ev.pageY + "px";
+    nodemenu.classList.add("open");
+  });
+  nodemenu.addEventListener("click", function (ev) {
+    var act = ev.target.getAttribute && ev.target.getAttribute("data-copy");
+    if (!act || !menuId) return;
+    var val = act === "ref" ? "[" + menuId + "]" : menuId;
+    copyText(val); toast("Copied " + val);
+    nodemenu.classList.remove("open");
+  });
+  document.addEventListener("click", function () { nodemenu.classList.remove("open"); });
 
   // --- theme: light / dark / auto (auto follows the OS via CSS media query) ---
   var THEME_KEY = "wh-dash-theme";
@@ -362,7 +442,8 @@ $HERO_HTML
   // --- global escape ---
   document.addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape") return;
-    if (canvas.classList.contains("open")) closeCanvas();
+    if (nodemenu.classList.contains("open")) nodemenu.classList.remove("open");
+    else if (canvas.classList.contains("open")) closeCanvas();
     else if (lb.classList.contains("open")) closeLB();
   });
 })();

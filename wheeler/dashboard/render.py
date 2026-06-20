@@ -50,7 +50,13 @@ def node_badge(node_id: str) -> str:
     nid = str(node_id)
     prefix = nid.split("-", 1)[0][:1].upper() if "-" in nid else ""
     cls = f"node-id t-{prefix}" if prefix else "node-id"
-    return f'<span class="{cls}">{esc(nid)}</span>'
+    # Copyable: click (or Enter) copies the [NODE_ID] reference; right-click opens
+    # a menu to copy the reference or the bare id. Lets the scientist grab a node
+    # and point an LLM at it.
+    return (
+        f'<span class="{cls}" data-nodeid="{esc(nid)}" role="button" tabindex="0" '
+        f'title="Click to copy [{esc(nid)}], right-click for options">{esc(nid)}</span>'
+    )
 
 
 def linkify_nodes(text: str) -> str:

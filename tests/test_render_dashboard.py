@@ -182,7 +182,19 @@ def test_refresh_button_and_graph_provenance():
     assert "<code>wheeler dashboard</code>" in html
 
 
+def test_node_badges_are_copyable():
+    html, _ = render(
+        _base_data(questions=[{"id": "Q-1111", "question": "q?", "priority": 5}])
+    )
+    # Badge carries the id and copy affordances; the JS wires click + right-click.
+    assert 'data-nodeid="Q-1111"' in html
+    assert 'role="button"' in html and 'tabindex="0"' in html
+    assert "Copy reference" in html and "Copy node id" in html
+    assert 'id="nodemenu"' in html and 'id="toast"' in html
+
+
 def test_helpers():
+    assert 'data-nodeid="Q-1234"' in node_badge("Q-1234")
     assert 'class="node-id t-Q"' in node_badge("Q-1234")
     assert "&lt;b&gt;" in linkify_nodes("<b>")
     assert alt_text({"title": "T"}) == "T"
