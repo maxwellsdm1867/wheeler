@@ -1,6 +1,6 @@
 ---
 name: wh:asta-scholar
-description: Use when the user wants to query Semantic Scholar via Asta (paper lookup, search, citations, or snippet search) and ingest the results into the Wheeler knowledge graph
+description: Use when the user wants to query Semantic Scholar via Asta (paper lookup, search, citations, snippet search, or an author's papers) and ingest the results into the Wheeler knowledge graph
 argument-hint: "[query, paper id, or DOI]"
 allowed-tools:
   - Read
@@ -16,12 +16,13 @@ allowed-tools:
 
 You are Wheeler, querying Semantic Scholar through the Asta CLI and marshalling the results into the knowledge graph. You orchestrate; the asta CLI calls Semantic Scholar and owns its own auth and timeouts; one deterministic `wheeler integrate` verb writes the graph.
 
-Semantic Scholar has four sub-queries. The ingest auto-detects which one from the artifact shape, so you only pick the right CLI call:
+Semantic Scholar has five sub-queries. The ingest auto-detects which one from the artifact shape, so you only pick the right CLI call:
 
 - `get`: one paper by id or DOI.
 - `search`: a relevance-ranked paper list for a query.
 - `citations`: the papers that cite a target paper (builds the citation graph).
 - `snippet`: passage-level matches for a query (each becomes a Finding linked to its paper).
+- `author`: an author's papers by author id (each becomes a Paper; the queried author is recorded on the run).
 
 ## Preflight
 
@@ -66,6 +67,15 @@ asta papers snippet "<query>" --fields corpusId,title,authors --limit <N> > /tmp
 wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id> --used <Q- or PL- id>
 ```
 
+### Author's papers
+
+Fetch one author's papers by author id. Each becomes a Paper (`RELEVANT_TO` the link target, like search results); the queried author (id, name, paperCount, citationCount, hIndex) is stamped on the run Execution so the run is queryable by author. Request `corpusId` on the nested papers so they dedupe across services:
+
+```
+asta papers author <authorId> --fields corpusId,title,authors,year,venue,citationCount > /tmp/asta-s2.json
+wheeler integrate ingest semantic_scholar /tmp/asta-s2.json --link-to <Q- or PL- id> --used <Q- or PL- id>
+```
+
 If any CLI command exits non-zero, FIRST record the failed attempt so it is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
 
 ```
@@ -85,4 +95,4 @@ The ingest is structurally complete (each result `USED` the request inputs, snip
 
 ## Report
 
-Relay the printed summary (`created`, `deduped`, `linked`, `skipped`, the run Execution id, and the new node ids) to the user in one or two sentences. For a citations run, note that the citing papers now link `CITES` the target so the citation graph is queryable. For snippet runs, note the passage-level Findings (`artifact_type=snippet`) are linked `APPEARS_IN` their papers. Do not editorialize the science: the records are now in the graph, queryable by `corpus_id` and by their parked `custom_*` scalars. Never use em dashes.
+Relay the printed summary (`created`, `deduped`, `linked`, `skipped`, the run Execution id, and the new node ids) to the user in one or two sentences. For a citations run, note that the citing papers now link `CITES` the target so the citation graph is queryable. For snippet runs, note the passage-level Findings (`artifact_type=snippet`) are linked `APPEARS_IN` their papers. For an author run, note the author's papers are now in the graph and the run Execution carries the queried author (queryable as `custom_author_id` / `custom_author_name`). Do not editorialize the science: the records are now in the graph, queryable by `corpus_id` and by their parked `custom_*` scalars. Never use em dashes.

@@ -15,7 +15,7 @@ the same cached backend the dispatch path uses, and reuse the shared helpers in
 the corpus_id normalization in ``schemas.py``.
 
 REAL Semantic Scholar REST output shapes (not A2A), captured live. The parser
-AUTO-DETECTS the sub-kind by keys, since all four are distinguishable:
+AUTO-DETECTS the sub-kind by keys, since all five are distinguishable:
 
   - ``get``: a single paper dict ``{paperId, title, venue, year, citationCount,
     url, openAccessPdf, publicationDate, authors:[{name, authorId}], abstract}``.
@@ -33,6 +33,18 @@ AUTO-DETECTS the sub-kind by keys, since all four are distinguishable:
   - ``snippet``: ``{data:[{paper:{corpusId, title, ...}, score, snippet:{text,
     snippetKind, ...}}], retrievalVersion}``. Detected by ``data[].snippet`` and
     a top-level ``retrievalVersion``. snippet-search DOES carry ``paper.corpusId``.
+  - ``author``: an author profile ``{authorId, name, paperCount, citationCount,
+    hIndex, affiliations, papers:[paper...]}`` from ``asta papers author
+    <authorId>``. Detected by a top-level ``authorId`` (the author endpoint) with
+    NO top-level ``paperId`` (which marks a single-paper ``get``). The author's
+    papers parse through the same paper path; they may instead arrive under
+    ``data`` (the ``/author/{id}/papers`` endpoint), which is also accepted.
+    NOTE: unlike the other four sub-shapes (captured from a live run), this
+    author shape is INFERRED from the documented S2 author-endpoint family, not
+    yet captured from a real ``asta papers author`` run. The parser is defensive
+    (missing keys are skipped, both ``papers`` and ``data`` containers accepted),
+    but VERIFY against one real capture and adjust the key names if the CLI
+    flattens or renames them. See the matching note on the test fixture.
 
 MAPPING (service = ``asta:semantic-scholar``):
   - get / search -> Paper nodes (dedupe by corpus_id when present, else a stable
@@ -52,6 +64,15 @@ MAPPING (service = ``asta:semantic-scholar``):
     confidence=score, title=short) -[APPEARS_IN]-> its Paper; the paper -> Paper
     node (corpusId present). Snippet Findings dedupe on a content hash so
     re-ingest is a no-op.
+  - author -> the author's papers become Paper nodes (REUSE the get/search path,
+    corpus_id dedupe), each RELEVANT_TO the link target (the author's papers ARE
+    relevant to the question that prompted the lookup, like search results). The
+    queried-author scalars (authorId, name, paperCount, citationCount, hIndex,
+    affiliations) are stamped onto the run Execution's custom bag
+    (``custom_author_id`` / ``custom_author_name`` / ...), NOT as a new node
+    type: the author dimension stays queryable on the run, and each paper already
+    carries the author in its ``authors`` field. No Author node type is created
+    (Papers remain reference entities; no WAS_GENERATED_BY).
   - raw output -> a Dataset node (structured reference records: data-ish is a
     Dataset, unlike Theorizer synthesis = Document), service-tagged, saved
     durably to ``.wheeler/asta/raw/asta-semantic-scholar/<sha>.json``. S2 has no
@@ -164,17 +185,35 @@ class S2Citation:
 
 
 @dataclass
+class S2Author:
+    """The queried author's profile from an ``asta papers author`` run.
+
+    The author dimension is stamped onto the run Execution (NOT a new node type);
+    ``custom`` holds the queryable scalars (``author_id`` / ``author_name`` /
+    ``author_paper_count`` / ...). The author's papers are parsed separately into
+    ``S2Parsed.papers`` and bucket like search results.
+    """
+
+    author_id: str
+    name: str
+    custom: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class S2Parsed:
     """The auto-detected, normalized result of parsing one S2 artifact.
 
-    ``sub_kind`` is one of get | search | citations | snippet | unknown.
-    Exactly one of the record lists is populated per sub_kind.
+    ``sub_kind`` is one of get | search | citations | snippet | author | unknown.
+    For get / search / author the ``papers`` list is populated (an author run
+    additionally sets ``author``); citations populates ``citations``; snippet
+    populates ``snippets``.
     """
 
     sub_kind: str
     papers: list[S2Paper] = field(default_factory=list)
     citations: list[S2Citation] = field(default_factory=list)
     snippets: list[S2Snippet] = field(default_factory=list)
+    author: S2Author | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +371,45 @@ def _parse_paper(paper: Any) -> S2Paper | None:
     )
 
 
+# Scalar author-profile fields parked onto the run Execution's custom bag. Each
+# maps an S2 author key to the custom_<key> name the backend stores (namespaced
+# with author_ so it never collides with a paper scalar on the same node).
+_AUTHOR_CUSTOM_SCALAR_KEYS: tuple[tuple[str, str], ...] = (
+    ("paperCount", "author_paper_count"),
+    ("citationCount", "author_citation_count"),
+    ("hIndex", "author_h_index"),
+    ("url", "author_url"),
+    ("homepage", "author_homepage"),
+)
+
+
+def _parse_author(doc: dict[str, Any]) -> S2Author:
+    """Parse the author-profile scalars from an ``asta papers author`` doc.
+
+    Defensive: missing keys are simply absent from the custom bag. The author id
+    and name are also mirrored into custom (``author_id`` / ``author_name``) so
+    the run Execution is queryable by either. ``affiliations`` is a list of
+    strings, joined to one scalar so it stays queryable as a flat prop.
+    """
+    author_id = _as_str(doc.get("authorId"))
+    name = _as_str(doc.get("name"))
+    custom: dict[str, Any] = {}
+    if author_id:
+        custom["author_id"] = author_id
+    if name:
+        custom["author_name"] = name
+    for src_key, dst_key in _AUTHOR_CUSTOM_SCALAR_KEYS:
+        val = _scalar_or_none(doc.get(src_key))
+        if val is not None and val != "":
+            custom[dst_key] = val
+    aff = doc.get("affiliations")
+    if isinstance(aff, list):
+        names = [str(a) for a in aff if isinstance(a, (str, int, float)) and str(a)]
+        if names:
+            custom["author_affiliations"] = ", ".join(names)
+    return S2Author(author_id=author_id, name=name, custom=custom)
+
+
 # ---------------------------------------------------------------------------
 # Auto-detect the sub-kind
 # ---------------------------------------------------------------------------
@@ -340,14 +418,18 @@ def _parse_paper(paper: Any) -> S2Paper | None:
 def _detect_sub_kind(doc: dict[str, Any]) -> str:
     """Classify an S2 REST doc into get | search | citations | snippet.
 
-    The four sub-shapes are distinguishable by keys:
+    The five sub-shapes are distinguishable by keys:
       - snippet:   ``retrievalVersion`` present, or ANY ``data[i].snippet``.
       - citations: ANY ``data[i]`` is a dict carrying a ``citingPaper`` KEY
                    (whether its value is a dict, ``null``, or absent-but-present).
-      - search:    ``total`` present alongside a ``data`` list (and not the two
+      - author:    a top-level ``authorId`` (the author endpoint) with NO
+                   top-level ``paperId``. Checked BEFORE the generic ``data``-list
+                   shapes so an author profile whose papers arrive under ``data``
+                   is not misread as a search.
+      - search:    ``total`` present alongside a ``data`` list (and not the three
                    above, which also carry a ``data`` list).
       - get:       a top-level ``paperId`` (a single paper dict).
-    Order matters: snippet and citations are checked before the generic
+    Order matters: snippet, citations, and author are checked before the generic
     ``data``-list shapes so they are not misread as a search.
 
     Detection SCANS the whole ``data`` list rather than trusting ``data[0]``: a
@@ -366,6 +448,8 @@ def _detect_sub_kind(doc: dict[str, Any]) -> str:
         return "snippet"
     if any("citingPaper" in e for e in entries):
         return "citations"
+    if "authorId" in doc and "paperId" not in doc:
+        return "author"
     if "total" in doc and isinstance(data, list):
         return "search"
     if "paperId" in doc:
@@ -445,6 +529,22 @@ def parse_semantic_scholar(doc: Any) -> S2Parsed:
                     )
                 )
         return S2Parsed(sub_kind="snippet", snippets=snippets)
+
+    if sub_kind == "author":
+        author = _parse_author(doc)
+        # The author's papers are under ``papers`` (the author-profile endpoint),
+        # else ``data`` (the /author/{id}/papers listing). Each parses through the
+        # same paper path so corpus_id dedupe + the custom bag carry over.
+        papers_raw = doc.get("papers")
+        if not isinstance(papers_raw, list):
+            data = doc.get("data")
+            papers_raw = data if isinstance(data, list) else []
+        papers = []
+        for entry in papers_raw:
+            record = _parse_paper(entry)
+            if record is not None:
+                papers.append(record)
+        return S2Parsed(sub_kind="author", papers=papers, author=author)
 
     logger.warning("parse_semantic_scholar: unrecognized S2 shape, nothing to ingest")
     return S2Parsed(sub_kind="unknown")
@@ -648,7 +748,7 @@ async def ingest_semantic_scholar(
 
     Args:
         doc: The S2 REST artifact dict (auto-detected: get / search / citations /
-            snippet).
+            snippet / author).
         link_to: Optional node id (Plan/Question) that relevant results link to
             via RELEVANT_TO. Applied to get / search / snippet results (those ARE
             relevant to the question). NOT applied to the ``citations`` sub-kind:
@@ -787,7 +887,7 @@ async def ingest_semantic_scholar(
     # bucket. (An undetectable shape is a parse limitation, not a remote-job
     # failure, so the run is honestly "completed", not "failed".)
     if parsed.sub_kind == "unknown" or not (
-        parsed.papers or parsed.citations or parsed.snippets
+        parsed.papers or parsed.citations or parsed.snippets or parsed.author
     ):
         logger.warning(
             "ingest_semantic_scholar: nothing parseable in completed artifact "
@@ -802,6 +902,35 @@ async def ingest_semantic_scholar(
         seen_papers: dict[str, str] = {}
 
         if parsed.sub_kind in ("get", "search"):
+            for record in parsed.papers:
+                await _ingest_paper(
+                    backend=backend,
+                    execute_tool=execute_tool,
+                    config=config,
+                    record=record,
+                    session_id=session_id,
+                    artifact_id=artifact_id,
+                    link_to=link_to,
+                    paper_index=paper_index,
+                    fallback_index=fallback_index,
+                    seen_papers=seen_papers,
+                    report=report,
+                )
+
+        elif parsed.sub_kind == "author":
+            # Stamp the queried-author scalars onto the run Execution so the run
+            # is queryable by author (custom_author_id / custom_author_name / ...).
+            # No Author node type is created: the author dimension lives on the
+            # Execution, and each paper already names the author in its own
+            # ``authors`` field. Best-effort (a stamp failure never aborts ingest).
+            if exec_id and parsed.author is not None and parsed.author.custom:
+                await _stamp_custom(
+                    execute_tool, config, exec_id, parsed.author.custom
+                )
+            # The author's papers bucket exactly like search results: Paper nodes
+            # (corpus_id dedupe), RELEVANT_TO the link target (they ARE relevant
+            # to the question that prompted the lookup), WAS_DERIVED_FROM the raw
+            # Dataset. Papers stay reference entities (no WAS_GENERATED_BY).
             for record in parsed.papers:
                 await _ingest_paper(
                     backend=backend,
