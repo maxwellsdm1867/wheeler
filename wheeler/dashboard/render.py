@@ -303,7 +303,10 @@ def render(data: dict) -> tuple[str, list[str]]:
         TITLE=esc(data.get("title") or "Wheeler Research Dashboard"),
         GENERATED_LINE=gen_line,
         PROJECT=project_label,
-        PROJECT_JSON=json.dumps(project),
+        # Defuse a "</script>" inside the project tag from breaking out of the
+        # inline <script>: "<\/" is valid JSON-in-JS and the parser no longer
+        # sees a closing script tag.
+        PROJECT_JSON=json.dumps(project).replace("</", "<\\/"),
         COUNTS_STRIP=count_chips,
         HERO_HTML=hero_html,
         QUESTIONS_HTML=questions_html,

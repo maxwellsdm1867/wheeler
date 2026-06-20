@@ -327,7 +327,10 @@ $HERO_HTML
     var id = ta.getAttribute("data-figid");
     try {
       var v = localStorage.getItem(noteKey(id));
-      if (v !== null) ta.value = v;
+      // Only seed from local storage when the server-rendered durable note is
+      // empty, so a durable note (set via `wheeler dashboard note`) is never
+      // clobbered by a stale or empty browser-local value.
+      if (v && !ta.value) ta.value = v;
     } catch (e) {}
   });
   document.addEventListener("input", function (ev) {
@@ -390,6 +393,17 @@ $HERO_HTML
       tile.style.left = (col * 500) + "px";
       tile.style.top = (row * 540) + "px";
       tile.innerHTML = card.innerHTML;
+      // Strip duplicate ids/for-refs the clone introduces, and avoid embedding
+      // interactive iframes twice (double payload + re-running their scripts):
+      // replace cloned iframes with a lightweight placeholder.
+      Array.prototype.forEach.call(tile.querySelectorAll("[id]"), function (e) { e.removeAttribute("id"); });
+      Array.prototype.forEach.call(tile.querySelectorAll("label[for]"), function (e) { e.removeAttribute("for"); });
+      Array.prototype.forEach.call(tile.querySelectorAll("iframe"), function (fr) {
+        var ph = document.createElement("div");
+        ph.className = "fig-placeholder";
+        ph.textContent = "Interactive figure (open from the main view)";
+        fr.parentNode.replaceChild(ph, fr);
+      });
       surface.appendChild(tile);
       col++; if (col >= perRow) { col = 0; row++; }
     });

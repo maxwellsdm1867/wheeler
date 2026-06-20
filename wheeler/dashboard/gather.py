@@ -79,11 +79,12 @@ def split_pinned(
 
 
 def attach_notes(figures: list[dict], notes: dict[str, str]) -> None:
-    """Attach the durable note text to each figure dict (in place)."""
-    for f in figures:
+    """Attach durable note text to each figure. Replaces each list entry with a
+    fresh dict (copy) so it never mutates a finding object that is also shared
+    with the results zone (avoids cross-zone aliasing)."""
+    for i, f in enumerate(figures):
         note = notes.get(f.get("id", ""))
-        if note:
-            f["note"] = note
+        figures[i] = {**f, "note": note} if note else dict(f)
 
 
 # --------------------------------------------------------------------------- local state I/O
@@ -101,6 +102,21 @@ def _read_state(path: Path) -> dict:
         return {}
 
 
+def _current_tag(config: WheelerConfig) -> str:
+    return getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
+
+
+def _tag_matches(config: WheelerConfig, data: dict) -> bool:
+    """True if the state file belongs to the current project_tag. Files written
+    before tag-stamping (no project_tag key) are treated as matching for
+    back-compat; a stamped tag that differs from the current one is rejected so
+    pins/notes from another namespace do not render against this project."""
+    stored = data.get("project_tag")
+    if stored is None:
+        return True
+    return str(stored) == _current_tag(config)
+
+
 def _write_state(path: Path, payload: dict) -> None:
     """Atomic write (tmp + rename), mirroring knowledge/store.write_node."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -111,24 +127,32 @@ def _write_state(path: Path, payload: dict) -> None:
 
 def read_pins(config: WheelerConfig) -> list[str]:
     data = _read_state(_state_dir(config) / "pins.json")
+    if not _tag_matches(config, data):
+        return []
     pins = data.get("pins", [])
     return [str(x) for x in pins] if isinstance(pins, list) else []
 
 
 def write_pins(config: WheelerConfig, pins: list[str]) -> None:
-    ptag = getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
-    _write_state(_state_dir(config) / "pins.json", {"project_tag": ptag, "pins": pins})
+    _write_state(
+        _state_dir(config) / "pins.json",
+        {"project_tag": _current_tag(config), "pins": pins},
+    )
 
 
 def read_notes(config: WheelerConfig) -> dict[str, str]:
     data = _read_state(_state_dir(config) / "notes.json")
+    if not _tag_matches(config, data):
+        return {}
     notes = data.get("notes", {})
     return {str(k): str(v) for k, v in notes.items()} if isinstance(notes, dict) else {}
 
 
 def write_notes(config: WheelerConfig, notes: dict[str, str]) -> None:
-    ptag = getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
-    _write_state(_state_dir(config) / "notes.json", {"project_tag": ptag, "notes": notes})
+    _write_state(
+        _state_dir(config) / "notes.json",
+        {"project_tag": _current_tag(config), "notes": notes},
+    )
 
 
 # --------------------------------------------------------------------------- enrichment
@@ -157,6 +181,35 @@ def _enrich_finding(knowledge_path: Path | None, f: dict) -> dict:
     return f
 
 
+def _figure_from_id(knowledge_path: Path | None, node_id: str, root: Path) -> dict | None:
+    """Load a figure finding directly by id (used so a pinned figure that is
+    older than the fetched findings window is never silently dropped). Returns a
+    finding dict if the node is a figure with an existing file, else None."""
+    if knowledge_path is None or not node_id:
+        return None
+    try:
+        from wheeler.knowledge.store import read_node
+
+        model = read_node(knowledge_path, node_id)
+    except FileNotFoundError:
+        return None
+    except Exception:
+        logger.debug("could not load pinned figure %s", node_id, exc_info=True)
+        return None
+    f = {
+        "id": getattr(model, "id", node_id),
+        "description": getattr(model, "description", ""),
+        "confidence": getattr(model, "confidence", 0.0),
+        "tier": getattr(model, "tier", "generated"),
+        "path": getattr(model, "path", ""),
+        "artifact_type": getattr(model, "artifact_type", ""),
+        "title": getattr(model, "title", ""),
+        "stale": getattr(model, "stale", False),
+        "stability": getattr(model, "stability", 0.0),
+    }
+    return f if is_figure(f, root) else None
+
+
 # --------------------------------------------------------------------------- main entry
 
 
@@ -176,8 +229,8 @@ async def gather_dashboard_data(
     project_tag = getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
 
     backend = get_backend(config)
-    await backend.initialize()
     try:
+        await backend.initialize()
         q_raw = await query_open_questions(backend, {"_config": config, "limit": limit})
         # Two passes for the two open statuses (query_plans takes a single status).
         plans_acc: list[dict] = []
@@ -205,10 +258,20 @@ async def gather_dashboard_data(
 
     root = Path(project_root)
     all_figures = select_figures(enriched, root)
+
+    # A pinned figure may be older than the fetched findings window; load any such
+    # pins directly so they are never silently dropped from the hero section.
+    pins = read_pins(config)
+    present = {f.get("id") for f in all_figures}
+    for pid in pins:
+        if pid not in present:
+            extra = _figure_from_id(knowledge_path, pid, root)
+            if extra is not None:
+                all_figures.append(extra)
+                present.add(pid)
+
     notes = read_notes(config)
     attach_notes(all_figures, notes)
-
-    pins = read_pins(config)
     hero, rest_figures = split_pinned(all_figures, pins)
 
     results = rank_results(enriched)[:limit]

@@ -99,6 +99,28 @@ def test_missing_figure_placeholder():
     assert "nope.png" in missing
 
 
+def test_project_tag_cannot_break_out_of_script():
+    # A project tag containing </script> must not close the inline <script>.
+    html, _ = render(_base_data(project="</script><img src=x onerror=alert(1)>"))
+    assert "</script><img" not in html          # raw breakout sequence absent
+    assert "<\\/script" in html                  # defused form present in the JS string
+
+
+def test_interactive_figure_srcdoc_escapes_attribute(tmp_path):
+    fig = tmp_path / "plot.html"
+    fig.write_text('<div title="a & b">x</div><script>1</script>', encoding="utf-8")
+    html, missing = render(
+        _base_data(
+            meta={"project_root": str(tmp_path)},
+            figures=[{"id": "F-q", "title": "P", "path": "plot.html"}],
+        )
+    )
+    assert missing == []
+    # The double-quote and ampersand in the figure content are attribute-escaped
+    # so they cannot close the double-quoted srcdoc attribute.
+    assert "&quot;" in html and "&amp;" in html
+
+
 def test_interactive_html_figure_is_sandboxed_iframe(tmp_path):
     fig = tmp_path / "plot.html"
     fig.write_text("<html><body><script>1+1</script>plot</body></html>", encoding="utf-8")

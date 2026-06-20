@@ -47,6 +47,39 @@ def test_live_server_serves_rendered_page(monkeypatch, tmp_path):
         httpd.server_close()
 
 
+def test_render_live_invalidates_driver(monkeypatch, tmp_path):
+    # Each request runs its own asyncio.run (fresh loop); the cached Neo4j driver
+    # must be discarded afterward so the next request does not reuse a driver
+    # bound to a dead loop. Assert invalidate is called, even on error.
+    import wheeler.dashboard as dashboard_pkg
+    import wheeler.graph.driver as driver_mod
+
+    calls = {"invalidated": 0}
+    monkeypatch.setattr(driver_mod, "invalidate_async_driver", lambda: calls.__setitem__("invalidated", calls["invalidated"] + 1))
+
+    async def fake_gather(config, *, limit=12, plan_id=None):
+        return {"meta": {"project_root": "."}, "generated": "2026-06-20T14:00:00Z",
+                "counts": {}, "hero": [], "questions": [], "plans": [], "results": [],
+                "figures": [], "notes": {}, "project": "", "title": "T"}
+
+    monkeypatch.setattr(dashboard_pkg, "gather_dashboard_data", fake_gather)
+
+    cfg = _config(tmp_path)
+    out = serve_mod.render_live(cfg, 5)
+    assert "<!DOCTYPE html>" in out
+    assert calls["invalidated"] == 1
+
+    async def boom(config, *, limit=12, plan_id=None):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(dashboard_pkg, "gather_dashboard_data", boom)
+    try:
+        serve_mod.render_live(cfg, 5)
+    except RuntimeError:
+        pass
+    assert calls["invalidated"] == 2  # invalidated even when gather raised
+
+
 def test_live_server_renders_error_page_when_graph_down(monkeypatch, tmp_path):
     def boom(config, limit=12):
         raise RuntimeError("connection refused")

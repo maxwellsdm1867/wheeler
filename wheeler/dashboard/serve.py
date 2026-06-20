@@ -13,7 +13,8 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,19 +22,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# The Neo4j async driver is a process-global singleton bound to whatever event
+# loop created it (graph/driver.py). Each request runs its own asyncio.run (a
+# fresh loop), so we serialize graph access and discard the cached driver after
+# every run, matching the MCP servers' invalidate_async_driver() idiom. This is
+# why the server is single-threaded (HTTPServer, not ThreadingHTTPServer): a
+# localhost single-user tool gains nothing from concurrency and the driver is
+# not safe to share across loops/threads.
+_RENDER_LOCK = threading.Lock()
+
 
 def render_live(config: WheelerConfig, limit: int = 12) -> str:
     """Query the graph and render the dashboard HTML for one request."""
     from wheeler.dashboard import gather_dashboard_data, render
+    from wheeler.graph.driver import invalidate_async_driver
 
-    data = asyncio.run(gather_dashboard_data(config, limit=limit))
-    out, _missing = render(data)
-    return out
+    with _RENDER_LOCK:
+        try:
+            data = asyncio.run(gather_dashboard_data(config, limit=limit))
+            out, _missing = render(data)
+            return out
+        finally:
+            invalidate_async_driver()
 
 
-def make_server(
-    config: WheelerConfig, host: str, port: int, limit: int
-) -> ThreadingHTTPServer:
+def make_server(config: WheelerConfig, host: str, port: int, limit: int) -> HTTPServer:
     """Build (but do not start) the dashboard HTTP server."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -70,7 +83,7 @@ def make_server(
         def log_message(self, *args) -> None:  # keep the console quiet
             return
 
-    return ThreadingHTTPServer((host, port), Handler)
+    return HTTPServer((host, port), Handler)
 
 
 def serve(
