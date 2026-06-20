@@ -177,8 +177,8 @@ def test_refresh_button_and_graph_provenance():
     # A refresh control that reloads the file from disk.
     assert 'id="refresh"' in html
     assert "location.reload()" in html
-    # Clear that the page is generated from the graph, with the regenerate command.
-    assert "Snapshot of the knowledge graph" in html
+    # Clear that the page is a live view of the graph, served by the command.
+    assert "Live view of the knowledge graph" in html
     assert "<code>wheeler dashboard</code>" in html
 
 

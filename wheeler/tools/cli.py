@@ -912,43 +912,41 @@ def cmd_migrate(
 @dashboard_app.callback(invoke_without_command=True)
 def dashboard_main(
     ctx: typer.Context,
-    output: Path = typer.Option(
-        Path(".wheeler/dashboard.html"), "--output", "-o", help="Output HTML file."
-    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind."),
+    port: int = typer.Option(8765, "--port", "-p", help="Port to bind."),
     limit: int = typer.Option(12, "--limit", "-l", help="Max items per zone."),
     open_browser: bool = typer.Option(
-        False, "--open", help="Open the rendered file in a browser."
+        True, "--open/--no-open", help="Open the dashboard in a browser."
     ),
 ) -> None:
-    """Render the dashboard (default action when no subcommand is given)."""
+    """Serve a live HTML dashboard that re-queries the graph on every load."""
     if ctx.invoked_subcommand is not None:
         return
 
-    import webbrowser
-
-    from wheeler.dashboard import gather_dashboard_data, render
+    from wheeler.dashboard.serve import render_live, serve
 
     config = load_config()
+
+    # Fail fast with a friendly message if the graph is unreachable, rather than
+    # binding a port that only serves error pages.
     try:
-        data = asyncio.run(gather_dashboard_data(config, limit=limit))
+        render_live(config, limit)
     except Exception as exc:
         console.print(f"[red]Could not read the graph:[/red] {exc}")
         console.print(
-            "[yellow]Is Neo4j running?[/yellow] Check your connection in wheeler.yaml. "
-            "No file was written."
+            "[yellow]Is Neo4j running?[/yellow] Check your connection in wheeler.yaml."
         )
         raise typer.Exit(1)
 
-    html, missing = render(data)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(html, encoding="utf-8")
-    console.print(f"[green]Dashboard written:[/green] {output.resolve()}")
-    if missing:
-        console.print(f"[yellow]{len(missing)} figure file(s) missing or too large:[/yellow]")
-        for m in missing[:10]:
-            console.print(f"  - {m}")
-    if open_browser:
-        webbrowser.open(output.resolve().as_uri())
+    def _announce(url: str) -> None:
+        console.print(f"[green]Dashboard live at[/green] {url}  [dim](Ctrl+C to stop)[/dim]")
+
+    try:
+        serve(config, host=host, port=port, limit=limit, open_browser=open_browser, on_start=_announce)
+    except OSError as exc:
+        console.print(f"[red]Could not start server on {host}:{port}:[/red] {exc}")
+        console.print("[yellow]Try a different --port.[/yellow]")
+        raise typer.Exit(1)
 
 
 @dashboard_app.command("pin")

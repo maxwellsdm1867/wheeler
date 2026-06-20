@@ -180,7 +180,7 @@ footer { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--line);
   <div class="counts">$COUNTS_STRIP</div>
   <input id="filter" type="search" placeholder="Filter cards..." aria-label="Filter cards by text">
   <button class="toolbtn" id="refresh" type="button"
-    title="Reload this file from disk. To pull fresh graph data, re-run: wheeler dashboard">Refresh</button>
+    title="Reload to re-query the knowledge graph for the latest data">Refresh</button>
   <button class="toolbtn" id="canvas-open" type="button">Open canvas</button>
   <button class="toolbtn" id="theme-toggle" type="button" aria-label="Cycle light, dark, or auto theme">Theme</button>
 </header>

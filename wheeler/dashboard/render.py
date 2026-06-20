@@ -253,7 +253,7 @@ def render(data: dict) -> tuple[str, list[str]]:
     project_label = f" &middot; project: {esc(project)}" if project else ""
     gen = fmt_date(data.get("generated"))
     when = esc(gen) if gen else "unknown time"
-    gen_line = f"Snapshot of the knowledge graph &middot; generated {when}"
+    gen_line = f"Live view of the knowledge graph &middot; rendered {when}"
 
     counts = data.get("counts") or {}
     count_chips = "".join(
@@ -289,13 +289,13 @@ def render(data: dict) -> tuple[str, list[str]]:
     )
 
     footer = (
-        "Wheeler research dashboard: a read-only snapshot generated from the "
-        "knowledge graph. Regenerate with <code>wheeler dashboard</code> "
-        "(use Refresh to reload this file after regenerating). "
+        "Wheeler research dashboard: a live read-only view served from the "
+        "knowledge graph by <code>wheeler dashboard</code>. Refresh re-queries "
+        "the graph. "
         'Badges: <span class="node-id t-Q">Q-</span> question, '
         '<span class="node-id t-P">PL-</span> plan, '
-        '<span class="node-id t-F">F-</span> finding. '
-        'Notes edited here are local to this browser unless saved with '
+        '<span class="node-id t-F">F-</span> finding. Click a badge to copy its '
+        "reference. Notes edited here are local to this browser unless saved with "
         "<code>wheeler dashboard note</code>."
     )
 

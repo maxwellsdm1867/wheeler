@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
-import wheeler.dashboard as dashboard_pkg
 import wheeler.tools.cli as cli
 
 runner = CliRunner()
@@ -60,44 +59,45 @@ def test_dashboard_note_set_and_clear(monkeypatch, tmp_path):
     assert "headline result" not in notes_file.read_text()
 
 
-def test_dashboard_render_writes_file(monkeypatch, tmp_path):
+def test_dashboard_serves_live(monkeypatch, tmp_path):
     _patch_config(monkeypatch, tmp_path)
+    import wheeler.dashboard.serve as serve_mod
 
-    async def fake_gather(config, *, limit=12, plan_id=None):
-        return {
-            "schema_version": 1,
-            "title": "Wheeler Research Dashboard",
-            "generated": "2026-06-20T14:00:00Z",
-            "project": "",
-            "meta": {"project_root": str(tmp_path)},
-            "counts": {"Finding": 0, "OpenQuestion": 0, "Plan": 0},
-            "hero": [],
-            "questions": [],
-            "plans": [],
-            "results": [],
-            "figures": [],
-            "notes": {},
-        }
+    calls = {}
 
-    monkeypatch.setattr(dashboard_pkg, "gather_dashboard_data", fake_gather)
+    def fake_render_live(config, limit=12):
+        return "<!DOCTYPE html><html></html>"
 
-    out = tmp_path / "dash.html"
-    r = runner.invoke(cli.app, ["dashboard", "-o", str(out)])
+    def fake_serve(config, *, host, port, limit, open_browser, on_start=None):
+        calls["served"] = (host, port, limit)
+        if on_start:
+            on_start(f"http://{host}:{port}/")
+
+    monkeypatch.setattr(serve_mod, "render_live", fake_render_live)
+    monkeypatch.setattr(serve_mod, "serve", fake_serve)
+
+    r = runner.invoke(cli.app, ["dashboard", "--no-open", "--port", "0"])
     assert r.exit_code == 0, r.stdout
-    assert out.exists()
-    assert "<!DOCTYPE html>" in out.read_text()
+    assert calls["served"][1] == 0
+    assert "live at" in r.stdout.lower()
 
 
-def test_dashboard_render_neo4j_down_writes_nothing(monkeypatch, tmp_path):
+def test_dashboard_neo4j_down_does_not_serve(monkeypatch, tmp_path):
     _patch_config(monkeypatch, tmp_path)
+    import wheeler.dashboard.serve as serve_mod
 
-    async def boom(config, *, limit=12, plan_id=None):
+    def boom(config, limit=12):
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(dashboard_pkg, "gather_dashboard_data", boom)
+    served = {"called": False}
 
-    out = tmp_path / "dash.html"
-    r = runner.invoke(cli.app, ["dashboard", "-o", str(out)])
+    def fake_serve(*a, **k):
+        served["called"] = True
+
+    monkeypatch.setattr(serve_mod, "render_live", boom)
+    monkeypatch.setattr(serve_mod, "serve", fake_serve)
+
+    r = runner.invoke(cli.app, ["dashboard", "--no-open"])
     assert r.exit_code == 1
-    assert not out.exists()
+    assert served["called"] is False
     assert "Neo4j" in r.stdout or "graph" in r.stdout
