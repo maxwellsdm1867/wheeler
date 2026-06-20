@@ -49,6 +49,7 @@ def _realistic_payload(root: Path) -> dict:
         "confidence": 0.86,
         "description": "Adaptation index scales 2x with firing rate. See [F-bbbb2222].",
         "note": "Headline figure for the pilot.",
+        "note_id": "N-hero0001",  # provenance-tracked ResearchNote
     }
     interactive_fig = {
         "id": "F-cccc3333",
@@ -82,7 +83,6 @@ def _realistic_payload(root: Path) -> dict:
              "confidence": 0.6, "tier": "reference", "stale": True, "stability": 0.8},
         ],
         "figures": [interactive_fig],
-        "notes": {"F-aaaa1111": "Headline figure for the pilot."},
     }
 
 

@@ -165,17 +165,20 @@ def test_hero_section_only_when_pinned(tmp_path):
     assert "Main Figures" in html_yes
 
 
-def test_figure_note_rendered_and_escaped(tmp_path):
+def test_figure_durable_note_rendered_with_provenance_badge(tmp_path):
     fig = tmp_path / "n.png"
     fig.write_bytes(PNG_1x1)
     html, _ = render(
         _base_data(
             meta={"project_root": str(tmp_path)},
-            figures=[{"id": "F-dddd", "title": "N", "path": "n.png", "note": "key <result>"}],
+            figures=[{"id": "F-dddd", "title": "N", "path": "n.png",
+                      "note": "key <result>", "note_id": "N-xyz9"}],
         )
     )
     assert 'data-figid="F-dddd"' in html
-    assert "key &lt;result&gt;" in html
+    assert "durable-note" in html
+    assert "key &lt;result&gt;" in html             # note content escaped
+    assert 'data-nodeid="N-xyz9"' in html           # ResearchNote provenance badge
 
 
 def test_byte_stability():
@@ -229,3 +232,20 @@ def test_embed_figure_missing_appends(tmp_path):
     out = embed_figure("ghost.png", tmp_path, "alt", "title", {"used": 0}, missing)
     assert "not found" in out
     assert missing == ["ghost.png"]
+
+
+def test_embed_cache_memoizes_by_file_signature(tmp_path):
+    from wheeler.dashboard.render import _EMBED_CACHE
+
+    _EMBED_CACHE.clear()
+    fig = tmp_path / "c.png"
+    fig.write_bytes(PNG_1x1)
+    data = _base_data(
+        meta={"project_root": str(tmp_path)},
+        figures=[{"id": "F-c", "title": "C", "path": "c.png"}],
+    )
+    h1, _ = render(data)
+    assert len(_EMBED_CACHE) == 1   # encoded once and cached
+    h2, _ = render(data)
+    assert h1 == h2                 # identical output, served from cache
+    assert len(_EMBED_CACHE) == 1   # not re-encoded

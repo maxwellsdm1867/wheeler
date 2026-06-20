@@ -78,15 +78,6 @@ def split_pinned(
     return hero, rest
 
 
-def attach_notes(figures: list[dict], notes: dict[str, str]) -> None:
-    """Attach durable note text to each figure. Replaces each list entry with a
-    fresh dict (copy) so it never mutates a finding object that is also shared
-    with the results zone (avoids cross-zone aliasing)."""
-    for i, f in enumerate(figures):
-        note = notes.get(f.get("id", ""))
-        figures[i] = {**f, "note": note} if note else dict(f)
-
-
 # --------------------------------------------------------------------------- local state I/O
 
 
@@ -140,19 +131,102 @@ def write_pins(config: WheelerConfig, pins: list[str]) -> None:
     )
 
 
-def read_notes(config: WheelerConfig) -> dict[str, str]:
-    data = _read_state(_state_dir(config) / "notes.json")
-    if not _tag_matches(config, data):
-        return {}
-    notes = data.get("notes", {})
-    return {str(k): str(v) for k, v in notes.items()} if isinstance(notes, dict) else {}
+# --------------------------------------------------------------------------- figure notes (graph)
+#
+# A note on a figure is a research fact, so it lives in the graph as a
+# ResearchNote (N-) linked RELEVANT_TO the figure (F-), giving it provenance and
+# letting it travel with backups: exactly the wh:note / add_note path. The
+# dashboard writes these through execute_tool (the only graph writer; lazy
+# import, like integrations) and reads them back per figure. The in-browser
+# textarea remains a browser-local scratch pad, seeded from the durable note.
 
 
-def write_notes(config: WheelerConfig, notes: dict[str, str]) -> None:
-    _write_state(
-        _state_dir(config) / "notes.json",
-        {"project_tag": _current_tag(config), "notes": notes},
+async def record_figure_note(config: WheelerConfig, figure_id: str, text: str) -> str | None:
+    """Create a ResearchNote and link it RELEVANT_TO the figure. Returns the
+    new note id, or None if creation failed. Routes through execute_tool so the
+    triple-write (graph + JSON + synthesis) and provenance all apply."""
+    from wheeler.tools.graph_tools import execute_tool
+
+    res = json.loads(
+        await execute_tool(
+            "add_note",
+            {
+                "content": text,
+                "title": f"Dashboard note on {figure_id}",
+                "context": "Authored from the Wheeler dashboard",
+            },
+            config,
+        )
     )
+    note_id = res.get("node_id")
+    if not note_id:
+        return None
+    await execute_tool(
+        "link_nodes",
+        {"source_id": note_id, "target_id": figure_id, "relationship": "RELEVANT_TO"},
+        config,
+    )
+    return note_id
+
+
+async def fetch_figure_notes(backend, figure_ids: list[str], project_tag: str) -> list[dict]:
+    """Return ResearchNotes linked RELEVANT_TO any of the given figure ids, as
+    rows {fid, nid, content, date}, newest first."""
+    if not figure_ids:
+        return []
+    pw = ""
+    params: dict = {"ids": figure_ids}
+    if project_tag:
+        pw = " AND f._wheeler_project = $ptag AND n._wheeler_project = $ptag"
+        params["ptag"] = project_tag
+    rows = await backend.run_cypher(
+        "MATCH (n:ResearchNote)-[:RELEVANT_TO]->(f:Finding) "
+        f"WHERE f.id IN $ids{pw} "
+        "RETURN f.id AS fid, n.id AS nid, n.content AS content, n.date AS date "
+        "ORDER BY n.date DESC",
+        params,
+    )
+    return [dict(r) for r in rows]
+
+
+async def list_all_figure_notes(config: WheelerConfig) -> list[dict]:
+    """List every ResearchNote linked RELEVANT_TO a figure (for the CLI)."""
+    from wheeler.graph.backend import get_backend
+
+    backend = get_backend(config)
+    try:
+        await backend.initialize()
+        ptag = _current_tag(config)
+        pw, params = "", {}
+        if ptag:
+            pw = " WHERE f._wheeler_project = $ptag AND n._wheeler_project = $ptag"
+            params["ptag"] = ptag
+        rows = await backend.run_cypher(
+            "MATCH (n:ResearchNote)-[:RELEVANT_TO]->(f:Finding)"
+            f"{pw} RETURN f.id AS fid, n.id AS nid, n.content AS content "
+            "ORDER BY n.date DESC",
+            params,
+        )
+        return [dict(r) for r in rows]
+    finally:
+        await backend.close()
+
+
+def attach_graph_notes(figures: list[dict], note_rows: list[dict]) -> None:
+    """Attach the newest ResearchNote per figure (content + id) to each figure
+    dict. Pure; rows are pre-sorted newest-first. Replaces each entry with a
+    copy so it never aliases the same finding object shown in the results zone."""
+    latest: dict = {}
+    for r in note_rows:
+        fid = r.get("fid")
+        if fid is not None and fid not in latest:
+            latest[fid] = r  # first seen = newest (rows sorted date DESC)
+    for i, f in enumerate(figures):
+        row = latest.get(f.get("id"))
+        if row:
+            figures[i] = {**f, "note": row.get("content", ""), "note_id": row.get("nid", "")}
+        else:
+            figures[i] = dict(f)
 
 
 # --------------------------------------------------------------------------- enrichment
@@ -244,38 +318,42 @@ async def gather_dashboard_data(
         f_raw = await query_findings(
             backend, {"_config": config, "limit": max(limit * 4, 200)}
         )
+
+        questions = json.loads(q_raw).get("questions", [])[:limit]
+        open_plans = select_open_plans(plans_acc)
+        open_plans.sort(
+            key=lambda p: (str(p.get("updated", "")), str(p.get("id", ""))), reverse=True
+        )
+        open_plans = open_plans[:limit]
+
+        findings = json.loads(f_raw).get("findings", [])
+        enriched = [_enrich_finding(knowledge_path, f) for f in findings]
+
+        root = Path(project_root)
+        all_figures = select_figures(enriched, root)
+
+        # A pinned figure may be older than the fetched findings window; load any
+        # such pins directly so they are never silently dropped from the hero.
+        pins = read_pins(config)
+        present = {f.get("id") for f in all_figures}
+        for pid in pins:
+            if pid not in present:
+                extra = _figure_from_id(knowledge_path, pid, root)
+                if extra is not None:
+                    all_figures.append(extra)
+                    present.add(pid)
+
+        # Pull figure notes from the graph (ResearchNote -RELEVANT_TO-> figure).
+        note_rows = await fetch_figure_notes(
+            backend, [str(f.get("id", "")) for f in all_figures], project_tag
+        )
         counts = await backend.count_all()
     finally:
         await backend.close()
 
-    questions = json.loads(q_raw).get("questions", [])[:limit]
-    open_plans = select_open_plans(plans_acc)
-    open_plans.sort(key=lambda p: (str(p.get("updated", "")), str(p.get("id", ""))), reverse=True)
-    open_plans = open_plans[:limit]
-
-    findings = json.loads(f_raw).get("findings", [])
-    enriched = [_enrich_finding(knowledge_path, f) for f in findings]
-
-    root = Path(project_root)
-    all_figures = select_figures(enriched, root)
-
-    # A pinned figure may be older than the fetched findings window; load any such
-    # pins directly so they are never silently dropped from the hero section.
-    pins = read_pins(config)
-    present = {f.get("id") for f in all_figures}
-    for pid in pins:
-        if pid not in present:
-            extra = _figure_from_id(knowledge_path, pid, root)
-            if extra is not None:
-                all_figures.append(extra)
-                present.add(pid)
-
-    notes = read_notes(config)
-    attach_notes(all_figures, notes)
+    attach_graph_notes(all_figures, note_rows)
     hero, rest_figures = split_pinned(all_figures, pins)
-
     results = rank_results(enriched)[:limit]
-
     clean_counts = {k: v for k, v in (counts or {}).items() if not str(k).startswith("_")}
 
     return {
@@ -290,7 +368,6 @@ async def gather_dashboard_data(
         "plans": open_plans,
         "results": results,
         "figures": rest_figures[:limit],
-        "notes": notes,
     }
 
 

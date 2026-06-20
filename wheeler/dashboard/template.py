@@ -140,6 +140,10 @@ details[open] > summary { margin-bottom: 6px; }
 }
 .note-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .note-hint { font-size: 11px; color: var(--muted); }
+.durable-note {
+  margin: 6px 0; padding: 7px 9px; border-left: 3px solid var(--pl);
+  background: var(--pill-bg); border-radius: 0 8px 8px 0; font-size: 13px;
+}
 /* lightbox */
 .lightbox {
   display: none; position: fixed; inset: 0; background: rgba(8,12,20,.86);

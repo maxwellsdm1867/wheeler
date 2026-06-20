@@ -999,38 +999,50 @@ def dashboard_pins() -> None:
 
 @dashboard_app.command("note")
 def dashboard_note(
-    figure_id: str = typer.Argument(..., help="Figure id to annotate."),
-    text: str = typer.Argument("", help="Note text. Empty clears the note."),
+    figure_id: str = typer.Argument(..., help="Figure id to annotate (e.g. F-1a2b)."),
+    text: str = typer.Argument(..., help="Note text."),
 ) -> None:
-    """Set (or clear, when text is empty) a durable note shown under a figure."""
-    from wheeler.dashboard.gather import read_notes, write_notes
+    """Record a durable note on a figure as a provenance-tracked ResearchNote.
+
+    Creates a ResearchNote (N-) linked RELEVANT_TO the figure, via the same
+    add_note path as wh:note, so the note lives in the graph and travels with
+    backups. Shown under the figure on the dashboard.
+    """
+    from wheeler.dashboard.gather import record_figure_note
 
     config = load_config()
-    notes = read_notes(config)
-    if text:
-        notes[figure_id] = text
-        write_notes(config, notes)
-        console.print(f"[green]Note set:[/green] {figure_id}")
-    else:
-        if figure_id in notes:
-            del notes[figure_id]
-            write_notes(config, notes)
-        console.print(f"[green]Note cleared:[/green] {figure_id}")
+    if not text.strip():
+        console.print("[yellow]Provide note text to record.[/yellow]")
+        raise typer.Exit(1)
+    try:
+        note_id = asyncio.run(record_figure_note(config, figure_id, text))
+    except Exception as exc:
+        console.print(f"[red]Could not record note:[/red] {exc}")
+        raise typer.Exit(1)
+    if not note_id:
+        console.print("[red]Note was not created.[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Recorded[/green] {note_id} (ResearchNote) linked to {figure_id}")
 
 
 @dashboard_app.command("notes")
 def dashboard_notes() -> None:
-    """List durable figure notes."""
-    from wheeler.dashboard.gather import read_notes
+    """List figure notes (ResearchNotes linked to figures) from the graph."""
+    from wheeler.dashboard.gather import list_all_figure_notes
 
     config = load_config()
-    notes = read_notes(config)
-    if not notes:
-        console.print("[yellow]No durable notes.[/yellow]")
+    try:
+        rows = asyncio.run(list_all_figure_notes(config))
+    except Exception as exc:
+        console.print(f"[red]Could not read notes:[/red] {exc}")
+        raise typer.Exit(1)
+    if not rows:
+        console.print("[yellow]No figure notes.[/yellow]")
         return
-    for fid, text in notes.items():
-        snippet = text if len(text) <= 70 else text[:70] + "..."
-        console.print(f"  {fid}: {snippet}")
+    for r in rows:
+        content = str(r.get("content", ""))
+        snippet = content if len(content) <= 70 else content[:70] + "..."
+        console.print(f"  {r.get('nid')} -> {r.get('fid')}: {snippet}")
 
 
 # ---------------------------------------------------------------------------

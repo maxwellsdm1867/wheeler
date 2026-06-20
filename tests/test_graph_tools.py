@@ -774,3 +774,31 @@ class TestAddDatasetMetadata:
         assert "parent_link" not in result
         assert result["status"] == "created"
         assert result["label"] == "Dataset"
+
+
+class TestOpenQuestionFiltering:
+    """query_open_questions must hide answered questions by default (wh/CLAUDE.md)."""
+
+    class _CaptureBackend:
+        def __init__(self):
+            self.query = ""
+
+        async def run_cypher(self, query, params=None):
+            self.query = query
+            return []
+
+    @pytest.mark.asyncio
+    async def test_excludes_answered_by_default(self):
+        from wheeler.tools.graph_tools.queries import query_open_questions
+
+        be = self._CaptureBackend()
+        await query_open_questions(be, {"limit": 5})
+        assert "q.status = 'open' OR q.status IS NULL" in be.query
+
+    @pytest.mark.asyncio
+    async def test_include_answered_bypasses_filter(self):
+        from wheeler.tools.graph_tools.queries import query_open_questions
+
+        be = self._CaptureBackend()
+        await query_open_questions(be, {"limit": 5, "include_answered": True})
+        assert "q.status" not in be.query

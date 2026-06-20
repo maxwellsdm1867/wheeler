@@ -10,14 +10,13 @@ from types import SimpleNamespace
 
 from wheeler.dashboard.gather import (
     _figure_from_id,
-    attach_notes,
+    attach_graph_notes,
     rank_results,
-    read_notes,
     read_pins,
+    record_figure_note,
     select_figures,
     select_open_plans,
     split_pinned,
-    write_notes,
     write_pins,
 )
 
@@ -68,23 +67,51 @@ def test_split_pinned_preserves_pin_order_and_drops_dangling():
     assert [f["id"] for f in rest] == ["F-2"]
 
 
-def test_attach_notes_sets_note():
+def test_attach_graph_notes_sets_newest_and_id():
     figs = [{"id": "F-1"}, {"id": "F-2"}]
-    attach_notes(figs, {"F-1": "hello"})
-    assert figs[0]["note"] == "hello"
+    rows = [
+        {"fid": "F-1", "nid": "N-new", "content": "newest"},
+        {"fid": "F-1", "nid": "N-old", "content": "older"},  # rows sorted date DESC
+    ]
+    attach_graph_notes(figs, rows)
+    assert figs[0]["note"] == "newest" and figs[0]["note_id"] == "N-new"
     assert "note" not in figs[1]
 
 
-def test_attach_notes_does_not_alias_results():
+def test_attach_graph_notes_does_not_alias_results():
     # The same finding dict can sit in both the figures list and the results
     # list; attaching a note must not mutate the shared object in results.
     shared = {"id": "F-1", "artifact_type": "figure"}
     figures = [shared]
     results = [shared]
-    attach_notes(figures, {"F-1": "a note"})
+    attach_graph_notes(figures, [{"fid": "F-1", "nid": "N-1", "content": "a note"}])
     assert figures[0]["note"] == "a note"
     assert "note" not in results[0]  # results untouched
     assert results[0] is shared
+
+
+def test_record_figure_note_creates_note_and_links(monkeypatch):
+    import json as _json
+
+    import wheeler.tools.graph_tools as gt
+
+    calls = []
+
+    async def fake_execute_tool(tool, args, config):
+        calls.append((tool, args))
+        if tool == "add_note":
+            return _json.dumps({"node_id": "N-42", "status": "created"})
+        return _json.dumps({"status": "linked"})
+
+    monkeypatch.setattr(gt, "execute_tool", fake_execute_tool)
+
+    import asyncio
+
+    nid = asyncio.run(record_figure_note(object(), "F-9", "a durable note"))
+    assert nid == "N-42"
+    assert calls[0][0] == "add_note" and calls[0][1]["content"] == "a durable note"
+    assert calls[1][0] == "link_nodes"
+    assert calls[1][1] == {"source_id": "N-42", "target_id": "F-9", "relationship": "RELEVANT_TO"}
 
 
 def test_read_pins_rejects_other_project_tag(tmp_path):
@@ -125,13 +152,6 @@ def test_pins_roundtrip_atomic(tmp_path):
     pins_file = Path(tmp_path) / ".wheeler" / "dashboard" / "pins.json"
     assert pins_file.exists()
     assert '"project_tag": "proj"' in pins_file.read_text()
-
-
-def test_notes_roundtrip(tmp_path):
-    config = _config(tmp_path)
-    assert read_notes(config) == {}
-    write_notes(config, {"F-1": "a note"})
-    assert read_notes(config) == {"F-1": "a note"}
 
 
 def test_read_state_tolerates_corrupt_file(tmp_path):

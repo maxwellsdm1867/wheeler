@@ -38,6 +38,28 @@ NODE_ID_RE = re.compile(r"\[([A-Z]{1,2}-[0-9a-fA-F]{4,})\]")
 
 _COUNT_ORDER = [("Finding", "findings"), ("OpenQuestion", "questions"), ("Plan", "plans")]
 
+# Memoize the expensive part of embedding (file read + base64/escape) by file
+# signature, so repeated live renders do not re-encode unchanged figures. Keyed
+# by (abspath, mtime_ns, size); a touched/replaced file misses and re-encodes.
+# This is a pure speed cache: output bytes are identical with or without it.
+_EMBED_CACHE: dict[tuple, str] = {}
+_EMBED_CACHE_MAX = 256
+
+
+def _embed_payload_cached(fp: Path, ext: str, sig: tuple) -> str:
+    cached = _EMBED_CACHE.get(sig)
+    if cached is not None:
+        return cached
+    if ext in INTERACTIVE_EXTS:
+        content = fp.read_text(encoding="utf-8", errors="replace")
+        payload = content.replace("&", "&amp;").replace('"', "&quot;")
+    else:
+        payload = base64.b64encode(fp.read_bytes()).decode("ascii")
+    if len(_EMBED_CACHE) >= _EMBED_CACHE_MAX:
+        _EMBED_CACHE.clear()
+    _EMBED_CACHE[sig] = payload
+    return payload
+
 
 # --------------------------------------------------------------------------- text
 
@@ -126,9 +148,10 @@ def embed_figure(path: str, root: Path, alt: str, title: str, budget: dict, miss
 
     ext = fp.suffix.lower()
     try:
-        size = fp.stat().st_size
+        st = fp.stat()
+        size, mtime_ns = st.st_size, st.st_mtime_ns
     except OSError:
-        size = 0
+        size, mtime_ns = 0, 0
     if size > MAX_FIG_BYTES or budget["used"] + size > MAX_TOTAL_BYTES:
         missing.append(path)
         return (
@@ -137,9 +160,8 @@ def embed_figure(path: str, root: Path, alt: str, title: str, budget: dict, miss
         )
 
     if ext in INTERACTIVE_EXTS:
-        content = fp.read_text(encoding="utf-8", errors="replace")
-        budget["used"] += len(content.encode("utf-8"))
-        srcdoc = content.replace("&", "&amp;").replace('"', "&quot;")
+        srcdoc = _embed_payload_cached(fp, ext, (str(fp), mtime_ns, size))
+        budget["used"] += size
         return (
             f'<iframe sandbox="allow-scripts" loading="lazy" '
             f'title="{esc(title or alt)}" srcdoc="{srcdoc}"></iframe>'
@@ -147,9 +169,8 @@ def embed_figure(path: str, root: Path, alt: str, title: str, budget: dict, miss
 
     if ext in RASTER_EXTS or ext == ".svg":
         mime = "image/svg+xml" if ext == ".svg" else (mimetypes.guess_type(fp.name)[0] or "image/png")
-        data = fp.read_bytes()
-        budget["used"] += len(data)
-        b64 = base64.b64encode(data).decode("ascii")
+        b64 = _embed_payload_cached(fp, ext, (str(fp), mtime_ns, size))
+        budget["used"] += size
         return f'<img src="data:{mime};base64,{b64}" alt="{esc(alt)}">'
 
     missing.append(path)
@@ -214,22 +235,32 @@ def render_figure_card(f: dict, root: Path, budget: dict, missing: list, *, hero
     conf_pill = pill(conf, "conf") if conf else ""
     desc = str(f.get("description") or "")
     legend = f'<p class="fig-legend">{linkify_nodes(desc)}</p>' if desc else ""
-    note = esc(f.get("note") or "")
     cls = "card fig-card hero-card" if hero else "card fig-card"
+
+    # Durable note: a provenance-tracked ResearchNote (N-) linked to the figure,
+    # shown read-only with its copyable node badge. The textarea below is a
+    # browser-local scratch pad; run `wheeler dashboard note` to make it durable.
+    note_id = f.get("note_id") or ""
+    durable = (
+        f'<div class="durable-note">{node_badge(note_id)} '
+        f'{linkify_nodes(f.get("note") or "")}</div>'
+        if note_id else ""
+    )
     return (
         f'<div class="{cls}">'
         f'<div class="card-head">{node_badge(fid)}'
         f'<span class="card-title">{esc(title)}</span>{conf_pill}</div>'
         f'<div class="fig-media" data-figid="{esc(fid)}" data-title="{esc(title)}">{media}</div>'
-        f"{legend}"
+        f"{legend}{durable}"
         '<div class="note-wrap">'
-        f'<label for="note-{esc(fid)}">Note</label>'
+        f'<label for="note-{esc(fid)}">Scratch note</label>'
         f'<textarea id="note-{esc(fid)}" class="note" data-figid="{esc(fid)}" '
-        f'placeholder="Add a note...">{note}</textarea>'
+        f'placeholder="Local scratch note..."></textarea>'
         '<div class="note-row">'
         f'<button type="button" class="toolbtn note-copy" data-figid="{esc(fid)}">Copy</button>'
-        '<span class="note-hint">saved in this browser; '
-        "use <code>wheeler dashboard note</code> to make it durable</span></div>"
+        '<span class="note-hint">local to this browser; run '
+        "<code>wheeler dashboard note "
+        f'{esc(fid)} "..."</code> to save a durable note</span></div>'
         "</div>"
         "</div>"
     )

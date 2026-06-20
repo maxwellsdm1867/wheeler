@@ -5,7 +5,6 @@ read is monkeypatched so the wiring is testable offline.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -43,20 +42,34 @@ def test_dashboard_pin_unpin_pins(monkeypatch, tmp_path):
     assert "No pinned figures" in r.stdout
 
 
-def test_dashboard_note_set_and_clear(monkeypatch, tmp_path):
+def test_dashboard_note_records_graph_note(monkeypatch, tmp_path):
     _patch_config(monkeypatch, tmp_path)
+    import wheeler.dashboard.gather as g
 
+    captured = {}
+
+    async def fake_record(config, figure_id, text):
+        captured["args"] = (figure_id, text)
+        return "N-7"
+
+    monkeypatch.setattr(g, "record_figure_note", fake_record)
     r = runner.invoke(cli.app, ["dashboard", "note", "F-9", "headline result"])
-    assert r.exit_code == 0
-    notes_file = Path(tmp_path) / ".wheeler" / "dashboard" / "notes.json"
-    assert "headline result" in notes_file.read_text()
+    assert r.exit_code == 0, r.stdout
+    assert captured["args"] == ("F-9", "headline result")
+    assert "N-7" in r.stdout and "F-9" in r.stdout
 
+
+def test_dashboard_notes_lists_graph_notes(monkeypatch, tmp_path):
+    _patch_config(monkeypatch, tmp_path)
+    import wheeler.dashboard.gather as g
+
+    async def fake_list(config):
+        return [{"nid": "N-1", "fid": "F-9", "content": "a durable note"}]
+
+    monkeypatch.setattr(g, "list_all_figure_notes", fake_list)
     r = runner.invoke(cli.app, ["dashboard", "notes"])
-    assert "F-9" in r.stdout
-
-    r = runner.invoke(cli.app, ["dashboard", "note", "F-9"])
     assert r.exit_code == 0
-    assert "headline result" not in notes_file.read_text()
+    assert "N-1" in r.stdout and "F-9" in r.stdout
 
 
 def test_dashboard_serves_live(monkeypatch, tmp_path):
