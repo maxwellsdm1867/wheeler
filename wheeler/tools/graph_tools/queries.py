@@ -149,10 +149,20 @@ async def query_findings(backend, args: dict) -> str:
 async def query_open_questions(backend, args: dict) -> str:
     ctx = _extract_context(args)
     limit = int(args.get("limit", 10))
+    # Only surface questions that are still open. Acts set status="answered"
+    # (and "in-progress") on questions; an answered question must no longer
+    # appear here (wh/CLAUDE.md). NULL status is treated as open for legacy
+    # nodes written before status tracking. Pass include_answered=True to bypass.
+    include_answered = bool(args.get("include_answered", False))
+    if include_answered:
+        where = _project_where("q", ctx.project_tag, has_existing_where=False)
+    else:
+        where = " WHERE (q.status = 'open' OR q.status IS NULL)" + _project_where(
+            "q", ctx.project_tag, has_existing_where=True
+        )
 
     records = await backend.run_cypher(
-        "MATCH (q:OpenQuestion)"
-        f"{_project_where('q', ctx.project_tag, has_existing_where=False)} "
+        f"MATCH (q:OpenQuestion){where} "
         "RETURN q.id AS id, q.question AS question, q.priority AS priority "
         "ORDER BY q.priority DESC LIMIT $limit",
         _inject_ptag({"limit": limit}, ctx.project_tag),

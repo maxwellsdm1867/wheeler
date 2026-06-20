@@ -41,6 +41,11 @@ app.add_typer(graph_app, name="graph")
 dev_app = typer.Typer(help="Developer commands.")
 app.add_typer(dev_app, name="dev")
 
+dashboard_app = typer.Typer(
+    help="Render an interactive HTML research dashboard from the knowledge graph."
+)
+app.add_typer(dashboard_app, name="dashboard")
+
 # External-tool integrations (Asta Paper Finder, etc.). Guarded so a missing
 # integrations package never breaks the rest of the CLI.
 try:
@@ -897,6 +902,147 @@ def cmd_migrate(
     except Exception as exc:
         console.print(f"[red]Migration failed:[/red] {exc}")
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# dashboard
+# ---------------------------------------------------------------------------
+
+
+@dashboard_app.callback(invoke_without_command=True)
+def dashboard_main(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind."),
+    port: int = typer.Option(8765, "--port", "-p", help="Port to bind."),
+    limit: int = typer.Option(12, "--limit", "-l", help="Max items per zone."),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the dashboard in a browser."
+    ),
+) -> None:
+    """Serve a live HTML dashboard that re-queries the graph on every load."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    from wheeler.dashboard.serve import render_live, serve
+
+    config = load_config()
+
+    # Fail fast with a friendly message if the graph is unreachable, rather than
+    # binding a port that only serves error pages.
+    try:
+        render_live(config, limit)
+    except Exception as exc:
+        console.print(f"[red]Could not read the graph:[/red] {exc}")
+        console.print(
+            "[yellow]Is Neo4j running?[/yellow] Check your connection in wheeler.yaml."
+        )
+        raise typer.Exit(1)
+
+    def _announce(url: str) -> None:
+        console.print(f"[green]Dashboard live at[/green] {url}  [dim](Ctrl+C to stop)[/dim]")
+
+    try:
+        serve(config, host=host, port=port, limit=limit, open_browser=open_browser, on_start=_announce)
+    except OSError as exc:
+        console.print(f"[red]Could not start server on {host}:{port}:[/red] {exc}")
+        console.print("[yellow]Try a different --port.[/yellow]")
+        raise typer.Exit(1)
+
+
+@dashboard_app.command("pin")
+def dashboard_pin(
+    figure_id: str = typer.Argument(..., help="Finding/figure id to pin (e.g. F-1a2b)."),
+) -> None:
+    """Pin a figure as a main (hero) figure on the dashboard."""
+    from wheeler.dashboard.gather import read_pins, write_pins
+
+    config = load_config()
+    pins = read_pins(config)
+    if figure_id in pins:
+        console.print(f"[yellow]Already pinned:[/yellow] {figure_id}")
+        return
+    pins.append(figure_id)
+    write_pins(config, pins)
+    console.print(f"[green]Pinned:[/green] {figure_id} ({len(pins)} pinned)")
+
+
+@dashboard_app.command("unpin")
+def dashboard_unpin(
+    figure_id: str = typer.Argument(..., help="Figure id to unpin."),
+) -> None:
+    """Remove a figure from the main (hero) figures."""
+    from wheeler.dashboard.gather import read_pins, write_pins
+
+    config = load_config()
+    pins = read_pins(config)
+    if figure_id not in pins:
+        console.print(f"[yellow]Not pinned:[/yellow] {figure_id}")
+        return
+    pins = [p for p in pins if p != figure_id]
+    write_pins(config, pins)
+    console.print(f"[green]Unpinned:[/green] {figure_id} ({len(pins)} pinned)")
+
+
+@dashboard_app.command("pins")
+def dashboard_pins() -> None:
+    """List the currently pinned figures."""
+    from wheeler.dashboard.gather import read_pins
+
+    config = load_config()
+    pins = read_pins(config)
+    if not pins:
+        console.print("[yellow]No pinned figures.[/yellow]")
+        return
+    for i, p in enumerate(pins, start=1):
+        console.print(f"  {i}. {p}")
+
+
+@dashboard_app.command("note")
+def dashboard_note(
+    figure_id: str = typer.Argument(..., help="Figure id to annotate (e.g. F-1a2b)."),
+    text: str = typer.Argument(..., help="Note text."),
+) -> None:
+    """Record a durable note on a figure as a provenance-tracked ResearchNote.
+
+    Creates a ResearchNote (N-) linked RELEVANT_TO the figure, via the same
+    add_note path as wh:note, so the note lives in the graph and travels with
+    backups. Shown under the figure on the dashboard.
+    """
+    from wheeler.dashboard.gather import record_figure_note
+
+    config = load_config()
+    if not text.strip():
+        console.print("[yellow]Provide note text to record.[/yellow]")
+        raise typer.Exit(1)
+    try:
+        note_id = asyncio.run(record_figure_note(config, figure_id, text))
+    except Exception as exc:
+        console.print(f"[red]Could not record note:[/red] {exc}")
+        raise typer.Exit(1)
+    if not note_id:
+        console.print("[red]Note was not created.[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Recorded[/green] {note_id} (ResearchNote) linked to {figure_id}")
+
+
+@dashboard_app.command("notes")
+def dashboard_notes() -> None:
+    """List figure notes (ResearchNotes linked to figures) from the graph."""
+    from wheeler.dashboard.gather import list_all_figure_notes
+
+    config = load_config()
+    try:
+        rows = asyncio.run(list_all_figure_notes(config))
+    except Exception as exc:
+        console.print(f"[red]Could not read notes:[/red] {exc}")
+        raise typer.Exit(1)
+    if not rows:
+        console.print("[yellow]No figure notes.[/yellow]")
+        return
+    for r in rows:
+        content = str(r.get("content", ""))
+        snippet = content if len(content) <= 70 else content[:70] + "..."
+        console.print(f"  {r.get('nid')} -> {r.get('fid')}: {snippet}")
 
 
 # ---------------------------------------------------------------------------
