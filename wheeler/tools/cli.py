@@ -41,6 +41,11 @@ app.add_typer(graph_app, name="graph")
 dev_app = typer.Typer(help="Developer commands.")
 app.add_typer(dev_app, name="dev")
 
+dashboard_app = typer.Typer(
+    help="Render an interactive HTML research dashboard from the knowledge graph."
+)
+app.add_typer(dashboard_app, name="dashboard")
+
 # External-tool integrations (Asta Paper Finder, etc.). Guarded so a missing
 # integrations package never breaks the rest of the CLI.
 try:
@@ -897,6 +902,137 @@ def cmd_migrate(
     except Exception as exc:
         console.print(f"[red]Migration failed:[/red] {exc}")
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# dashboard
+# ---------------------------------------------------------------------------
+
+
+@dashboard_app.callback(invoke_without_command=True)
+def dashboard_main(
+    ctx: typer.Context,
+    output: Path = typer.Option(
+        Path(".wheeler/dashboard.html"), "--output", "-o", help="Output HTML file."
+    ),
+    limit: int = typer.Option(12, "--limit", "-l", help="Max items per zone."),
+    open_browser: bool = typer.Option(
+        False, "--open", help="Open the rendered file in a browser."
+    ),
+) -> None:
+    """Render the dashboard (default action when no subcommand is given)."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    import webbrowser
+
+    from wheeler.dashboard import gather_dashboard_data, render
+
+    config = load_config()
+    try:
+        data = asyncio.run(gather_dashboard_data(config, limit=limit))
+    except Exception as exc:
+        console.print(f"[red]Could not read the graph:[/red] {exc}")
+        console.print(
+            "[yellow]Is Neo4j running?[/yellow] Check your connection in wheeler.yaml. "
+            "No file was written."
+        )
+        raise typer.Exit(1)
+
+    html, missing = render(data)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(html, encoding="utf-8")
+    console.print(f"[green]Dashboard written:[/green] {output.resolve()}")
+    if missing:
+        console.print(f"[yellow]{len(missing)} figure file(s) missing or too large:[/yellow]")
+        for m in missing[:10]:
+            console.print(f"  - {m}")
+    if open_browser:
+        webbrowser.open(output.resolve().as_uri())
+
+
+@dashboard_app.command("pin")
+def dashboard_pin(
+    figure_id: str = typer.Argument(..., help="Finding/figure id to pin (e.g. F-1a2b)."),
+) -> None:
+    """Pin a figure as a main (hero) figure on the dashboard."""
+    from wheeler.dashboard.gather import read_pins, write_pins
+
+    config = load_config()
+    pins = read_pins(config)
+    if figure_id in pins:
+        console.print(f"[yellow]Already pinned:[/yellow] {figure_id}")
+        return
+    pins.append(figure_id)
+    write_pins(config, pins)
+    console.print(f"[green]Pinned:[/green] {figure_id} ({len(pins)} pinned)")
+
+
+@dashboard_app.command("unpin")
+def dashboard_unpin(
+    figure_id: str = typer.Argument(..., help="Figure id to unpin."),
+) -> None:
+    """Remove a figure from the main (hero) figures."""
+    from wheeler.dashboard.gather import read_pins, write_pins
+
+    config = load_config()
+    pins = read_pins(config)
+    if figure_id not in pins:
+        console.print(f"[yellow]Not pinned:[/yellow] {figure_id}")
+        return
+    pins = [p for p in pins if p != figure_id]
+    write_pins(config, pins)
+    console.print(f"[green]Unpinned:[/green] {figure_id} ({len(pins)} pinned)")
+
+
+@dashboard_app.command("pins")
+def dashboard_pins() -> None:
+    """List the currently pinned figures."""
+    from wheeler.dashboard.gather import read_pins
+
+    config = load_config()
+    pins = read_pins(config)
+    if not pins:
+        console.print("[yellow]No pinned figures.[/yellow]")
+        return
+    for i, p in enumerate(pins, start=1):
+        console.print(f"  {i}. {p}")
+
+
+@dashboard_app.command("note")
+def dashboard_note(
+    figure_id: str = typer.Argument(..., help="Figure id to annotate."),
+    text: str = typer.Argument("", help="Note text. Empty clears the note."),
+) -> None:
+    """Set (or clear, when text is empty) a durable note shown under a figure."""
+    from wheeler.dashboard.gather import read_notes, write_notes
+
+    config = load_config()
+    notes = read_notes(config)
+    if text:
+        notes[figure_id] = text
+        write_notes(config, notes)
+        console.print(f"[green]Note set:[/green] {figure_id}")
+    else:
+        if figure_id in notes:
+            del notes[figure_id]
+            write_notes(config, notes)
+        console.print(f"[green]Note cleared:[/green] {figure_id}")
+
+
+@dashboard_app.command("notes")
+def dashboard_notes() -> None:
+    """List durable figure notes."""
+    from wheeler.dashboard.gather import read_notes
+
+    config = load_config()
+    notes = read_notes(config)
+    if not notes:
+        console.print("[yellow]No durable notes.[/yellow]")
+        return
+    for fid, text in notes.items():
+        snippet = text if len(text) <= 70 else text[:70] + "..."
+        console.print(f"  {fid}: {snippet}")
 
 
 # ---------------------------------------------------------------------------
