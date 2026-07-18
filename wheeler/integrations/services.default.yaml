@@ -22,6 +22,16 @@
 #   cost        free-text cost/time hint, surfaced as a warning by the router
 #   available   shell probe; non-zero exit or missing binary => unavailable
 #   when        free-text trigger hint ("use this when ...")
+#   inputs      the interview schema: what the router asks the scientist before
+#               dispatch. Each port: {name, kind, required, prompt, ...}.
+#                 kind: node   -> a graph-node reference; node_type is the label
+#                                 (Dataset, Question, ...) and source names the
+#                                 graph query that offers the options.
+#                 kind: choice -> options + default (rendered as a pick list).
+#                 kind: text   -> free text (e.g. a search query).
+#               The registry treats inputs opaquely; wheeler/integrations/
+#               invocation.py interprets them for the router/plan acts.
+#   output      raw_node + produced node types (documentation of the result).
 #
 # No em dashes anywhere. The router lists only AVAILABLE services.
 
@@ -35,6 +45,12 @@ services:
     cost: "cheap"
     available: "asta auth status"
     when: "broad literature discovery (find papers on X, what is known about Y)"
+    inputs:
+      - { name: query, kind: text, source: query, required: true, prompt: "What should Paper Finder search for?" }
+      - { name: link_to, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this support?" }
+    output:
+      raw_node: dataset
+      nodes: [Paper]
 
   - id: theorizer
     provider: asta
@@ -45,6 +61,12 @@ services:
     cost: "expensive (~$7, ~20min)"
     available: "asta auth status"
     when: "hypothesis or theory generation (generate theories about X, what could explain Y)"
+    inputs:
+      - { name: query, kind: text, source: query, required: true, prompt: "What question should Theorizer generate theories for?" }
+      - { name: link_to, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this support?" }
+    output:
+      raw_node: document
+      nodes: [Finding, Hypothesis, Paper]
 
   - id: semantic-scholar
     provider: asta
@@ -55,6 +77,12 @@ services:
     cost: "cheap"
     available: "asta auth status"
     when: "a specific paper, its citations, or snippet evidence (look up Z, what cites Y)"
+    inputs:
+      - { name: query, kind: text, source: query, required: true, prompt: "Which paper, citation, or snippet query?" }
+      - { name: link_to, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this support?" }
+    output:
+      raw_node: dataset
+      nodes: [Paper]
 
   - id: scholar-qa
     provider: asta
@@ -66,7 +94,8 @@ services:
     available: "asta auth status"
     when: "a written literature review or comprehensive multi-paper report (write a review of X, synthesize the literature on Y)"
     inputs:
-      - { name: query, source: query, required: true }
+      - { name: query, kind: text, source: query, required: true, prompt: "What topic should the literature review cover?" }
+      - { name: link_to, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this support?" }
     output:
       raw_node: document
       nodes: [Document, Paper]
@@ -81,6 +110,7 @@ services:
     cost: "free"
     available: "wheeler graph status"
     when: "a quick local snapshot of graph health and recent activity, no external service"
+
   - id: llmsr-discover
     provider: llmsr
     name: LLM-SR Equation Discovery
@@ -91,8 +121,10 @@ services:
     available: "wheeler llmsr --help"
     when: "discover or fit a closed-form equation / symbolic model from a dataset"
     inputs:
-      - { name: dataset, source: datasets, required: true }
-      - { name: question, source: query, required: false }
+      - { name: dataset, kind: node, node_type: Dataset, source: datasets, required: true, prompt: "Which dataset should the equation be fit to?" }
+      - { name: question, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this address?" }
+      - { name: metric, kind: choice, options: [nmse, mse], default: nmse, required: true, prompt: "Which scoring metric should the search optimize?" }
+      - { name: select, kind: choice, options: [parsimony, ood, fit], default: parsimony, required: false, prompt: "How should the winning equation be selected?" }
     output:
       raw_node: document
       nodes: [Script, Finding]
