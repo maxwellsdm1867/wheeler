@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wheeler"
-version = "0.9.15"
+version = "0.10.0"
 description = "Reliable, trustworthy, trackable AI workflows for science. A Claude Code-native research assistant with a provenance-tracked knowledge graph."
 readme = "README.md"
 license = {text = "MIT"}
@@ -66,22 +66,27 @@ search = [
 ]
 # LLM-SR equation-discovery service. The vendored search core fits free
 # constants with scipy; numpy is already in core. Optional so the base install
-# stays lean; `wheeler llmsr` degrades to unavailable if scipy is absent.
+# stays lean; `wheeler llmsr` degrades to unavailable if scipy is absent. The
+# test/dev extras below pull it in so the llmsr suite actually runs.
 llmsr = [
     "scipy>=1.10",
 ]
-# Test-only deps, kept lean so `pip install wheeler[test]` stays small.
+# Test deps. Includes the llmsr extra (scipy) so the equation-discovery tests
+# run rather than skip: they verify real fit/recovery numerics.
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "wheeler[llmsr]",
 ]
-# Full developer toolchain: tests, lint, type-check, build backend.
+# Full developer toolchain: tests, lint, type-check, build backend, plus the
+# llmsr extra so the whole suite runs locally and in the commit hooks.
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "mypy>=1.10",
     "build>=1.2",
+    "wheeler[llmsr]",
 ]
 # Convenience aggregate for contributors.
 all = [

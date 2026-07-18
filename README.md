@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.9.15-blue" alt="v0.9.15">
+  <img src="https://img.shields.io/badge/v0.10.0-blue" alt="v0.10.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -199,6 +199,15 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.10.0</b> (2026-07-18): equation discovery + service invocation</summary>
+
+- **LLM-SR equation discovery**: discover a closed-form equation from a dataset via LLM-guided evolutionary search, run on your Max subscription with no API keys, landed as a provenance-tracked Script plus a Finding with in-domain and out-of-domain metrics.
+- **Discover the law, not the best fit**: the run selects the winner by parsimony or out-of-domain generalization, so it recovers the true equation instead of an overfit that merely scores lower training error.
+- **Invoke services from a plan**: name a service (LLM-SR, Asta, ...) in `/wh:plan`; a cross-provider router interviews you for that service's inputs, shows the assembled request, and dispatches it, with the run wired into the plan's provenance.
+
+</details>
+
+<details>
 <summary><b>v0.9.15</b> (2026-06-15): Asta router, three ways in</summary>
 
 - **Name a service, give an intent, or be asked**: `/wh:asta` now takes three routes in: name a service directly (`/wh:asta paper-finder`) and it dispatches straightaway, hand it a task and it matches the right adapter, or invoke it bare and it asks what you want before doing anything.
@@ -214,15 +223,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **The update badge reliably clears**: `/wh:update` now updates every install the badge checker tracks (the SessionStart hook probes `~/.local/bin/wheeler` and the uv-tools path, not just the session's install), then clears the cache, so the `⬆ /wh:update` indicator disappears after updating and stays gone on a multi-install machine.
 - **Integrations, framed**: a dedicated README "Integrations" section and a forward-looking roadmap entry describe the Asta integration and where it is headed (external research services reading and acting on Wheeler's graph and context).
 - **Resilient e2e tests**: the live-Neo4j test suite now degrades to clean skips on a transient Neo4j outage instead of erroring, so a database hiccup no longer blocks a commit.
-
-</details>
-
-<details>
-<summary><b>v0.9.13</b> (2026-06-15): update fixes + integration docs</summary>
-
-- **`/wh:update` resolves split-server installs**: the update flow looked for the obsolete single `wheeler` MCP key and failed on modern installs; it now resolves any Wheeler MCP server (split or legacy), preferring the install serving the session.
-- **The update badge clears after updating**: `wheeler update` reliably drops the `⬆ /wh:update` statusline badge by clearing the version-check cache in a way that works for every install type, including uv tool.
-- **Service integrations documented**: ARCHITECTURE.md, the README, CLAUDE.md, the tech stack, and the getting-started guide now cover the Asta adapters, the external-call failsafe, and how to add a new service with the `wheeler-service-creator` skill.
 
 </details>
 
@@ -270,7 +270,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 1929 tests
+tests/                        # 2008 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -282,7 +282,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (1929 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (2008 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
