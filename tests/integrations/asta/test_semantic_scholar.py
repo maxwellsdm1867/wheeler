@@ -31,6 +31,7 @@ GET_FIXTURE = FIX / "s2_get.json"
 SEARCH_FIXTURE = FIX / "s2_search.json"
 CITATIONS_FIXTURE = FIX / "s2_citations.json"
 SNIPPET_FIXTURE = FIX / "s2_snippet.json"
+AUTHOR_FIXTURE = FIX / "s2_author.json"
 
 # Service tag for every node this adapter writes. Teardown keys on it (plus the
 # fixture corpus_ids) so cleanup is hermetic regardless of a per-run e2e tag.
@@ -43,6 +44,15 @@ SNIPPET_CORPUS_IDS = ["203658198", "12580360"]
 # corpus_ids in the get + search fixtures.
 GET_CORPUS_ID = "210116405"
 SEARCH_CORPUS_IDS = ["301234001", "301234002", "301234003"]
+# author fixture: the queried author + the corpus_ids of their papers.
+# NOTE: s2_author.json is an INFERRED shape (the documented S2 author-endpoint
+# family), NOT a live `asta papers author` capture like the other four fixtures.
+# When a real author run is captured, drop a trimmed copy over s2_author.json and
+# fix these constants + any renamed keys in _parse_author. The parser is
+# defensive, so a key-name drift degrades gracefully rather than raising.
+AUTHOR_ID = "1741101"
+AUTHOR_NAME = "Wolfram Schultz"
+AUTHOR_CORPUS_IDS = ["501234001", "501234002", "501234003"]
 
 # The cited target paper for the citations e2e (a corpus_id, NOT in the output).
 TARGET_CORPUS_ID = "210116405"
@@ -77,6 +87,12 @@ class TestAutoDetectSubKind:
         parsed = parse_semantic_scholar(_load(SNIPPET_FIXTURE))
         assert parsed.sub_kind == "snippet"
         assert len(parsed.snippets) == 3
+
+    def test_detects_author(self):
+        parsed = parse_semantic_scholar(_load(AUTHOR_FIXTURE))
+        assert parsed.sub_kind == "author"
+        assert len(parsed.papers) == len(AUTHOR_CORPUS_IDS)
+        assert parsed.author is not None
 
 
 class TestParseGet:
@@ -173,6 +189,64 @@ class TestParseSnippet:
         parsed = parse_semantic_scholar(_load(SNIPPET_FIXTURE))
         kinds = {s.kind for s in parsed.snippets}
         assert kinds == {"body", "abstract"}
+
+
+class TestParseAuthor:
+    def test_author_meta_lifted_to_custom(self):
+        parsed = parse_semantic_scholar(_load(AUTHOR_FIXTURE))
+        author = parsed.author
+        assert author is not None
+        assert author.author_id == AUTHOR_ID
+        assert author.name == AUTHOR_NAME
+        # The scalars the run is queryable by, namespaced with author_.
+        assert author.custom["author_id"] == AUTHOR_ID
+        assert author.custom["author_name"] == AUTHOR_NAME
+        assert author.custom["author_paper_count"] == 412
+        assert author.custom["author_citation_count"] == 98765
+        assert author.custom["author_h_index"] == 142
+        assert author.custom["author_affiliations"] == "University of Cambridge"
+
+    def test_author_papers_parse_through_the_paper_path(self):
+        parsed = parse_semantic_scholar(_load(AUTHOR_FIXTURE))
+        cids = {p.corpus_id for p in parsed.papers}
+        assert cids == set(AUTHOR_CORPUS_IDS)
+        # Promoted + custom fields carry over from the shared paper parser.
+        by_cid = {p.corpus_id: p for p in parsed.papers}
+        assert by_cid["501234002"].title.startswith("A neural substrate")
+        assert by_cid["501234002"].year == 1997
+        assert "Dayan" in by_cid["501234002"].authors
+        assert by_cid["501234002"].custom["citation_count"] == 6890
+
+    def test_author_papers_under_data_key(self):
+        # The /author/{id}/papers endpoint nests papers under ``data`` instead of
+        # ``papers``; both are accepted so the run still buckets its papers.
+        doc = {
+            "authorId": "9",
+            "name": "Solo",
+            "data": [{"corpusId": 7, "title": "Lone paper", "year": 2020}],
+        }
+        parsed = parse_semantic_scholar(doc)
+        assert parsed.sub_kind == "author"
+        assert [p.corpus_id for p in parsed.papers] == ["7"]
+
+    def test_profile_only_author_has_no_papers(self):
+        # A bare author profile (no papers) is still an author run: it records the
+        # queried author, with an empty paper list.
+        parsed = parse_semantic_scholar({"authorId": "9", "name": "Solo"})
+        assert parsed.sub_kind == "author"
+        assert parsed.papers == []
+        assert parsed.author is not None and parsed.author.name == "Solo"
+
+    def test_get_with_nested_author_ids_is_not_misread_as_author(self):
+        # A paper ``get`` carries authorId only NESTED under authors[]; the
+        # top-level key is paperId, so it must stay a ``get`` (the author endpoint
+        # puts authorId at the top level).
+        doc = {
+            "paperId": "abc",
+            "title": "T",
+            "authors": [{"authorId": "1", "name": "A"}],
+        }
+        assert parse_semantic_scholar(doc).sub_kind == "get"
 
 
 class TestDefensive:
@@ -978,3 +1052,149 @@ class TestIngestSemanticScholarE2E:
                 xid=report3.execution_id,
             )
             assert (await res.single())["c"] == 0
+
+    @pytest.mark.asyncio
+    async def test_author_papers_and_execution_stamp_and_provenance(self, e2e_config):
+        """An ``author`` run: the author's papers + the queried-author stamp.
+
+        Asserts the full provenance contract for the new sub-kind:
+          - Execution kind ``s2-author``, stamped with the queried-author scalars
+            (custom_author_id / custom_author_name / custom_author_h_index),
+          - each author paper is a Paper node RELEVANT_TO the link target (the
+            author's papers ARE relevant to the question, like search results),
+          - each author paper WAS_DERIVED_FROM the raw Dataset (lineage), and
+            carries NO WAS_GENERATED_BY (Papers are reference entities),
+          - Execution -[USED]-> the link target (input-side provenance),
+          - re-ingest is idempotent (created==0, all deduped, same Execution).
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.asta.semantic_scholar import (
+            ingest_semantic_scholar,
+        )
+        from wheeler.tools.graph_tools import execute_tool
+
+        doc = _load(AUTHOR_FIXTURE)
+        artifact_path = self._tmp / "s2_author_raw.json"
+        artifact_path.write_text(json.dumps(doc))
+        driver = get_async_driver(e2e_config)
+        db = e2e_config.neo4j.database
+
+        # The Question the author lookup supports (the link + USED target).
+        q_result = json.loads(await execute_tool(
+            "add_question",
+            {"question": "E2E author: what has this author published on reward?",
+             "priority": 5},
+            e2e_config,
+        ))
+        question_id = q_result["node_id"]
+        async with driver.session(database=db) as s:
+            await s.run(
+                "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
+                id=question_id, tag=self._e2e_tag,
+            )
+
+        # --- First ingest of the author artifact ---
+        report1 = await ingest_semantic_scholar(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=[question_id],
+        )
+        await self._tag_all(e2e_config, report1)
+        exec_id = report1.execution_id
+        assert exec_id.startswith("X-")
+        # 3 distinct author papers created.
+        assert report1.created == len(AUTHOR_CORPUS_IDS)
+        assert report1.used == 1
+
+        # Execution kind reflects the sub-shape, scoped to THIS run's id.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid}) RETURN x.kind AS kind",
+                xid=exec_id,
+            )
+            assert (await res.single())["kind"] == "s2-author"
+
+        # The queried-author scalars are stamped on the run Execution (the author
+        # dimension is queryable on the run, NOT as a new node type).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid}) RETURN "
+                "x.custom_author_id AS aid, x.custom_author_name AS name, "
+                "x.custom_author_h_index AS h",
+                xid=exec_id,
+            )
+            rec = await res.single()
+        assert rec["aid"] == AUTHOR_ID
+        assert rec["name"] == AUTHOR_NAME
+        assert rec["h"] == 142
+
+        # One Paper per author corpus_id.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper) WHERE p.corpus_id IN $cids "
+                "RETURN count(DISTINCT p) AS c",
+                cids=AUTHOR_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == len(AUTHOR_CORPUS_IDS)
+
+        # Each author paper RELEVANT_TO the Question (they ARE relevant, like
+        # search results).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:RELEVANT_TO]->(q {id: $qid}) "
+                "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
+                qid=question_id, cids=AUTHOR_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == len(AUTHOR_CORPUS_IDS)
+
+        # Papers are REFERENCE ENTITIES: NO author paper carries WAS_GENERATED_BY.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
+                xid=exec_id, cids=AUTHOR_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == 0
+
+        # Each author paper WAS_DERIVED_FROM the raw Dataset (its lineage).
+        assert report1.artifact and report1.artifact.startswith("D-")
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:WAS_DERIVED_FROM]->(d:Dataset {id: $aid}) "
+                "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
+                aid=report1.artifact, cids=AUTHOR_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == len(AUTHOR_CORPUS_IDS)
+
+        # Input-side provenance: Execution -[USED]-> the Question.
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (x:Execution {id: $xid})-[r:USED]->(q {id: $qid}) "
+                "RETURN count(r) AS c",
+                xid=exec_id, qid=question_id,
+            )
+            assert (await res.single())["c"] == 1
+
+        # --- Second ingest of the SAME artifact: idempotent ---
+        report2 = await ingest_semantic_scholar(
+            doc,
+            link_to=question_id,
+            config=e2e_config,
+            artifact_path=str(artifact_path),
+            used_inputs=[question_id],
+        )
+        await self._tag_all(e2e_config, report2)
+        assert report2.execution_id == exec_id
+        assert report2.created == 0
+        assert report2.deduped == len(AUTHOR_CORPUS_IDS)
+        assert report2.used == 0
+        # RELEVANT_TO not duplicated (link_once).
+        async with driver.session(database=db) as s:
+            res = await s.run(
+                "MATCH (p:Paper)-[r:RELEVANT_TO]->(q {id: $qid}) "
+                "WHERE p.corpus_id IN $cids RETURN count(r) AS c",
+                qid=question_id, cids=AUTHOR_CORPUS_IDS,
+            )
+            assert (await res.single())["c"] == len(AUTHOR_CORPUS_IDS)

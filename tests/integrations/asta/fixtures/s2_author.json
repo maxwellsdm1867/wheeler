@@ -1,0 +1,48 @@
+{
+  "_comment": "INFERRED shape from the documented S2 author-endpoint family, NOT a live `asta papers author` capture. Replace with a trimmed real capture when available; the parser ignores this key. See _parse_author in semantic_scholar.py.",
+  "authorId": "1741101",
+  "name": "Wolfram Schultz",
+  "affiliations": ["University of Cambridge"],
+  "homepage": "https://www.neuroscience.cam.ac.uk/",
+  "paperCount": 412,
+  "citationCount": 98765,
+  "hIndex": 142,
+  "url": "https://www.semanticscholar.org/author/1741101",
+  "papers": [
+    {
+      "paperId": "aaa1111111111111111111111111111111111111",
+      "corpusId": 501234001,
+      "title": "Dopamine neurons and their role in reward mechanisms",
+      "venue": "Journal of Neuroscience",
+      "year": 1998,
+      "citationCount": 3120,
+      "authors": [
+        {"authorId": "1741101", "name": "Wolfram Schultz"}
+      ]
+    },
+    {
+      "paperId": "bbb2222222222222222222222222222222222222",
+      "corpusId": 501234002,
+      "title": "A neural substrate of prediction and reward",
+      "venue": "Science",
+      "year": 1997,
+      "citationCount": 6890,
+      "authors": [
+        {"authorId": "1741101", "name": "Wolfram Schultz"},
+        {"authorId": "2222222", "name": "P. Dayan"},
+        {"authorId": "3333333", "name": "P. R. Montague"}
+      ]
+    },
+    {
+      "paperId": "ccc3333333333333333333333333333333333333",
+      "corpusId": 501234003,
+      "title": "Predictive reward signal of dopamine neurons",
+      "venue": "Journal of Neurophysiology",
+      "year": 1998,
+      "citationCount": 4501,
+      "authors": [
+        {"authorId": "1741101", "name": "Wolfram Schultz"}
+      ]
+    }
+  ]
+}
