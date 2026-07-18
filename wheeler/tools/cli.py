@@ -64,6 +64,16 @@ try:
 except ImportError:
     pass
 
+# LLM-SR equation-discovery driver (init/prompt/submit/best). Guarded: the
+# vendored search core needs numpy + scipy, so a missing dependency degrades to
+# "wheeler llmsr unavailable" rather than breaking the rest of the CLI.
+try:
+    from wheeler.integrations.llmsr.cli import llmsr_app
+
+    app.add_typer(llmsr_app, name="llmsr")
+except ImportError:
+    pass
+
 
 
 # Re-export for backward compatibility and convenience

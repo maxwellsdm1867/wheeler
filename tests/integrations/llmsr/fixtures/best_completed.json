@@ -1,0 +1,27 @@
+{
+  "status": "completed",
+  "run_id": "fixturerun01",
+  "spec_path": "/private/tmp/claude-501/-Users-maxwellsdm-Documents-GitHub-wheeler/8a15c841-42d0-4b8f-8fef-2c235875a31d/scratchpad/LLM-SR/specs/specification_bactgrow_numpy.txt",
+  "data_path": "/private/tmp/claude-501/-Users-maxwellsdm-Documents-GitHub-wheeler/8a15c841-42d0-4b8f-8fef-2c235875a31d/scratchpad/LLM-SR/data/bactgrow/train.csv",
+  "metric": "mse",
+  "generator": "claude",
+  "equation": "    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]",
+  "params": [
+    0.011432654420904619,
+    0.004132786064263525,
+    0.004420238878264297,
+    -0.00015936463501544528,
+    -0.09732155839110336,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "program": "\"\"\"\nFind the mathematical function skeleton that represents E. Coli bacterial growth rate, given data on population density, substrate concentration, temperature, and pH level. \n\"\"\"\n\n\nimport numpy as np\n\n#Initialize parameters\nMAX_NPARAMS = 10\nPRAMS_INIT = [1.0]*MAX_NPARAMS\n\n\ndef evaluate(data: dict) -> float:\n    \"\"\" Evaluate the equation on data observations.\"\"\"\n    inputs, outputs = data['inputs'], data['outputs']\n    b, s, temp, pH = inputs[:,0], inputs[:,1], inputs[:,2], inputs[:,3]\n    \n    # Optimize parameters based on data\n    from scipy.optimize import minimize\n    def loss(params):\n        y_pred = equation(b, s, temp, pH, params)\n        return np.mean((y_pred - outputs) ** 2)\n\n    loss_partial = lambda params: loss(params)\n    result = minimize(loss_partial, [1.0]*MAX_NPARAMS, method='BFGS')\n    \n    # Return evaluation score\n    optimized_params = result.x\n    loss = result.fun\n\n    if np.isnan(loss) or np.isinf(loss):\n        return None\n    else:\n        return -loss\n\n\ndef equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:\n    \"\"\" Mathematical function for bacterial growth rate\n\n    Args:\n        b: A numpy array representing observations of population density of the bacterial species.\n        s: A numpy array representing observations of substrate concentration.\n        temp: A numpy array representing observations of temperature.\n        pH: A numpy array representing observations of pH level.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing bacterial growth rate as the result of applying the mathematical function to the inputs.\n    \"\"\"\n    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]\n\n\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\nFITTED_PARAMS = [0.011432654420904619, 0.004132786064263525, 0.004420238878264297, -0.00015936463501544528, -0.09732155839110336, 1.0, 1.0, 1.0, 1.0, 1.0]\nMETRIC = {'name': 'mse', 'value': 0.016718887300831962}\n\nif __name__ == '__main__':\n    import numpy as _np\n    _d = _np.genfromtxt(r'/private/tmp/claude-501/-Users-maxwellsdm-Documents-GitHub-wheeler/8a15c841-42d0-4b8f-8fef-2c235875a31d/scratchpad/LLM-SR/data/bactgrow/train.csv', delimiter=',', skip_header=1)\n    _X, _y = _d[:, :-1], _d[:, -1].reshape(-1)\n    _n = equation.__code__.co_argcount - 1\n    _cols = [_X[:, i] for i in range(_n)]\n    _pred = equation(*_cols, _np.array(FITTED_PARAMS))\n    print('metric', METRIC)\n    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n",
+  "metrics": {
+    "mse_train": 0.016718887300831962
+  },
+  "n_samples": 2,
+  "n_valid": 2
+}

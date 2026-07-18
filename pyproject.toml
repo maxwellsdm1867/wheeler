@@ -64,6 +64,12 @@ search = [
     "fastembed>=0.4",
     "numpy>=1.24",
 ]
+# LLM-SR equation-discovery service. The vendored search core fits free
+# constants with scipy; numpy is already in core. Optional so the base install
+# stays lean; `wheeler llmsr` degrades to unavailable if scipy is absent.
+llmsr = [
+    "scipy>=1.10",
+]
 # Test-only deps, kept lean so `pip install wheeler[test]` stays small.
 test = [
     "pytest>=8.0",
@@ -116,3 +122,15 @@ include = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 norecursedirs = ["tests/e2e/sandbox"]
+
+# Vendored third-party code (the LLM-SR search core, MIT/Apache-2.0) is shipped
+# verbatim and is not held to Wheeler's lint/type rules. Only Wheeler's own
+# adapter code around it (cli.py, fit.py, metrics.py, discover.py) is checked.
+[tool.ruff]
+extend-exclude = ["wheeler/integrations/llmsr/vendor"]
+
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+module = "wheeler.integrations.llmsr.vendor.*"
+ignore_errors = true

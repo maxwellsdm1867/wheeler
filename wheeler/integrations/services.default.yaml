@@ -81,3 +81,19 @@ services:
     cost: "free"
     available: "wheeler graph status"
     when: "a quick local snapshot of graph health and recent activity, no external service"
+  - id: llmsr-discover
+    provider: llmsr
+    name: LLM-SR Equation Discovery
+    description: discover a closed-form equation from a dataset via LLM-guided evolutionary search
+    kind: local
+    act: /wh:llmsr-discover
+    cost: "slow (dozens of sub-agent rounds, minutes)"
+    available: "wheeler llmsr --help"
+    when: "discover or fit a closed-form equation / symbolic model from a dataset"
+    inputs:
+      - { name: dataset, source: datasets, required: true }
+      - { name: question, source: query, required: false }
+    output:
+      raw_node: document
+      nodes: [Script, Finding]
+    # implemented by wheeler/integrations/llmsr/discover.py

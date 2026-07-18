@@ -33,6 +33,7 @@ _INGESTERS = {
     "scholar_qa",
     "scholar-qa",
     "literature-report",
+    "discover",
 }
 
 # Tools whose deliverable is a MARKDOWN document, not a JSON ``-o`` artifact. The
@@ -53,6 +54,7 @@ _FAILURE_META = {
     "scholar_qa": ("literature-report", "asta:scholar-qa"),
     "scholar-qa": ("literature-report", "asta:scholar-qa"),
     "literature-report": ("literature-report", "asta:scholar-qa"),
+    "discover": ("equation-discovery", "llmsr:discover"),
 }
 
 
@@ -270,6 +272,18 @@ def ingest(
                 doc,
                 link_to=link_to,
                 target=target,
+                config=config,
+                artifact_path=str(artifact),
+                used_inputs=used_inputs,
+            )
+        )
+    elif tool_key == "discover":
+        from wheeler.integrations.llmsr.discover import ingest_discover
+
+        report = asyncio.run(
+            ingest_discover(
+                doc,
+                link_to=link_to,
                 config=config,
                 artifact_path=str(artifact),
                 used_inputs=used_inputs,
