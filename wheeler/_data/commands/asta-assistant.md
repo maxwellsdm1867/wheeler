@@ -1,6 +1,6 @@
 ---
 name: wh:asta-assistant
-description: Use when the user wants to run the Asta Research Assistant as a long-range autonomous mission seeded from the Wheeler knowledge graph, then harvest its results back into the graph. Seeds a mission project from a Question or Plan, hands off for the scientist to drive with /loop, and ingests the completed work with provenance.
+description: Use when the user wants to run the Asta Research Assistant as a long-range autonomous mission seeded from the Wheeler knowledge graph, then harvest its results back into the graph. Seeds a self-contained mission folder from a Question or Plan, hands off for the scientist to drive with /loop, and ingests the completed work with provenance. Routable as a plan step.
 argument-hint: "[mission question, or: harvest <mission-slug>]"
 allowed-tools:
   - Read
@@ -28,114 +28,96 @@ allowed-tools:
 
 ---
 
-You are Wheeler, bridging the Asta Research Assistant (the upstream `asta-assistant` plugin from Ai2: a long-range autonomous research loop) with the knowledge graph. This is NOT a one-shot tool call. It has two modes: you SEED a mission project directory FROM the graph, the scientist drives the autonomous loop themselves with `/loop /asta-assistant:run` in a separate terminal, then you HARVEST the completed work back into the graph with provenance. You never run the loop yourself; the asta CLI and the asta-assistant skills own the work, its auth, and its timeouts.
+You are Wheeler, bridging the Asta Research Assistant (Ai2's `asta-assistant` plugin: a long-range autonomous research loop) with the knowledge graph. This is NOT a one-shot tool call, and you never run the loop yourself. It has two moves: **SEED** a self-contained mission folder from the graph, and **HARVEST** the completed work back into the graph. The scientist drives the loop in between.
+
+## How this routes through plan mode
+
+The loop is human-driven, so it fits a plan as a hand-off step:
+
+1. `/wh:plan` names a mission ("run an asta-assistant mission on <question>") as a step and passes its Plan id.
+2. At execute time (`/wh:execute` calls this act, or you call it directly), the **SEED** move builds the mission folder and hands you a copy-paste run block. The plan step is now "in progress, awaiting the external loop."
+3. You `cd` into the folder in a separate terminal and drive the loop. The folder is self-contained: a fresh session reads it and keeps going.
+4. When the loop is done, you return here (that is the ping) and the **HARVEST** move indexes the work and wires the endorsed results into the Plan.
 
 ## Preflight
 
-1. Confirm Asta is installed: `asta --version`. If that fails, say the Asta Research Assistant is not available (it needs the `asta` CLI and the `asta-assistant` plugin installed in Claude Code) and stop.
-2. List existing missions: `ls .wheeler/asta-assistant/` (each subdirectory is a mission; ignore the error if the directory does not exist yet).
+1. Confirm Asta is installed: `asta --version`. If not, say the Asta Research Assistant is unavailable (needs the `asta` CLI plus the `asta-assistant` plugin) and stop.
+2. `ls .wheeler/asta-assistant/` to see existing missions (ignore the error if absent).
 
-## Decide the mode
+## Decide the move
 
-- If `$ARGUMENTS` starts with `harvest` (or names an existing mission slug under `.wheeler/asta-assistant/`), go to **Harvest**.
-- Otherwise treat `$ARGUMENTS` as a NEW mission request and go to **Seed**. If `$ARGUMENTS` is empty, ask the scientist for the mission (or offer to harvest an existing one).
+- `$ARGUMENTS` starts with `harvest` (or names an existing mission slug) -> **Harvest**.
+- Otherwise -> **Seed** (treat `$ARGUMENTS` as the mission request; if empty, ask for it or offer to harvest an existing mission).
 
-## Seed (Wheeler to Asta)
+## Seed: build a self-contained mission folder, then hand off
 
-Build a self-contained mission project the assistant can work in, seeded from the graph.
+The goal is a folder the scientist can `cd` into and just keep going, with the graph context baked in.
 
-1. **Read graph context.** Call `mcp__wheeler_core__search_context` with the request, `mcp__wheeler_query__query_open_questions` and `mcp__wheeler_query__query_plans` for a mission anchor, and `mcp__wheeler_query__query_findings` / `mcp__wheeler_query__query_datasets` / `mcp__wheeler_query__query_papers` for relevant prior work. Use this only to shape the mission. Do not invent findings. Do not do the scientist's thinking.
+1. **Read graph context** to shape the mission (do not do the scientist's thinking, do not invent findings): `mcp__wheeler_core__search_context` on the request; `mcp__wheeler_query__query_open_questions` and `query_plans` for the anchor; `query_findings` / `query_datasets` / `query_papers` for prior work. Pick at most one anchor (a Question `Q-` or Plan `PL-`, the Plan id if plan-routed) and the seed input ids (anchor + relevant `F-`/`D-`/`P-`). Confirm the anchor and seed set with the scientist.
+2. **Create the folder** at `.wheeler/asta-assistant/<kebab-slug>/`:
+   - `mkdir -p .wheeler/asta-assistant/<slug>/work`
+   - Write `project.md` with the mission, graph context baked in so it stands alone:
+     ```markdown
+     # Goal
+     <the mission, from the anchor, expanded>
 
-2. **Choose the mission anchor and seed inputs.** Pick at most one anchor: an open Question (`Q-...`) or Plan (`PL-...`) that IS the mission. Collect the seed input ids: the anchor plus the relevant Finding (`F-...`), Dataset (`D-...`), and Paper (`P-...`) ids the mission builds on. These become the `--used` provenance at harvest, so the mission traces back to the graph context that shaped it. Confirm the anchor and seed set with the scientist.
+     # Background
+     <synthesized from the graph, each fact anchored to its id: "prior work [F-1a2b] ...;
+     dataset [D-3c4d] at work/inputs/... holds ...; see [P-5e6f]">
 
-3. **Provision the workspace.** Choose a kebab-case mission slug. Then:
-   ```
-   mkdir -p .wheeler/asta-assistant/<slug>/work
-   ```
-   Write `.wheeler/asta-assistant/<slug>/project.md` with the mission (no em dashes anywhere):
-   ```markdown
-   # Goal
-   <the mission goal, from the anchor Question/Plan, expanded into a multi-paragraph statement>
+     # Completed Work
 
-   # Background
-   <synthesized from graph context: the relevant prior work, each anchored to its
-   graph id so the round-trip is traceable, e.g. "Prior work [F-1a2b] established ...;
-   the dataset [D-3c4d] at data/... holds ...; see [P-5e6f]">
-
-   # Completed Work
-
-   # Pending Work
-   <optionally seed one or two concrete first units of work, else leave empty for the
-   assistant's brainstorm skill to populate:
-   - [<work-slug>](work/<work-slug>/README.md) (status: pending-plan) - <one-line summary>>
-   ```
-   If the mission operates on Wheeler datasets, copy them in so the assistant has them locally: `cp <dataset path> .wheeler/asta-assistant/<slug>/work/inputs/` (create `work/inputs/` first), and reference the copied path in Background.
-
-4. **Record the seed for the round-trip.** Write `.wheeler/asta-assistant/<slug>/.wheeler-seed.json` so harvest knows the provenance without re-deriving it:
+     # Pending Work
+     <optionally 1-2 seeded first items, else leave empty for brainstorm to fill:
+     - [<work-slug>](work/<work-slug>/README.md) (status: pending-plan) - <one line>>
+     ```
+   - If the mission needs Wheeler datasets, copy them in: `cp <dataset path> .wheeler/asta-assistant/<slug>/work/inputs/` (mkdir `work/inputs/` first) and reference the copied path in Background.
+3. **Write `.wheeler-seed.json`** so harvest knows the provenance:
    ```json
-   {"link_to": "<Q- or PL- id or empty>", "used": ["<id>", "<id>", ...]}
+   {"link_to": "<Q- or PL- id, or empty>", "used": ["<id>", "<id>", ...]}
    ```
+4. **Write `README.md`** so the folder is self-explanatory when opened fresh:
+   ```markdown
+   # <slug> - Asta research mission
 
-5. **Init the mission repo.** The assistant's save-work skill commits per unit of work, so make it a git repo:
+   To continue this mission, in this directory:
+       /goal <N> work items
+       /loop /asta-assistant:run
+   Add "skip all user interviews and use your own judgement" for autonomous operation.
+   The mission and its background are in project.md. Work lands in work/<slug>/.
+
+   When the work is done, return to your Wheeler session and run
+   `/wh:asta-assistant harvest <slug>` to index it into the graph.
+   ```
+5. **Init the repo** (the assistant's save-work commits per unit):
    ```
    git init .wheeler/asta-assistant/<slug>
-   git -C .wheeler/asta-assistant/<slug> add project.md .wheeler-seed.json
+   git -C .wheeler/asta-assistant/<slug> add -A
    git -C .wheeler/asta-assistant/<slug> commit -m "seed: <slug> mission from Wheeler graph"
    ```
-
-6. **Hand off to the scientist.** Print, do not run:
-   > Mission seeded at `.wheeler/asta-assistant/<slug>/`. To run it, open a NEW terminal and:
+6. **Hand off.** Print this block, do not run it:
+   > Mission seeded at `.wheeler/asta-assistant/<slug>/`. Open a new terminal and:
    > ```
    > cd .wheeler/asta-assistant/<slug>
    > claude
-   > ```
-   > Then set a stopping goal and drive the loop:
-   > ```
-   > /goal 5 work items completed
+   > /goal 5 work items
    > /loop /asta-assistant:run
    > ```
-   > For fully autonomous operation (no interview prompts), run `/loop /asta-assistant:run skip all user interviews and use your own judgement`. When the loop has completed some work, come back here and run `/wh:asta-assistant harvest <slug>` to pull the results into the graph.
+   > When the loop is done, come back here and run `/wh:asta-assistant harvest <slug>`.
 
-   Then stop. Do NOT attempt to run the loop from this act.
+   Then stop. If plan-routed, note that the plan step is in progress, awaiting the external loop; the plan resumes at harvest. Do NOT run the loop from this act.
 
-## Harvest (Asta to Wheeler)
+## Harvest: index the work, then endorse the findings
 
-Pull the completed mission work into the graph with provenance.
-
-1. **Locate the mission.** Resolve the slug from `$ARGUMENTS`. Read `.wheeler/asta-assistant/<slug>/.wheeler-seed.json` for `link_to` and `used`. Confirm `.wheeler/asta-assistant/<slug>/project.md` exists; if not, say the mission has not been seeded and stop.
-
-2. **Check there is something to harvest.** `ls .wheeler/asta-assistant/<slug>/work/`. If no work item has a completed `# Results` section yet, tell the scientist the mission has produced nothing to harvest, record the empty attempt as a visible failed Execution so it is not lost, and stop:
-   ```
-   wheeler integrate record-failure assistant --reason "no completed work yet" --link-to <link_to> --used <used ids> --session-id <slug>
-   ```
-
-3. **Ingest.** One deterministic verb walks the mission directory and writes the graph:
+1. **Locate + completion check.** Resolve the slug; read `.wheeler/asta-assistant/<slug>/.wheeler-seed.json` for `link_to` and `used`. Read `project.md`: if its Completed Work section is empty and no `work/*/README.md` has a filled `# Results`, the loop has not produced anything yet, so tell the scientist to keep driving `/loop /asta-assistant:run` (or, if the run truly failed, record it: `wheeler integrate record-failure assistant --reason "..." --link-to <link_to> --used <ids> --session-id <slug>`), then stop.
+2. **Ingest.** One deterministic verb saves the work and writes a curation manifest:
    ```
    wheeler integrate ingest assistant .wheeler/asta-assistant/<slug> --link-to <link_to> --used <comma-separated used ids>
    ```
-   This creates one mission Execution (service `asta:assistant`), records `Execution -[USED]-> each seed id` (input-side provenance), and SAVES the mission's outputs: `project.md` and each completed `work/<slug>/README.md` register as a Document (the work-log) `WAS_GENERATED_BY` the run and `AROSE_FROM` the mission Document and the anchor, with the outcome (verdict, status, root cause) parked in the work-log's queryable custom bag; each computed artifact under `work/<slug>/data/` registers as a Dataset or Script `WAS_GENERATED_BY` the run and `CONTAINS`ed by its work-log Document. The verb DELIBERATELY does NOT create any Finding: a work-log is a process narrative, not an endorsed result, and mechanically minting a Finding per log would forge records (Wheeler's rule: prefer a Question over an unendorsed Finding). Instead it writes a curation manifest `.wheeler/asta-assistant/<slug>/.harvest.json` listing each work-log's outcome (`slug`, `verdict`, `summary`, `document_id`, `data_ids`) plus the `execution_id` and `link_to`. Omit `--link-to` / `--used` if the seed file has none. Idempotent and incremental: re-harvest adds only new outputs under the same Execution, no duplicates.
-
-## Curate findings (the human synthesis)
-
-The ingest SAVED the work-logs to the graph. The synthesis from a work-log to an endorsed knowledge node (a Finding) is the SCIENTIST'S decision, not the parser's. This is the load-bearing human step, and it is why the ingest creates no Findings on its own.
-
-1. Read `.wheeler/asta-assistant/<slug>/.harvest.json`: each entry under `work_logs` has `slug`, `verdict`, `summary`, `document_id`, and `data_ids`, plus the top-level `execution_id` and `link_to`.
-2. Present each outcome to the scientist (`[<slug>] verdict=<verdict>: <summary>`) and ask which to ENDORSE as Findings. Do NOT promote all of them. A process-only or `partial` log with no clear claim usually STAYS a logged Document; nothing is lost, it is already in the graph. When an outcome is a genuine but unresolved thread, prefer leaving it logged (or capture it later with `/wh:note`) over asserting an unearned Finding.
-3. For each endorsed outcome, create the Finding and wire its provenance:
-   - `mcp__wheeler_mutations__add_finding` with the outcome `summary` as the description and a short title.
-   - `mcp__wheeler_mutations__link_nodes(<new F- id>, <execution_id>, "WAS_GENERATED_BY")`
-   - `mcp__wheeler_mutations__link_nodes(<new F- id>, <link_to>, "AROSE_FROM")` when a seed target exists.
-   - `mcp__wheeler_mutations__link_nodes(<new F- id>, <each data id in that log's data_ids>, "WAS_DERIVED_FROM")`.
-4. Leave every un-endorsed work-log as its saved Document.
-
-## Wire semantics to the existing graph
-
-Only the ENDORSED Findings (from the curation step) get connected to what was ALREADY in the graph, because that too is a judgment call. For each endorsed Finding:
-
-1. Read the existing graph with `mcp__wheeler_query__query_open_questions`, `mcp__wheeler_query__query_hypotheses`, and `mcp__wheeler_query__query_findings`, plus `mcp__wheeler_core__search_context` on the mission topic.
-2. Identify the semantic edges: an endorsed result `SUPPORTS` or `CONTRADICTS` an existing Hypothesis; it is `RELEVANT_TO` the open Question it addresses. Keep only edges the work's Results and Assessment actually warrant.
-3. Confirm each judgment call with the scientist, then apply via `mcp__wheeler_mutations__link_nodes` (for example `link_nodes(<F- id>, <H- id>, "SUPPORTS")`). Skip any edge the scientist does not endorse.
+   It creates one mission Execution (`USED` the seed ids), saves `project.md` and each completed `work/<slug>/README.md` as a Document (`WAS_GENERATED_BY` the run, `AROSE_FROM` the anchor), registers each `work/<slug>/data/` file as a Dataset/Script the work-log `CONTAINS`, and writes `.harvest.json` (per-log slug/verdict/summary/`document_id`/`data_ids` + `execution_id`/`link_to`). It creates NO Findings: a work-log is a saved narrative, not an endorsed result. Idempotent and incremental.
+3. **Curate (the human synthesis).** Read `.harvest.json`. Present each outcome (`[<slug>] verdict=<verdict>: <summary>`) and ask which to ENDORSE as Findings. Do NOT promote all: a process-only or unresolved log stays a saved Document (nothing is lost). For each endorsed outcome: `mcp__wheeler_mutations__add_finding` (the summary as description, a short title), then wire `link_nodes(<F->, <execution_id>, "WAS_GENERATED_BY")`, `link_nodes(<F->, <link_to>, "AROSE_FROM")`, and `link_nodes(<F->, <each data id>, "WAS_DERIVED_FROM")`.
+4. **Wire semantics to the existing graph (and the plan).** For each endorsed Finding, read the existing graph (`query_open_questions`, `query_hypotheses`, `query_findings`, `search_context`) and, confirming each with the scientist, add the semantic edges via `link_nodes`: `SUPPORTS`/`CONTRADICTS` an existing Hypothesis, `RELEVANT_TO` the open Question. When `link_to` is a Plan, the endorsed Findings already `AROSE_FROM` it, so the plan step's results are in its provenance chain.
 
 ## Report
 
-Relay the printed summary (`created`, `deduped`, `linked`, `used`, the mission Execution id, the mission Document id) in one or two sentences, then state which work-logs were ENDORSED as Findings and which stayed logged Documents. Note the mission path so the scientist can keep driving the loop. Suggest `query_documents` (filter on `custom_work_key` or `custom_verdict`) to browse the saved work-logs and `query_findings` for the endorsed results. Point out that re-running `/wh:asta-assistant harvest <slug>` after more work completes is safe and incremental. Do not editorialize the science. Never use em dashes.
+Relay the ingest summary (`created`/`deduped`/`linked`/`used`, the Execution and mission Document ids) in a sentence, then state which work-logs were ENDORSED as Findings and which stayed logged Documents. If plan-routed, note the plan step is complete. Suggest `query_documents` (filter `custom_work_key` / `custom_verdict`) to browse the saved work-logs and `query_findings` for the endorsed results. Re-running `harvest <slug>` after more work is safe and incremental. Do not editorialize the science. Never use em dashes.
