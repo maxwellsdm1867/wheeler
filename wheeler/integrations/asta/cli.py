@@ -34,6 +34,9 @@ _INGESTERS = {
     "scholar-qa",
     "literature-report",
     "discover",
+    "assistant",
+    "asta-assistant",
+    "research-assistant",
 }
 
 # Tools whose deliverable is a MARKDOWN document, not a JSON ``-o`` artifact. The
@@ -55,7 +58,16 @@ _FAILURE_META = {
     "scholar-qa": ("literature-report", "asta:scholar-qa"),
     "literature-report": ("literature-report", "asta:scholar-qa"),
     "discover": ("equation-discovery", "llmsr:discover"),
+    "assistant": ("research-assistant", "asta:assistant"),
+    "asta-assistant": ("research-assistant", "asta:assistant"),
+    "research-assistant": ("research-assistant", "asta:assistant"),
 }
+
+# Tools whose artifact is a DIRECTORY (a mission project tree), not a single
+# file. The ingest verb passes the directory path straight through to the
+# directory-walking ingest rather than reading it as text or JSON. The Asta
+# Research Assistant is the first such tool.
+_DIRECTORY_TOOLS = {"assistant", "asta-assistant", "research-assistant"}
 
 
 def _echo_report(report) -> None:
@@ -206,6 +218,24 @@ def ingest(
     # no-USED-edges path is reached identically rather than passing an empty list.
     _parsed_used = [i.strip() for i in used.split(",") if i.strip()] if used else []
     used_inputs = _parsed_used or None
+
+    # The Asta Research Assistant deliverable is a DIRECTORY (a mission project
+    # tree: project.md + work/<slug>/README.md + work/<slug>/data/), not a single
+    # file. Pass the directory (or a project.md path) straight to the
+    # directory-walking harvest, before any read-as-text/json.
+    if tool_key in _DIRECTORY_TOOLS:
+        from wheeler.integrations.asta.assistant import ingest_assistant
+
+        report = asyncio.run(
+            ingest_assistant(
+                str(artifact),
+                link_to=link_to,
+                config=config,
+                used_inputs=used_inputs,
+            )
+        )
+        _echo_report(report)
+        return
 
     # A literature report is MARKDOWN, not a JSON artifact: read it as text and
     # dispatch to the markdown ingest path. The optional --find-results JSON is

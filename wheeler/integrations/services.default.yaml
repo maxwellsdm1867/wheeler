@@ -129,3 +129,21 @@ services:
       raw_node: document
       nodes: [Script, Finding]
     # implemented by wheeler/integrations/llmsr/discover.py
+
+  - id: asta-assistant
+    provider: asta
+    name: Asta Research Assistant
+    description: long-range autonomous research assistant that drives a mission project to completion, harvested into the graph with provenance
+    kind: local
+    act: /wh:asta-assistant
+    cost: "long-running (autonomous multi-step loop; you drive it with /loop in a new terminal)"
+    available: "asta --version"
+    when: "long-range autonomous research: seed a mission from the graph, run it open-endedly, harvest results back"
+    inputs:
+      - { name: mission, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan is the mission?" }
+      - { name: findings, kind: node, node_type: Finding, source: findings, required: false, prompt: "Which findings should seed the mission background?" }
+      - { name: datasets, kind: node, node_type: Dataset, source: datasets, required: false, prompt: "Which datasets should the mission operate on?" }
+    output:
+      raw_node: document
+      nodes: [Document, Finding, Dataset]
+    # implemented by wheeler/integrations/asta/assistant.py

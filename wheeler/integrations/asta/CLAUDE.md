@@ -90,12 +90,41 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   Execution `session_id` AND the durable raw-store key are BOTH the same
   path-derived `run_key`, so one report path = one run = one Document even when the
   report is re-synthesized with edited text (no second Document accrues).
+- `assistant.py` -- `parse_assistant(project_dir) -> (ProjectRecord, RunMeta)` and
+  `ingest_assistant(project_dir, *, link_to, config, used_inputs) -> ImportReport`.
+  The Asta Research Assistant (asta:assistant) adapter, wrapping Ai2's
+  `asta-assistant` plugin (a long-range AUTONOMOUS loop the scientist drives with
+  Claude Code `/loop` + `/goal`). UNLIKE every other adapter, the deliverable is a
+  DIRECTORY, not a file: a mission tree (`project.md` + `work/<slug>/README.md` +
+  `work/<slug>/data/`). Wheeler never runs the loop: the `/wh:asta-assistant` act
+  SEEDS the mission project FROM the graph (Goal from a Question/Plan, Background
+  from Findings/Datasets/Papers), the scientist runs the loop in a separate
+  terminal, then this module HARVESTS the directory back. Bucketing (one Execution
+  per MISSION, kind `research-assistant`, session_id = the mission slug so
+  incremental re-harvests reuse it): `project.md` registers as a Document (`W-`,
+  the mission) via in-place `ensure_artifact` (points at the LIVE file, not a
+  frozen copy, since the mission evolves) `WAS_GENERATED_BY` the run; each
+  COMPLETED work item (a README with a non-empty `# Results`) becomes a Finding
+  (Results summary + the Assessment verdict/status/root-cause in the queryable
+  custom bag), deduped across harvests on a stable `custom_work_key` =
+  `<mission-slug>/<work-slug>`, `WAS_GENERATED_BY` the run and `AROSE_FROM` the
+  mission Document (and the seed Question/Plan); each `work/<slug>/data/<file>`
+  registers as a Dataset/Script (`ensure_artifact`, classified by extension)
+  `WAS_GENERATED_BY` the run, with the work Finding `WAS_DERIVED_FROM` it. Produces
+  NO Paper nodes (a corpus_id is not reliably recoverable from arbitrary work
+  output; a literature-heavy mission records papers via `/wh:asta-lit` directly).
+  Imports `execute_tool` lazily and reuses `_marshal.py`'s `_link_once` /
+  `_record_used` / `_find_execution` / `_link_execution_to_plan` / `job_outcome`
+  helpers.
 - `cli.py` -- `integrate_app` Typer sub-app, one verb: `ingest <tool> <artifact>
   [--link-to ID] [--used IDS] [--target ID] [--find-results JSON]`. Registered in
   `wheeler/tools/cli.py` guarded by try/except. The `scholar-qa` /
   `literature-report` tool is the first MARKDOWN deliverable: its artifact is read
   as TEXT (not `json.loads`), and `--find-results` carries the optional
-  `LiteratureSearchResult` JSON for paper enrichment. Note: the generic `integrate`
+  `LiteratureSearchResult` JSON for paper enrichment. The `assistant` tool
+  (`_DIRECTORY_TOOLS`) is the first DIRECTORY deliverable: its `<artifact>` is a
+  mission directory (or a `project.md` path), passed straight to `ingest_assistant`
+  before any read-as-text/json. Note: the generic `integrate`
   CLI currently lives here and moves up to `wheeler/integrations/` when the contract
   engine is extracted (Phase 3).
 
