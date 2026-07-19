@@ -204,6 +204,7 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **Asta Research Assistant, into the graph**: seed a long-range autonomous research mission from a Question or Plan, drive it with the asta-assistant loop in a separate terminal, then harvest the completed work back into Wheeler with full provenance.
 - **A work-log is not a finding**: harvested work-logs are saved as indexed Documents (their computed artifacts as Datasets and Scripts), and you decide which outcomes get promoted to Findings, so Wheeler never fabricates an unendorsed result.
 - **Validated end to end**: the adapter ships with a live-Neo4j test that walks a real mission through seed, harvest, and re-harvest, checking both provenance sides, idempotency, and the curation manifest.
+- **Semantic Scholar author lookup**: the Asta Semantic Scholar adapter gained an `author` sub-query, so an author's papers can be pulled into the graph.
 
 </details>
 
