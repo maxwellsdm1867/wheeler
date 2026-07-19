@@ -23,6 +23,7 @@ allowed-tools:
   - mcp__wheeler_query__query_datasets
   - mcp__wheeler_query__query_hypotheses
   - mcp__wheeler_query__query_papers
+  - mcp__wheeler_mutations__add_finding
   - mcp__wheeler_mutations__link_nodes
 
 ---
@@ -112,17 +113,29 @@ Pull the completed mission work into the graph with provenance.
    ```
    wheeler integrate ingest assistant .wheeler/asta-assistant/<slug> --link-to <link_to> --used <comma-separated used ids>
    ```
-   This creates one mission Execution (service `asta:assistant`), registers `project.md` as a Document `WAS_GENERATED_BY` the run, records `Execution -[USED]-> each seed id` (input-side provenance), turns each completed work item into a Finding (its Results summary plus the Assessment verdict, `WAS_GENERATED_BY` the run and `AROSE_FROM` the mission Document and the anchor), and registers each computed artifact under `work/<slug>/data/` as a Dataset or Script the Finding `WAS_DERIVED_FROM`. Omit `--link-to` / `--used` if the seed file has none. The verb is idempotent and incremental: re-harvest after more work completes adds only the new items under the same Execution, creating no duplicate nodes or edges.
+   This creates one mission Execution (service `asta:assistant`), records `Execution -[USED]-> each seed id` (input-side provenance), and SAVES the mission's outputs: `project.md` and each completed `work/<slug>/README.md` register as a Document (the work-log) `WAS_GENERATED_BY` the run and `AROSE_FROM` the mission Document and the anchor, with the outcome (verdict, status, root cause) parked in the work-log's queryable custom bag; each computed artifact under `work/<slug>/data/` registers as a Dataset or Script `WAS_GENERATED_BY` the run and `CONTAINS`ed by its work-log Document. The verb DELIBERATELY does NOT create any Finding: a work-log is a process narrative, not an endorsed result, and mechanically minting a Finding per log would forge records (Wheeler's rule: prefer a Question over an unendorsed Finding). Instead it writes a curation manifest `.wheeler/asta-assistant/<slug>/.harvest.json` listing each work-log's outcome (`slug`, `verdict`, `summary`, `document_id`, `data_ids`) plus the `execution_id` and `link_to`. Omit `--link-to` / `--used` if the seed file has none. Idempotent and incremental: re-harvest adds only new outputs under the same Execution, no duplicates.
+
+## Curate findings (the human synthesis)
+
+The ingest SAVED the work-logs to the graph. The synthesis from a work-log to an endorsed knowledge node (a Finding) is the SCIENTIST'S decision, not the parser's. This is the load-bearing human step, and it is why the ingest creates no Findings on its own.
+
+1. Read `.wheeler/asta-assistant/<slug>/.harvest.json`: each entry under `work_logs` has `slug`, `verdict`, `summary`, `document_id`, and `data_ids`, plus the top-level `execution_id` and `link_to`.
+2. Present each outcome to the scientist (`[<slug>] verdict=<verdict>: <summary>`) and ask which to ENDORSE as Findings. Do NOT promote all of them. A process-only or `partial` log with no clear claim usually STAYS a logged Document; nothing is lost, it is already in the graph. When an outcome is a genuine but unresolved thread, prefer leaving it logged (or capture it later with `/wh:note`) over asserting an unearned Finding.
+3. For each endorsed outcome, create the Finding and wire its provenance:
+   - `mcp__wheeler_mutations__add_finding` with the outcome `summary` as the description and a short title.
+   - `mcp__wheeler_mutations__link_nodes(<new F- id>, <execution_id>, "WAS_GENERATED_BY")`
+   - `mcp__wheeler_mutations__link_nodes(<new F- id>, <link_to>, "AROSE_FROM")` when a seed target exists.
+   - `mcp__wheeler_mutations__link_nodes(<new F- id>, <each data id in that log's data_ids>, "WAS_DERIVED_FROM")`.
+4. Leave every un-endorsed work-log as its saved Document.
 
 ## Wire semantics to the existing graph
 
-The ingest is STRUCTURALLY complete (each harvested Finding `USED` its seed inputs and `WAS_GENERATED_BY` the run, and is `WAS_DERIVED_FROM` its data). It does NOT connect the new results to what was ALREADY in the graph, because that is a judgment call (compare the results against the current graph), so it lives here in the act, not in the mechanical parser. After harvest:
+Only the ENDORSED Findings (from the curation step) get connected to what was ALREADY in the graph, because that too is a judgment call. For each endorsed Finding:
 
-1. Read the new node ids from the ingest summary. Read the existing graph with `mcp__wheeler_query__query_open_questions`, `mcp__wheeler_query__query_hypotheses`, and `mcp__wheeler_query__query_findings`, plus `mcp__wheeler_core__search_context` on the mission topic.
-2. Identify the semantic edges between the new Findings and EXISTING nodes: a harvested result `SUPPORTS` or `CONTRADICTS` an existing Hypothesis; a result is `RELEVANT_TO` the open Question it addresses. Keep only edges the work's Results and Assessment actually warrant, and read a Finding with `mcp__wheeler_core__show_node` when the verdict is ambiguous.
-3. Confirm each judgment call with the scientist before writing.
-4. Apply the confirmed edges via `mcp__wheeler_mutations__link_nodes` (for example `link_nodes(<new F- id>, <H- id>, "SUPPORTS")` or `link_nodes(<new F- id>, <Q- id>, "RELEVANT_TO")`). Skip any edge the scientist does not endorse.
+1. Read the existing graph with `mcp__wheeler_query__query_open_questions`, `mcp__wheeler_query__query_hypotheses`, and `mcp__wheeler_query__query_findings`, plus `mcp__wheeler_core__search_context` on the mission topic.
+2. Identify the semantic edges: an endorsed result `SUPPORTS` or `CONTRADICTS` an existing Hypothesis; it is `RELEVANT_TO` the open Question it addresses. Keep only edges the work's Results and Assessment actually warrant.
+3. Confirm each judgment call with the scientist, then apply via `mcp__wheeler_mutations__link_nodes` (for example `link_nodes(<F- id>, <H- id>, "SUPPORTS")`). Skip any edge the scientist does not endorse.
 
 ## Report
 
-Relay the printed summary (`created`, `deduped`, `linked`, `used`, the mission Execution id, the mission Document id) in one or two sentences, and note the mission path so the scientist can keep driving the loop. Suggest `query_findings` (filter on `custom_verdict` or `custom_work_key`) and `query_datasets` to browse the harvested nodes. Point out that re-running `/wh:asta-assistant harvest <slug>` after more work completes is safe and incremental. Do not editorialize the science. Never use em dashes.
+Relay the printed summary (`created`, `deduped`, `linked`, `used`, the mission Execution id, the mission Document id) in one or two sentences, then state which work-logs were ENDORSED as Findings and which stayed logged Documents. Note the mission path so the scientist can keep driving the loop. Suggest `query_documents` (filter on `custom_work_key` or `custom_verdict`) to browse the saved work-logs and `query_findings` for the endorsed results. Point out that re-running `/wh:asta-assistant harvest <slug>` after more work completes is safe and incremental. Do not editorialize the science. Never use em dashes.

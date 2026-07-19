@@ -103,19 +103,26 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   per MISSION, kind `research-assistant`, session_id = the mission slug so
   incremental re-harvests reuse it): `project.md` registers as a Document (`W-`,
   the mission) via in-place `ensure_artifact` (points at the LIVE file, not a
-  frozen copy, since the mission evolves) `WAS_GENERATED_BY` the run; each
-  COMPLETED work item (a README with a non-empty `# Results`) becomes a Finding
-  (Results summary + the Assessment verdict/status/root-cause in the queryable
-  custom bag), deduped across harvests on a stable `custom_work_key` =
-  `<mission-slug>/<work-slug>`, `WAS_GENERATED_BY` the run and `AROSE_FROM` the
-  mission Document (and the seed Question/Plan); each `work/<slug>/data/<file>`
-  registers as a Dataset/Script (`ensure_artifact`, classified by extension)
-  `WAS_GENERATED_BY` the run, with the work Finding `WAS_DERIVED_FROM` it. Produces
-  NO Paper nodes (a corpus_id is not reliably recoverable from arbitrary work
-  output; a literature-heavy mission records papers via `/wh:asta-lit` directly).
-  Imports `execute_tool` lazily and reuses `_marshal.py`'s `_link_once` /
-  `_record_used` / `_find_execution` / `_link_execution_to_plan` / `job_outcome`
-  helpers.
+  frozen copy, since the mission evolves) `WAS_GENERATED_BY` the run. **A work-log
+  is NOT a Finding.** Each COMPLETED work item (a README with a non-empty
+  `# Results`) is SAVED as a Document (the work-log) `WAS_GENERATED_BY` the run and
+  `AROSE_FROM` the mission Document (and the seed), with the outcome
+  (verdict/status/root-cause/`custom_work_key`) parked in its custom bag; each
+  `work/<slug>/data/<file>` registers as a Dataset/Script (`ensure_artifact`,
+  classified by extension) `WAS_GENERATED_BY` the run and `CONTAINS`ed by its
+  work-log Document. The parser creates **NO Finding**: promoting a work-log to an
+  endorsed Finding is a HUMAN decision (mechanically minting one per log forges
+  records and breaks the "prefer a Question over an unendorsed Finding" rule). So
+  the ingest writes a curation manifest `.harvest.json` (per-log slug, verdict,
+  summary, `document_id`, `data_ids` + the `execution_id`/`link_to`), and the
+  `/wh:asta-assistant` act presents each outcome for the scientist to ENDORSE:
+  endorsed ones get `add_finding` in the ACT, wired `WAS_GENERATED_BY` the
+  Execution, `AROSE_FROM` the seed, and `WAS_DERIVED_FROM` the log's data. Dedupe
+  is native (path-based via `ensure_artifact`; no persisted index). Produces NO
+  Paper nodes (a corpus_id is not reliably recoverable from arbitrary work output;
+  a literature-heavy mission records papers via `/wh:asta-lit` directly). Imports
+  `execute_tool` lazily and reuses `_marshal.py`'s `_link_once` / `_record_used` /
+  `_find_execution` / `_link_execution_to_plan` / `job_outcome` helpers.
 - `cli.py` -- `integrate_app` Typer sub-app, one verb: `ingest <tool> <artifact>
   [--link-to ID] [--used IDS] [--target ID] [--find-results JSON]`. Registered in
   `wheeler/tools/cli.py` guarded by try/except. The `scholar-qa` /

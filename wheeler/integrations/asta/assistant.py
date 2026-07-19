@@ -31,17 +31,25 @@ MISSION so incremental re-harvests accrue under one run):
     the node's hash tracks the file across harvests. Document
     ``-[WAS_GENERATED_BY]-> Execution``.
   - Each COMPLETED work item (a ``work/<slug>/README.md`` with a non-empty
-    ``# Results`` section) -> a Finding whose description is the Results summary
-    and whose Assessment verdict + status + root cause are parked in the queryable
-    custom bag. Deduped across harvests on a stable ``work_key`` =
-    ``<mission-slug>/<work-slug>`` (a graph read on ``custom_work_key``), so a
-    re-harvest updates nothing and creates nothing for an already-recorded item.
-    Finding ``-[WAS_GENERATED_BY]-> Execution``, ``-[AROSE_FROM]-> the mission
-    Document`` (and the seed Question/Plan when ``link_to`` is given).
+    ``# Results`` section) -> a Document (the SAVED work-log), NOT a Finding. A
+    work-log is a process narrative, not an endorsed result: mechanically minting
+    a Finding per log would forge records (and violates Wheeler's "prefer a
+    Question over an unendorsed Finding" rule). So the parser SAVES the log as a
+    Document and parks the outcome (verdict, status, root cause, one-line summary,
+    the stable ``work_key`` = ``<mission-slug>/<work-slug>``) in its custom bag.
+    Deduped on the README path by ``ensure_artifact``. Document
+    ``-[WAS_GENERATED_BY]-> Execution``, ``-[AROSE_FROM]-> the mission Document``
+    (and the seed Question/Plan). **The synthesis from work-log to knowledge node
+    is a HUMAN decision:** the ingest writes a curation manifest (``.harvest.json``)
+    and the ``/wh:asta-assistant`` act presents each outcome so the scientist
+    ENDORSES which become Findings (``add_finding`` in the act, wired
+    ``WAS_GENERATED_BY`` the Execution and ``WAS_DERIVED_FROM`` the data). The
+    parser never creates a Finding.
   - Each ``work/<slug>/data/<file>`` -> a Dataset (data) or Script (code) node via
     ``ensure_artifact`` (deduped on path). Data node ``-[WAS_GENERATED_BY]->
-    Execution``; the work Finding ``-[WAS_DERIVED_FROM]-> the data node`` (the
-    result was computed from it).
+    Execution``; the work-log Document ``-[CONTAINS]-> the data node`` (the log's
+    artifacts). When a work-log is later endorsed as a Finding, the act links the
+    Finding ``-[WAS_DERIVED_FROM]-> the data``.
 
 Input-side provenance: the marshal-in act SEEDED the mission FROM graph nodes
 (the mission Question/Plan, the seeded Findings, the Dataset paths), so the run
@@ -90,7 +98,6 @@ from wheeler.integrations.asta._marshal import (
     _find_execution,
     _link_execution_to_plan,
     _link_once,
-    _node_exists,
     _record_used,
     job_outcome,
     mark_execution_completed,
@@ -100,14 +107,12 @@ from wheeler.integrations.asta._marshal import (
 logger = logging.getLogger(__name__)
 
 _SERVICE_TAG = "asta:assistant"
-_RAW_NODE_TYPE = "document"  # project.md is synthesized WRITING (the mission)
 
-# Persisted (work_key -> Finding id) index so re-harvest dedupes a work item even
-# if the in-graph custom_work_key stamp (a separate best-effort write) failed. The
-# hit is existence-guarded before reuse (a deleted node's stale id is dropped),
-# mirroring the theorizer / corpus_id index pattern. Belt-and-suspenders with the
-# graph read in _find_finding_by_work_key.
-_WORK_INDEX_REL_PATH = ".wheeler/integrations/assistant_work_index.json"
+# The ingest writes a curation manifest here (relative to the mission dir), listing
+# each harvested work-log Document + its outcome, so the /wh:asta-assistant act can
+# present them and the scientist can ENDORSE which become Findings. Findings are a
+# judgment call, so the parser never mints them (a work-log is not a finding).
+_HARVEST_MANIFEST = ".harvest.json"
 
 # File extensions that classify a work data artifact. Code -> Script (S-), prose
 # -> Document (W-), everything else (csv, mat, db, parquet, npy, png, ...) ->
@@ -444,86 +449,6 @@ def _parse_work_item(work_dir: Path, readme: Path) -> WorkItem | None:
 
 
 # ---------------------------------------------------------------------------
-# Project-aware reads (dedupe a work Finding across harvests)
-# ---------------------------------------------------------------------------
-
-
-def _work_index_path() -> Path:
-    return Path(_WORK_INDEX_REL_PATH)
-
-
-def _load_work_index() -> dict[str, str]:
-    path = _work_index_path()
-    try:
-        if path.exists():
-            data = json.loads(path.read_text())
-            if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items()}
-    except (OSError, json.JSONDecodeError):
-        logger.warning(
-            "ingest_assistant: could not read work index %s, starting fresh", path
-        )
-    return {}
-
-
-def _save_work_index(index: dict[str, str]) -> None:
-    path = _work_index_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(index, indent=2, sort_keys=True))
-        tmp.replace(path)
-    except OSError:
-        logger.error(
-            "ingest_assistant: could not persist work index %s (best-effort)",
-            path,
-            exc_info=True,
-        )
-
-
-async def _find_finding_by_work_key(
-    backend, config: WheelerConfig, work_key: str, work_index: dict[str, str]
-) -> str | None:
-    """Return an existing Finding id for this ``work_key``, or None.
-
-    Makes a work item idempotent across incremental harvests via TWO signals, so a
-    single failed write cannot cause a duplicate:
-      1. the persisted ``work_index`` (work_key -> F-id), existence-guarded with
-         ``_node_exists`` so a deleted node's stale id is dropped, not trusted;
-      2. the in-graph ``custom_work_key`` = ``<mission-slug>/<work-slug>`` (a
-         separate best-effort stamp), read project-aware.
-    A graph hit repopulates the index. Returns None only when NEITHER signal
-    finds a live Finding.
-    """
-    if not work_key:
-        return None
-    # 1. Persisted index (guarded against staleness).
-    cached = work_index.get(work_key)
-    if cached and await _node_exists(backend, config, cached):
-        return cached
-    if cached:
-        work_index.pop(work_key, None)  # stale: node gone, fall through
-    # 2. Project-aware graph read on the stamped key.
-    ptag = getattr(config.neo4j, "project_tag", "") or ""
-    if ptag:
-        query = (
-            "MATCH (f:Finding {custom_work_key: $key}) "
-            "WHERE f._wheeler_project = $ptag RETURN f.id AS id LIMIT 1"
-        )
-        params = {"key": work_key, "ptag": ptag}
-    else:
-        query = (
-            "MATCH (f:Finding {custom_work_key: $key}) RETURN f.id AS id LIMIT 1"
-        )
-        params = {"key": work_key}
-    rows = await backend.run_cypher(query, params)
-    if rows and rows[0].get("id"):
-        work_index[work_key] = rows[0]["id"]
-        return rows[0]["id"]
-    return None
-
-
-# ---------------------------------------------------------------------------
 # Ingest
 # ---------------------------------------------------------------------------
 
@@ -542,7 +467,7 @@ async def ingest_assistant(
             ``project.md``). Must contain a readable ``project.md``; otherwise
             the harvest fabricates nothing and returns an empty report.
         link_to: Optional seed node id (Question ``Q-`` or Plan ``PL-``) the
-            mission AROSE_FROM. Each harvested Finding and the mission Document
+            mission AROSE_FROM. Each work-log Document and the mission Document
             AROSE_FROM it; when it is a Plan, the run Execution AROSE_FROM it too.
         config: Active Wheeler config.
         used_inputs: The graph node ids the mission was SEEDED from (the mission
@@ -579,7 +504,6 @@ async def ingest_assistant(
         return report
 
     backend = await _get_backend(config)
-    work_index = _load_work_index()
 
     # One Execution per MISSION, keyed on the mission slug so incremental
     # re-harvests REUSE it (session_id stable across passes). Falls back to a
@@ -643,11 +567,15 @@ async def ingest_assistant(
         if link_to and await _link_once(backend, config, doc_id, "AROSE_FROM", link_to):
             report.linked += 1
 
-    # Output bucketing: each completed work item -> a Finding + its data artifacts.
+    # Output bucketing: each completed work item -> a SAVED work-log Document plus
+    # its data artifacts. Findings are NOT minted here (a work-log is not an
+    # endorsed finding): the ingest collects curation candidates, and the
+    # /wh:asta-assistant act lets the scientist ENDORSE which become Findings.
     # Wrapped so a partial-ingest exception marks the run failed (no clean masquerade).
+    candidates: list[dict[str, Any]] = []
     try:
         for item in record.work_items:
-            await _ingest_work_item(
+            cand = await _ingest_work_log(
                 backend=backend,
                 execute_tool=execute_tool,
                 config=config,
@@ -656,10 +584,10 @@ async def ingest_assistant(
                 exec_id=exec_id,
                 doc_id=doc_id,
                 link_to=link_to,
-                session_id=session_id,
-                work_index=work_index,
                 report=report,
             )
+            if cand:
+                candidates.append(cand)
     except Exception:
         logger.error(
             "ingest_assistant: output bucketing raised partway; marking run failed",
@@ -672,12 +600,12 @@ async def ingest_assistant(
         )
         report.failed = True
         report.job_state = "ingest-error"
-        # Persist whatever the index learned before the failure, so the work items
-        # already recorded this run still dedupe on a later retry.
-        _save_work_index(work_index)
+        _write_manifest(record, exec_id, doc_id, link_to, candidates)
         return report
 
-    _save_work_index(work_index)
+    # Write the curation manifest so the act can present the outcomes and the
+    # scientist can endorse which work-logs become Findings.
+    _write_manifest(record, exec_id, doc_id, link_to, candidates)
 
     logger.info(
         "ingest_assistant: created=%d deduped=%d linked=%d skipped=%d used=%d "
@@ -774,7 +702,7 @@ async def _register_artifact(
     return node_id
 
 
-async def _ingest_work_item(
+async def _ingest_work_log(
     *,
     backend,
     execute_tool,
@@ -784,83 +712,61 @@ async def _ingest_work_item(
     exec_id: str,
     doc_id: str | None,
     link_to: str | None,
-    session_id: str,
-    work_index: dict[str, str],
     report: ImportReport,
-) -> None:
-    """Harvest one completed work item into a Finding + its data artifacts.
+) -> dict[str, Any] | None:
+    """Save one completed work item as a Document (the work-log), NOT a Finding.
 
-    The Finding's description is the Results summary; the Assessment verdict,
-    status, and root cause are parked in the queryable custom bag. Deduped across
-    harvests on ``work_key`` = ``<mission-slug>/<work-slug>``. Provenance: Finding
-    ``-[WAS_GENERATED_BY]-> Execution``, ``-[AROSE_FROM]-> the mission Document``
-    (and the seed link target); each data artifact ``-[WAS_GENERATED_BY]->
-    Execution`` and the Finding ``-[WAS_DERIVED_FROM]-> it``.
+    A work-log is a process narrative, not an endorsed result, so the parser SAVES
+    it (registers the README as a Document via ``ensure_artifact``, deduped on
+    path) and parks the outcome in its custom bag (work_key, verdict, status, root
+    cause). Provenance: Document ``-[WAS_GENERATED_BY]-> Execution``,
+    ``-[AROSE_FROM]-> the mission Document`` (and the seed Question/Plan). Its data
+    artifacts register as Dataset/Script nodes ``-[WAS_GENERATED_BY]-> Execution``,
+    and the work-log Document ``-[CONTAINS]-> each``. Returns a curation candidate
+    dict (or None if the log could not be saved) so the act can present the outcome
+    for the scientist to ENDORSE as a Finding.
     """
     work_key = f"{mission_slug}/{item.slug}"
-    finding_id = await _find_finding_by_work_key(backend, config, work_key, work_index)
-    if finding_id:
-        report.deduped += 1
-    else:
-        # Confidence reflects the honest verdict; an autonomous-loop result is not
-        # asserted as high-confidence (LLM-generated Findings are low-stability).
-        confidence = {
-            "accomplished": 0.6,
-            "partial": 0.4,
-        }.get(item.verdict, 0.3)
-        add_args: dict[str, Any] = {
-            "description": (item.result_summary or item.goal or item.title)[:2000],
-            "title": (item.title or item.slug)[:100],
-            "confidence": confidence,
-            "artifact_type": "assistant-work",
-            "session_id": session_id,
+    log_id = await _register_artifact(
+        execute_tool,
+        backend,
+        config,
+        path=item.readme_path,
+        artifact_type="document",
+        description=(
+            f"Work-log: {item.title or item.slug} [{item.verdict or 'done'}]"
+        )[:200],
+        exec_id=exec_id,
+        report=report,
+    )
+    if not log_id:
+        return None
+    # Park the outcome so it is queryable and the act can read it for curation.
+    await _stamp_custom(
+        execute_tool,
+        config,
+        log_id,
+        {
+            "work_key": work_key,
+            "work_slug": item.slug,
+            "status": item.status,
+            "verdict": item.verdict,
+            "root_cause": item.root_cause[:500],
+            "kind": "work-log",
             "service": _SERVICE_TAG,
-        }
-        result = json.loads(await execute_tool("add_finding", add_args, config))
-        finding_id = result.get("node_id")
-        if not finding_id or "error" in result:
-            logger.warning(
-                "ingest_assistant: add_finding failed for work %r", work_key
-            )
-            report.skipped += 1
-            return
-        report.created += 1
-        # Record in the persisted index immediately (belt-and-suspenders with the
-        # in-graph stamp below), so a later re-harvest dedupes this item even if
-        # the custom_work_key stamp write fails.
-        work_index[work_key] = finding_id
-        # add_finding does not forward custom into create_node: stamp the work
-        # metadata (the dedupe key + the verdict bag) via update_node so they are
-        # queryable (custom_work_key / custom_verdict / custom_status).
-        await _stamp_custom(
-            execute_tool,
-            config,
-            finding_id,
-            {
-                "work_key": work_key,
-                "work_slug": item.slug,
-                "status": item.status,
-                "verdict": item.verdict,
-                "root_cause": item.root_cause[:500],
-                "service": _SERVICE_TAG,
-            },
-        )
-
-    # Provenance: Finding WAS_GENERATED_BY the run; AROSE_FROM the mission Document
-    # (and the seed Question/Plan). All link_once-guarded, so re-harvest is a no-op.
-    if exec_id and await _link_once(
-        backend, config, finding_id, "WAS_GENERATED_BY", exec_id
-    ):
+        },
+    )
+    # AROSE_FROM the mission Document and the seed target (link_once-guarded).
+    if doc_id and await _link_once(backend, config, log_id, "AROSE_FROM", doc_id):
         report.linked += 1
-    if doc_id and await _link_once(backend, config, finding_id, "AROSE_FROM", doc_id):
-        report.linked += 1
-    if link_to and await _link_once(
-        backend, config, finding_id, "AROSE_FROM", link_to
-    ):
+    if link_to and await _link_once(backend, config, log_id, "AROSE_FROM", link_to):
         report.linked += 1
 
     # Each computed data artifact -> a Dataset/Script node WAS_GENERATED_BY the
-    # run; the Finding WAS_DERIVED_FROM it (the result was computed from the data).
+    # run; the work-log Document CONTAINS each (its produced artifacts). When the
+    # scientist later endorses this log as a Finding, the act links the Finding
+    # WAS_DERIVED_FROM these data ids.
+    data_ids: list[str] = []
     for data_path in item.data_files:
         data_id = await _register_artifact(
             execute_tool,
@@ -872,10 +778,49 @@ async def _ingest_work_item(
             exec_id=exec_id,
             report=report,
         )
-        if data_id and await _link_once(
-            backend, config, finding_id, "WAS_DERIVED_FROM", data_id
-        ):
-            report.linked += 1
+        if data_id:
+            data_ids.append(data_id)
+            if await _link_once(backend, config, log_id, "CONTAINS", data_id):
+                report.linked += 1
+
+    return {
+        "slug": item.slug,
+        "verdict": item.verdict,
+        "status": item.status,
+        "summary": item.result_summary,
+        "document_id": log_id,
+        "data_ids": data_ids,
+    }
+
+
+def _write_manifest(
+    record: ProjectRecord,
+    exec_id: str,
+    doc_id: str | None,
+    link_to: str | None,
+    candidates: list[dict[str, Any]],
+) -> None:
+    """Write the curation manifest ``.harvest.json`` into the mission directory.
+
+    The ``/wh:asta-assistant`` act reads it to present each work-log outcome so the
+    scientist can ENDORSE which become Findings: the synthesis from work-log to
+    knowledge node is a human decision, not the parser's. Best-effort: a write
+    failure never breaks the harvest.
+    """
+    try:
+        mission_dir = Path(record.project_md_path).parent
+        payload = {
+            "execution_id": exec_id,
+            "mission_document": doc_id or "",
+            "link_to": link_to or "",
+            "work_logs": candidates,
+        }
+        (mission_dir / _HARVEST_MANIFEST).write_text(json.dumps(payload, indent=2))
+    except OSError:
+        logger.warning(
+            "ingest_assistant: could not write curation manifest (best-effort)",
+            exc_info=True,
+        )
 
 
 async def _stamp_custom(
@@ -883,10 +828,10 @@ async def _stamp_custom(
 ) -> None:
     """Stamp custom-bag scalars onto an existing node via update_node.
 
-    add_finding does not forward ``custom`` into create_node, so the bag is
-    applied with a follow-up update_node. ``custom`` is a first-class NodeBase
-    field (update_node's allow-list accepts it) and the backend flattens it to
-    discrete ``custom_<key>`` props on write, so ``custom_work_key`` /
+    ensure_artifact and the add_* tools do not forward ``custom`` into create_node,
+    so the bag is applied with a follow-up update_node. ``custom`` is a first-class
+    NodeBase field (update_node's allow-list accepts it) and the backend flattens
+    it to discrete ``custom_<key>`` props on write, so ``custom_work_key`` /
     ``custom_verdict`` are stored AND queryable. A ``service`` key is lifted to the
     first-class field. Best-effort: a failure here never breaks the harvest.
     """

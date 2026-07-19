@@ -442,21 +442,33 @@ class TestIngestAssistantE2E:
         assert report1.artifact and report1.artifact.startswith("W-")
         xid = report1.execution_id
 
-        # --- Output side: everything produced WAS_GENERATED_BY the run. ---
+        # --- Output side: work-logs are SAVED as Documents, NEVER auto-Findings. ---
+        # 3 Documents WAS_GENERATED_BY the run: the mission project.md + the two
+        # completed work-log READMEs (pending-task is skipped, empty Results).
         docs = await self._count(
             e2e_config,
             "MATCH (d:Document)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
             "WHERE d.e2e_tag=$tag RETURN count(d)",
             xid=xid, tag=self._e2e_tag,
         )
-        assert docs == 1  # the mission Document
+        assert docs == 3  # mission + 2 work-logs
+        # The parser mints NO Findings: synthesis to a Finding is a human decision.
         findings = await self._count(
             e2e_config,
             "MATCH (f:Finding)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
             "WHERE f.e2e_tag=$tag RETURN count(f)",
             xid=xid, tag=self._e2e_tag,
         )
-        assert findings == 2  # analyze-widget + summarize; pending-task skipped
+        assert findings == 0
+        # Work-log Documents carry the parsed outcome (verdict) in their custom bag.
+        verdicts = await self._count(
+            e2e_config,
+            "MATCH (d:Document)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
+            "WHERE d.e2e_tag=$tag AND d.custom_verdict IN ['accomplished','partial'] "
+            "RETURN count(d)",
+            xid=xid, tag=self._e2e_tag,
+        )
+        assert verdicts == 2
         datasets = await self._count(
             e2e_config,
             "MATCH (d:Dataset)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
@@ -472,14 +484,14 @@ class TestIngestAssistantE2E:
         )
         assert scripts >= 1  # compute.py
 
-        # The analyze-widget Finding WAS_DERIVED_FROM its data artifacts.
-        derived = await self._count(
+        # The accomplished work-log Document CONTAINS its computed data artifacts.
+        contains = await self._count(
             e2e_config,
-            "MATCH (f:Finding {custom_verdict:'accomplished'})-[:WAS_DERIVED_FROM]->"
-            "(d) WHERE f.e2e_tag=$tag AND d.e2e_tag=$tag RETURN count(d)",
+            "MATCH (d:Document {custom_verdict:'accomplished'})-[:CONTAINS]->"
+            "(a) WHERE d.e2e_tag=$tag AND a.e2e_tag=$tag RETURN count(a)",
             tag=self._e2e_tag,
         )
-        assert derived >= 2  # widget.csv + compute.py
+        assert contains >= 2  # widget.csv + compute.py
 
         # --- Input side: the run USED the seed Question. ---
         used = await self._count(
@@ -489,9 +501,14 @@ class TestIngestAssistantE2E:
         )
         assert used == 1
 
-        # This adapter produces no Paper nodes (the reference-entity rule): the
-        # harvest never records a paper, so the report's paper list stays empty.
+        # This adapter produces no Paper nodes (the reference-entity rule).
         assert report1.paper_ids == []
+
+        # The curation manifest is written for the act, listing the 2 work-logs.
+        manifest = json.loads((mission / ".harvest.json").read_text())
+        assert manifest["execution_id"] == xid
+        assert {w["slug"] for w in manifest["work_logs"]} == {"analyze-widget", "summarize"}
+        assert all(w["document_id"].startswith("W-") for w in manifest["work_logs"])
 
         # --- Re-harvest the SAME mission: idempotent. ---
         report2 = await ingest_assistant(
@@ -503,17 +520,17 @@ class TestIngestAssistantE2E:
         await self._tag_all(e2e_config, report2, extra_ids=[question_id])
         assert report2.created == 0  # nothing new on the second pass
 
-        # No duplicate USED edge, no duplicate Findings.
+        # No duplicate USED edge; still zero Findings; still 3 Documents.
         used2 = await self._count(
             e2e_config,
             "MATCH (x:Execution {id:$xid})-[r:USED]->(q {id:$qid}) RETURN count(r)",
             xid=xid, qid=question_id,
         )
         assert used2 == 1
-        findings2 = await self._count(
+        docs2 = await self._count(
             e2e_config,
-            "MATCH (f:Finding)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
-            "WHERE f.e2e_tag=$tag RETURN count(f)",
+            "MATCH (d:Document)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
+            "WHERE d.e2e_tag=$tag RETURN count(d)",
             xid=xid, tag=self._e2e_tag,
         )
-        assert findings2 == 2
+        assert docs2 == 3
