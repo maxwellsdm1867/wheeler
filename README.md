@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.10.0-blue" alt="v0.10.0">
+  <img src="https://img.shields.io/badge/v0.11.0-blue" alt="v0.11.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -199,6 +199,15 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.11.0</b> (2026-07-18): the Asta Research Assistant, seeded and harvested</summary>
+
+- **Asta Research Assistant, into the graph**: seed a long-range autonomous research mission from a Question or Plan, drive it with the asta-assistant loop in a separate terminal, then harvest the completed work back into Wheeler with full provenance.
+- **A work-log is not a finding**: harvested work-logs are saved as indexed Documents (their computed artifacts as Datasets and Scripts), and you decide which outcomes get promoted to Findings, so Wheeler never fabricates an unendorsed result.
+- **Validated end to end**: the adapter ships with a live-Neo4j test that walks a real mission through seed, harvest, and re-harvest, checking both provenance sides, idempotency, and the curation manifest.
+
+</details>
+
+<details>
 <summary><b>v0.10.0</b> (2026-07-18): equation discovery + service invocation</summary>
 
 - **LLM-SR equation discovery**: discover a closed-form equation from a dataset via LLM-guided evolutionary search, run on your Max subscription with no API keys, landed as a provenance-tracked Script plus a Finding with in-domain and out-of-domain metrics.
@@ -214,15 +223,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **It asks to nail down the right service**: when more than one adapter could fit a request, the router uses AskUserQuestion to offer the candidate services (each labeled with its description and cost) instead of silently guessing.
 - **Intent first, graph second**: with no intent it asks you before touching the graph (the graph cannot tell it what you want), then reads the graph only once it knows the task, so it never grounds on the wrong thing.
 - **Plan and execute route through it**: a `/wh:plan` or `/wh:execute` step can call the router and forward its plan id, so the dispatched run anchors `AROSE_FROM` the right plan, and the service descriptions it routes on now match the shipped adapters exactly.
-
-</details>
-
-<details>
-<summary><b>v0.9.14</b> (2026-06-15): the update badge actually clears</summary>
-
-- **The update badge reliably clears**: `/wh:update` now updates every install the badge checker tracks (the SessionStart hook probes `~/.local/bin/wheeler` and the uv-tools path, not just the session's install), then clears the cache, so the `⬆ /wh:update` indicator disappears after updating and stays gone on a multi-install machine.
-- **Integrations, framed**: a dedicated README "Integrations" section and a forward-looking roadmap entry describe the Asta integration and where it is headed (external research services reading and acting on Wheeler's graph and context).
-- **Resilient e2e tests**: the live-Neo4j test suite now degrades to clean skips on a transient Neo4j outage instead of erroring, so a database hiccup no longer blocks a commit.
 
 </details>
 
