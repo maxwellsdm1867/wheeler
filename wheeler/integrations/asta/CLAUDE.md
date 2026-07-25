@@ -21,7 +21,8 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   the Paper Finder module (`ingest.py`). Holds `ImportReport` (the ingest-run
   outcome dataclass), the persisted corpus_id index load/save helpers
   (`_INDEX_REL_PATH` / `_index_path` / `_load_index` / `_save_index`), the
-  project-aware read helpers (`_find_paper_by_corpus_id` / `_find_execution` /
+  project-aware read helpers (`_find_paper_by_corpus_id` /
+  `_find_paper_by_normalized_title` / `_find_execution` /
   `_paper_exists`), and the edge-existence / `link_once` write helpers
   (`_edge_exists` / `_link_once`). Like the adapters, it imports `execute_tool`
   lazily (function-local) inside `_link_once` only. No Paper-Finder-,
@@ -141,8 +142,9 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   `semantic_scholar.py`, `artifacts.py`) plus the shared `_marshal.py` are the
   only callers of `execute_tool`, and each imports it lazily (function-local).
   `_marshal.py` holds the shared read/link/dedupe helpers (`_load_index` /
-  `_save_index` / `_find_paper_by_corpus_id` / `_find_execution` /
-  `_paper_exists` / `_edge_exists` / `_link_once` + `ImportReport`); the four
+  `_save_index` / `_find_paper_by_corpus_id` / `_find_paper_by_normalized_title` /
+  `_find_execution` / `_paper_exists` / `_edge_exists` / `_link_once` +
+  `ImportReport`); the four
   adapters import them from there rather than from `ingest.py`. This keeps
   `graph_tools/` asta-free and preserves strict layering. `transport.py` and
   `schemas.py` have no graph dependency.
@@ -150,6 +152,16 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   digit-string (`str(int(...))`), so an int or a digit-string artifact value map
   to the same Paper. The key is INDEXED on `Paper.corpus_id` and promoted onto
   `PaperModel`.
+- **Title dedupe is the FALLBACK, corpus_id stays authoritative.** A Paper
+  already in the graph WITHOUT a `corpus_id` (added by hand via `add_paper`, or
+  by an ingest that predates the promoted field) is invisible to the corpus_id
+  read, so a paper_finder run would create a title-identical duplicate node. When
+  the corpus_id read finds nothing, `_ingest_one_paper` falls back to
+  `_find_paper_by_normalized_title` (case-insensitive, trimmed, internal
+  whitespace runs collapsed). The fallback matches ONLY corpus_id-less nodes, so
+  two DISTINCT papers that merely share a title (a preprint and its published
+  version, each with its own corpus_id) are never collapsed. Near-duplicates with
+  reworded titles are out of scope: this catches exact normalized matches only.
 - **Custom-bag flatten.** Scalar long-tail fields with no promoted model field
   are parked into `PaperModel.custom`. The Neo4j backend flattens `custom` to
   discrete `custom_<key>` props on write and reassembles on read, so they are
@@ -248,8 +260,10 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   bag (`custom_job_state` / `custom_error` via `mark_execution_failed`), registers
   the raw artifact for debugging, records USED inputs, and RETURNS EARLY: a failed
   or partial remote job NEVER has fabricated Findings / Hypotheses / Papers, so it
-  cannot masquerade as a clean run (`ImportReport.failed` / `job_state` surface it;
-  the CLI prints a FAILED line). The output-bucketing loop is wrapped so a
+  cannot masquerade as a clean run (`ImportReport.failed` / `job_state` /
+  `error_reason` surface it; the CLI prints a FAILED line on stderr carrying that
+  reason, so `state=failed` alone never hides whether the run hit auth, quota, a
+  malformed input, or a transient server error). The output-bucketing loop is wrapped so a
   partial-ingest exception marks the Execution failed too. There is NO destructive
   rollback (provenance must stay reachable, per /wh:close); nodes already written
   stay, and `graph_consistency_check` reconciles any triple-write drift. When the

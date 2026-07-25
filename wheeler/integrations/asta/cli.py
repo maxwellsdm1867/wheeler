@@ -79,9 +79,16 @@ def _echo_report(report) -> None:
     )
     if report.failed:
         # Honest signal: the job did not complete; no outputs were fabricated.
+        # The reason (the server's own message when it sent one, else the
+        # job_outcome fallback) rides along so the caller can tell auth from
+        # quota from a transient server error without querying custom_error.
+        # On stderr: it is a diagnostic, not part of the machine-read summary.
+        reason = report.error_reason
         typer.echo(
-            f"FAILED: job did not complete (state={report.job_state or 'unknown'}). "
-            "The Execution is recorded as failed; no outputs were ingested."
+            f"FAILED: job did not complete (state={report.job_state or 'unknown'}"
+            f"{', reason: ' + reason if reason else ''}). "
+            "The Execution is recorded as failed; no outputs were ingested.",
+            err=True,
         )
     if report.artifact:
         typer.echo(f"artifact: {report.artifact}")
