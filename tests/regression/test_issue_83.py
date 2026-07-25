@@ -32,13 +32,15 @@ def test_asta_lit_act_documents_positive_query_format() -> None:
     act_content = act_path.read_text()
 
     # The act should provide guidance on query format.
-    # Look for keywords that indicate positive query instruction:
+    # These phrases must be SPECIFIC to the new guidance. A bare "topic" is not
+    # enough: the unfixed act already said "ask the user for a topic", so that
+    # substring matched on main and the assertion guarded nothing.
     has_positive_guidance = any(
         phrase in act_content.lower()
         for phrase in [
-            "positive",
+            "positive topical",
             "topical query",
-            "topic",
+            "positive query",
             "avoid exclusion",
             "avoid negative",
             "no exclusion",
