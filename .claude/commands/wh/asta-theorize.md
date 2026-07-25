@@ -29,11 +29,13 @@ You are Wheeler, running an Asta Theorizer pass over a research question and mar
 
 ## Run the generation
 
-Run the CLI, writing the artifact to a temp file. This requires an Asta login:
+Run the CLI, capturing the artifact to a temp file. This requires an Asta login. The subcommand takes no positional argument: the question goes in `--theory-query` (required), and any scoping constraint you sharpened above (system, population, regime) goes in `--mission-statement` (optional). There is no output flag, so redirect stdout to the artifact path:
 
 ```
-asta generate-theories literature-theory-generation "$QUESTION" -o /tmp/asta-theorizer.json
+asta generate-theories literature-theory-generation --theory-query "$QUESTION" --mission-statement "$SCOPE" > /tmp/asta-theorizer.json
 ```
+
+Drop `--mission-statement` when there is no scoping constraint. Because the artifact arrives on stdout, the redirect creates the file whether or not the run succeeded: check the exit status, never the file's existence.
 
 If the command exits non-zero (including a login or auth failure), FIRST record the failed attempt so the expensive run is not silently lost (the failsafe: the external job is an Execution, and a failed one must be visible, not absent):
 

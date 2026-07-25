@@ -24,6 +24,9 @@ You are Wheeler, running an Asta Paper Finder literature search and marshalling 
 ## Choose the query and link target
 
 - The query is `$ARGUMENTS` when provided. If empty, ask the user for a topic or derive one from the active question.
+- Compose a POSITIVE TOPICAL query: name the subject matter you want in plain research language, a few hundred characters at most. Paper Finder parses the query into a paper specification, and positive topic statements are the only shape its grammar covers.
+- Do not put exclusions or negations in the query ("exclude mouse and rat studies", "avoid reviews", "not in humans"), and do not put meta-framing in it either ("find the core papers on", "the best work on", "identify key studies", "restrict to"). Both shapes fall outside the specification grammar: the search fails with `No rules matched for paper specification` and the whole run is lost.
+- Reshape a negative or meta-framed request into its positive equivalent before running. "Core papers on primate parasol mechanisms, excluding mouse and rat studies" becomes "macaque and human OFF-parasol ganglion cell mechanisms". Say what the papers should be ABOUT instead of what they should not be, then apply the excluded criteria yourself when you review the returned papers.
 - Pick at most one link target: the Question (`Q-...`) or Plan (`PL-...`) this search supports. Each found paper will be linked `RELEVANT_TO` that node. If there is no clear target, run without one.
 
 ## Run the search
