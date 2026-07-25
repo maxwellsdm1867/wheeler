@@ -196,8 +196,18 @@ async def _find_paper_by_normalized_title(
     # Normalize both sides inside Cypher: the pattern is case-insensitive, spans
     # any leading/trailing whitespace, and matches each internal whitespace run
     # with \s+ so spacing differences do not defeat the match.
+    #
+    # The U flag (UNICODE_CHARACTER_CLASS) is load-bearing, not decoration. Neo4j
+    # evaluates JAVA regex, where BOTH `(?i)` and `\s` are ASCII-only by default:
+    # `(?i)` would not fold "MULLER" to "muller" once an umlaut is involved, and
+    # `\s` would not match a no-break space (U+00A0), which publisher-scraped
+    # titles do carry. Either miss silently reopens the very duplicate this
+    # fallback exists to prevent, on exactly the titles a retina corpus is full
+    # of ("Muller cells", "Poincare section"). U implies UNICODE_CASE, so it
+    # fixes both. The probe side is already Unicode-correct because
+    # _normalize_title uses Python's str.split() and str.lower().
     pattern = (
-        r"(?i)^\s*"
+        r"(?iU)^\s*"
         + r"\s+".join(re.escape(token) for token in norm.split(" "))
         + r"\s*$"
     )
