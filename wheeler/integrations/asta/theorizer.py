@@ -1090,6 +1090,10 @@ async def ingest_theorizer(
         await mark_execution_failed(config, exec_id, outcome)
         report.failed = True
         report.job_state = outcome.state
+        # Carry the server's own reason out with the report: a bare state=failed
+        # cannot tell auth from quota from a transient server error, and the
+        # caller should not have to query custom_error to find out.
+        report.error_reason = outcome.detail
         logger.warning(
             "ingest_theorizer: job did not complete (state=%s): %s",
             outcome.state,
@@ -1140,15 +1144,15 @@ async def ingest_theorizer(
             "ingest_theorizer: output bucketing raised partway; marking run failed",
             exc_info=True,
         )
+        bucketing_detail = "output bucketing raised"
         await mark_execution_failed(
             config,
             exec_id,
-            JobOutcome(
-                ok=False, state="ingest-error", detail="output bucketing raised"
-            ),
+            JobOutcome(ok=False, state="ingest-error", detail=bucketing_detail),
         )
         report.failed = True
         report.job_state = "ingest-error"
+        report.error_reason = bucketing_detail
         _save_index(paper_index)
         _save_hyp_index(hyp_index)
         _save_theory_index(theory_index)

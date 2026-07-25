@@ -52,6 +52,14 @@ class ImportReport:
     visible (``failed=True``, ``job_state`` = the job's own state), but no
     fabricated Findings/Hypotheses/Papers, so a failed run never masquerades as a
     clean completed one.
+
+    ``error_reason`` carries WHY it failed: the server's own message (an A2A
+    ``status.message``) when it sent one, else the fallback ``job_outcome``
+    composes. It is the same string ``mark_execution_failed`` parks in the
+    Execution's ``custom_error``, surfaced on the report so the caller reads the
+    diagnostic from the ingest output instead of having to query the graph. A
+    bare ``state=failed`` says nothing about whether the run hit auth, quota, a
+    malformed input, or a transient server error.
     """
 
     created: int = 0
@@ -65,6 +73,7 @@ class ImportReport:
     paper_ids: list[str] = field(default_factory=list)
     failed: bool = False
     job_state: str = ""
+    error_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +88,7 @@ class ImportReport:
             "paper_ids": list(self.paper_ids),
             "failed": self.failed,
             "job_state": self.job_state,
+            "error_reason": self.error_reason,
         }
 
 
@@ -523,7 +533,7 @@ async def record_failed_execution(
     """
     from wheeler.tools.graph_tools import execute_tool
 
-    report = ImportReport(failed=True, job_state="missing")
+    report = ImportReport(failed=True, job_state="missing", error_reason=reason)
     exec_id = await _find_execution(
         backend, config, service=service, session_id=session_id
     )

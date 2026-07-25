@@ -248,8 +248,10 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   bag (`custom_job_state` / `custom_error` via `mark_execution_failed`), registers
   the raw artifact for debugging, records USED inputs, and RETURNS EARLY: a failed
   or partial remote job NEVER has fabricated Findings / Hypotheses / Papers, so it
-  cannot masquerade as a clean run (`ImportReport.failed` / `job_state` surface it;
-  the CLI prints a FAILED line). The output-bucketing loop is wrapped so a
+  cannot masquerade as a clean run (`ImportReport.failed` / `job_state` /
+  `error_reason` surface it; the CLI prints a FAILED line on stderr carrying that
+  reason, so `state=failed` alone never hides whether the run hit auth, quota, a
+  malformed input, or a transient server error). The output-bucketing loop is wrapped so a
   partial-ingest exception marks the Execution failed too. There is NO destructive
   rollback (provenance must stay reachable, per /wh:close); nodes already written
   stay, and `graph_consistency_check` reconciles any triple-write drift. When the
