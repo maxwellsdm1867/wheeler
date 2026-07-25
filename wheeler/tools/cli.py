@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
+from typer.core import TyperGroup
 
 from wheeler.config import load_config
 from wheeler.graph.driver import get_sync_driver
@@ -95,24 +96,42 @@ except ImportError as _llmsr_exc:  # pragma: no cover - needs the extra absent
             "The LLM-SR engine failed to import. The error above names the cause."
         )
 
+    def _llmsr_report_unavailable() -> None:
+        """Print the real cause on stderr and exit non-zero."""
+        typer.echo(f"wheeler llmsr is unavailable: {_llmsr_error}", err=True)
+        typer.echo(_llmsr_hint, err=True)
+        raise typer.Exit(code=1)
+
+    class _LlmsrUnavailableGroup(TyperGroup):
+        """Answer with the diagnostic for ANY invocation, subcommands included.
+
+        A Click Group resolves the first positional as a subcommand name before
+        the group callback ever runs, so `wheeler llmsr init --spec x` would
+        otherwise die with "No such command 'init'" and no explanation: the
+        exact class of message this stub exists to eliminate. Overriding
+        resolve_command catches every verb, known or not. `--help` is unaffected
+        because Click's help option is eager and exits before resolution.
+        """
+
+        def resolve_command(self, ctx, args):  # type: ignore[no-untyped-def]
+            _llmsr_report_unavailable()
+
     # Rich renders the help string and would read "[llmsr]" as a style tag,
     # swallowing it and printing a wrong install command. Escape it for help;
-    # the stderr echo below is plain text and needs no escaping.
+    # the stderr echo above is plain text and needs no escaping.
     _llmsr_help_hint = _llmsr_hint.replace("[", "\\[")
     _llmsr_stub = typer.Typer(
+        cls=_LlmsrUnavailableGroup,
         help=(
             f"LLM-SR equation discovery (UNAVAILABLE: {_llmsr_error}). "
             f"{_llmsr_help_hint}"
         ),
-        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
     )
 
     @_llmsr_stub.callback(invoke_without_command=True)
     def _llmsr_unavailable() -> None:
         """Report why the LLM-SR engine is unavailable instead of vanishing."""
-        typer.echo(f"wheeler llmsr is unavailable: {_llmsr_error}", err=True)
-        typer.echo(_llmsr_hint, err=True)
-        raise typer.Exit(code=1)
+        _llmsr_report_unavailable()
 
     app.add_typer(_llmsr_stub, name="llmsr")
 

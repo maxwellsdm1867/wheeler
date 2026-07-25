@@ -101,6 +101,96 @@ print("OK", m.__name__)
     assert "OK" in result.stdout
 
 
+def _run_with_engine_unimportable(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    """Invoke the CLI in a subprocess where the llmsr engine cannot import.
+
+    Simulates the reported environment (engine shipped, optional scipy absent)
+    by making the engine module itself raise ModuleNotFoundError('scipy'), which
+    is what the real import chain did via vendor/buffer.py.
+    """
+    program = f"""
+import sys
+
+_TARGET = "wheeler.integrations.llmsr.cli"
+
+class _BreakEngine:
+    def find_spec(self, name, path=None, target=None):
+        if name == _TARGET:
+            raise ModuleNotFoundError("No module named 'scipy'", name="scipy")
+        return None
+
+sys.meta_path.insert(0, _BreakEngine())
+for _m in [k for k in list(sys.modules) if k.startswith("wheeler")]:
+    del sys.modules[_m]
+
+from typer.testing import CliRunner
+from wheeler.tools.cli import app
+
+result = CliRunner().invoke(app, {argv!r})
+sys.stdout.write(result.output or "")
+sys.stderr.write("EXITCODE=%d" % result.exit_code)
+"""
+    return subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["llmsr"],
+        ["llmsr", "init", "--spec", "x.txt", "--data", "y.csv"],
+        ["llmsr", "best", "--run", "somewhere"],
+        ["llmsr", "totallyunknownverb"],
+    ],
+    ids=["bare", "init", "best", "unknown-verb"],
+)
+def test_unavailable_engine_diagnoses_on_every_invocation(argv: list[str]) -> None:
+    """A broken engine must name its cause, for subcommands too.
+
+    The first version of this stub only answered the bare `wheeler llmsr` and
+    `--help`. A Click Group resolves the first positional as a subcommand BEFORE
+    the group callback runs, so `wheeler llmsr init` still died with
+    "No such command 'init'" and no diagnostic: precisely the message class this
+    whole change exists to eliminate.
+    """
+    result = _run_with_engine_unimportable(argv)
+    combined = result.stdout + result.stderr
+
+    assert "EXITCODE=1" in result.stderr, (
+        f"`wheeler {' '.join(argv)}` should exit 1 when the engine cannot "
+        f"import. Got: {result.stderr[-1500:]}"
+    )
+    assert "No such command" not in combined, (
+        f"`wheeler {' '.join(argv)}` fell through to Click's "
+        f"'No such command', which hides the real cause. Output: {combined[-1500:]}"
+    )
+    assert "is unavailable" in combined and "scipy" in combined, (
+        "The diagnostic must name the failing module. "
+        f"Output: {combined[-1500:]}"
+    )
+
+
+def test_unavailable_engine_help_still_reports_the_cause() -> None:
+    """`--help` must surface the cause too, since the act prescribes that command."""
+    result = _run_with_engine_unimportable(["llmsr", "--help"])
+    combined = result.stdout + result.stderr
+
+    assert "UNAVAILABLE" in combined, (
+        "`wheeler llmsr --help` must carry UNAVAILABLE in its description when "
+        "the engine failed to import. The /wh:llmsr-discover preflight keys on "
+        f"exactly that string. Output: {combined[-1500:]}"
+    )
+    # Rich reads "[llmsr]" as a style tag; the install hint must survive it.
+    assert "wheeler[llmsr]" in combined.replace("\n", "").replace(" ", ""), (
+        "The `pip install 'wheeler[llmsr]'` hint was swallowed by rich markup. "
+        f"Output: {combined[-1500:]}"
+    )
+
+
 def test_llmsr_command_group_is_registered() -> None:
     """`wheeler llmsr` must resolve, never 'No such command'."""
     from typer.main import get_command
