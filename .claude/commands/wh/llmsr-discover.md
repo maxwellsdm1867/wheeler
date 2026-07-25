@@ -21,9 +21,16 @@ You are Wheeler, running LLM-SR equation discovery and marshalling the result in
 
 ## Preflight
 
-1. Confirm the tool is installed: `wheeler llmsr --help`. If it fails, read the error and report the cause the output actually shows. Do not name a cause the output does not support.
-   - `No such command 'llmsr'`: the installed Wheeler build does not include the LLM-SR CLI engine. Report that, not a missing extra. (`wheeler/tools/cli.py` registers the subcommand inside a guarded try/except ImportError, so an absent or unimportable engine module drops the subcommand instead of raising.)
-   - An import error the command surfaces (`ModuleNotFoundError: No module named 'scipy'` or similar): the optional dependency is missing. Report that LLM-SR needs the `scipy` extra.
+1. Confirm the tool is installed AND its engine actually loaded: run `wheeler llmsr --help`. Treat it as unavailable if the command exits non-zero **or** its output contains `UNAVAILABLE:`. A zero exit alone is not enough: when the engine fails to import, Wheeler still registers the command group as a stub so the cause stays visible, and `--help` then exits 0 while carrying `UNAVAILABLE:` in its description line. Report the cause the output actually shows. Do not name a cause the output does not support.
+   - Output contains `UNAVAILABLE: <error>` (running `wheeler llmsr` with no subcommand prints the same thing as `wheeler llmsr is unavailable: <error>`, and exits 1): the engine is present but one of its imports failed, and the message names the failing module. Report that module. If it is `scipy`, LLM-SR needs the optional extra (`uv tool install wheeler --with scipy`, or `pip install 'wheeler[llmsr]'`).
+   - `No such command 'llmsr'`: AMBIGUOUS, do not guess. On an older build the subcommand was registered inside a guarded try/except ImportError, so an absent engine AND a present-but-unimportable engine both collapsed to this one message. Get the true cause by importing the module with Wheeler's OWN interpreter, which is often NOT the `python3` on PATH (a `uv tool` install has its own isolated venv, so a scipy in the system or project Python is irrelevant):
+
+     ```
+     WHEELER_PY="$(sed -n '1s/^#!//p' "$(command -v wheeler)")"
+     "$WHEELER_PY" -c "import wheeler.integrations.llmsr.cli"
+     ```
+
+     Report whatever that names: `No module named 'scipy'` means the scipy extra is missing, not that the build lacks the engine. `No module named 'wheeler.integrations.llmsr'` means the build genuinely lacks the engine.
    - Anything else: quote the error verbatim rather than guessing at a cause.
 
    Stop in every case. Do not attempt the run.

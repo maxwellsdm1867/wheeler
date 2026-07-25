@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
+from typer.core import TyperGroup
 
 from wheeler.config import load_config
 from wheeler.graph.driver import get_sync_driver
@@ -64,15 +65,75 @@ try:
 except ImportError:
     pass
 
-# LLM-SR equation-discovery driver (init/prompt/submit/best). Guarded: the
-# vendored search core needs numpy + scipy, so a missing dependency degrades to
-# "wheeler llmsr unavailable" rather than breaking the rest of the CLI.
+# LLM-SR equation-discovery driver (init/prompt/submit/best). Guarded so a
+# missing optional dependency cannot break the rest of the CLI.
+#
+# On failure the group is still REGISTERED, as a stub that reports the real
+# cause. Dropping it silently (the previous behavior) made a missing optional
+# extra indistinguishable from an absent engine or a genuine import bug: all
+# three surfaced as "No such command 'llmsr'" with no hint, which sent the
+# scientist chasing the wrong fix. Naming the failing module is the whole point.
 try:
     from wheeler.integrations.llmsr.cli import llmsr_app
 
     app.add_typer(llmsr_app, name="llmsr")
-except ImportError:
-    pass
+except ImportError as _llmsr_exc:  # pragma: no cover - needs the extra absent
+    _llmsr_error = _llmsr_exc
+    _llmsr_missing = (getattr(_llmsr_exc, "name", "") or "").split(".")[0]
+    if _llmsr_missing == "scipy":
+        _llmsr_hint = (
+            "LLM-SR needs the optional scipy extra. Install it with "
+            "`uv tool install wheeler --with scipy` or "
+            "`pip install 'wheeler[llmsr]'`."
+        )
+    elif _llmsr_missing:
+        _llmsr_hint = (
+            f"The LLM-SR engine could not import {_llmsr_missing!r}. "
+            "Install that dependency, or reinstall Wheeler with the llmsr extra."
+        )
+    else:
+        _llmsr_hint = (
+            "The LLM-SR engine failed to import. The error above names the cause."
+        )
+
+    def _llmsr_report_unavailable() -> None:
+        """Print the real cause on stderr and exit non-zero."""
+        typer.echo(f"wheeler llmsr is unavailable: {_llmsr_error}", err=True)
+        typer.echo(_llmsr_hint, err=True)
+        raise typer.Exit(code=1)
+
+    class _LlmsrUnavailableGroup(TyperGroup):
+        """Answer with the diagnostic for ANY invocation, subcommands included.
+
+        A Click Group resolves the first positional as a subcommand name before
+        the group callback ever runs, so `wheeler llmsr init --spec x` would
+        otherwise die with "No such command 'init'" and no explanation: the
+        exact class of message this stub exists to eliminate. Overriding
+        resolve_command catches every verb, known or not. `--help` is unaffected
+        because Click's help option is eager and exits before resolution.
+        """
+
+        def resolve_command(self, ctx, args):  # type: ignore[no-untyped-def]
+            _llmsr_report_unavailable()
+
+    # Rich renders the help string and would read "[llmsr]" as a style tag,
+    # swallowing it and printing a wrong install command. Escape it for help;
+    # the stderr echo above is plain text and needs no escaping.
+    _llmsr_help_hint = _llmsr_hint.replace("[", "\\[")
+    _llmsr_stub = typer.Typer(
+        cls=_LlmsrUnavailableGroup,
+        help=(
+            f"LLM-SR equation discovery (UNAVAILABLE: {_llmsr_error}). "
+            f"{_llmsr_help_hint}"
+        ),
+    )
+
+    @_llmsr_stub.callback(invoke_without_command=True)
+    def _llmsr_unavailable() -> None:
+        """Report why the LLM-SR engine is unavailable instead of vanishing."""
+        _llmsr_report_unavailable()
+
+    app.add_typer(_llmsr_stub, name="llmsr")
 
 
 
