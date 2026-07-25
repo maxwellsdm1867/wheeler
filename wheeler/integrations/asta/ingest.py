@@ -4,7 +4,8 @@ A marshal-out module: it imports ``execute_tool`` lazily (function-local),
 mirroring ``wheeler/validation/ledger.py``. Every graph write routes through
 ``execute_tool`` so the triple-write, write receipt, trace id, and embedding
 wiring all fire. The shared read/link/dedupe helpers (``_link_once`` /
-``_edge_exists`` / ``_find_paper_by_corpus_id`` / ``_paper_exists`` /
+``_edge_exists`` / ``_find_paper_by_corpus_id`` /
+``_find_paper_by_normalized_title`` / ``_paper_exists`` /
 ``_find_execution`` + the persisted corpus_id index + ``ImportReport``) live in
 ``_marshal.py``; this module imports them and keeps only Paper-Finder-specific
 logic (``ingest_paper_finder`` and ``_ingest_one_paper``). Reads (dedupe by
@@ -14,7 +15,8 @@ the dispatch path uses, and are project-aware (Community Edition namespacing).
 Invariants:
   - Sequential writes only. Never ``asyncio.gather``: ``execute_tool`` reuses
     one cached backend singleton and Neo4j forbids concurrent queries.
-  - Idempotent. Papers dedupe on ``corpus_id``; re-ingest reuses the existing
+  - Idempotent. Papers dedupe on ``corpus_id``, falling back to the normalized
+    title for an existing node that carries none; re-ingest reuses the existing
     ``P-`` id. Edges are guarded by ``link_once`` because the backend's
     ``create_relationship`` is a bare CREATE that would duplicate on re-run.
   - One Execution per RUN (not per paper), tagged service ``asta:paper-finder``.
@@ -33,6 +35,7 @@ from ._marshal import (
     JobOutcome,
     _find_execution,
     _find_paper_by_corpus_id,
+    _find_paper_by_normalized_title,
     _link_execution_to_plan,
     _link_once,
     _load_index,
@@ -298,6 +301,13 @@ async def _ingest_one_paper(
             index.pop(record.corpus_id, None)
     if not existing and record.corpus_id:
         existing = await _find_paper_by_corpus_id(backend, config, record.corpus_id)
+    # Fallback: a Paper already in the graph WITHOUT a corpus_id (added by hand
+    # via add_paper, or by an earlier ingest) is invisible to the corpus_id read
+    # above, so without this the run creates a title-identical duplicate. The
+    # fallback matches only corpus_id-less nodes, so corpus_id stays the
+    # authoritative key whenever both sides carry one.
+    if not existing:
+        existing = await _find_paper_by_normalized_title(backend, config, record.title)
 
     if existing:
         report.deduped += 1

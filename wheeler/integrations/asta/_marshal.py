@@ -9,8 +9,8 @@ module.
 The helpers are:
   - ``ImportReport``: the outcome dataclass of one ingest run.
   - the persisted corpus_id -> node-id index load/save helpers.
-  - the project-aware read helpers (dedupe by corpus_id, Execution lookup,
-    Paper existence guard).
+  - the project-aware read helpers (dedupe by corpus_id, the normalized-title
+    dedupe fallback, Execution lookup, Paper existence guard).
   - the edge-existence / ``link_once`` write helpers.
 
 Like the adapters, every graph WRITE here routes through ``execute_tool``,
@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,72 @@ async def _find_paper_by_corpus_id(backend, config: WheelerConfig, corpus_id: st
     else:
         query = "MATCH (p:Paper {corpus_id: $cid}) RETURN p.id AS id LIMIT 1"
         params = {"cid": corpus_id}
+    rows = await backend.run_cypher(query, params)
+    if rows:
+        return rows[0].get("id")
+    return None
+
+
+def _normalize_title(title: str) -> str:
+    """Lower-cased, trimmed, internal-whitespace-collapsed form of a title.
+
+    The comparison key for title-based dedupe: the same paper reaches us with
+    different casing and spacing depending on the source (a hand-typed
+    ``add_paper`` title vs a service record), and none of that makes it a
+    different paper.
+    """
+    return " ".join((title or "").split()).lower()
+
+
+async def _find_paper_by_normalized_title(
+    backend,
+    config: WheelerConfig,
+    title: str,
+    *,
+    without_corpus_id: bool = True,
+) -> str | None:
+    """Return an existing Paper id whose title normalizes to this one, or None.
+
+    The dedupe FALLBACK behind ``_find_paper_by_corpus_id``. A Paper added by
+    hand (``add_paper``) or by an earlier ingest can carry NO ``corpus_id``, so
+    the corpus_id read cannot see it and the ingest creates a title-identical
+    duplicate Paper. Matching on the normalized title (case-insensitive, leading
+    / trailing whitespace ignored, internal whitespace runs treated as one)
+    catches exactly those.
+
+    ``without_corpus_id`` (the default) restricts the match to Papers that carry
+    no corpus_id, so two DISTINCT papers that merely share a title (a preprint
+    and its published version, each with its own corpus_id) are never collapsed:
+    corpus_id stays the authoritative key whenever both sides have one.
+
+    Deterministic (``ORDER BY id``) so a repeat ingest resolves to the same node
+    when several candidates match. Project-aware, mirroring the read scoping in
+    the query handlers.
+    """
+    norm = _normalize_title(title)
+    if not norm:
+        return None
+    # Normalize both sides inside Cypher: the pattern is case-insensitive, spans
+    # any leading/trailing whitespace, and matches each internal whitespace run
+    # with \s+ so spacing differences do not defeat the match.
+    pattern = (
+        r"(?i)^\s*"
+        + r"\s+".join(re.escape(token) for token in norm.split(" "))
+        + r"\s*$"
+    )
+    clauses = ["p.title =~ $pat"]
+    params: dict[str, Any] = {"pat": pattern}
+    if without_corpus_id:
+        clauses.append("(p.corpus_id IS NULL OR p.corpus_id = '')")
+    ptag = getattr(config.neo4j, "project_tag", "") or ""
+    if ptag:
+        clauses.append("p._wheeler_project = $ptag")
+        params["ptag"] = ptag
+    query = (
+        "MATCH (p:Paper) WHERE "
+        + " AND ".join(clauses)
+        + " RETURN p.id AS id ORDER BY id LIMIT 1"
+    )
     rows = await backend.run_cypher(query, params)
     if rows:
         return rows[0].get("id")
