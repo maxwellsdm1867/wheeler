@@ -64,15 +64,57 @@ try:
 except ImportError:
     pass
 
-# LLM-SR equation-discovery driver (init/prompt/submit/best). Guarded: the
-# vendored search core needs numpy + scipy, so a missing dependency degrades to
-# "wheeler llmsr unavailable" rather than breaking the rest of the CLI.
+# LLM-SR equation-discovery driver (init/prompt/submit/best). Guarded so a
+# missing optional dependency cannot break the rest of the CLI.
+#
+# On failure the group is still REGISTERED, as a stub that reports the real
+# cause. Dropping it silently (the previous behavior) made a missing optional
+# extra indistinguishable from an absent engine or a genuine import bug: all
+# three surfaced as "No such command 'llmsr'" with no hint, which sent the
+# scientist chasing the wrong fix. Naming the failing module is the whole point.
 try:
     from wheeler.integrations.llmsr.cli import llmsr_app
 
     app.add_typer(llmsr_app, name="llmsr")
-except ImportError:
-    pass
+except ImportError as _llmsr_exc:  # pragma: no cover - needs the extra absent
+    _llmsr_error = _llmsr_exc
+    _llmsr_missing = (getattr(_llmsr_exc, "name", "") or "").split(".")[0]
+    if _llmsr_missing == "scipy":
+        _llmsr_hint = (
+            "LLM-SR needs the optional scipy extra. Install it with "
+            "`uv tool install wheeler --with scipy` or "
+            "`pip install 'wheeler[llmsr]'`."
+        )
+    elif _llmsr_missing:
+        _llmsr_hint = (
+            f"The LLM-SR engine could not import {_llmsr_missing!r}. "
+            "Install that dependency, or reinstall Wheeler with the llmsr extra."
+        )
+    else:
+        _llmsr_hint = (
+            "The LLM-SR engine failed to import. The error above names the cause."
+        )
+
+    # Rich renders the help string and would read "[llmsr]" as a style tag,
+    # swallowing it and printing a wrong install command. Escape it for help;
+    # the stderr echo below is plain text and needs no escaping.
+    _llmsr_help_hint = _llmsr_hint.replace("[", "\\[")
+    _llmsr_stub = typer.Typer(
+        help=(
+            f"LLM-SR equation discovery (UNAVAILABLE: {_llmsr_error}). "
+            f"{_llmsr_help_hint}"
+        ),
+        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    )
+
+    @_llmsr_stub.callback(invoke_without_command=True)
+    def _llmsr_unavailable() -> None:
+        """Report why the LLM-SR engine is unavailable instead of vanishing."""
+        typer.echo(f"wheeler llmsr is unavailable: {_llmsr_error}", err=True)
+        typer.echo(_llmsr_hint, err=True)
+        raise typer.Exit(code=1)
+
+    app.add_typer(_llmsr_stub, name="llmsr")
 
 
 

@@ -25,7 +25,6 @@ from typing import Any, Tuple, Mapping
 
 import logging
 import numpy as np
-import scipy
 
 from . import code_manipulation
 from . import config as config_lib
@@ -43,7 +42,18 @@ def _softmax(logits: np.ndarray, temperature: float) -> np.ndarray:
     if not np.issubdtype(logits.dtype, np.floating):
         logits = np.array(logits, dtype=np.float32)
 
-    result = scipy.special.softmax(logits / temperature, axis=-1)
+    # Computed with numpy rather than scipy.special.softmax so that merely
+    # IMPORTING this module does not require scipy. numpy is a hard dependency;
+    # scipy is the optional [llmsr] extra. A top-level `import scipy` here made
+    # the whole llmsr CLI unimportable without it, and because the CLI is
+    # registered under a guarded `except ImportError`, the group silently
+    # vanished and `wheeler llmsr` reported "No such command" with no hint.
+    # Subtracting the max is the standard overflow guard scipy applies
+    # internally, so this is numerically equivalent.
+    scaled = logits / temperature
+    scaled = scaled - np.max(scaled, axis=-1, keepdims=True)
+    exponentiated = np.exp(scaled)
+    result = exponentiated / np.sum(exponentiated, axis=-1, keepdims=True)
     index = np.argmax(result)
     result[index] = 1 - np.sum(result[0:index]) - np.sum(result[index + 1:])
     return result

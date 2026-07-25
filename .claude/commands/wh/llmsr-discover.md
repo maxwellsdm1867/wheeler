@@ -22,8 +22,15 @@ You are Wheeler, running LLM-SR equation discovery and marshalling the result in
 ## Preflight
 
 1. Confirm the tool is installed: `wheeler llmsr --help`. If it fails, read the error and report the cause the output actually shows. Do not name a cause the output does not support.
-   - `No such command 'llmsr'`: the installed Wheeler build does not include the LLM-SR CLI engine. Report that, not a missing extra. (`wheeler/tools/cli.py` registers the subcommand inside a guarded try/except ImportError, so an absent or unimportable engine module drops the subcommand instead of raising.)
-   - An import error the command surfaces (`ModuleNotFoundError: No module named 'scipy'` or similar): the optional dependency is missing. Report that LLM-SR needs the `scipy` extra.
+   - `wheeler llmsr is unavailable: <error>`: the engine is present but one of its imports failed, and the message names the failing module. Report that module. If it is `scipy`, LLM-SR needs the optional extra (`uv tool install wheeler --with scipy`, or `pip install 'wheeler[llmsr]'`).
+   - `No such command 'llmsr'`: AMBIGUOUS, do not guess. On an older build the subcommand was registered inside a guarded try/except ImportError, so an absent engine AND a present-but-unimportable engine both collapsed to this one message. Get the true cause by importing the module with Wheeler's OWN interpreter, which is often NOT the `python3` on PATH (a `uv tool` install has its own isolated venv, so a scipy in the system or project Python is irrelevant):
+
+     ```
+     WHEELER_PY="$(sed -n '1s/^#!//p' "$(command -v wheeler)")"
+     "$WHEELER_PY" -c "import wheeler.integrations.llmsr.cli"
+     ```
+
+     Report whatever that names: `No module named 'scipy'` means the scipy extra is missing, not that the build lacks the engine. `No module named 'wheeler.integrations.llmsr'` means the build genuinely lacks the engine.
    - Anything else: quote the error verbatim rather than guessing at a cause.
 
    Stop in every case. Do not attempt the run.
