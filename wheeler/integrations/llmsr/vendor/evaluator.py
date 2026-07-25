@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+#
+# Modified by the Wheeler project (https://github.com/maxwellsdm1867/wheeler).
+# This file is NOT Wheeler's work: it descends from FunSearch by DeepMind
+# Technologies Limited, and reaches Wheeler by way of LLM-SR
+# (https://github.com/deep-symbolic-mathematics/LLM-SR, Shojaee et al.,
+# ICLR 2025), which modified it first. Wheeler's own changes are mechanical
+# or environmental and are itemized in NOTICE.md alongside this file.
+# For the canonical, complete version, go to those repositories.
 
 """ Class for evaluating programs proposed by the Sampler."""
 from __future__ import annotations

@@ -319,6 +319,12 @@ The integration layer is provider-agnostic and growing. Adding a new external to
 
 Wheeler's Asta integration shells out to the [Asta toolkit](https://github.com/allenai/asta-plugins) from the [Allen Institute for AI (Ai2)](https://allenai.org). The Paper Finder, Semantic Scholar, Theorizer, and Literature Reports services are Ai2's work ([asta.allen.ai](https://asta.allen.ai)); Wheeler does not vendor or reimplement them, it invokes the upstream `asta` CLI and marshals the results into the knowledge graph with provenance. Credit and thanks to the Ai2 Asta team.
 
+Wheeler's equation discovery is **not Wheeler's method**. It is a vendored, refactored subset of [**LLM-SR**](https://github.com/deep-symbolic-mathematics/LLM-SR) (MIT) by Parshin Shojaee, Kazem Meidani, Shashank Gupta, Amir Barati Farimani, and Chandan K. Reddy, published at ICLR 2025 as ["LLM-SR: Scientific Equation Discovery via Programming with Large Language Models"](https://arxiv.org/abs/2404.18400). LLM-SR in turn builds on [**FunSearch**](https://github.com/google-deepmind/funsearch) (Apache-2.0) from Google DeepMind, published in Nature as ["Mathematical discoveries from program search with large language models"](https://doi.org/10.1038/s41586-023-06924-6); the FunSearch-derived files keep their original headers.
+
+What ships in `wheeler/integrations/llmsr/vendor/` is deliberately partial: Wheeler vendors six of upstream's eight modules and leaves out the samplers (Wheeler proposes candidates via a Claude Code sub-agent, never an API key) and upstream's own orchestration loop. The remaining changes are mechanical or environmental (package-relative imports, Python 3.12 AST renames, dropping the `absl` and `torch` dependencies, a macOS `fork` context, and a numpy softmax so `scipy` stays optional). **The search algorithm, the island model, and the scoring are theirs, not ours.**
+
+If you publish results from `/wh:llmsr-discover`, cite LLM-SR (and FunSearch where appropriate), not Wheeler's copy. For the complete and actively maintained implementation, the benchmark problems, and the authors' own documentation, go to the upstream repositories. Full per-file attribution, both licenses, and BibTeX entries are in [`wheeler/integrations/llmsr/vendor/NOTICE.md`](wheeler/integrations/llmsr/vendor/NOTICE.md). Credit and thanks to the LLM-SR authors and to the FunSearch team.
+
 ## License
 
 [MIT](LICENSE)
