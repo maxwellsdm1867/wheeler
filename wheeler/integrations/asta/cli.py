@@ -340,3 +340,128 @@ def ingest(
         )
 
     _echo_report(report)
+
+
+@integrate_app.command("export-paper-store")
+def export_paper_store(
+    out: Path = typer.Option(
+        Path("/tmp/asta-paper-store.json"),
+        "--out",
+        "-o",
+        help="Where to write the paper store JSON.",
+    ),
+    link_to: Optional[str] = typer.Option(
+        None,
+        "--link-to",
+        help=(
+            "Select every Paper linked RELEVANT_TO this node (the Q-/PL- the "
+            "literature pass was run against). The curated set, post-screening."
+        ),
+    ),
+    papers: Optional[str] = typer.Option(
+        None,
+        "--papers",
+        help="Comma-separated Paper ids (P-...), instead of --link-to.",
+    ),
+    mode: str = typer.Option(
+        "markdown",
+        "--mode",
+        help=(
+            "markdown: emit paper_markdown per entry (abstract-level) for a "
+            "CLOSED corpus with --no-search-additional-papers. "
+            "identifiers: emit corpus_id/title only, which REQUIRES "
+            "--search-additional-papers and so cannot exclude off-target papers."
+        ),
+    ),
+) -> None:
+    """Build an Asta --paper-store payload from curated graph Papers.
+
+    Marshal-IN: reads the graph, writes a file, creates no nodes or edges.
+    """
+    from wheeler.config import load_config
+    from wheeler.integrations.asta.paper_store import (
+        MODES,
+        build_paper_store,
+        write_paper_store,
+    )
+
+    mode_key = mode.strip().lower()
+    if mode_key not in MODES:
+        typer.echo(f"Unknown mode '{mode}'. Supported: {', '.join(MODES)}.", err=True)
+        raise typer.Exit(code=2)
+
+    paper_ids = [i.strip() for i in papers.split(",") if i.strip()] if papers else []
+    if not link_to and not paper_ids:
+        typer.echo("Pass --link-to <Q-/PL- id> or --papers <P-id,...>.", err=True)
+        raise typer.Exit(code=2)
+
+    config = load_config()
+    result = asyncio.run(
+        build_paper_store(
+            config,
+            link_to=link_to,
+            paper_ids=paper_ids or None,
+            mode=mode_key,
+        )
+    )
+
+    if not result.entries:
+        typer.echo(
+            f"No papers exported (selected={result.selected}, "
+            f"skipped={len(result.skipped)}). Nothing written.",
+            err=True,
+        )
+        if result.skipped:
+            typer.echo(
+                "Every selected Paper lacked an abstract. Add abstracts, or use "
+                "--mode identifiers (which cannot give a closed corpus).",
+                err=True,
+            )
+        raise typer.Exit(code=1)
+
+    path = write_paper_store(result, out)
+
+    typer.echo(
+        f"mode={result.mode} selected={result.selected} "
+        f"exported={len(result.entries)} skipped={len(result.skipped)} "
+        f"closed={'yes' if result.closed else 'no'} store={path}"
+    )
+    if result.paper_ids:
+        typer.echo(f"used={','.join(result.paper_ids)}")
+
+    # Skipped papers are not a footnote: each one is a paper the scientist
+    # curated that will NOT reach the theorizer. Name them.
+    for item in result.skipped:
+        typer.echo(
+            f"  skipped (no abstract): {item['id']} {item['title'][:70]}", err=True
+        )
+    if result.skipped:
+        typer.echo(
+            "Those papers carry no abstract, so they cannot become "
+            "paper_markdown. Including them as identifiers would force "
+            "PaperFinder on and reopen the corpus, so they were dropped "
+            "instead. Add an abstract to include them.",
+            err=True,
+        )
+
+    # The flag pairing is the whole point and is easy to forget, so print the
+    # exact next command rather than describing it.
+    if result.closed:
+        typer.echo(
+            "\nClosed corpus. Run the theorizer with PaperFinder OFF so nothing "
+            "outside this set is pulled in:\n"
+            f"  asta generate-theories literature-theory-generation \\\n"
+            f'    --theory-query "<question>" \\\n'
+            f"    --paper-store @{path} \\\n"
+            f"    --no-search-additional-papers > /tmp/asta-theorizer.json"
+        )
+    else:
+        typer.echo(
+            "\nNOT a closed corpus: identifier-only entries are hydrated during "
+            "the PaperFinder step, so PaperFinder must stay ON and may "
+            "reintroduce off-target papers.\n"
+            f"  asta generate-theories literature-theory-generation \\\n"
+            f'    --theory-query "<question>" \\\n'
+            f"    --paper-store @{path} \\\n"
+            f"    --search-additional-papers > /tmp/asta-theorizer.json"
+        )

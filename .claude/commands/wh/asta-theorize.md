@@ -27,12 +27,38 @@ You are Wheeler, running an Asta Theorizer pass over a research question and mar
 - Sharpen it from the graph context: name the intervention or mechanism, the outcome, and the scope (system, population, regime). A crisp question yields crisper theories.
 - Pick at most one link target: the Question (`Q-...`) or Plan (`PL-...`) this generation supports. Each theory's parent node will be linked `AROSE_FROM` that node. If there is no clear target, run without one.
 
+## Decide whether to seed from the curated graph (ASK)
+
+By default the Theorizer runs its own PaperFinder and reads whatever it discovers. If the scientist has already curated a paper set in the graph (a `/wh:asta-lit` pass they then screened), offer to seed from it. Ask; do not assume. Seeding matters when the discovered literature keeps drifting off-target (the wrong species, preparation, or regime).
+
+Build the store from the GRAPH, never from a raw `/tmp/asta-paper-finder.json`: the artifact still contains the papers the scientist screened out, while the graph holds only the survivors.
+
+```
+wheeler integrate export-paper-store --link-to <Q- or PL- id> -o /tmp/asta-paper-store.json
+```
+
+The command prints `closed=yes|no`, a `used=P-...,P-...` line, and the exact `asta` command to run next. Read `closed` before going further, because it decides the flag pairing and the flag pairing decides whether curation survives:
+
+- **`closed=yes` (markdown mode, the default).** Every entry carries `paper_markdown`, so the Theorizer reads these papers directly. Run it with `--no-search-additional-papers`. PaperFinder never runs, nothing outside the set is pulled in, and the curation holds. The content is abstract-level, which is thinner than the server's own full-text hydration: that is the trade, corpus control for per-paper depth.
+- **`closed=no` (identifiers mode, or any entry lacking `paper_markdown`).** Identifier-only entries are hydrated during the PaperFinder step, so PaperFinder MUST stay on and can reintroduce exactly the papers that were screened out. Say this plainly rather than implying the run is curated. Hydration also costs roughly 30 to 60 seconds per paper server-side, so a 50-paper store is a long run.
+
+If the export skips papers for having no abstract, report which ones. They are papers the scientist curated that will NOT reach the Theorizer. It refuses to silently downgrade them to identifiers because one identifier-only entry forces PaperFinder back on and quietly reopens the whole corpus.
+
+Keep the `used=` line: those Paper ids go into `--used` at ingest so the run records what it was seeded with.
+
 ## Run the generation
 
 Run the CLI, capturing the artifact to a temp file. This requires an Asta login. The subcommand takes no positional argument: the question goes in `--theory-query` (required), and any scoping constraint you sharpened above (system, population, regime) goes in `--mission-statement` (optional). There is no output flag, so redirect stdout to the artifact path:
 
 ```
 asta generate-theories literature-theory-generation --theory-query "$QUESTION" --mission-statement "$SCOPE" > /tmp/asta-theorizer.json
+```
+
+When seeding, add the store and the matching PaperFinder flag that `export-paper-store` printed:
+
+```
+asta generate-theories literature-theory-generation --theory-query "$QUESTION" --mission-statement "$SCOPE" \
+  --paper-store @/tmp/asta-paper-store.json --no-search-additional-papers > /tmp/asta-theorizer.json
 ```
 
 Drop `--mission-statement` when there is no scoping constraint. Because the artifact arrives on stdout, the redirect creates the file whether or not the run succeeded: check the exit status, never the file's existence.
@@ -52,10 +78,10 @@ The ingest applies the same gate even when an artifact IS returned: a Theorizer 
 Marshal the artifact into the graph with the single integrate verb:
 
 ```
-wheeler integrate ingest theorizer /tmp/asta-theorizer.json --link-to <Q- or PL- id> --used <Q- or PL- id>,<F-... seeded Finding ids>
+wheeler integrate ingest theorizer /tmp/asta-theorizer.json --link-to <Q- or PL- id> --used <Q- or PL- id>,<F-... seeded Finding ids>,<P-... seeded Paper ids>
 ```
 
-Omit `--link-to` if there is no target. Pass `--used` with the graph node ids the request was built from: the link target (the `Q-`/`PL-` that motivated the run) AND every Finding id you seeded into the Theorizer extraction payload (the existing results that shaped the theory generation), comma-separated. This records `Execution -[USED]-> each input` (input-side provenance), so every generated theory traces back to the exact graph context it was built from, not just the literature support. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate theories, law hypotheses, papers, edges, or USED edges. Each theory becomes a parent Finding (`artifact_type=theory`); each law becomes a Hypothesis the parent `CONTAINS`; supporting papers link `SUPPORTS` and contradicting papers link `CONTRADICTS` each law Hypothesis. The novelty verdict (established, derivable, new) is parked as `custom_novelty` on each Hypothesis, never in its `status`.
+Omit `--link-to` if there is no target. Pass `--used` with the graph node ids the request was built from: the link target (the `Q-`/`PL-` that motivated the run), every Finding id you seeded into the Theorizer extraction payload (the existing results that shaped the theory generation), AND, when you seeded a paper store, every Paper id from the `used=` line that `export-paper-store` printed (the literature the run was actually built on), comma-separated. This records `Execution -[USED]-> each input` (input-side provenance), so every generated theory traces back to the exact graph context it was built from, not just the literature support. Omit `--used` if there were no graph inputs. The verb is idempotent: re-running the same artifact creates no duplicate theories, law hypotheses, papers, edges, or USED edges. Each theory becomes a parent Finding (`artifact_type=theory`); each law becomes a Hypothesis the parent `CONTAINS`; supporting papers link `SUPPORTS` and contradicting papers link `CONTRADICTS` each law Hypothesis. The novelty verdict (established, derivable, new) is parked as `custom_novelty` on each Hypothesis, never in its `status`.
 
 ## Wire semantics to the existing graph
 
