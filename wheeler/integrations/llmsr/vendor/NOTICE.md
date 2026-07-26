@@ -1,15 +1,22 @@
-# Third-party notice: this directory is not Wheeler's work
+# Third-party notice: this is an adapter for LLM-SR, not an implementation of it
 
-Everything in `wheeler/integrations/llmsr/vendor/` is a **vendored, refactored
-subset of other people's research code**. Wheeler did not invent the LLM-SR
-method, the evolutionary search, or the island-model buffer. If you use this and
-publish, cite the papers below, not Wheeler's copy of them.
+`wheeler/integrations/llmsr/vendor/` is **adapted from the LLM-SR pipeline**.
+The right way to read this directory is as a plug-in that lets Wheeler drive
+LLM-SR from Claude Code, not as a Wheeler feature. The method, the evolutionary
+search, and the island-model buffer are the LLM-SR authors' work, building on
+FunSearch. Wheeler contributes the driver and the provenance around it, and
+nothing about the science.
 
-**For the full, canonical, actively maintained version, go upstream.** What
-lives here is deliberately partial, trimmed to what Wheeler can drive from
-Claude Code. Anyone doing serious work with LLM-SR should start at the original
-repository, which has the complete pipeline, the samplers, the benchmark
-problems, and the authors' own documentation.
+The adaptation exists for one reason: Wheeler runs on a Max subscription with no
+API keys, so upstream's sampler and its orchestration loop cannot be used as
+shipped. Everything else is the changes needed to run their pipeline in that
+environment.
+
+**For the real thing, go upstream.** What lives here is deliberately partial,
+carrying only what the adapter needs to drive. Anyone doing serious work with
+LLM-SR should start at the original repository, which has the complete pipeline,
+the samplers, the benchmark problems, and the authors' own documentation. If you
+publish, cite their papers, not Wheeler's adapter.
 
 ## Upstream projects
 
@@ -61,22 +68,26 @@ original Apache-2.0 headers.
 }
 ```
 
-## What Wheeler changed, and why
+## What the adapter changes, and why
 
-Per Apache-2.0 section 4(b), the modified files carry a notice stating they were
-changed. The changes are mechanical or environmental, not scientific: the search
+Per Apache-2.0 section 4(b), the changed files carry a notice saying so. Every
+change below is mechanical or environmental: what it took to run their pipeline
+under Claude Code without an API key. None of it touches the science. The search
 algorithm, the island model, the scoring, and the program-manipulation logic are
-upstream's.
+upstream's, unaltered.
 
-**Files not vendored at all.** Upstream `llmsr/` has eight modules; this
-directory has six. `sampler.py` and `pipeline.py` are deliberately excluded:
+**The two modules the adapter replaces.** Upstream `llmsr/` has eight; this
+directory carries six. `sampler.py` and `pipeline.py` are the two the plug-in
+substitutes for, and they are the reason it exists:
 
 - `sampler.py` holds the LLM call sites (an OpenAI client and a local HF
-  server). Wheeler never uses an API key, so candidate equations are proposed by
-  a Claude Code sub-agent or an external CLI instead. See `../cli.py`.
+  server). Wheeler never uses an API key, so candidate equations come from a
+  Claude Code sub-agent or an external CLI instead. See `../cli.py`.
 - `pipeline.py` is upstream's own orchestration loop. Wheeler drives the loop
-  from the outside (`wheeler llmsr init / prompt / submit / best`) so Claude Code
+  from outside (`wheeler llmsr init / prompt / submit / best`) so Claude Code
   stays the orchestrator.
+
+Anything upstream does that depends on those two is out of scope here by design.
 
 **Per-file changes:**
 
@@ -91,4 +102,4 @@ directory has six. `sampler.py` and `pipeline.py` are deliberately excluded:
 | `buffer.py` | `scipy.special.softmax` replaced with the equivalent numpy expression, verified bit-identical. scipy is an optional Wheeler extra, and a module-top-level import of it made the whole CLI unavailable on installs without it (Wheeler issue #88) |
 
 None of these touch the method. If you want to understand or extend LLM-SR
-itself, read upstream's code, not this copy.
+itself, read upstream's code, not this adapter.

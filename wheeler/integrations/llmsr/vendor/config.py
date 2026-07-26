@@ -13,13 +13,15 @@
 # limitations under the License.
 # ==============================================================================
 #
-# Modified by the Wheeler project (https://github.com/maxwellsdm1867/wheeler).
-# This file is NOT Wheeler's work: it descends from FunSearch by DeepMind
-# Technologies Limited, and reaches Wheeler by way of LLM-SR
+# Adapted, with modifications, by the Wheeler project
+# (https://github.com/maxwellsdm1867/wheeler), which ships a plug-in that
+# drives the LLM-SR pipeline from Claude Code. This file is upstream's work,
+# not Wheeler's: it descends from FunSearch by DeepMind Technologies Limited
+# and reaches Wheeler by way of LLM-SR
 # (https://github.com/deep-symbolic-mathematics/LLM-SR, Shojaee et al.,
-# ICLR 2025), which modified it first. Wheeler's own changes are mechanical
-# or environmental and are itemized in NOTICE.md alongside this file.
-# For the canonical, complete version, go to those repositories.
+# ICLR 2025), which adapted it first. The Wheeler-side changes are
+# environmental, itemized in NOTICE.md alongside this file. For the real
+# pipeline, go to those repositories.
 
 """Configuration of a LLMSR experiments
 ."""

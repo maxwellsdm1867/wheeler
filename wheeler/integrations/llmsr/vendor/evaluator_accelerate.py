@@ -1,10 +1,11 @@
 # This file aims to accelerate the original evaluate logic using 'numba' package.
 # You should install numba package in your Python environment or the later evaluation will fail.
 #
-# Vendored from deep-symbolic-mathematics/LLM-SR (Shojaee et al., ICLR 2025),
-# MIT licensed. NOT Wheeler's work. Wheeler's only change here is
-# ast.NameConstant -> ast.Constant, removed in Python 3.12. See NOTICE.md
-# alongside this file, and go upstream for the canonical version.
+# Adapted from deep-symbolic-mathematics/LLM-SR (Shojaee et al., ICLR 2025),
+# MIT licensed. Upstream's work, not Wheeler's: Wheeler ships a plug-in that
+# drives their pipeline. The only change here is ast.NameConstant ->
+# ast.Constant, removed in Python 3.12. See NOTICE.md alongside this file,
+# and go upstream for the real pipeline.
 
 import ast
 
