@@ -92,6 +92,22 @@ def _load_xy(data_path: str) -> tuple[np.ndarray, np.ndarray]:
     return data[:, :-1], data[:, -1].reshape(-1)
 
 
+def _load_data(data_path: str, metric: metrics_mod.Metric):
+    """Load a run's data in the shape its metric declares.
+
+    ``regression``: the tabular convention, last column is the target, one value
+    per row. ``spike_train``: the leading columns are the stimulus and the last
+    column holds the RECORDED EVENT TIMES, which in general are fewer than the
+    stimulus samples, so that column is read as padded (blank cells dropped)
+    rather than as one value per sample.
+    """
+    X, y = _load_xy(data_path)
+    if metric.data_shape == metrics_mod.REGRESSION:
+        return X, y
+    events = np.asarray(y, dtype=float)
+    return X, [float(v) for v in events[~np.isnan(events)]]
+
+
 def _read_submissions(run_dir: Path) -> list[dict]:
     path = run_dir / "submissions.jsonl"
     if not path.exists():
@@ -265,7 +281,7 @@ def init(
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
     # seed the buffer with the spec's initial equation body (submission 0, all islands)
-    X, y = _load_xy(str(meta["data_path"]))
+    X, y = _load_data(str(meta["data_path"]), metric_obj)
     seed_body = template.get_function(fte).body
     _t0 = time.time()
     result, program, _fn = _score_body(
@@ -354,7 +370,7 @@ def submit(
     meta = _read_meta(run_dir)
     metric_obj = _metric_for(meta["metric"])
     template, db, fte = _rebuild_buffer(run_dir, meta)
-    X, y = _load_xy(str(meta["data_path"]))
+    X, y = _load_data(str(meta["data_path"]), metric_obj)
 
     body = body_file.read_text()
     _t0 = time.time()
@@ -410,7 +426,6 @@ def best(
         raise typer.BadParameter(f"select must be one of {_SELECT_MODES}")
     subs = _read_submissions(run_dir)
     valid = [s for s in subs if s.get("valid") and s.get("score") is not None]
-
     # best.json is the FINAL result only. The full per-candidate search trail
     # (bodies, programs, params, scores) stays in submissions.jsonl in the run
     # dir; the graph adapter records the winner, never intermediate candidates.
@@ -438,7 +453,8 @@ def best(
     winner = _select_winner(valid, meta, mode)
     metric_key = meta["metric"]
     program = _runnable_program(winner["program"], winner["params"], metric_key,
-                                winner["value"], meta["data_path"], meta["function_to_evolve"])
+                                winner["value"], meta["data_path"], meta["function_to_evolve"],
+                                _metric_for(metric_key).data_shape)
 
     # Generalization: apply the TRAIN-fitted equation (no re-fit) to the sibling
     # in-domain / out-of-domain test sets, reporting both MSE and NMSE per split
@@ -477,8 +493,22 @@ def best(
     }))
 
 
-def _runnable_program(program: str, params, metric_key: str, value, data_path: str, fte: str) -> str:
+def _runnable_program(
+    program: str, params, metric_key: str, value, data_path: str, fte: str,
+    data_shape: str = metrics_mod.REGRESSION,
+) -> str:
     """Append fitted constants + a runnable main so the .py reproduces the answer."""
+    if data_shape == metrics_mod.REGRESSION:
+        bind = f"    _n = {fte}.__code__.co_argcount - 1\n"
+        show = "    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n"
+    else:
+        # A simulator takes the stimulus columns it declares and returns however
+        # many events it returns: neither count is fixed by the table.
+        bind = f"    _n = min({fte}.__code__.co_argcount - 1, _X.shape[1])\n"
+        show = (
+            "    _ev = list(_pred)\n"
+            "    print('n_events', len(_ev), 'events[:5]', _ev[:5])\n"
+        )
     footer = (
         "\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n"
         f"FITTED_PARAMS = {list(params)!r}\n"
@@ -487,11 +517,11 @@ def _runnable_program(program: str, params, metric_key: str, value, data_path: s
         "    import numpy as _np\n"
         f"    _d = _np.genfromtxt(r{data_path!r}, delimiter=',', skip_header=1)\n"
         "    _X, _y = _d[:, :-1], _d[:, -1].reshape(-1)\n"
-        f"    _n = {fte}.__code__.co_argcount - 1\n"
-        "    _cols = [_X[:, i] for i in range(_n)]\n"
-        f"    _pred = {fte}(*_cols, _np.array(FITTED_PARAMS))\n"
-        "    print('metric', METRIC)\n"
-        "    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n"
+        + bind
+        + "    _cols = [_X[:, i] for i in range(_n)]\n"
+        + f"    _pred = {fte}(*_cols, _np.array(FITTED_PARAMS))\n"
+        + "    print('metric', METRIC)\n"
+        + show
     )
     return program + footer
 
@@ -536,19 +566,28 @@ def _equation_complexity(body: str) -> int:
 
 
 def _candidate_ood(meta: dict, cand: dict) -> float | None:
-    """Held-out out-of-domain NMSE of a candidate (train-fitted, applied to
+    """Held-out out-of-domain error of a candidate (train-fitted, applied to
     test_ood). None when no OOD set exists. This is the extrapolation signal: the
     true law generalizes here, an overfit form does not."""
     sibling = Path(str(meta["data_path"])).parent / "test_ood.csv"
     if not sibling.exists():
         return None
+    metric = _metric_for(meta["metric"])
+    # NMSE is the scale-free comparison for a regression run. For any other shape
+    # it is meaningless (it assumes a row-for-row prediction), so the run's own
+    # metric is the only one that can rank extrapolation.
+    ood_metric = (
+        metrics_mod.get_metric("nmse")
+        if metric.data_shape == metrics_mod.REGRESSION
+        else metric
+    )
     try:
-        X, y = _load_xy(str(sibling))
+        X, y = _load_data(str(sibling), metric)
     except OSError:
         return None
     return fit_mod.evaluate_fixed(
         cand["program"], meta["function_to_evolve"], X, y,
-        cand["params"], metrics_mod.get_metric("nmse"),
+        cand["params"], ood_metric,
     )
 
 
@@ -581,7 +620,9 @@ def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
 def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
     """Score the train-fitted winner on train + sibling test_id / test_ood sets.
 
-    Both MSE and NMSE per split. The LLM-SR datasets store
+    Both MSE and NMSE per split for a regression run (the paper's protocol). For
+    any other data shape those two are meaningless, so the run's own metric is
+    reported instead. The LLM-SR datasets store
     ``<problem>/{train,test_id,test_ood}.csv``, so the test splits are siblings of
     the training file. Applies the fitted constants without re-fitting.
     """
@@ -589,6 +630,10 @@ def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
     fte = meta["function_to_evolve"]
     program = winner["program"]
     params = winner["params"]
+    metric = _metric_for(meta["metric"])
+    report_keys = (
+        ("mse", "nmse") if metric.data_shape == metrics_mod.REGRESSION else (metric.key,)
+    )
     train_path = str(meta["data_path"])
     splits = {"train": train_path}
     for name, fname in (("test_id", "test_id.csv"), ("test_ood", "test_ood.csv")):
@@ -597,10 +642,10 @@ def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
             splits[name] = str(sibling)
     for split, path in splits.items():
         try:
-            X, y = _load_xy(path)
+            X, y = _load_data(path, metric)
         except OSError:
             continue
-        for mkey in ("mse", "nmse"):
+        for mkey in report_keys:
             val = fit_mod.evaluate_fixed(
                 program, fte, X, y, params, metrics_mod.get_metric(mkey)
             )

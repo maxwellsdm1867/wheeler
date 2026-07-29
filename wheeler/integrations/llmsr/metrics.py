@@ -25,10 +25,13 @@ a metric name, so an upgrade never drops the objective::
         lower_is_better=True, loss=huber, report=huber,
     ))
 
-A metric also declares the data shape it expects (``regression`` for tabular
-``(X, y)``); spike-train metrics such as Victor-Purpura will declare
-``spike_train`` and carry their own loader, which is deferred breadth (see the
-package plan).
+A metric also declares the DATA SHAPE it expects, and the fit path dispatches on
+it. ``regression`` is the tabular case: one column of ``X`` per input, and the
+prediction lines up row-for-row with ``y``. ``spike_train`` is the simulator
+case: the candidate returns a variable-length sequence of event times, scored
+against a recorded sequence of a different length, so nothing lines up row-wise
+and the metric owns the comparison (a Victor-Purpura distance, for instance).
+An unsupported shape is rejected when the metric is declared, not at scoring time.
 """
 
 from __future__ import annotations
@@ -41,13 +44,17 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-Scorer = Callable[[np.ndarray, np.ndarray], float]
+Scorer = Callable[[Any, Any], float]
+
+REGRESSION = "regression"  # tabular (X, y): prediction lines up row-for-row
+SPIKE_TRAIN = "spike_train"  # simulator: variable-length event times vs recorded
+DATA_SHAPES = (REGRESSION, SPIKE_TRAIN)
 
 
 @dataclass(frozen=True)
@@ -59,14 +66,25 @@ class Metric:
     coincide; for a metric like R2 they differ (fit may minimize ``-R2`` while the
     report is ``R2``). ``lower_is_better`` lets the driver turn ``report`` into a
     buffer score where higher is always better (the island model maximizes).
+
+    ``data_shape`` is one of ``DATA_SHAPES``. It decides how the fit path calls
+    the candidate and what it hands the metric, so an unknown shape is a hard
+    error here rather than a silent no-op at scoring time.
     """
 
     key: str
     label: str
-    data_shape: str  # "regression" (tabular X, y). "spike_train" reserved.
+    data_shape: str
     lower_is_better: bool
     loss: Scorer
     report: Scorer
+
+    def __post_init__(self) -> None:
+        if self.data_shape not in DATA_SHAPES:
+            raise ValueError(
+                f"metric {self.key!r} declares data_shape {self.data_shape!r}, "
+                f"which the fit path cannot dispatch; supported: {list(DATA_SHAPES)}"
+            )
 
     def score_from_value(self, value: float) -> float:
         """Convert a reported value into a maximize-me buffer score."""
