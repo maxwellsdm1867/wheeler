@@ -5,24 +5,98 @@ the run, and used both to FIT the free constants (minimize ``loss``) and to REPO
 the result (``report``). The scientist picks it in the act; nothing is defaulted
 silently.
 
-The vertical slice wires ``mse`` only. Adding a metric is: define a ``Metric`` and
-register it here. A metric also declares the data shape it expects
-(``regression`` for tabular ``(X, y)``); spike-train metrics such as
-Victor-Purpura will declare ``spike_train`` and carry their own loader, which is
-deferred breadth (see the package plan).
+``mse`` and ``nmse`` ship built in. Any other objective is the scientist's own and
+does NOT require editing the installed package: write a ``Metric`` in your own
+module, call ``register_metric`` on it, and point Wheeler at that module through
+``$WHEELER_LLMSR_METRICS`` or by putting it at ``.wheeler/llmsr/metrics.py`` in
+the project. ``load_user_metrics()`` imports those sources before the CLI resolves
+a metric name, so an upgrade never drops the objective::
+
+    # .wheeler/llmsr/metrics.py
+    import numpy as np
+    from wheeler.integrations.llmsr.metrics import Metric, register_metric
+
+    def huber(y_pred, y_true, delta=1.0):
+        r = np.abs(np.asarray(y_pred).reshape(-1) - np.asarray(y_true).reshape(-1))
+        return float(np.mean(np.where(r <= delta, 0.5 * r**2, delta * (r - 0.5 * delta))))
+
+    register_metric(Metric(
+        key="huber", label="Huber loss", data_shape="regression",
+        lower_is_better=True, loss=huber, report=huber,
+    ))
+
+A metric also declares the DATA SHAPE it expects, and the fit path dispatches on
+it. ``regression`` is the tabular case: one column of ``X`` per input, and the
+prediction lines up row-for-row with ``y``. ``spike_train`` is the simulator
+case: the candidate returns a variable-length sequence of event times, scored
+against a recorded sequence of a different length, so nothing lines up row-wise
+and the metric owns the comparison (a Victor-Purpura distance, for instance).
+An unsupported shape is rejected when the metric is declared, not at scoring time.
+
+A metric may also declare HARD CONSTRAINTS through ``guard``: accept/reject checks
+evaluated per candidate, separately from the scalar loss, so a candidate that
+violates one is rejected whatever it scored (see ``Constraint``).
 """
 
 from __future__ import annotations
 
+import hashlib
+import importlib
+import importlib.util
 import logging
-from dataclasses import dataclass
-from typing import Callable
+import os
+import sys
+from dataclasses import InitVar, dataclass, field
+from pathlib import Path
+from typing import Any, Callable
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-Scorer = Callable[[np.ndarray, np.ndarray], float]
+Scorer = Callable[[Any, Any], float]
+
+REGRESSION = "regression"  # tabular (X, y): prediction lines up row-for-row
+SPIKE_TRAIN = "spike_train"  # simulator: variable-length event times vs recorded
+DATA_SHAPES = (REGRESSION, SPIKE_TRAIN)
+
+
+@dataclass(frozen=True)
+class Constraint:
+    """A hard accept/reject check on a fitted candidate.
+
+    ``check(y_pred, y_true, params) -> bool``, where True means admissible. This
+    is NOT a weighted penalty in the loss: a candidate that fails a constraint is
+    rejected whatever it scored, so it cannot buy a large gain on the primary
+    objective by paying a small penalty on a secondary one.
+    """
+
+    name: str
+    check: Callable[[Any, Any, np.ndarray], bool]
+
+    def holds(self, y_pred: Any, y_true: Any, params: np.ndarray) -> bool:
+        return bool(self.check(y_pred, y_true, params))
+
+
+def _as_constraints(guard: Any, key: str) -> tuple[Constraint, ...]:
+    """Normalize a declared guard into constraints. One callable, or several."""
+    if guard is None:
+        return ()
+    items = list(guard) if isinstance(guard, (list, tuple)) else [guard]
+    out: list[Constraint] = []
+    for i, item in enumerate(items):
+        if isinstance(item, Constraint):
+            out.append(item)
+        elif callable(item):
+            out.append(
+                Constraint(name=getattr(item, "__name__", "") or f"constraint_{i}", check=item)
+            )
+        else:
+            raise TypeError(
+                f"metric {key!r}: guard entry {item!r} is neither a Constraint nor "
+                "a callable taking (y_pred, y_true, params)"
+            )
+    return tuple(out)
 
 
 @dataclass(frozen=True)
@@ -34,18 +108,43 @@ class Metric:
     coincide; for a metric like R2 they differ (fit may minimize ``-R2`` while the
     report is ``R2``). ``lower_is_better`` lets the driver turn ``report`` into a
     buffer score where higher is always better (the island model maximizes).
+
+    ``data_shape`` is one of ``DATA_SHAPES``. It decides how the fit path calls
+    the candidate and what it hands the metric, so an unknown shape is a hard
+    error here rather than a silent no-op at scoring time.
+
+    ``guard`` declares hard constraints: one ``Constraint`` or callable, or a
+    sequence of them. They are normalized into ``hard_constraints`` and evaluated
+    per candidate AFTER the fit, separately from the scalar loss.
     """
 
     key: str
     label: str
-    data_shape: str  # "regression" (tabular X, y). "spike_train" reserved.
+    data_shape: str
     lower_is_better: bool
     loss: Scorer
     report: Scorer
+    guard: InitVar[Any] = None
+    hard_constraints: tuple[Constraint, ...] = field(init=False, default=())
+
+    def __post_init__(self, guard: Any) -> None:
+        if self.data_shape not in DATA_SHAPES:
+            raise ValueError(
+                f"metric {self.key!r} declares data_shape {self.data_shape!r}, "
+                f"which the fit path cannot dispatch; supported: {list(DATA_SHAPES)}"
+            )
+        object.__setattr__(self, "hard_constraints", _as_constraints(guard, self.key))
 
     def score_from_value(self, value: float) -> float:
         """Convert a reported value into a maximize-me buffer score."""
         return -value if self.lower_is_better else value
+
+
+# ``guard`` is consumed by __post_init__, so no instance ever stores it. Dropping
+# the class-level default the dataclass leaves behind keeps that honest: reading
+# ``metric.guard`` raises instead of answering None for a metric that does carry
+# constraints. ``metric.hard_constraints`` is the one place they live.
+delattr(Metric, "guard")
 
 
 def _as_arrays(y_pred, y_true) -> tuple[np.ndarray, np.ndarray]:
@@ -94,20 +193,140 @@ NMSE = Metric(
 )
 
 
-# The registry. Only wired metrics appear; the act offers exactly these.
-METRICS: dict[str, Metric] = {MSE.key: MSE, NMSE.key: NMSE}
+# The two metrics Wheeler ships. Never mutated: it is what `builtin` reports
+# against, so a scientist can always tell their own objective from ours.
+BUILTIN_METRICS: dict[str, Metric] = {MSE.key: MSE, NMSE.key: NMSE}
+
+# The live registry: the built-ins plus whatever `register_metric` has added.
+METRICS: dict[str, Metric] = dict(BUILTIN_METRICS)
+
+_REQUIRED_ATTRS = ("key", "label", "data_shape", "lower_is_better", "loss", "report")
+_USER_METRICS_ENV = "WHEELER_LLMSR_METRICS"
+_PROJECT_METRICS_FILE = Path(".wheeler/llmsr/metrics.py")
+
+
+@dataclass(frozen=True)
+class MetricSourceError:
+    """A user metric module that failed to import, and why."""
+
+    source: str
+    error: str
+
+
+_loaded_sources: set[str] = set()
+
+
+def _normalize_key(key: object) -> str:
+    return key.strip().lower() if isinstance(key, str) else ""
+
+
+def register_metric(metric: Metric, *, replace: bool = False) -> Metric:
+    """Register a scientist-supplied metric under its key and return it.
+
+    Everything the fit path will touch is checked HERE, naming what is missing,
+    so a half-built metric fails at declaration rather than as an AttributeError
+    inside a fit worker an hour into a search.
+    """
+    missing = [attr for attr in _REQUIRED_ATTRS if not hasattr(metric, attr)]
+    if missing:
+        raise TypeError(
+            f"invalid metric ({type(metric).__name__}): missing required "
+            f"attribute(s) {', '.join(missing)}. A metric must declare "
+            f"{', '.join(_REQUIRED_ATTRS)}."
+        )
+    key = _normalize_key(getattr(metric, "key", None))
+    if not key:
+        raise ValueError("invalid metric: 'key' must be a non-empty string")
+    if not isinstance(metric, Metric):
+        raise TypeError(
+            f"invalid metric {key!r}: build it with "
+            "wheeler.integrations.llmsr.metrics.Metric, which validates the "
+            "declared data shape and derives the selection score"
+        )
+    for attr in ("loss", "report"):
+        if not callable(getattr(metric, attr)):
+            raise TypeError(f"invalid metric {key!r}: '{attr}' must be callable")
+    if not isinstance(metric.lower_is_better, bool):
+        raise TypeError(f"invalid metric {key!r}: 'lower_is_better' must be a bool")
+    if key in METRICS and not replace:
+        origin = "built in" if key in BUILTIN_METRICS else "already registered"
+        raise ValueError(
+            f"metric {key!r} is {origin}; pass replace=True to override it"
+        )
+    METRICS[key] = metric
+    logger.debug("registered metric %r (%s)", key, metric.label)
+    return metric
+
+
+def user_metric_sources() -> list[str]:
+    """Where to look for the scientist's metric modules, in order."""
+    raw = os.environ.get(_USER_METRICS_ENV, "")
+    sources = [
+        part.strip()
+        for chunk in raw.split(os.pathsep)
+        for part in chunk.split(",")
+        if part.strip()
+    ]
+    if _PROJECT_METRICS_FILE.exists():
+        sources.append(str(_PROJECT_METRICS_FILE.resolve()))
+    return sources
+
+
+def _import_source(source: str) -> None:
+    """Import one metric source: a .py path, or an importable module path."""
+    if not source.endswith(".py"):
+        importlib.import_module(source)
+        return
+    path = Path(source).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"no such metrics file: {path}")
+    name = "wheeler_llmsr_user_metrics_" + hashlib.sha256(
+        str(path).encode()
+    ).hexdigest()[:8]
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load metrics from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # so the module behaves like any other import
+    spec.loader.exec_module(module)
+
+
+def load_user_metrics() -> list[MetricSourceError]:
+    """Import the scientist's metric modules so their registrations take effect.
+
+    Sources, in order: every entry of ``$WHEELER_LLMSR_METRICS`` (separated by
+    the path separator or by commas, each either an importable module path or a
+    path to a .py file), then ``.wheeler/llmsr/metrics.py`` under the project.
+    Each source is imported at most once per process. A source that raises is
+    REPORTED, not raised: one broken file must not take down every verb.
+    """
+    failures: list[MetricSourceError] = []
+    for source in user_metric_sources():
+        if source in _loaded_sources:
+            continue
+        _loaded_sources.add(source)
+        try:
+            _import_source(source)
+        except Exception as exc:
+            logger.error("could not load metrics from %s: %s", source, exc)
+            failures.append(
+                MetricSourceError(source=source, error=f"{type(exc).__name__}: {exc}")
+            )
+    return failures
 
 
 def get_metric(key: str) -> Metric:
-    """Return the wired metric for ``key`` or raise with the available list."""
-    normalized = (key or "").strip().lower()
+    """Return the registered metric for ``key`` or raise with the available list."""
+    normalized = _normalize_key(key)
     if normalized not in METRICS:
         raise KeyError(
-            f"unknown metric {key!r}; wired metrics: {sorted(METRICS)}"
+            f"unknown metric {key!r}; registered metrics: {sorted(METRICS)}. "
+            f"Register your own with metrics.register_metric() from a module "
+            f"named in ${_USER_METRICS_ENV} or from {_PROJECT_METRICS_FILE}."
         )
     return METRICS[normalized]
 
 
 def available() -> list[str]:
-    """Return the sorted keys of wired metrics (what the act may offer)."""
+    """Return the sorted keys of registered metrics (what the act may offer)."""
     return sorted(METRICS)

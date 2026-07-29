@@ -8,6 +8,10 @@ scipy BFGS (the same optimizer the upstream spec uses). The input-column calling
 convention is derived from the ``equation`` signature (every parameter except the
 trailing ``params``), so no per-spec coupling is needed.
 
+``metric.data_shape`` decides how the candidate is called and what the metric is
+handed (see ``_bind_inputs``). The optimizer is the same either way: what changes
+is whether the prediction has to line up row-for-row with the data.
+
 Execution runs in a forked, timeout-bounded child process (reusing the vendored
 sandbox's fork context) because the equation body is model-generated code: a
 pathological body cannot hang or crash the parent.
@@ -25,7 +29,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .metrics import Metric
+from .metrics import REGRESSION, Metric
 from .vendor.evaluator import _MP_CONTEXT
 
 logger = logging.getLogger(__name__)
@@ -42,26 +46,72 @@ class FitResult:
     value: float | None = None  # reported metric value
     params: list[float] = field(default_factory=list)
     error: str = ""
+    # why an invalid candidate was rejected: "constraint" (a hard constraint said
+    # no, whatever it scored) or "numeric" (no finite metric value was produced).
+    # Empty on a valid fit. Conflating the two hides a truncated frontier.
+    rejection_reason: str = ""
+
+
+def _first_violation(metric: Metric, y_pred, y_true, params) -> str:
+    """Name of the first hard constraint the fitted candidate fails, else ''.
+
+    A constraint that raises counts as failed: an inconclusive check cannot admit
+    a candidate.
+    """
+    for constraint in metric.hard_constraints:
+        try:
+            holds = constraint.holds(y_pred, y_true, params)
+        except Exception as exc:
+            logger.warning("constraint %r raised, rejecting: %s", constraint.name, exc)
+            return constraint.name
+        if not holds:
+            return constraint.name
+    return ""
+
+
+def _bind_inputs(metric: Metric, equation, X, y) -> tuple[list, object, str]:
+    """Bind the candidate's call arguments and the recorded data, per data shape.
+
+    Returns ``(cols, y_true, error)``; a non-empty ``error`` means the candidate
+    cannot be called against this data at all.
+    """
+    # inputs = every equation arg except the trailing `params`
+    n_inputs = len(inspect.signature(equation).parameters) - 1
+    if metric.data_shape == REGRESSION:
+        # Tabular: every declared input is a column, and the prediction has to
+        # line up row-for-row with the target.
+        if n_inputs < 1 or n_inputs > X.shape[1]:
+            return [], None, f"arity {n_inputs} vs {X.shape[1]} cols"
+        cols = [np.asarray(X[:, i], dtype=float) for i in range(n_inputs)]
+        return cols, np.asarray(y, dtype=float).reshape(-1), ""
+    # The candidate is a SIMULATOR: it returns however many events it returns, so
+    # the tabular arity rule does not apply. It gets the stimulus columns it
+    # declares (zero is legal, a free-running generator), and the recorded data
+    # goes to the metric UNTOUCHED, whatever its length: the metric owns the
+    # comparison. A declared input the stimulus cannot supply surfaces as the
+    # real TypeError from calling it, not as a tabular rule it never agreed to.
+    n_cols = min(max(n_inputs, 0), X.shape[1])
+    return [np.asarray(X[:, i], dtype=float) for i in range(n_cols)], y, ""
 
 
 def _worker(program_str, function_to_evolve, X, y, metric: Metric, max_nparams, q):
     try:
         import scipy.optimize as opt  # local: only needed in the child
 
-        namespace: dict = {}
+        # `np` is pre-bound because a candidate body is written against the numpy
+        # calling convention but need not carry its own import; a spec preface
+        # that imports numpy rebinds the same module.
+        namespace: dict = {"np": np}
         exec(program_str, namespace)  # noqa: S102 - sandboxed, model-generated body
         equation = namespace.get(function_to_evolve)
         if not callable(equation):
             q.put({"valid": False, "error": f"no callable {function_to_evolve!r}"})
             return
 
-        # input columns = every equation arg except the trailing `params`
-        n_inputs = len(inspect.signature(equation).parameters) - 1
-        if n_inputs < 1 or n_inputs > X.shape[1]:
-            q.put({"valid": False, "error": f"arity {n_inputs} vs {X.shape[1]} cols"})
+        cols, y_true, bind_error = _bind_inputs(metric, equation, X, y)
+        if bind_error:
+            q.put({"valid": False, "error": bind_error})
             return
-        cols = [np.asarray(X[:, i], dtype=float) for i in range(n_inputs)]
-        y_true = np.asarray(y, dtype=float).reshape(-1)
 
         with np.errstate(all="ignore"):
             def loss(p):
@@ -91,9 +141,21 @@ def _worker(program_str, function_to_evolve, X, y, metric: Metric, max_nparams, 
             params = np.asarray(best.x, dtype=float)
             y_pred = equation(*cols, params)
             value = float(metric.report(y_pred, y_true))
+            violated = _first_violation(metric, y_pred, y_true, params) if np.isfinite(value) else ""
 
         if not np.isfinite(value):
             q.put({"valid": False, "error": "non-finite metric value"})
+            return
+        if violated:
+            # Keep the value and the constants: a candidate the guard rejected
+            # often scored WELL, and hiding that hides why it was thrown out.
+            q.put({
+                "valid": False,
+                "rejection_reason": "constraint",
+                "error": f"rejected by hard constraint {violated!r}",
+                "value": value,
+                "params": params.tolist(),
+            })
             return
         q.put({
             "valid": True,
@@ -120,16 +182,14 @@ def evaluate_fixed(
     passed the sandbox); defensive, returns None on any failure.
     """
     try:
-        namespace: dict = {}
+        namespace: dict = {"np": np}
         exec(program_str, namespace)  # noqa: S102 - already-validated winner
         equation = namespace.get(function_to_evolve)
         if not callable(equation):
             return None
-        n_inputs = len(inspect.signature(equation).parameters) - 1
-        if n_inputs < 1 or n_inputs > X.shape[1]:
+        cols, y_true, bind_error = _bind_inputs(metric, equation, X, y)
+        if bind_error:
             return None
-        cols = [np.asarray(X[:, i], dtype=float) for i in range(n_inputs)]
-        y_true = np.asarray(y, dtype=float).reshape(-1)
         with np.errstate(all="ignore"):
             y_pred = equation(*cols, np.asarray(params, dtype=float))
             value = float(metric.report(y_pred, y_true))
@@ -151,7 +211,8 @@ def evaluate_body(
     """Fit ``program_str``'s constants under ``metric``; never raises.
 
     Returns a ``FitResult``: ``valid`` false on compile error, wrong arity,
-    non-finite result, or timeout.
+    non-finite result, or timeout (``rejection_reason`` ``numeric``), and also
+    when a hard constraint rejected the fitted candidate (``constraint``).
     """
     queue = _MP_CONTEXT.Queue()
     proc = _MP_CONTEXT.Process(
@@ -163,13 +224,25 @@ def evaluate_body(
     if proc.is_alive():
         proc.terminate()
         proc.join()
-        return FitResult(valid=False, error=f"timeout after {timeout_seconds}s")
+        return FitResult(
+            valid=False,
+            error=f"timeout after {timeout_seconds}s",
+            rejection_reason="numeric",
+        )
 
     if queue.empty():
-        return FitResult(valid=False, error="worker produced no result")
+        return FitResult(
+            valid=False, error="worker produced no result", rejection_reason="numeric"
+        )
     out = queue.get_nowait()
     if not out.get("valid"):
-        return FitResult(valid=False, error=out.get("error", "invalid"))
+        return FitResult(
+            valid=False,
+            error=out.get("error", "invalid"),
+            rejection_reason=out.get("rejection_reason", "numeric"),
+            value=out.get("value"),
+            params=out.get("params", []),
+        )
     return FitResult(
         valid=True,
         score=out["score"],

@@ -47,6 +47,24 @@ llmsr_app = typer.Typer(
 _GENERATORS = ("claude", "codex")
 _RUNS_ROOT = Path(".wheeler/llmsr/runs")
 
+# Static on purpose: a help string is frozen when the command is declared, so it
+# can only ever name the built-ins truthfully. `wheeler llmsr metrics` is the
+# listing that reflects what is actually registered right now.
+_METRIC_HELP = (
+    "scoring metric; built in: "
+    + ", ".join(sorted(metrics_mod.BUILTIN_METRICS))
+    + " (run `wheeler llmsr metrics` for every registered metric, yours included)"
+)
+
+
+def _metric_for(key: str) -> metrics_mod.Metric:
+    """Resolve a metric by name, importing the scientist's metric modules first."""
+    metrics_mod.load_user_metrics()
+    try:
+        return metrics_mod.get_metric(key)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
 
 # --------------------------------------------------------------------------- io
 
@@ -74,6 +92,22 @@ def _load_xy(data_path: str) -> tuple[np.ndarray, np.ndarray]:
     return data[:, :-1], data[:, -1].reshape(-1)
 
 
+def _load_data(data_path: str, metric: metrics_mod.Metric):
+    """Load a run's data in the shape its metric declares.
+
+    ``regression``: the tabular convention, last column is the target, one value
+    per row. ``spike_train``: the leading columns are the stimulus and the last
+    column holds the RECORDED EVENT TIMES, which in general are fewer than the
+    stimulus samples, so that column is read as padded (blank cells dropped)
+    rather than as one value per sample.
+    """
+    X, y = _load_xy(data_path)
+    if metric.data_shape == metrics_mod.REGRESSION:
+        return X, y
+    events = np.asarray(y, dtype=float)
+    return X, [float(v) for v in events[~np.isnan(events)]]
+
+
 def _read_submissions(run_dir: Path) -> list[dict]:
     path = run_dir / "submissions.jsonl"
     if not path.exists():
@@ -97,10 +131,17 @@ def _append_submission(run_dir: Path, record: dict) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+def _n_constraint_rejected(subs: list[dict]) -> int:
+    """Candidates a hard constraint threw out, whatever they scored. Reported so
+    a frontier truncated by the guard is visible rather than silent."""
+    return sum(1 for s in subs if s.get("rejection_reason") == "constraint")
+
+
 def _progress(run_dir: Path, meta: dict) -> dict:
     """Current run state: how many samples, how many valid, and the best so far."""
     subs = _read_submissions(run_dir)
     valid = [s for s in subs if s.get("valid") and s.get("score") is not None]
+    rejected = _n_constraint_rejected(subs)
     best = max(valid, key=lambda s: s["score"]) if valid else None
     created_epoch = meta.get("created_epoch")
     elapsed = round(time.time() - created_epoch, 2) if created_epoch else None
@@ -110,6 +151,8 @@ def _progress(run_dir: Path, meta: dict) -> dict:
         "generator": meta["generator"],
         "n_samples": len(subs),
         "n_valid": len(valid),
+        "n_constraint_rejected": rejected,
+        "n_failed": len(subs) - len(valid) - rejected,
         "best_value": best["value"] if best else None,
         "best_equation": best["body"].strip("\n") if best else None,
         "best_sample_order": best["sample_order"] if best else None,
@@ -170,7 +213,15 @@ def _score_body(
     """Build the program from a body, fit + score it. Returns (result, program, fn)."""
     fn, program = evaluator._sample_to_program(body, version_generated, template, fte)
     if evaluator._calls_ancestor(program, fte):
-        return fit_mod.FitResult(valid=False, error="calls an ancestor version"), program, fn
+        return (
+            fit_mod.FitResult(
+                valid=False,
+                error="calls an ancestor version",
+                rejection_reason="numeric",
+            ),
+            program,
+            fn,
+        )
     result = fit_mod.evaluate_body(
         program, fte, X, y, metric, max_nparams=max_nparams, timeout_seconds=timeout
     )
@@ -180,20 +231,41 @@ def _score_body(
 # --------------------------------------------------------------------- verbs
 
 @llmsr_app.command()
+def metrics() -> None:
+    """List every registered metric: the built-ins plus the scientist's own.
+
+    This is the truthful listing the act offers from, because it is computed at
+    call time after the user metric modules are imported.
+    """
+    failures = metrics_mod.load_user_metrics()
+    typer.echo(json.dumps({
+        "metrics": [
+            {
+                "key": key,
+                "label": m.label,
+                "data_shape": m.data_shape,
+                "lower_is_better": m.lower_is_better,
+                "builtin": key in metrics_mod.BUILTIN_METRICS,
+            }
+            for key, m in sorted(metrics_mod.METRICS.items())
+        ],
+        "sources": metrics_mod.user_metric_sources(),
+        "errors": [{"source": f.source, "error": f.error} for f in failures],
+    }, indent=2))
+
+
+@llmsr_app.command()
 def init(
     spec: Path = typer.Option(..., exists=True, readable=True, help="spec .txt (skeleton + evaluate)"),
     data: Path = typer.Option(..., exists=True, readable=True, help="training CSV (last column = target)"),
-    metric: str = typer.Option(..., help=f"scoring metric; wired: {metrics_mod.available()}"),
+    metric: str = typer.Option(..., help=_METRIC_HELP),
     generator: str = typer.Option("claude", help="candidate generator: claude | codex"),
     run_id: Optional[str] = typer.Option(None, help="explicit run id (default: random)"),
     max_nparams: Optional[int] = typer.Option(None, help="free-constant budget (default: spec MAX_NPARAMS or 10)"),
     timeout: int = typer.Option(30, help="per-fit timeout seconds"),
 ) -> None:
     """Create a run: bind spec + data + metric + generator, seed the buffer."""
-    try:
-        metric_obj = metrics_mod.get_metric(metric)
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+    metric_obj = _metric_for(metric)
     gen = generator.strip().lower()
     if gen not in _GENERATORS:
         raise typer.BadParameter(f"generator must be one of {_GENERATORS}")
@@ -226,7 +298,7 @@ def init(
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
     # seed the buffer with the spec's initial equation body (submission 0, all islands)
-    X, y = _load_xy(str(meta["data_path"]))
+    X, y = _load_data(str(meta["data_path"]), metric_obj)
     seed_body = template.get_function(fte).body
     _t0 = time.time()
     result, program, _fn = _score_body(
@@ -244,6 +316,7 @@ def init(
         "version_generated": None,
         "seed": True,
         "error": result.error,
+        "rejection_reason": result.rejection_reason,
         "fit_seconds": round(time.time() - _t0, 4),
         "at_epoch": time.time(),
     })
@@ -313,9 +386,9 @@ def submit(
     """Fit + score one candidate body and register it into the buffer."""
     run_dir = _run_dir(run)
     meta = _read_meta(run_dir)
-    metric_obj = metrics_mod.get_metric(meta["metric"])
+    metric_obj = _metric_for(meta["metric"])
     template, db, fte = _rebuild_buffer(run_dir, meta)
-    X, y = _load_xy(str(meta["data_path"]))
+    X, y = _load_data(str(meta["data_path"]), metric_obj)
 
     body = body_file.read_text()
     _t0 = time.time()
@@ -340,6 +413,7 @@ def submit(
         "version_generated": version_generated,
         "seed": False,
         "error": result.error,
+        "rejection_reason": result.rejection_reason,
         "fit_seconds": round(fit_seconds, 4),
         "at_epoch": time.time(),
     })
@@ -349,6 +423,7 @@ def submit(
         "value": result.value,
         "score": result.score,
         "error": result.error,
+        "rejection_reason": result.rejection_reason,
         "sample_order": sample_order,
     }))
 
@@ -371,6 +446,10 @@ def best(
         raise typer.BadParameter(f"select must be one of {_SELECT_MODES}")
     subs = _read_submissions(run_dir)
     valid = [s for s in subs if s.get("valid") and s.get("score") is not None]
+    # A candidate a hard constraint rejected is not in `valid`, so it can never
+    # win however well it scored. The count is reported so that truncation of the
+    # frontier is visible rather than silent.
+    rejected = _n_constraint_rejected(subs)
 
     # best.json is the FINAL result only. The full per-candidate search trail
     # (bodies, programs, params, scores) stays in submissions.jsonl in the run
@@ -390,16 +469,23 @@ def best(
             "timing": _timing(meta, subs),
             "n_samples": len(subs),
             "n_valid": 0,
+            "n_constraint_rejected": rejected,
             "error": "no valid equation was found",
         }
         (run_dir / "best.json").write_text(json.dumps(payload, indent=2))
-        typer.echo(json.dumps({"status": "failed", "n_samples": len(subs), "n_valid": 0}))
+        typer.echo(json.dumps({
+            "status": "failed",
+            "n_samples": len(subs),
+            "n_valid": 0,
+            "n_constraint_rejected": rejected,
+        }))
         raise typer.Exit(code=1)
 
     winner = _select_winner(valid, meta, mode)
     metric_key = meta["metric"]
     program = _runnable_program(winner["program"], winner["params"], metric_key,
-                                winner["value"], meta["data_path"], meta["function_to_evolve"])
+                                winner["value"], meta["data_path"], meta["function_to_evolve"],
+                                _metric_for(metric_key).data_shape)
 
     # Generalization: apply the TRAIN-fitted equation (no re-fit) to the sibling
     # in-domain / out-of-domain test sets, reporting both MSE and NMSE per split
@@ -426,6 +512,7 @@ def best(
         "timing": _timing(meta, subs),
         "n_samples": len(subs),
         "n_valid": len(valid),
+        "n_constraint_rejected": rejected,
     }
     (run_dir / "best.json").write_text(json.dumps(payload, indent=2))
     typer.echo(json.dumps({
@@ -434,12 +521,27 @@ def best(
         "value": winner["value"],
         "n_samples": len(subs),
         "n_valid": len(valid),
+        "n_constraint_rejected": rejected,
         "best_json": str(run_dir / "best.json"),
     }))
 
 
-def _runnable_program(program: str, params, metric_key: str, value, data_path: str, fte: str) -> str:
+def _runnable_program(
+    program: str, params, metric_key: str, value, data_path: str, fte: str,
+    data_shape: str = metrics_mod.REGRESSION,
+) -> str:
     """Append fitted constants + a runnable main so the .py reproduces the answer."""
+    if data_shape == metrics_mod.REGRESSION:
+        bind = f"    _n = {fte}.__code__.co_argcount - 1\n"
+        show = "    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n"
+    else:
+        # A simulator takes the stimulus columns it declares and returns however
+        # many events it returns: neither count is fixed by the table.
+        bind = f"    _n = min({fte}.__code__.co_argcount - 1, _X.shape[1])\n"
+        show = (
+            "    _ev = list(_pred)\n"
+            "    print('n_events', len(_ev), 'events[:5]', _ev[:5])\n"
+        )
     footer = (
         "\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n"
         f"FITTED_PARAMS = {list(params)!r}\n"
@@ -448,11 +550,11 @@ def _runnable_program(program: str, params, metric_key: str, value, data_path: s
         "    import numpy as _np\n"
         f"    _d = _np.genfromtxt(r{data_path!r}, delimiter=',', skip_header=1)\n"
         "    _X, _y = _d[:, :-1], _d[:, -1].reshape(-1)\n"
-        f"    _n = {fte}.__code__.co_argcount - 1\n"
-        "    _cols = [_X[:, i] for i in range(_n)]\n"
-        f"    _pred = {fte}(*_cols, _np.array(FITTED_PARAMS))\n"
-        "    print('metric', METRIC)\n"
-        "    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n"
+        + bind
+        + "    _cols = [_X[:, i] for i in range(_n)]\n"
+        + f"    _pred = {fte}(*_cols, _np.array(FITTED_PARAMS))\n"
+        + "    print('metric', METRIC)\n"
+        + show
     )
     return program + footer
 
@@ -497,19 +599,28 @@ def _equation_complexity(body: str) -> int:
 
 
 def _candidate_ood(meta: dict, cand: dict) -> float | None:
-    """Held-out out-of-domain NMSE of a candidate (train-fitted, applied to
+    """Held-out out-of-domain error of a candidate (train-fitted, applied to
     test_ood). None when no OOD set exists. This is the extrapolation signal: the
     true law generalizes here, an overfit form does not."""
     sibling = Path(str(meta["data_path"])).parent / "test_ood.csv"
     if not sibling.exists():
         return None
+    metric = _metric_for(meta["metric"])
+    # NMSE is the scale-free comparison for a regression run. For any other shape
+    # it is meaningless (it assumes a row-for-row prediction), so the run's own
+    # metric is the only one that can rank extrapolation.
+    ood_metric = (
+        metrics_mod.get_metric("nmse")
+        if metric.data_shape == metrics_mod.REGRESSION
+        else metric
+    )
     try:
-        X, y = _load_xy(str(sibling))
+        X, y = _load_data(str(sibling), metric)
     except OSError:
         return None
     return fit_mod.evaluate_fixed(
         cand["program"], meta["function_to_evolve"], X, y,
-        cand["params"], metrics_mod.get_metric("nmse"),
+        cand["params"], ood_metric,
     )
 
 
@@ -542,7 +653,9 @@ def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
 def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
     """Score the train-fitted winner on train + sibling test_id / test_ood sets.
 
-    Both MSE and NMSE per split. The LLM-SR datasets store
+    Both MSE and NMSE per split for a regression run (the paper's protocol). For
+    any other data shape those two are meaningless, so the run's own metric is
+    reported instead. The LLM-SR datasets store
     ``<problem>/{train,test_id,test_ood}.csv``, so the test splits are siblings of
     the training file. Applies the fitted constants without re-fitting.
     """
@@ -550,6 +663,10 @@ def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
     fte = meta["function_to_evolve"]
     program = winner["program"]
     params = winner["params"]
+    metric = _metric_for(meta["metric"])
+    report_keys = (
+        ("mse", "nmse") if metric.data_shape == metrics_mod.REGRESSION else (metric.key,)
+    )
     train_path = str(meta["data_path"])
     splits = {"train": train_path}
     for name, fname in (("test_id", "test_id.csv"), ("test_ood", "test_ood.csv")):
@@ -558,10 +675,10 @@ def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
             splits[name] = str(sibling)
     for split, path in splits.items():
         try:
-            X, y = _load_xy(path)
+            X, y = _load_data(path, metric)
         except OSError:
             continue
-        for mkey in ("mse", "nmse"):
+        for mkey in report_keys:
             val = fit_mod.evaluate_fixed(
                 program, fte, X, y, params, metrics_mod.get_metric(mkey)
             )
