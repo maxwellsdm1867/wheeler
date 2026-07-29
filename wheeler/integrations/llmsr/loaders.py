@@ -242,7 +242,17 @@ def get_loader(key: str) -> Loader:
 
 
 def available() -> list[str]:
-    """Return the sorted keys of registered loaders (what the act may offer)."""
+    """Return the sorted keys of registered loaders (what the act may offer).
+
+    Imports the scientist's loader modules first, for the same reason
+    `metrics.available` does: this is what an `options_from` port calls, and a
+    listing that showed only the built-in csv would make a registered loader
+    unofferable. Failures are swallowed; `load_user_loaders()` reports them.
+    """
+    try:
+        load_user_loaders()
+    except Exception:  # a listing must never raise
+        logger.debug("could not load user loaders while listing", exc_info=True)
     return sorted(LOADERS)
 
 

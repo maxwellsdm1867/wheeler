@@ -266,7 +266,17 @@ def canonical(key: str) -> str:
 
 
 def available() -> list[str]:
-    """Return the sorted keys of registered optimizers (concrete ones only)."""
+    """Return the sorted keys of registered optimizers (concrete ones only).
+
+    Imports the scientist's optimizer modules first, for the same reason
+    `metrics.available` does: this is what an `options_from` port calls, and a
+    listing that showed only the built-ins would make a registered optimizer
+    unofferable. Failures are swallowed; `load_user_optimizers()` reports them.
+    """
+    try:
+        load_user_optimizers()
+    except Exception:  # a listing must never raise
+        logger.debug("could not load user optimizers while listing", exc_info=True)
     return sorted(OPTIMIZERS)
 
 

@@ -281,5 +281,20 @@ def get_metric(key: str) -> Metric:
 
 
 def available() -> list[str]:
-    """Return the sorted keys of registered metrics (what the act may offer)."""
+    """Return the sorted keys of registered metrics (what the act may offer).
+
+    Imports the scientist's metric modules FIRST, because this is the callable
+    the `llmsr-discover` contract points its `metric` port at via `options_from`.
+    A listing that reported only the built-ins would leave a registered metric
+    unofferable by the interview, which is the exact invisibility the registry
+    exists to remove.
+
+    A failed source is swallowed here, not raised: `load_user_metrics()` is the
+    call that REPORTS failures, and one broken file must not take down the whole
+    interview.
+    """
+    try:
+        load_user_metrics()
+    except Exception:  # a listing must never raise
+        logger.debug("could not load user metrics while listing", exc_info=True)
     return sorted(METRICS)
