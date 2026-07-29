@@ -39,6 +39,7 @@ from . import loaders as loaders_mod
 from . import metrics as metrics_mod
 from . import optimizers as optimizers_mod
 from . import runs as runs_mod
+from . import transfer as transfer_mod
 from .data import _as_groups, _load_data
 from .runs import (
     _RUNS_ROOT,
@@ -580,6 +581,7 @@ def best(
             "params": [],
             "program": None,
             "metrics": {},
+            "metrics_refit": {},
             "optimizer": _optimizer_report(meta, None),
             "timing": _timing(meta, subs),
             "n_samples": len(subs),
@@ -609,13 +611,16 @@ def best(
                                 params_per_group=winner.get("params_per_group") or {},
                                 value_per_group=winner.get("per_group_value") or {})
 
-    # Generalization: apply the TRAIN-fitted equation (no re-fit) to the sibling
-    # in-domain / out-of-domain test sets, reporting both MSE and NMSE per split.
-    # This split scoring is WHEELER'S addition, not upstream's: LLM-SR ships the
-    # datasets as `<problem>/{train,test_id,test_ood}.csv`, but its own `main.py`
-    # loads only `train.csv` and nothing in the pipeline opens the test splits.
-    # The splits are theirs; scoring against them is ours.
-    metrics_out = _split_metrics(meta, winner)
+    # Generalization, asked BOTH ways on the sibling in-domain / out-of-domain
+    # test sets. `metrics` applies the winner's constants unchanged (do the
+    # CONSTANTS transfer), `metrics_refit` refits them from scratch under the same
+    # form (does the FORM transfer, which is what symbolic regression is looking
+    # for). They stay in separate labelled dicts so neither can be read as the
+    # other. This split scoring is WHEELER'S addition, not upstream's: LLM-SR
+    # ships the datasets as `<problem>/{train,test_id,test_ood}.csv`, but its own
+    # `main.py` loads only `train.csv` and nothing in the pipeline opens the test
+    # splits. The splits are theirs; scoring against them is ours.
+    metrics_out, metrics_refit = _split_metrics(meta, winner)
 
     payload = {
         "status": "completed",
@@ -644,11 +649,22 @@ def best(
         ),
         "program": program,
         "metrics": metrics_out,
+        # The same splits with the constants REFITTED. Kept apart from `metrics`
+        # rather than folded in under a suffix, because a refit number had its
+        # constants fitted on the split it reports, so it is a held-out claim
+        # about the FORM only. The graph's regime labeller reads `metrics`.
+        "metrics_refit": metrics_refit,
         "optimizer": _optimizer_report(meta, winner),
         "selection": {
             "mode": mode,
             "complexity": _equation_complexity(winner["body"]),
             "candidates": len(valid),
+            # What `--select ood` ranked on, when it ranked. Named because the
+            # quantity is a choice: fixed-theta extrapolation, under the run's own
+            # metric, never a refit (see `selection._candidate_ood`).
+            "ranked_on": (
+                f"test_ood fixed-theta {metric_key}" if mode == "ood" else f"train {metric_key}"
+            ),
         },
         "timing": _timing(meta, subs),
         "n_samples": len(subs),
@@ -666,3 +682,89 @@ def best(
         "n_constraint_rejected": rejected,
         "best_json": str(run_dir / "best.json"),
     }))
+
+
+@llmsr_app.command()
+def transfer(
+    run: str = typer.Option(..., help="run id or run dir"),
+    data: Path = typer.Option(
+        ..., exists=True, readable=True,
+        help="held-out table to transfer the discovered form onto",
+    ),
+    candidate: Optional[int] = typer.Option(
+        None,
+        help=(
+            "sample_order of an explicit candidate to transfer; default: the "
+            "winner this run's own selection rules pick"
+        ),
+    ),
+    select: str = typer.Option(
+        "fit",
+        help=(
+            "how to pick the candidate when --candidate is not given: fit | ood | "
+            "parsimony, the same rules as `best`"
+        ),
+    ),
+    group_by: Optional[str] = typer.Option(
+        None,
+        help=(
+            "column naming who each row of the TRANSFER data belongs to. Default: "
+            "the run's own --group-by. Name it here when the held-out file is "
+            "grouped and the training file was not (several held-out cells, one "
+            "training cell), so each cell refits its own constants."
+        ),
+    ),
+) -> None:
+    """Refit the discovered FORM on held-out data: an on-demand generalization test.
+
+    Reports TWO numbers side by side, labelled, because "does it generalize" is
+    two questions. The refit asks whether the FORM still fits once its constants
+    are fitted here; the fixed-theta number asks whether the source run's own
+    CONSTANTS transfer. A law that governs a new cell with different constants is
+    the same law, so the first is what symbolic regression is looking for, and
+    until this verb existed only the second was ever measured.
+
+    Writes ``transfer.json`` into the run dir. Never appends to
+    ``submissions.jsonl`` and never registers into the experience buffer: a
+    number that fed back into the search would stop being a holdout.
+
+    Exits non-zero when the candidate fails to refit on any group, matching the
+    strictness of the per-group fit itself: one blind group invalidates the
+    candidate rather than being quietly dropped from an average.
+    """
+    run_dir = _run_dir(run)
+    meta = _read_meta(run_dir)
+    mode = select.strip().lower()
+    if mode not in _SELECT_MODES:
+        raise typer.BadParameter(f"select must be one of {_SELECT_MODES}")
+
+    subs = _read_submissions(run_dir)
+    n_valid = len([s for s in subs if s.get("valid") and s.get("score") is not None])
+    try:
+        cand, selected_by = transfer_mod.resolve_candidate(subs, meta, mode, candidate)
+    except LookupError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    payload = transfer_mod.transfer_report(
+        meta, cand, data,
+        group_by if group_by is not None else str(meta.get("group_by", "") or ""),
+        selected_by=selected_by,
+        n_valid=n_valid,
+        run_dir=run_dir,
+    )
+    out_path = run_dir / transfer_mod.TRANSFER_FILE
+    out_path.write_text(json.dumps(payload, indent=2))
+
+    typer.echo(json.dumps({
+        "status": payload["status"],
+        "metric": payload["metric"],
+        "groups": payload["groups"],
+        "refit_value": payload["refit"]["value"],
+        "fixed_theta_value": payload["fixed_theta"]["value"],
+        "sample_order": payload["candidate"]["sample_order"],
+        "selected_by": selected_by,
+        "error": payload["refit"]["error"],
+        "transfer_json": str(out_path),
+    }))
+    if payload["status"] != "completed":
+        raise typer.Exit(code=1)

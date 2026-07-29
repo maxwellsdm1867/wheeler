@@ -22,6 +22,10 @@ wheeler llmsr best   --run R [--select fit|ood|parsimony]  -> best.json
 wheeler integrate ingest llmsr-discover best.json ...      -> the graph
 ```
 
+Plus one verb outside that loop: `transfer --run R --data HELD_OUT.csv` refits the
+discovered FORM on data the search never saw and writes `transfer.json`. It reads
+the run and writes nothing back into it (see the holdout invariant below).
+
 State persists by replaying `submissions.jsonl` through the vendored
 `register_program` on every call. No pickles, no daemon, no resident process.
 
@@ -56,9 +60,13 @@ State persists by replaying `submissions.jsonl` through the vendored
 - `selection.py` -- picking the winner and reporting how it generalizes.
   `fit` (lowest training error), `ood` (best extrapolation), `parsimony`
   (simplest form among those that fit comparably, Occam). Also `_split_metrics`
-  (train / test_id / test_ood scoring, WHEELER'S addition, see below) and
-  `_runnable_program` (the footer that turns the winner into a `.py` that
-  reproduces the answer).
+  (train / test_id / test_ood scoring, WHEELER'S addition, see below),
+  `_source_theta` (which source constants may legitimately be applied to which
+  group) and `_runnable_program` (the footer that turns the winner into a `.py`
+  that reproduces the answer).
+- `transfer.py` -- the on-demand generalization test behind `wheeler llmsr
+  transfer`. Same two quantities as `_split_metrics`, against any file rather
+  than the sibling splits, written to `transfer.json`.
 - `discover.py` -- the marshal-out ingest (`parse_discover` + `ingest_discover`).
   Reads `best.json`, writes the graph via `execute_tool` (lazy, function-local,
   the only graph writer here), reusing `asta/_marshal.py`'s shared helpers.
@@ -83,8 +91,9 @@ State persists by replaying `submissions.jsonl` through the vendored
 - **Held-out ID/OOD scoring is WHEELER'S, not the paper's protocol.** The LLM-SR
   datasets ship `<problem>/{train,test_id,test_ood}.csv`, but upstream's own
   `main.py` loads only `train.csv` and nothing in its pipeline opens the test
-  splits. Wheeler applies the train-fitted constants to the siblings when they
-  exist. Do not re-describe this as upstream's protocol.
+  splits. Wheeler scores the siblings when they exist, both by applying the
+  train-fitted constants and by refitting them. Do not re-describe this as
+  upstream's protocol.
 - **One FORM, one theta per group.** A run may declare `--group-by COL`, and then
   every group refits its OWN constants under the SAME form. This is not a
   convenience: symbolic regression is looking for the FORM, and a single pooled
@@ -113,12 +122,54 @@ State persists by replaying `submissions.jsonl` through the vendored
   dataset makes that number a training number however good it looks, and the
   graph must never present it as a generalization claim. Where the regime cannot
   be determined, say `unknown` rather than picking the flattering answer.
+- **"Does it generalize" is TWO questions, and they travel separately.** Applying
+  the winner's constants unchanged to new data asks whether the CONSTANTS
+  transfer. Refitting them from scratch under the same form asks whether the FORM
+  transfers, which is the question symbolic regression is actually asking: a law
+  that governs a new cell with different constants is the SAME law. `best.json`
+  carries them in two dicts, `metrics` (fixed theta, the historic keys, unchanged
+  number for number on an ungrouped run) and `metrics_refit`, and `transfer.json`
+  carries them as two blocks each stamped with its `claim` (`constants` or
+  `form`). Neither is ever derived from the other and neither stands in for the
+  other. The refit's regime is `held_out` FOR THE FORM ONLY, and its
+  `regime_reason` says so, because a refit fitted its constants on the split it
+  reports. Only `metrics` reaches the graph's regime labeller today; giving the
+  refit numbers their own Findings needs `discover.py`, which is why they do not
+  ride into `metrics` under a suffix where that labeller would call them clean
+  held-out numbers.
+- **A fixed-theta number is reported only where a source vector BELONGS.**
+  `selection._source_theta` allows exactly two cases: the source fitted this same
+  group (use its own constants) or the source has a single constant vector (what
+  an ungrouped run's constants are). A grouped source with no vector for this
+  group reports nothing, and `_strict_mean` then withholds the aggregate rather
+  than averaging the groups that happened to work. Substituting another group's
+  theta would answer a different question dressed as this one. This policy is
+  what the old "held-out scoring is skipped for a grouped run" deferral was
+  waiting on, and `_split_metrics` no longer returns `{}` for a grouped run.
+- **`--select ood` ranks on FIXED THETA, under the run's own metric.** Fixed theta
+  by design and not by omission: refitting on the OOD split before ranking would
+  reward flexibility, which is precisely what OOD selection exists to punish (a
+  nine-term polynomial refitted on the extrapolation region fits it; the signal
+  is that its TRAIN-fitted constants diverge there). The metric is the run's,
+  always: it used to be hardcoded to NMSE for any regression run, which ranked a
+  run whose declared objective was a registered custom metric on a quantity it
+  never chose. Ranking goes through `metric.score_from_value`, so a metric
+  declaring `lower_is_better=False` is not ranked backwards. `best.json` names
+  the ranked quantity in `selection.ranked_on`.
 - **A grouped run's scalar is a MEAN, and travels labelled as one.** A grouped
-  run reports no scalar in `metrics` (held-out scoring is skipped for it, since
-  applying one group's constants to a held-out file needs a policy for absent
-  groups, deferred with the rest of the Objective work). The ingest derives the
-  mean over `value_per_group`, which is exactly what `fit.py` aggregates to, and
-  stamps `custom_value_is_group_mean`.
+  run reports no `train` entry in `metrics`: its train answer is the per-group
+  value TABLE (`value_per_group`), and the ingest derives the mean over it, which
+  is exactly what `fit.py` aggregates to, and stamps
+  `custom_value_is_group_mean`. Writing a pooled `<metric>_train` beside it would
+  put an unlabelled duplicate where the labelled one is. Held-out splits DO
+  appear for a grouped run, per group, both ways.
+- **A holdout that fed back into the search would stop being a holdout.**
+  `transfer` reads `submissions.jsonl` and never appends to it, and never
+  registers into the experience buffer. It writes `transfer.json`, refreshes
+  S0b's `progress.json` while the refit runs, and refreshes `heartbeat.json`
+  once at the end (only so `status` does not report a phantom `fitting` forever
+  after: `_phase` reads an un-overtaken progress ping as a fit in flight). It
+  never writes `best.json`.
 - **One Execution per RUN, with a truthful status.** Service tag
   `llmsr:discover`, `session_id` = the run id, so a re-ingest reuses it. The
   external-call failsafe applies unchanged: a non-`completed` `best.json`, or a
