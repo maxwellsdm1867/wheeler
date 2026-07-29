@@ -71,10 +71,20 @@ original Apache-2.0 headers.
 ## What the adapter changes, and why
 
 Per Apache-2.0 section 4(b), the changed files carry a notice saying so. Every
-change below is mechanical or environmental: what it took to run their pipeline
-under Claude Code without an API key. None of it touches the science. The search
-algorithm, the island model, the scoring, and the program-manipulation logic are
-upstream's, unaltered.
+change to the vendored files below is mechanical or environmental: what it took
+to run their pipeline under Claude Code without an API key. The search
+algorithm, the island model, and the program-manipulation logic are upstream's,
+unaltered.
+
+**The scoring seam is a substitution, and it is the one place the adapter does
+not follow upstream's method.** A spec declares an `@evaluate.run` function that
+fits a candidate's free constants and returns its score, and upstream's loop
+calls it. The driver does not: it scores every candidate through Wheeler's own
+fit/score seam (`../fit.py` + `../metrics.py`). That is what makes the metric
+pluggable, the fitted constants recoverable for `best.json`, and per-group
+refitting possible. The spec's `@evaluate.run` is parsed for its name and then
+never called. Upstream's scoring code is here unaltered; the driver simply does
+not take that path. See the table row below.
 
 **The two modules the adapter replaces.** Upstream `llmsr/` has eight; this
 directory carries six. `sampler.py` and `pipeline.py` are the two the plug-in
@@ -100,6 +110,8 @@ Anything upstream does that depends on those two is out of scope here by design.
 | `evaluator.py` | sandboxed fits run under an explicit `fork` multiprocessing context. Upstream targeted Linux, where fork is the default; on macOS with Python 3.12+ the default is `spawn`, which re-imports the interpreter per sample (roughly 14x slower) and cannot re-import a `__main__` launched from stdin. Falls back to the platform default where fork is unavailable |
 | `profile.py` | dropped the TensorBoard writer (and with it the `torch` dependency), keeping the stdlib JSON sample logging. The public surface (`register_function`) is unchanged so the vendored buffer and evaluator pass a profiler unmodified |
 | `buffer.py` | `scipy.special.softmax` replaced with the equivalent numpy expression, verified bit-identical. scipy is an optional Wheeler extra, and a module-top-level import of it made the whole CLI unavailable on installs without it (Wheeler issue #88) |
+| `evaluator.py` (call path, not an edit to the file) | the spec's `@evaluate.run` is NOT called. Upstream's loop hands a candidate to the spec's own `evaluate`, which fits its constants and returns the score; the driver instead scores through Wheeler's `../fit.py` + `../metrics.py` seam, so the metric is pluggable, the constants are recoverable, and each group can refit its own. `_sample_to_program` and `_calls_ancestor` (building and guarding the candidate program) are upstream's, used unchanged. PLANNED: Wheeler issue #107 slice S4 makes the spec's `@evaluate.run` selectable, so the seam becomes one the scientist chooses rather than one the driver imposes; until it lands, the substitution is unconditional |
 
-None of these touch the method. If you want to understand or extend LLM-SR
-itself, read upstream's code, not this adapter.
+Apart from the scoring seam called out above, none of these touch the method. If
+you want to understand or extend LLM-SR itself, read upstream's code, not this
+adapter.

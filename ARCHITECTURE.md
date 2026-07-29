@@ -380,7 +380,7 @@ Every MCP call goes through the `@_logged` decorator in `mcp_shared.py`. The dec
 
 ## Service Integrations (v0.9.12)
 
-`wheeler/integrations/` turns external research tools into graph-native, provenance-tracked nodes. It is NOT an agent framework or a workflow engine: Claude Code is the orchestrator, the external tool owns its own auth and retries, and the integration is only the plumbing that shapes the request from the graph and writes the result back. AllenAI Asta (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) is instance #1; the layer is provider-agnostic.
+`wheeler/integrations/` turns external research tools into graph-native, provenance-tracked nodes. It is NOT an agent framework or a workflow engine: Claude Code is the orchestrator, the external tool owns its own auth and retries, and the integration is only the plumbing that shapes the request from the graph and writes the result back. AllenAI Asta (Paper Finder, Semantic Scholar, Theorizer, Literature Reports) is instance #1; the layer is provider-agnostic. LLM-SR equation discovery is instance #2 and the one that stretches the shape, because there is no service to call at all (see "LLM-SR" below).
 
 ### The sandwich
 
@@ -428,6 +428,37 @@ A declarative manifest, read by `integrations/registry.py`, so commands never ha
 ### The wheeler-service-creator skill
 
 `.claude/skills/wheeler-service-creator/` scaffolds a new adapter from a contract: the registry entry, the marshal-out ingest skeleton (with the failsafe baked in), the marshal-in act (with the semantic-wiring + record-failure steps), and a parse-unit + live-Neo4j test stub. Its Step 1 reads the codebase and asks the scientist the genuine design decisions (deliverable shape, node mapping, USED inputs, naming) rather than scaffolding blind. A bundled deterministic AUDITOR (`assets/audit_service.py`) is the mechanical half of the adversarial review: it checks data safety (the e2e teardown deletes only by per-run `e2e_tag`, never by service/corpus_id; run-unique corpus_ids), two-sided provenance + the Paper reference-entity rule, the failsafe, and the house conventions, exiting non-zero on any blocker. Adding a service is then: run the creator -> fill the parser -> audit -> review -> land. Literature Reports was the first adapter built this way (dogfooding the skill surfaced the v0.9.12 refinements).
+
+### LLM-SR equation discovery (`integrations/llmsr/`)
+
+The second integration, and the one that bends the sandwich: **there is no external service to call.** LLM-SR (Shojaee et al., ICLR 2025, building on DeepMind's FunSearch) is an evolutionary search that asks an LLM for candidate equation bodies, and Wheeler has no API key. So instead of a transport, the loop is INVERTED into four CLI verbs that Claude Code steps, and the sub-agent that proposes candidates IS the sampler:
+
+```
+wheeler llmsr init   --spec S --data D --metric M [--group-by COL]  -> run dir
+wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
+   ... the act generates a candidate body with a sub-agent ...
+wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
+wheeler llmsr best   --run R [--select fit|ood|parsimony]           -> best.json
+wheeler integrate ingest llmsr-discover best.json --link-to Q --used D  -> graph
+```
+
+Run state lives on disk under `.wheeler/llmsr/runs/<run_id>` (`meta.json`, an append-only `submissions.jsonl`, `heartbeat.json` after a fit, `progress.json` during one) and is reconstructed by replaying the log through the vendored `register_program`. No pickles, no daemon.
+
+**What is vendored and what is not.** `integrations/llmsr/vendor/` carries six upstream modules (buffer, code_manipulation, config, evaluator, evaluator_accelerate, profile) under their MIT / Apache-2.0 licences, with only mechanical changes (package-relative imports, Python 3.12 AST renames, dropped `absl` / `torch`, a macOS `fork` context, a numpy softmax so `scipy` stays optional). Upstream's `sampler.py` and `pipeline.py` are substituted, and so is one thing that is easy to misdescribe: **the scoring seam.** A spec declares an `@evaluate.run` that fits the candidate's constants and returns its score; the driver parses its name and never calls it, scoring through `fit.py` + `metrics.py` instead. That is what makes the metric pluggable and the fitted constants recoverable. The search algorithm, the island model, and the program-manipulation logic are upstream's, unaltered. Held-out `test_id` / `test_ood` scoring is likewise Wheeler's: upstream ships those CSVs but its `main.py` opens only `train.csv`. PLANNED (issue #107, slice S4): make the spec's `@evaluate.run` selectable, so the scoring substitution becomes a choice.
+
+**Per-group refit.** A run may declare `--group-by COL`, and then every group refits its OWN constants under the SAME form. Symbolic regression is looking for the FORM, and a single pooled fit charges the form for variation that belongs to the PARAMETERS, so a correct law governing 40 cells with 40 constant sets gets rejected. The per-group score VECTOR is the primary object and is what reaches the vendored buffer (`_reduce_score` ranks islands, `_get_signature` clusters forms by their per-group profile). The consequence that reaches the graph: a grouped run has NO single parameter vector, so its answer is a TABLE. `best.json` carries `params_per_group` / `value_per_group`, the generated `.py` emits `FITTED_PARAMS_PER_GROUP` and filters rows by group, and the Script node carries `custom_params_per_group` + the group coverage.
+
+**What lands in the graph.** One Execution per run (kind `equation-discovery`, service `llmsr:discover`, `session_id` = the run id), with the standard two-sided provenance and the standard external-call failsafe (a `best.json` that is not `completed`, or a completed one with no parseable equation, records a FAILED Execution and fabricates nothing). Its outputs:
+
+| Node | What it is |
+|------|------------|
+| Script | the full discovered program written to `.wheeler/llmsr/discoveries/<run>.py`, hashed via `ensure_artifact`, carrying the equation and the fitted constants (a vector, or the per-group table) |
+| Finding | one per scored split, each carrying `custom_regime` |
+| Document | `best.json` itself, in the durable raw store |
+
+**Regime labelling is the scientific guardrail here.** Every metric Finding records whether the search optimized against the data behind its number: `scored`, `held_out`, or `unknown`. Two things count as optimizing against data, fitting the constants (train) and choosing the winner (`--select ood` ranks candidates by their `test_ood` error, making that split a selection set). Forty rounds scored on a dataset makes that number a training number however good it looks, and the graph must never present it as a generalization claim. Where the artifact does not record enough to tell (no selection mode, an unplaceable metric key), the Finding says `unknown` rather than guessing. Multi-dataset scoring and a `transfer` verb are issue #107 slices S2/S3.
+
+See `wheeler/integrations/llmsr/CLAUDE.md` for the per-module reference, `wheeler/integrations/llmsr/vendor/NOTICE.md` for full attribution, and `docs/llmsr-objective-formulation.md` for the objective design.
 
 ---
 
