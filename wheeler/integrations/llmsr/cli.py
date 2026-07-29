@@ -47,6 +47,24 @@ llmsr_app = typer.Typer(
 _GENERATORS = ("claude", "codex")
 _RUNS_ROOT = Path(".wheeler/llmsr/runs")
 
+# Static on purpose: a help string is frozen when the command is declared, so it
+# can only ever name the built-ins truthfully. `wheeler llmsr metrics` is the
+# listing that reflects what is actually registered right now.
+_METRIC_HELP = (
+    "scoring metric; built in: "
+    + ", ".join(sorted(metrics_mod.BUILTIN_METRICS))
+    + " (run `wheeler llmsr metrics` for every registered metric, yours included)"
+)
+
+
+def _metric_for(key: str) -> metrics_mod.Metric:
+    """Resolve a metric by name, importing the scientist's metric modules first."""
+    metrics_mod.load_user_metrics()
+    try:
+        return metrics_mod.get_metric(key)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
 
 # --------------------------------------------------------------------------- io
 
@@ -180,20 +198,41 @@ def _score_body(
 # --------------------------------------------------------------------- verbs
 
 @llmsr_app.command()
+def metrics() -> None:
+    """List every registered metric: the built-ins plus the scientist's own.
+
+    This is the truthful listing the act offers from, because it is computed at
+    call time after the user metric modules are imported.
+    """
+    failures = metrics_mod.load_user_metrics()
+    typer.echo(json.dumps({
+        "metrics": [
+            {
+                "key": key,
+                "label": m.label,
+                "data_shape": m.data_shape,
+                "lower_is_better": m.lower_is_better,
+                "builtin": key in metrics_mod.BUILTIN_METRICS,
+            }
+            for key, m in sorted(metrics_mod.METRICS.items())
+        ],
+        "sources": metrics_mod.user_metric_sources(),
+        "errors": [{"source": f.source, "error": f.error} for f in failures],
+    }, indent=2))
+
+
+@llmsr_app.command()
 def init(
     spec: Path = typer.Option(..., exists=True, readable=True, help="spec .txt (skeleton + evaluate)"),
     data: Path = typer.Option(..., exists=True, readable=True, help="training CSV (last column = target)"),
-    metric: str = typer.Option(..., help=f"scoring metric; wired: {metrics_mod.available()}"),
+    metric: str = typer.Option(..., help=_METRIC_HELP),
     generator: str = typer.Option("claude", help="candidate generator: claude | codex"),
     run_id: Optional[str] = typer.Option(None, help="explicit run id (default: random)"),
     max_nparams: Optional[int] = typer.Option(None, help="free-constant budget (default: spec MAX_NPARAMS or 10)"),
     timeout: int = typer.Option(30, help="per-fit timeout seconds"),
 ) -> None:
     """Create a run: bind spec + data + metric + generator, seed the buffer."""
-    try:
-        metric_obj = metrics_mod.get_metric(metric)
-    except KeyError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+    metric_obj = _metric_for(metric)
     gen = generator.strip().lower()
     if gen not in _GENERATORS:
         raise typer.BadParameter(f"generator must be one of {_GENERATORS}")
@@ -313,7 +352,7 @@ def submit(
     """Fit + score one candidate body and register it into the buffer."""
     run_dir = _run_dir(run)
     meta = _read_meta(run_dir)
-    metric_obj = metrics_mod.get_metric(meta["metric"])
+    metric_obj = _metric_for(meta["metric"])
     template, db, fte = _rebuild_buffer(run_dir, meta)
     X, y = _load_xy(str(meta["data_path"]))
 
