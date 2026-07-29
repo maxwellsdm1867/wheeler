@@ -1,0 +1,66 @@
+"""Find the ONE mathematical function skeleton that represents the growth rate of
+several bacterial strains, given population density, substrate concentration,
+temperature and pH.
+
+Every strain is assumed to obey the same law and to differ only in its constants:
+a different maximum rate, a different temperature optimum. So the form is shared
+and the constants are not. Prefer the simplest mechanistic form that fits every
+strain once each is allowed its own constants. The table carries about 1%
+measurement error, so a form that drives the error much below that is fitting the
+noise rather than the biology.
+"""
+
+# A Wheeler-written starting point for the LLM-SR bacterial-growth problem family
+# (Shojaee et al., ICLR 2025). It is not a copy of their specification file, and
+# the demo table beside it is synthetic. See ../README.md.
+#
+# Pair it with:  wheeler llmsr init --spec <this> --data bactgrow_strains_demo.csv
+#                                   --metric nmse --group-by strain
+# The `strain` column NAMES the group and is not an input to the equation: the
+# driver removes it and refits every strain's own constants under the one form.
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = 10
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit THIS strain's own constants and report them.
+
+    There is no loop over strains here on purpose: the driver calls this once per
+    (dataset, group) unit with that unit's rows, so the per-strain refit is its
+    job. The score is then a vector, one entry per strain, and a form is ranked on
+    the whole vector.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    b, s, temp, pH = inputs[:, 0], inputs[:, 1], inputs[:, 2], inputs[:, 3]
+
+    def loss(params):
+        return float(np.mean((equation(b, s, temp, pH, params) - outputs) ** 2))
+
+    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """Mathematical function for the bacterial growth rate, shared across strains.
+
+    Args:
+        b: population density of the bacterial species.
+        s: substrate concentration available to it.
+        temp: temperature in degrees Celsius.
+        pH: pH of the medium.
+        params: Array of numeric constants or parameters to be optimized, refitted
+            per strain.
+
+    Return:
+        A numpy array of the growth rate, one value per row.
+    """
+    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]

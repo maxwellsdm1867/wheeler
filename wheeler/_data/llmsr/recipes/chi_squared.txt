@@ -1,0 +1,69 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+# The column holding each point's own standard deviation. It is read off the
+# input array here and is NOT an argument to the equation: it describes the
+# MEASUREMENT, not the law.
+SIGMA_COLUMN = '%%SIGMA_COLUMN%%'
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Chi-squared: every residual divided by that point's own measurement error.
+
+    This is the recipe that cannot be written as a metric. Wheeler's metric
+    contract is a two-argument scorer, ``(y_pred, y_true) -> float``, and the
+    per-point sigma is a third array: there is nowhere to pass it. Through this
+    door the spec reads it straight off ``data['inputs']``, which is why the door
+    exists. Needs --use-spec-evaluate.
+
+    Reported as the mean squared pull, not the reduced chi-squared: divide by
+    (n - k) yourself if you want the reduced statistic, where k is the number of
+    constants the form actually uses (which the search varies candidate to
+    candidate, so it is not a constant of the run).
+
+    The assumption is doing real work here. Sigma must be an honest, independent,
+    correctly scaled standard deviation. A sigma column that is off by a constant
+    factor rescales the score without changing the ranking; a sigma column that
+    is WRONG POINT BY POINT silently reweights the fit toward whichever points
+    were mislabelled as precise.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+    y = np.asarray(outputs, dtype=float).reshape(-1)
+    # A non-positive sigma is not a measurement error. Dropped rather than
+    # clipped, so a bad column shows up as fewer points and not as a huge weight.
+    sigma_values = np.asarray(%%SIGMA%%, dtype=float).reshape(-1)
+    usable = np.isfinite(sigma_values) & (sigma_values > 0.0)
+    if not np.any(usable):
+        return None
+
+    def chi_squared(params):
+        pred = np.asarray(equation(%%EQ_ARGS%%, params), dtype=float).reshape(-1)
+        pull = (pred[usable] - y[usable]) / sigma_values[usable]
+        return float(np.mean(pull ** 2))
+
+    result = minimize(chi_squared, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%.
+    """
+    return %%EQ_RETURN%%

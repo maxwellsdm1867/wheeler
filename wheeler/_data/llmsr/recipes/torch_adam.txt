@@ -1,0 +1,71 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+# The optimizer's own knobs, owned by the SPEC. Upstream's torch specification
+# runs 10,000 steps; 500 is a starting point that finishes in seconds.
+STEPS = 500
+LEARNING_RATE = 0.05
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit the constants with autograd, the widest thing this door admits.
+
+    Upstream's own specification_oscillator2_torch.txt defines a torch module, an
+    Adam optimizer and a gradient loop INSIDE the spec, and the unmodified LLM-SR
+    package runs it, because nothing ever looks inside evaluate. Wheeler's
+    default door cannot: it calls equation(*cols, params) under its own numpy
+    convention and fits the constants itself. --use-spec-evaluate is what lets
+    this run.
+
+    The constraint that catches people: THE GENERATED BODY MUST BE
+    DIFFERENTIABLE IN TORCH. The search proposes ordinary numpy code, and
+    np.exp(tensor) raises rather than returning a tensor, so such a candidate is
+    recorded invalid with that error rather than scored. Say so in the docstring
+    above, which is what the generator reads: ask for torch operations
+    (torch.exp, torch.sin) or for arithmetic that works either way.
+
+    Wants torch installed. Without it the candidate is invalid with an
+    ImportError, never a fabricated score. numpy_adam is the same shape with a
+    finite-difference gradient and no dependency.
+    """
+    import torch
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+    cols = [torch.as_tensor(np.asarray(c, dtype=float)) for c in (%%EQ_ARGS%%,)]
+    y = torch.as_tensor(np.asarray(outputs, dtype=float).reshape(-1))
+
+    theta = torch.ones(MAX_NPARAMS, dtype=torch.float64, requires_grad=True)
+    optimizer = torch.optim.Adam([theta], lr=LEARNING_RATE)
+    for _step in range(STEPS):
+        optimizer.zero_grad()
+        loss = torch.mean((equation(*cols, theta) - y) ** 2)
+        loss.backward()
+        optimizer.step()
+
+    final = float(loss.detach())
+    if not np.isfinite(final):
+        return None
+    return {
+        'score': -final,
+        'params': [float(p) for p in theta.detach().numpy()],
+    }
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%. Use operations that work on torch tensors.
+    """
+    return %%EQ_RETURN%%

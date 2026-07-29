@@ -1,0 +1,58 @@
+"""Find the mathematical function skeleton that represents the growth rate of a
+bacterial population, given its population density, the concentration of the
+substrate it is growing in, the temperature, and the pH.
+
+The rate is expected to rise with available substrate and saturate, and to fall
+away from an optimum temperature and an optimum pH. Prefer the simplest
+mechanistic form that fits: the table carries about 1% measurement error, so a
+form that drives the error much below that is fitting the noise.
+"""
+
+# A Wheeler-written starting point for the LLM-SR bacterial-growth problem family
+# (Shojaee et al., ICLR 2025). It is not a copy of their specification file, and
+# the demo table beside it is synthetic. See ../README.md.
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = 10
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit the free constants on the rows handed in, and report the fit.
+
+    Wheeler's DEFAULT door never calls this: it scores through its own fit seam
+    under the metric the run declared. It is written out so the spec runs
+    unmodified under upstream LLM-SR, and so `--use-spec-evaluate` measures the
+    same quantity through the other door.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    b, s, temp, pH = inputs[:, 0], inputs[:, 1], inputs[:, 2], inputs[:, 3]
+
+    def loss(params):
+        return float(np.mean((equation(b, s, temp, pH, params) - outputs) ** 2))
+
+    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """Mathematical function for the bacterial growth rate.
+
+    Args:
+        b: population density of the bacterial species.
+        s: substrate concentration available to it.
+        temp: temperature in degrees Celsius.
+        pH: pH of the medium.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of the growth rate, one value per row.
+    """
+    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]

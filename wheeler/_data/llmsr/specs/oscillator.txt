@@ -1,0 +1,57 @@
+"""Find the mathematical function skeleton that represents the acceleration of a
+damped nonlinear oscillator, given the time, the position and the velocity.
+
+A restoring term that grows with displacement and a damping term that opposes
+motion are both expected. The system is autonomous, so a correct form need not
+use every input it is handed: dropping one is a result, not an omission. The
+table carries a small additive measurement error, so a form that drives the error
+to zero is fitting the noise.
+"""
+
+# A Wheeler-written starting point for the LLM-SR oscillator problem family
+# (Shojaee et al., ICLR 2025). It is not a copy of their specification file, and
+# the demo table beside it is synthetic. See ../README.md.
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = 10
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit the free constants on the rows handed in, and report the fit.
+
+    Wheeler's DEFAULT door never calls this: it scores through its own fit seam
+    under the metric the run declared. It is written out so the spec runs
+    unmodified under upstream LLM-SR, and so `--use-spec-evaluate` measures the
+    same quantity through the other door.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    t, x, v = inputs[:, 0], inputs[:, 1], inputs[:, 2]
+
+    def loss(params):
+        return float(np.mean((equation(t, x, v, params) - outputs) ** 2))
+
+    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(t: np.ndarray, x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """Mathematical function for the acceleration of the oscillator.
+
+    Args:
+        t: time at which the sample was recorded.
+        x: position of the oscillator.
+        v: velocity of the oscillator.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of the acceleration, one value per row.
+    """
+    return params[0] * x + params[1] * v + params[2] * t + params[3]

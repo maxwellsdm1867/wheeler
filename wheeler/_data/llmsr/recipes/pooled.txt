@@ -1,0 +1,50 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+
+@evaluate.run
+def evaluate(data: dict):
+    """Fit ONE constant vector on every row this call is handed, report -MSE.
+
+    This is upstream LLM-SR's own shape, and it is exactly what Wheeler's DEFAULT
+    door ignores: without --use-spec-evaluate the driver never calls this
+    function, and scores through its own fit seam instead. It is written out
+    anyway for two reasons. The spec stays portable to upstream unmodified, and
+    the two doors then measure the same quantity, so turning the flag on changes
+    who computed the number and not what the number means.
+
+    Returns upstream's bare float, which is the MAXIMIZE-ME score. The fitted
+    constants are computed and thrown away here, as every upstream spec does. The
+    refit_per_group recipe shows the dict contract that keeps them.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+
+    def loss(params):
+        return float(np.mean((equation(%%EQ_ARGS%%, params) - outputs) ** 2))
+
+    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')
+    discarded_params = result.x  # upstream computes this and drops it
+    if not np.isfinite(result.fun):
+        return None
+    return -float(result.fun)
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%.
+    """
+    return %%EQ_RETURN%%

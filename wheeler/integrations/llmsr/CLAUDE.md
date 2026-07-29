@@ -14,6 +14,7 @@ orchestration loop cannot be used as shipped. Instead the evolutionary loop is
 INVERTED into four CLI verbs, and Claude Code steps it:
 
 ```
+wheeler llmsr scaffold-spec --data D [--recipe R]  -> a filled spec + its command
 wheeler llmsr init   --spec S --data D... --metric M [--group-by COL]
                      [--seed-from NAME] [--score-on NAMES]
                      [--use-spec-evaluate]                           -> run dir
@@ -27,6 +28,10 @@ wheeler integrate ingest llmsr-discover best.json ...      -> the graph
 Plus one verb outside that loop: `transfer --run R --data HELD_OUT.csv` refits the
 discovered FORM on data the search never saw and writes `transfer.json`. It reads
 the run and writes nothing back into it (see the holdout invariant below).
+
+Plus four listings, all computed at call time so they are truthful about open
+registries: `metrics`, `loaders`, `optimizers`, `recipes`, and `specs` for what
+ships.
 
 State persists by replaying `submissions.jsonl` through the vendored
 `register_program` on every call. No pickles, no daemon, no resident process.
@@ -80,6 +85,13 @@ State persists by replaying `submissions.jsonl` through the vendored
 - `transfer.py` -- the on-demand generalization test behind `wheeler llmsr
   transfer`. Same two quantities as `_split_metrics`, against any file rather
   than the sibling splits, written to `transfer.json`.
+- `recipes.py` -- the worked `evaluate` recipes and the scaffolder behind
+  `wheeler llmsr scaffold-spec`. A recipe is a spec TEMPLATE under
+  `wheeler/_data/llmsr/recipes/<key>.txt` plus the flag combination it pairs with
+  (`Recipe.cli`, the ONE source the cookbook quotes, the scaffolder prints and
+  the test runs). Also the registry of bundled specs and their synthetic demo
+  tables. The registry here is deliberately CLOSED, unlike metrics / loaders /
+  optimizers: extending a recipe means editing the spec it just wrote.
 - `discover.py` -- the marshal-out ingest (`parse_discover` + `ingest_discover`).
   Reads `best.json`, writes the graph via `execute_tool` (lazy, function-local,
   the only graph writer here), reusing `asta/_marshal.py`'s shared helpers.
@@ -291,15 +303,65 @@ State persists by replaying `submissions.jsonl` through the vendored
   skips; ingest is never aborted by a missing piece.
 - **Sequential writes only.** Never `asyncio.gather`: Neo4j forbids concurrent
   queries in one session.
-- **The metric port reads the registry.** The `llmsr-discover` contract in
-  `services.default.yaml` points its `metric` port at
-  `wheeler.integrations.llmsr.metrics:available` via `options_from`, so a
-  registered metric is offerable by the interview instead of being invisible
-  behind a hardcoded `[nmse, mse]`. Resolution is lazy and falls back to the
-  static list on any failure. CAVEAT: `available()` reports what is registered in
-  the CALLING process and does not itself import the userland sources, so a
-  caller that has not run `load_user_metrics()` still sees only the built-ins.
-  Making `available()` load first is the natural follow-up (issue #107).
+- **A recipe is EXECUTED, never merely described.** Every entry in `recipes.py`
+  points at a real template that `tests/integrations/llmsr/test_recipes.py` fills
+  against a synthetic table and runs through the CLI, under the flag combination
+  the recipe itself declares. Three recipes (`pooled`, `refit_per_group`,
+  `transfer`) are flag combinations on the DEFAULT door, where the spec's
+  `evaluate` is never called, so each is ALSO run once with
+  `--use-spec-evaluate`: otherwise the text of three shipped files would never
+  execute. `torch_adam` skips here (torch is absent) and `numpy_adam` carries the
+  same claim in pure numpy, with a 400-step-versus-1-step comparison proving the
+  loop ran rather than the return value being faked. Do not add a recipe without
+  its file and its row in that walk, and do not let `torch_adam` become the only
+  cover for the door's width. `docs/llmsr-spec-cookbook.md` quotes
+  `Recipe.answers` / `assumes` / `costs` verbatim and a test pins the quotation,
+  because a document that shows a different flag combination from the one the
+  test runs is worse than no document.
+- **The column names a scaffolded spec binds cannot shadow the recipe.** Every
+  recipe binds locals (`y`, `pred`, `result`) partway through `evaluate`, and a
+  CSV column with one of those names would be unpacked first and then overwritten,
+  so the call to `equation` would pass the target where an input belongs and the
+  fit would be scored against the wrong array WITHOUT raising. So the reserved set
+  is read off the template itself (`recipes._bound_names` fills it with stand-ins,
+  parses it, and collects every assignment, loop target, function name, argument
+  and import) rather than hand-kept. A hand-kept list falls behind the first
+  recipe that gains a local; this cannot.
+- **`wheeler/_data/llmsr/` is authored, not mirrored.** `installer.sync_data()`
+  mirrors `.claude/commands/wh/` and `.claude/agents/` into `_data/`; the llmsr
+  tree has no upstream copy and is edited in place. It ships because hatchling
+  includes every file inside a listed package, which is why no package-data glob
+  exists for it, and `test_bundled.py` pins the one thing that could silently
+  break it: the tree staying under `wheeler/`.
+- **The demo tables are SYNTHETIC and every surface says so.** They are generated
+  by `_data/llmsr/data/make_demo_data.py` from laws written in that file, not
+  taken from the LLM-SR paper, whose datasets are not vendored here. The generator
+  uses no RNG (an additive recurrence for the sample positions, an integer LCG for
+  the noise) so the tables regenerate reproducibly, and the test reruns it and
+  compares. Never describe them as the paper's data, and never drop the
+  `synthetic_demo_data` flag from the `specs` listing.
+- **Every port reads its registry, and the dataset port takes SEVERAL.** The
+  `llmsr-discover` contract in `services.default.yaml` points `metric`, `recipe`,
+  `loader` and `optimizer` at their registries through `options_from`, so a
+  scientist's own metric or loader is offerable by the interview instead of being
+  invisible behind a hardcoded list. Resolution is lazy and falls back to the
+  static `options` on any failure, because an EMPTY choice port would make every
+  answer invalid. Two details that are choices, not accidents: the optimizer port
+  asks `optimizers:choices` and not `available()`, because `auto` is the default
+  and must therefore be a legal explicit answer while not being a concrete
+  registered optimizer; and `available()` imports the userland sources itself
+  (S7), so a caller that has not run `load_user_metrics()` still sees a
+  registered metric.
+- **The dataset port is `multi`, and a single-valued port refuses a list.**
+  `--data` is repeatable and the unit of fitting is a (dataset, group) pair, so a
+  contract declaring one `dataset` could not interview for the run this engine is
+  built around. `invocation.InputPort` therefore carries `multi`, and the
+  `datasets` / `score_on` ports set it, with `seed_from` and `score_on` carrying
+  `from: datasets` so the interview knows their legal answers come from what was
+  just named. The other half is load-bearing: a list handed to a single-valued
+  port is reported INVALID rather than truncated, because quietly keeping one of
+  several answers is exactly how a multi-input run ends up answering a smaller
+  question than the scientist asked. An empty list is not an answer either.
 
 ## Conventions
 

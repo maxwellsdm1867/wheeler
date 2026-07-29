@@ -1,0 +1,63 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Score the SHAPE of the prediction, with a gain and an offset removed first.
+
+    For every candidate constant vector, the best-fitting scale and baseline are
+    solved for in closed form (a two-column least squares) and subtracted before
+    the error is measured. A form that is right up to an unknown gain therefore
+    scores as if it were right, which is what you want when the recording is in
+    arbitrary units: an uncalibrated amplifier, a fluorescence signal, a
+    normalized response.
+
+    Needs --use-spec-evaluate. Wheeler's default door scores through its own
+    metric, and a metric sees only (y_pred, y_true); it could compute this, but
+    then EVERY run using that metric would regress out a gain, which is a
+    property of the recording and not of the objective.
+
+    What you give up: the constants come back UNIDENTIFIABLE. The free gain and
+    params[0] are confounded by construction, so the reported numbers are one
+    member of a family, not the fitted scale of the law. Read the FORM here, not
+    the constants. The score also cannot distinguish y from 3*y + 5, so a
+    baseline that carries real signal is destroyed by this recipe rather than
+    accounted for.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+    y = np.asarray(outputs, dtype=float).reshape(-1)
+
+    def shape_error(params):
+        pred = np.asarray(equation(%%EQ_ARGS%%, params), dtype=float).reshape(-1)
+        if not np.all(np.isfinite(pred)):
+            return np.inf
+        design = np.column_stack([pred, np.ones_like(pred)])
+        gain_offset = np.linalg.lstsq(design, y, rcond=None)[0]
+        return float(np.mean((design @ gain_offset - y) ** 2))
+
+    result = minimize(shape_error, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%, up to an arbitrary gain and offset.
+    """
+    return %%EQ_RETURN%%
