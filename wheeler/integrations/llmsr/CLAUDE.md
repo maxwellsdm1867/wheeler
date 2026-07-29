@@ -22,12 +22,18 @@ wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
    ... the ACT generates a candidate body with a sub-agent (no API key) ...
 wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
 wheeler llmsr best   --run R [--select fit|ood|parsimony]  -> best.json
-wheeler integrate ingest llmsr-discover best.json ...      -> the graph
+wheeler integrate ingest discover best.json ...            -> the graph
 ```
 
 Plus one verb outside that loop: `transfer --run R --data HELD_OUT.csv` refits the
 discovered FORM on data the search never saw and writes `transfer.json`. It reads
-the run and writes nothing back into it (see the holdout invariant below).
+the run and writes nothing back into it (see the holdout invariant below). Its
+result reaches the graph through its own marshal-out and its own act:
+
+```
+wheeler llmsr transfer --run R --data HELD_OUT.csv [--group-by COL]  -> transfer.json
+wheeler integrate ingest transfer transfer.json ...                  -> the graph
+```
 
 Plus four listings, all computed at call time so they are truthful about open
 registries: `metrics`, `loaders`, `optimizers`, `recipes`, and `specs` for what
@@ -89,7 +95,18 @@ State persists by replaying `submissions.jsonl` through the vendored
   (one file, several groups) and the flat one.
 - `transfer.py` -- the on-demand generalization test behind `wheeler llmsr
   transfer`. Same two quantities as `_split_metrics`, against any file rather
-  than the sibling splits, written to `transfer.json`.
+  than the sibling splits, written to `transfer.json`. It carries the source
+  run's `scored_metric` block (from `runs.scored_metric_report`, present only on
+  the spec door) so the ingest can say whose machinery produced its numbers.
+- `transfer_ingest.py` -- the marshal-out ingest for `transfer.json`
+  (`parse_transfer` + `ingest_transfer`), the answer to "does the FORM
+  generalize" landing in the graph. Same layer as `discover.py` (config +
+  `asta/_marshal.py`, `execute_tool` lazy and function-local) and it imports
+  discover's REGIME / CLAIM / MEASURED_BY vocabulary and `_finding_id` rather
+  than restating them. Deliberately NOT inside `transfer.py`: that module
+  imports the scoring machinery (`fit`, `runs`, `selection`) and says in its own
+  header that it duplicates the regime literals because it is not the graph
+  writer. Writes TWO Findings per transfer, never one (see the invariant below).
 - `recipes.py` -- the worked `evaluate` recipes and the scaffolder behind
   `wheeler llmsr scaffold-spec`. A recipe is a spec TEMPLATE under
   `wheeler/_data/llmsr/recipes/<key>.txt` plus the flag combination it pairs with
@@ -98,10 +115,12 @@ State persists by replaying `submissions.jsonl` through the vendored
   tables. The registry here is deliberately CLOSED, unlike metrics / loaders /
   optimizers: extending a recipe means editing the spec it just wrote.
 - `discover.py` -- the marshal-out ingest (`parse_discover` + `ingest_discover`).
-  Reads `best.json`, writes the graph via `execute_tool` (lazy, function-local,
-  the only graph writer here), reusing `asta/_marshal.py`'s shared helpers. It
+  Reads `best.json`, writes the graph via `execute_tool` (lazy, function-local;
+  one of the two graph writers here, the other being `transfer_ingest.py`),
+  reusing `asta/_marshal.py`'s shared helpers. It
   owns the REGIME / CLAIM / MEASURED_BY vocabulary every number in the graph is
-  labelled with (`transfer.py` and `cli.py::_dataset_report` read it from here),
+  labelled with (`transfer.py`, `transfer_ingest.py` and
+  `cli.py::_dataset_report` read it from here),
   the per-unit constant table, and the input Datasets.
 - `vendor/` -- six modules adapted from upstream (`buffer.py`,
   `code_manipulation.py`, `config.py`, `evaluator.py`, `evaluator_accelerate.py`,
@@ -188,6 +207,18 @@ State persists by replaying `submissions.jsonl` through the vendored
   Where the spec returned no constants at all (upstream's bare float),
   `selection._no_constants_footer` writes the score and refuses to emit a runner,
   because there is genuinely nothing to run.
+  **`transfer` is on the same side of that seam and now says so.** It refits
+  through `fit.py` under the DECLARED metric whatever scored the search, so on a
+  spec-door run BOTH of its numbers are a second opinion. `transfer.json`
+  therefore carries the same `scored_metric` block `best.json` does (from
+  `runs.scored_metric_report`, present exactly when the two names differ, absent
+  on a default-door run so that file is what it always was), and
+  `transfer_ingest.py` reads it: both Findings get `custom_measured_by=wheeler-fit`
+  plus `_SECOND_OPINION_NOTE`, and `custom_source_scored_metric` names what the
+  SEARCH was scored on so nobody compares a transfer number against a `best.json`
+  headline that is a different quantity. The block is never reconstructed here,
+  for the same reason `discover._scored_metric` reads it off the artifact: only
+  the RUN knows how it was scored.
 - **Which constant SHAPE a run has is a property of its UNITS, not of its
   constants.** `discover._is_multi` / `_is_grouped` ask `value_per_key` /
   `value_per_group` as well as the constant tables, because upstream's bare-float
@@ -342,6 +373,23 @@ State persists by replaying `submissions.jsonl` through the vendored
   vocabularies are equal. This is why the refit numbers never rode into `metrics`
   under a suffix: `_split_key` would have mislabelled them, and the regime
   labeller would have called them clean held-out numbers.
+  **They travel separately all the way into the graph.** `transfer_ingest.py`
+  writes TWO Findings per transfer and they must never collapse into one: the
+  refit one carries `custom_claim=form` and regime `held_out_form`, the
+  fixed-theta one `custom_claim=constants` and regime `held_out` proper. The ids
+  differ by construction (`discover._finding_id` keys on the CLAIM), and the
+  split token names the TRANSFER (`transfer:<digest>`) rather than one of the
+  run's sibling splits, so neither can collide with the other nor with a Finding
+  from the discovery run it came from. Both numbers and the labelled
+  `refit_over_fixed` ratio ride on BOTH nodes, because a reader who lands on one
+  Finding and sees a single number takes it for the answer to both questions,
+  which is the failure this verb exists to prevent. A WITHHELD fixed-theta number
+  still gets its Finding, carrying the `error` and `source_per_group` that say
+  which group had no legitimate source vector: leaving it out would make an
+  unanswerable question look like one nobody asked. No verdict is written
+  anywhere, by the module or by the act: whether the two numbers are close enough
+  is the scientist's call, exactly as `transfer._comparison` already declines to
+  rank them.
 - **A fixed-theta number is reported only where a source vector BELONGS.**
   `selection._source_theta` allows exactly two cases: the source fitted this same
   group (use its own constants) or the source has a single constant vector (what
@@ -385,8 +433,43 @@ State persists by replaying `submissions.jsonl` through the vendored
   on path via `ensure_artifact`, Finding on a deterministic id (which now
   includes the SPLIT and the CLAIM, with `train` and `constants` as the historic
   defaults so existing ids still resolve), every edge through `link_once`.
-- **The parser never raises.** A shape-drifted or partial `best.json` counts and
-  skips; ingest is never aborted by a missing piece.
+- **One Execution per TRANSFER, keyed on WHAT it measured.** Service tag
+  `llmsr:transfer`, and the `session_id` is `<run id>:<table stem>:<digest>`
+  where the digest hashes the run, the recorded `data_path` and the candidate's
+  `sample_order`. The run id ALONE would not do: one discovery can be transferred
+  onto many tables and each is a separate measurement, so keying on the run would
+  make the second transfer silently overwrite the first's numbers under its
+  Finding ids, which is worse than a duplicate because it reads as an update. The
+  recorded path is used EXACTLY as the artifact wrote it and is never re-resolved
+  at ingest, else the same file would key differently from two directories. A
+  different service tag from `llmsr:discover` means a transfer can never collide
+  with its own discovery's Execution. The external-call failsafe applies
+  unchanged: a non-`completed` `transfer.json` records a FAILED Execution plus
+  the raw artifact and fabricates NO Finding, even though a failed transfer's
+  fixed-theta side often carries real per-group numbers. Promoting those would
+  answer the CONSTANTS question while silently dropping the FORM one the transfer
+  was actually run for.
+- **A transfer USED three things, and the Script edge is the one that matters.**
+  `Execution -[USED]->` the table the form was transferred ONTO (carrying the
+  regime the RUN assigned it), the source run's own training table (whose fitted
+  constants the fixed-theta number applies, labelled `scored`), and the SOURCE
+  RUN'S DISCOVERED SCRIPT at `.wheeler/llmsr/discoveries/<run_id>.py`. The third
+  is what makes the chain from a transfer number back to the discovery that
+  produced the form a real edge rather than a shared `custom_run_id`, and it
+  resolves to the same node `discover.py` registered because `ensure_artifact`
+  dedupes on path. It exists only once the DISCOVERY has been ingested, so a
+  transfer ingested first is an ordinary order of operations: the edge is counted
+  and logged, never fatal, and the act tells the scientist to ingest the
+  discovery first. All three are INPUTS, so none is ever in `produced_ids` and
+  none is `WAS_GENERATED_BY` the transfer, on the same rule that keeps
+  reference-entity Papers off that edge.
+- **The parser never raises.** A shape-drifted or partial `best.json` or
+  `transfer.json` counts and skips; ingest is never aborted by a missing piece.
+  A regime label neither module recognizes reports `unknown` with the reason
+  rather than being coerced into the flattering answer, and a refit block
+  labelled plain `held_out` is REPAIRED through `discover._refit_regime` on the
+  way in (a no-op on anything `transfer.py` wrote, since it applies the same
+  rule before writing).
 - **Sequential writes only.** Never `asyncio.gather`: Neo4j forbids concurrent
   queries in one session.
 - **A recipe is EXECUTED, never merely described.** Every entry in `recipes.py`
@@ -446,6 +529,16 @@ State persists by replaying `submissions.jsonl` through the vendored
   under that same name, the .py's number must BE it. The .py is the durable half
   of a discovery, so a wrong label there outlives the run dir, the terminal and
   the conversation.
+- **`llmsr-transfer` is a SECOND contract, not a flag on the first.** A
+  generalization test is its own run with its own inputs, its own truthful
+  status and its own answer, so it gets its own contract, its own act
+  (`/wh:llmsr-transfer`), its own service tag and its own Execution. Its
+  `dataset` port is SINGLE-valued, unlike `llmsr-discover`'s: `transfer --data`
+  takes one table, and a `multi` port would interview for a call the verb
+  cannot make. It declares no `options_from` because nothing on it is backed by
+  an open registry: the metric, loader and optimizer are the SOURCE RUN'S and
+  are read off its `meta.json`, since a transfer fitted differently from the
+  search that produced the form is not comparable with it.
 - **Every port reads its registry, and the dataset port takes SEVERAL.** The
   `llmsr-discover` contract in `services.default.yaml` points `metric`, `recipe`,
   `loader` and `optimizer` at their registries through `options_from`, so a
@@ -472,9 +565,14 @@ State persists by replaying `submissions.jsonl` through the vendored
 ## Conventions
 
 - `from __future__ import annotations`; `logging.getLogger(__name__)`; async only
-  where graph I/O happens (`discover.py`).
-- `execute_tool` is imported lazily, function-local, in `discover.py` only. Same
-  rule as the Asta adapters and `validation/ledger.py`.
+  where graph I/O happens (`discover.py`, `transfer_ingest.py`).
+- `execute_tool` is imported lazily, function-local, in `discover.py` and
+  `transfer_ingest.py` only. Same rule as the Asta adapters and
+  `validation/ledger.py`. Those two are the only graph writers here, and
+  `transfer_ingest.py` imports its labelling vocabulary and its Finding-id
+  scheme FROM `discover.py` rather than restating them: two modules writing
+  metric Findings under two spellings of "held out" is exactly what the labels
+  exist to prevent.
 - Add no LLM-provider SDK, and never an API key path. Generation is the act's job.
 - Never use em dashes. Use colons, commas, periods, parentheses.
 - Tests live in `tests/integrations/llmsr/`, whose `conftest.py` gives every test

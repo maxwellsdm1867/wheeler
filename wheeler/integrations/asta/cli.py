@@ -34,6 +34,7 @@ _INGESTERS = {
     "scholar-qa",
     "literature-report",
     "discover",
+    "transfer",
     "assistant",
     "asta-assistant",
     "research-assistant",
@@ -58,6 +59,10 @@ _FAILURE_META = {
     "scholar-qa": ("literature-report", "asta:scholar-qa"),
     "literature-report": ("literature-report", "asta:scholar-qa"),
     "discover": ("equation-discovery", "llmsr:discover"),
+    # A generalization test is its OWN run with its own inputs and its own
+    # answer, so a failed one is its own failed Execution and never a footnote
+    # on the discovery it came from.
+    "transfer": ("equation-transfer", "llmsr:transfer"),
     "assistant": ("research-assistant", "asta:assistant"),
     "asta-assistant": ("research-assistant", "asta:assistant"),
     "research-assistant": ("research-assistant", "asta:assistant"),
@@ -221,9 +226,11 @@ def ingest(
     """Marshal an external-tool artifact into the Wheeler knowledge graph."""
     tool_key = tool.strip().lower()
     if tool_key not in _INGESTERS:
+        # The full set, computed rather than restated: a hardcoded list falls
+        # behind the first tool that lands and then names a shorter surface than
+        # the one that exists.
         typer.echo(
-            f"Unknown tool '{tool}'. Supported: paper_finder, theorizer, "
-            "semantic_scholar (alias s2), scholar_qa (alias literature-report).",
+            f"Unknown tool '{tool}'. Supported: {', '.join(sorted(_INGESTERS))}.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -337,6 +344,18 @@ def ingest(
 
         report = asyncio.run(
             ingest_discover(
+                doc,
+                link_to=link_to,
+                config=config,
+                artifact_path=str(artifact),
+                used_inputs=used_inputs,
+            )
+        )
+    elif tool_key == "transfer":
+        from wheeler.integrations.llmsr.transfer_ingest import ingest_transfer
+
+        report = asyncio.run(
+            ingest_transfer(
                 doc,
                 link_to=link_to,
                 config=config,

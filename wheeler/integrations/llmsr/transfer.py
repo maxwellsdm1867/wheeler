@@ -277,6 +277,16 @@ def transfer_report(
             "restarts": knobs["restarts"],
             "seed": knobs["seed"],
         },
+        # What the SOURCE SEARCH's own numbers are in, present exactly when that
+        # is not the declared metric, which is the spec door. Both numbers above
+        # were computed HERE by `fit.py` under the DECLARED metric, so on that
+        # door they are a second opinion measured by different machinery than
+        # the search used, and a reader who did not know that would compare them
+        # against a `best.json` headline that is a different quantity. The block
+        # is absent on a default-door run, which is the file this verb has
+        # always written. `runs.scored_metric_report` is the ONE place that
+        # question is answered; it is never reconstructed here.
+        **runs_mod.scored_metric_report(meta),
         "written": _now(),
     }
     payload["comparison"] = _comparison(
@@ -358,5 +368,8 @@ def _failed(
             "regime": regime, "regime_reason": reason, "error": error,
         },
         "comparison": _comparison(None, None, str(meta.get("metric", ""))),
+        # Present only on the spec door, exactly as in the completed payload, so
+        # the two shapes do not diverge and the ingest reads one field.
+        **runs_mod.scored_metric_report(meta),
         "written": _now(),
     }

@@ -166,6 +166,14 @@ Report BOTH numbers it returns, labelled, and do not let either stand in for the
 
 A null `fixed_theta_value` is not a failure: it is withheld when no source constant vector legitimately belongs to that group, rather than borrowing another group's.
 
+Then ingest it, so the generalization answer lands in the graph rather than only in the run dir:
+
+```
+wheeler integrate ingest transfer <run_dir>/transfer.json --link-to <Q- or PL- id> --used <D- held-out dataset id>
+```
+
+That writes TWO Findings (regime `held_out_form` for the refit, `held_out` for the fixed-theta), one transfer Execution, and `transfer.json` as its raw Document. `/wh:llmsr-transfer` is the full act for this, including the choice of which table is genuinely held out; use it when the generalization test is the task rather than a coda to this one. **Ingest THIS run first**: the transfer's `USED` edge to the discovered Script only lands once the Script exists.
+
 ## Ingest
 
 ```
