@@ -109,29 +109,43 @@ def _multidata_footer(
     metric_key: str,
     value,
     group_by: str,
+    fte: str,
+    data_shape: str = metrics_mod.REGRESSION,
 ) -> str:
-    """The footer for a MULTI-DATASET run: the constants, and NO runner.
+    """The footer for a MULTI-DATASET run: the constants, and a runner that loops.
 
-    Both branches below address ONE file. The flat one applies a single parameter
-    vector to ``data_path``; the grouped one filters that file's rows by a group
-    column. A multi-dataset run has neither a single vector nor a single file: its
-    units are (dataset, group) pairs spanning several tables, so the flat branch
-    would write ``FITTED_PARAMS = []`` and raise, and the grouped branch would
-    match keys like ``A:c01`` against one file's cell labels and report zero rows
-    for every group WITHOUT failing.
+    Neither other footer can address this shape. The flat one applies a single
+    parameter vector to one ``data_path``; the grouped one filters that one file's
+    rows by a group column. A multi-dataset run has neither a single vector nor a
+    single file: its units are (dataset, group) pairs spanning several tables, so
+    the flat branch would write ``FITTED_PARAMS = []`` and raise, and the grouped
+    branch would match keys like ``A:c01`` against one file's cell labels and
+    report zero rows for every group WITHOUT failing.
 
-    The second of those is the reason this exists. A silent wrong answer is worse
-    than no answer, and it is the exact outcome the per-group protocol was built
-    to prevent. So this refuses to advertise a runner it cannot write correctly,
-    and emits the constants alone. They are the answer; the loop over files is
-    convenience, and writing it properly is issue #107 slice S8.
+    That second failure is what this footer is written against. It loops the
+    SCORED datasets, and the groups within each one, and applies each unit's OWN
+    constants to that unit's OWN rows, so the key that names a fit and the rows
+    that fit it can never come apart. The row filter and the group-column
+    exclusion mirror ``_grouped_footer``, which mirrors ``data.py::_load_xy``.
 
-    The refusal is LOUD rather than absent. Emitting no ``__main__`` at all would
-    make ``python best.py`` exit 0 printing nothing, and an exit 0 reads as
-    success: the scientist would have to notice the absence of output and then go
-    looking for a comment to explain it. So the block below states the limitation
-    and exits non-zero. Nothing here can be mistaken for a result, which is the
-    same standard the rest of this file is held to.
+    Two mismatches are possible once the file on disk and the run's key set can
+    disagree, and BOTH are reported and both exit non-zero:
+
+    ``missing``
+        a unit in the file that the run has no constants for (the table gained a
+        group after the search ran). Applying a neighbouring group's theta would
+        answer a different question dressed as this one.
+    ``unused``
+        a key in the table that no row in any file matched (the file lost a group,
+        or was replaced). The number in ``METRIC`` then describes rows this run
+        can no longer show you.
+
+    Silence on either would be the exact outcome the per-group protocol exists to
+    prevent: a plausible-looking printout computed over the wrong rows.
+
+    HELD-OUT datasets are listed and deliberately NOT run: the search fitted no
+    constants on them, so there is nothing to apply. Refitting the form on one is
+    ``wheeler llmsr transfer``, a separate act with its own provenance.
     """
     entries = [e for e in report.get("entries", []) if isinstance(e, dict)]
     scored = [e for e in entries if e.get("regime") == "scored"]
@@ -145,32 +159,87 @@ def _multidata_footer(
             value_per_key[str(key)] = float(val)
     scored_paths = {str(e.get("name", "")): str(e.get("path", "")) for e in scored}
     held_out_paths = {str(e.get("name", "")): str(e.get("path", "")) for e in held_out}
+    if data_shape == metrics_mod.REGRESSION:
+        bind = f"            _n = {fte}.__code__.co_argcount - 1\n"
+        show = (
+            "                  'prediction[:5]',\n"
+            "                  _np.asarray(_pred).reshape(-1)[:5])\n"
+        )
+    else:
+        # A simulator takes the stimulus columns it declares and returns however
+        # many events it returns: neither count is fixed by the table.
+        bind = (
+            f"            _n = min({fte}.__code__.co_argcount - 1, _gX.shape[1])\n"
+        )
+        show = "                  'n_events', len(list(_pred)))\n"
     return (
         "\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n"
         "# MULTI-DATASET run: this one shared form was refitted, with its OWN\n"
-        "# constants, on every dataset the search scored. There is no single\n"
-        "# parameter vector and no single input file, so this file carries the\n"
-        "# constants but deliberately emits NO __main__ runner: a re-runner that\n"
-        "# loops datasets (and groups within them) is issue #107 slice S8, and\n"
-        "# one that quietly reported zero rows would be worse than none.\n"
-        "# Keys below are 'dataset' or 'dataset:group'. The labelled breakdown,\n"
-        "# including which datasets were only declared, is best.json['datasets'].\n"
+        "# constants, on every unit the search scored. A unit is a (dataset,\n"
+        "# group) pair, so there is no single parameter vector and no single\n"
+        "# input file. Keys below are 'dataset' or 'dataset:group', and the\n"
+        "# runner walks them: each unit's rows are fitted by that unit's own\n"
+        "# constants, never by a neighbour's. The labelled breakdown, including\n"
+        "# which datasets were only declared, is best.json['datasets'].\n"
+        "# HELD-OUT datasets are listed but NOT run: the search fitted no\n"
+        "# constants on them, so there is nothing here to apply to them.\n"
         f"SCORED_DATASETS = {scored_paths!r}\n"
         f"HELD_OUT_DATASETS = {held_out_paths!r}\n"
-        + (f"GROUP_BY = {group_by!r}\n" if group_by else "")
-        + f"FITTED_PARAMS_PER_KEY = {params_per_key!r}\n"
+        f"GROUP_BY = {group_by!r}\n"
+        f"FITTED_PARAMS_PER_KEY = {params_per_key!r}\n"
         f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
         f"'per_key': {value_per_key!r}}}\n\n"
         "if __name__ == '__main__':\n"
-        "    raise SystemExit(\n"
-        "        'This is a MULTI-DATASET discovery: one form, refitted with its own\\n'\n"
-        "        'constants on each of ' + repr(sorted(SCORED_DATASETS)) + '.\\n'\n"
-        "        'The constants are above in FITTED_PARAMS_PER_KEY, keyed by dataset\\n'\n"
-        "        \"(or 'dataset:group'). No runner is emitted because applying one\\n\"\n"
-        "        'vector to one file would misreport this run, so it exits non-zero\\n'\n"
-        "        'rather than print something that looks like a result.\\n'\n"
-        "        'A loop over datasets is issue #107 slice S8.'\n"
-        "    )\n"
+        "    import numpy as _np\n"
+        "    print('metric', METRIC)\n"
+        "    _missing, _unused = [], set(FITTED_PARAMS_PER_KEY)\n"
+        "    for _name in sorted(SCORED_DATASETS):\n"
+        "        _path = SCORED_DATASETS[_name]\n"
+        "        with open(_path) as _fh:\n"
+        "            _header = [_c.strip() for _c in _fh.readline().strip().split(',')]\n"
+        "        _d = _np.genfromtxt(_path, delimiter=',', skip_header=1)\n"
+        "        if _d.ndim == 1:\n"
+        "            _d = _d.reshape(1, -1)\n"
+        "        if GROUP_BY and GROUP_BY in _header:\n"
+        "            _gi = _header.index(GROUP_BY)\n"
+        "            _labels = [str(_v) for _v in _np.atleast_1d(_np.genfromtxt(\n"
+        "                _path, delimiter=',', skip_header=1, usecols=[_gi],\n"
+        "                dtype=str)).tolist()]\n"
+        "            _keep = [_i for _i in range(_d.shape[1] - 1) if _i != _gi]\n"
+        "            _units = [(_g, _np.asarray([_v == _g for _v in _labels]))\n"
+        "                      for _g in sorted(set(_labels))]\n"
+        "        else:\n"
+        "            _keep = list(range(_d.shape[1] - 1))\n"
+        "            _units = [('', _np.ones(_d.shape[0], dtype=bool))]\n"
+        "        _X = _d[:, _keep]\n"
+        "        for _g, _mask in _units:\n"
+        "            _key = _name + ':' + _g if _g else _name\n"
+        "            if _key not in FITTED_PARAMS_PER_KEY:\n"
+        "                _missing.append(_key)\n"
+        "                print('dataset', _name, 'group', _g or '-', 'key', _key,\n"
+        "                      'n_rows', int(_mask.sum()), 'NO CONSTANTS')\n"
+        "                continue\n"
+        "            _unused.discard(_key)\n"
+        "            _gX = _X[_mask]\n"
+        + bind
+        + f"            _pred = {fte}(*[_gX[:, _i] for _i in range(_n)],\n"
+        "                          _np.array(FITTED_PARAMS_PER_KEY[_key]))\n"
+        "            print('dataset', _name, 'group', _g or '-', 'key', _key,\n"
+        "                  'n_rows', int(_mask.sum()),\n"
+        + show
+        + "    for _name in sorted(HELD_OUT_DATASETS):\n"
+        "        print('dataset', _name, 'HELD OUT: the search fitted no constants\\n'\n"
+        "              '  here, so there are none to apply. `wheeler llmsr transfer\\n'\n"
+        "              '  --run <run> --data <file>` refits the form on it.')\n"
+        "    if _missing or _unused:\n"
+        "        raise SystemExit(\n"
+        "            'This run and the files on disk no longer describe the same units.\\n'\n"
+        "            'units in the data with no constants here: ' + repr(sorted(_missing)) + '\\n'\n"
+        "            'constants here matched by no row: ' + repr(sorted(_unused)) + '\\n'\n"
+        "            'Nothing was guessed: a unit with no constants of its own was\\n'\n"
+        "            'skipped rather than fitted with a neighbour\\'s. Re-run the\\n'\n"
+        "            'search against the current files, or restore the ones it scored.'\n"
+        "        )\n"
     )
 
 
@@ -245,7 +314,7 @@ def _runnable_program(
         return program + _no_constants_footer(metric_key, value, value_per_group)
     if dataset_report:
         return program + _multidata_footer(
-            dataset_report, metric_key, value, group_by
+            dataset_report, metric_key, value, group_by, fte, data_shape
         )
     if group_by and params_per_group:
         return program + _grouped_footer(
