@@ -75,14 +75,19 @@ State persists by replaying `submissions.jsonl` through the vendored
   (simplest form among those that fit comparably, Occam). Also `_split_metrics`
   (train / test_id / test_ood scoring, WHEELER'S addition, see below),
   `_source_theta` (which source constants may legitimately be applied to which
-  group) and `_runnable_program` (the footer that turns the winner into a `.py`
-  that reproduces the answer).
+  group) and `_runnable_program`, which dispatches to one of four footers by the
+  shape of the answer: `_no_constants_footer` (a bare-float spec-evaluate winner,
+  nothing to run), `_multidata_footer` (keys spanning files), `_grouped_footer`
+  (one file, several groups) and the flat one.
 - `transfer.py` -- the on-demand generalization test behind `wheeler llmsr
   transfer`. Same two quantities as `_split_metrics`, against any file rather
   than the sibling splits, written to `transfer.json`.
 - `discover.py` -- the marshal-out ingest (`parse_discover` + `ingest_discover`).
   Reads `best.json`, writes the graph via `execute_tool` (lazy, function-local,
-  the only graph writer here), reusing `asta/_marshal.py`'s shared helpers.
+  the only graph writer here), reusing `asta/_marshal.py`'s shared helpers. It
+  owns the REGIME / CLAIM / MEASURED_BY vocabulary every number in the graph is
+  labelled with (`transfer.py` and `cli.py::_dataset_report` read it from here),
+  the per-unit constant table, and the input Datasets.
 - `vendor/` -- six modules adapted from upstream (`buffer.py`,
   `code_manipulation.py`, `config.py`, `evaluator.py`, `evaluator_accelerate.py`,
   `profile.py`) plus both licences and `NOTICE.md`. **Do not fork this code.**
@@ -134,11 +139,16 @@ State persists by replaying `submissions.jsonl` through the vendored
   `transfer.py`) still runs through `fit.py`, under the run's DECLARED metric, so
   under `--use-spec-evaluate` those numbers are a second opinion computed by
   different machinery than the search used, not the run's own objective measured
-  again. `best.json` says which door scored the run in `optimizer.scored_by`, so
-  the two can be told apart; teaching the marshal-out to label them is issue #107
-  slice S8. Where the spec returned no constants at all (upstream's bare float),
+  again. `best.json` says which door scored the run in `optimizer.scored_by`, and
+  the marshal-out reads it: every Finding carries `custom_measured_by`
+  (`wheeler-fit` or `spec-evaluate`), and one measured by machinery OTHER than
+  what scored the search also carries `custom_measurement_note` saying so, which
+  the description repeats. The per-unit value vector is the exception: the spec's
+  own `evaluate` produced it, so a mean derived from it is the run's own
+  objective and is labelled `spec-evaluate` with no caveat. Where the spec
+  returned no constants at all (upstream's bare float),
   `selection._no_constants_footer` writes the score and refuses to emit a runner,
-  on the same rule as `_multidata_footer`.
+  because there is genuinely nothing to run.
 - **Held-out ID/OOD scoring is WHEELER'S, not the paper's protocol.** The LLM-SR
   datasets ship `<problem>/{train,test_id,test_ood}.csv`, but upstream's own
   `main.py` loads only `train.csv` and nothing in its pipeline opens the test
@@ -193,42 +203,78 @@ State persists by replaying `submissions.jsonl` through the vendored
   which is a separate act with its own provenance (`wheeler llmsr transfer`), not
   a footnote on this one. The block is ABSENT on a single-default-dataset run, so
   existing readers see the file they always saw.
-- **A multi-file run REFUSES to advertise a runner it cannot write.** Both of
-  `selection.py`'s footers address ONE file: the flat one applies a single
-  parameter vector to `data_path`, the grouped one filters that file's rows by a
-  group column. Neither can address a run whose score keys span several tables.
-  The flat branch would write `FITTED_PARAMS = []` and raise; the grouped branch
+- **A multi-file run gets a runner that ADDRESSES its units, or none at all.**
+  The other two footers address ONE file: the flat one applies a single parameter
+  vector to `data_path`, the grouped one filters that file's rows by a group
+  column. Neither can address a run whose score keys span several tables. The
+  flat branch would write `FITTED_PARAMS = []` and raise; the grouped branch
   would match keys like `A:c01` against one file's cell labels and report zero
   rows for EVERY group without failing. The second is why this matters: a silent
   wrong answer is worse than no answer, and it is exactly what the per-group
   protocol exists to prevent. So `_runnable_program` takes `dataset_report` and
-  emits `_multidata_footer` instead: `SCORED_DATASETS`, `HELD_OUT_DATASETS`,
+  emits `_multidata_footer`: `SCORED_DATASETS`, `HELD_OUT_DATASETS`, `GROUP_BY`,
   `FITTED_PARAMS_PER_KEY` (keys are `dataset` or `dataset:group`), `METRIC`, and
-  deliberately NO `__main__`. The constants are the answer; the loop over files
-  is convenience, and writing it correctly is issue #107 slice S8. The branch is
-  checked FIRST and only ever reached when `cli.py` passes a report, so a
+  a `__main__` that loops the scored FILES and the groups within them, applying
+  each unit's own constants to that unit's own rows (the row filter mirrors
+  `_grouped_footer`, which mirrors `data.py::_load_xy`). It refuses in exactly
+  the two cases where the file and the key set have come apart: a unit in the
+  data with no constants (never fitted with a neighbour's theta) and a key no row
+  matched. Both are printed, named, and exit non-zero. HELD-OUT datasets are
+  listed and deliberately not run: the search fitted no constants on them, so
+  refitting the form there is `wheeler llmsr transfer`, a separate act with its
+  own provenance. The branch is checked only when `cli.py` passes a report, so a
   single-table run (ungrouped or grouped) reaches the footer it always reached,
-  byte for byte.
-- **A grouped run's answer is the TABLE, everywhere.** `params` is EMPTY by
-  construction whenever there is more than one group, so anything that reads it
-  alone records nothing. `best.json` carries `params_per_group` /
-  `value_per_group`; the written `.py` emits `FITTED_PARAMS_PER_GROUP` plus a
-  `__main__` that filters rows by group and applies that group's own constants
-  (mirroring `data.py::_load_xy`, group column excluded from the inputs, labels
-  read as text); the Script node carries `custom_params_per_group`,
-  `custom_group_by`, `custom_n_groups`, and `custom_groups`. The artifact is
-  advertised as durable and re-runnable, so its grouped form must actually run:
-  `tests/integrations/llmsr/` EXECUTES it rather than inspecting its text.
-- **Every metric Finding is labelled by REGIME.** `custom_regime` is `scored`
-  (the search optimized against this data), `held_out` (it did not), or `unknown`
-  (the artifact does not record enough to tell), with `custom_regime_reason`
-  spelling out why. Two things count as optimizing against data: FITTING the
-  constants (train) and CHOOSING THE WINNER (`--select ood` ranks candidates by
-  their `test_ood` error, so under that mode the OOD split is a selection set).
-  This is a scientific guardrail, not bookkeeping: forty rounds scored on a
-  dataset makes that number a training number however good it looks, and the
-  graph must never present it as a generalization claim. Where the regime cannot
-  be determined, say `unknown` rather than picking the flattering answer.
+  byte for byte. `tests/integrations/llmsr/test_runnable_program.py::TestFourShapesRun`
+  EXECUTES all four shapes and checks the printed numbers against the file.
+- **A multi-unit run's answer is the TABLE, everywhere.** `params` is EMPTY by
+  construction whenever there is more than one fittable unit, whether that is
+  several groups in one table or several datasets or both, so anything that reads
+  it alone records nothing. `best.json` carries `params_per_group` /
+  `value_per_group` (grouped) and `datasets.entries[*].params_per_key` (multi
+  dataset); the written `.py` emits `FITTED_PARAMS_PER_GROUP` or
+  `FITTED_PARAMS_PER_KEY` plus a `__main__` that applies each unit's own
+  constants to that unit's own rows; the Script node carries exactly ONE of the
+  three shapes, never two (`custom_params_per_key` + `custom_keys` +
+  `custom_n_keys` + `custom_datasets_scored` / `custom_datasets_held_out` for a
+  multi-dataset run, `custom_params_per_group` + `custom_group_by` +
+  `custom_n_groups` + `custom_groups` for a grouped single table, `custom_params`
+  only for a genuine one-unit run). Writing two of them would put the same
+  numbers in the graph twice under names that invite a reader to compare them.
+  The scalar is the mean over UNITS, which is what `fit.py` aggregates to
+  (`sum(per_group_value) / len(per_group_value)`), derived over the SCORED
+  entries only and stamped `custom_value_is_unit_mean` (or
+  `custom_value_is_group_mean` one level down). The artifact is advertised as
+  durable and re-runnable, so it must actually run: `tests/integrations/llmsr/`
+  EXECUTES all four shapes rather than inspecting their text.
+- **A run's input tables land as Dataset nodes on the USED side.** A
+  multi-dataset run fitted constants on several tables, and each is an input the
+  run genuinely read, so `discover._record_datasets` registers every DECLARED
+  entry via `ensure_artifact` (deduped on path, so a Dataset the act already
+  passed in `--used` is the same node) and links `Execution -[USED]-> Dataset`
+  through `link_once`. They are inputs, so they are never in `produced_ids` and
+  never `WAS_GENERATED_BY` the run, on the same rule that keeps reference-entity
+  Papers off that edge. Held-out and seed-only tables land too, each carrying
+  `custom_regime` / `custom_regime_reason` / `custom_seeded_the_prompt`: which
+  tables a form was NOT fitted on is the more interesting half of the question,
+  and only the run knows. A table whose file has moved is counted and skipped,
+  never fatal. The block is absent on a single-default-dataset run, so that run
+  lands exactly the nodes it always did.
+- **Every metric Finding is labelled by REGIME, by CLAIM, and by what MEASURED
+  it.** `custom_regime` is `scored` (the search optimized against this data),
+  `held_out` (it did not), `held_out_form` (it did not, but the constants were
+  REFITTED on the split being reported, so the number is held out for the FORM
+  only) or `unknown` (the artifact does not record enough to tell), with
+  `custom_regime_reason` spelling out why. Two things count as optimizing against
+  data: FITTING the constants (train) and CHOOSING THE WINNER (`--select ood`
+  ranks candidates by their `test_ood` error, so under that mode the OOD split is
+  a selection set). `custom_claim` is `constants` or `form`, matching
+  `transfer.py`, and it is part of the Finding id so the two numbers on one split
+  are two nodes and never collide (`constants` is the historic default, so ids
+  minted before the refit numbers were ingested still resolve). This is a
+  scientific guardrail, not bookkeeping: forty rounds scored on a dataset makes
+  that number a training number however good it looks, and the graph must never
+  present it as a generalization claim. Where the regime cannot be determined,
+  say `unknown` rather than picking the flattering answer.
 - **"Does it generalize" is TWO questions, and they travel separately.** Applying
   the winner's constants unchanged to new data asks whether the CONSTANTS
   transfer. Refitting them from scratch under the same form asks whether the FORM
@@ -238,12 +284,13 @@ State persists by replaying `submissions.jsonl` through the vendored
   number for number on an ungrouped run) and `metrics_refit`, and `transfer.json`
   carries them as two blocks each stamped with its `claim` (`constants` or
   `form`). Neither is ever derived from the other and neither stands in for the
-  other. The refit's regime is `held_out` FOR THE FORM ONLY, and its
-  `regime_reason` says so, because a refit fitted its constants on the split it
-  reports. Only `metrics` reaches the graph's regime labeller today; giving the
-  refit numbers their own Findings needs `discover.py`, which is why they do not
-  ride into `metrics` under a suffix where that labeller would call them clean
-  held-out numbers.
+  other. The refit's regime is its OWN label, `held_out_form`, not `held_out`
+  with a longer reason, because a refit fitted its constants on the split it
+  reports: `discover._refit_regime` and `transfer._refit_regime` apply the same
+  rule with the same wording, and `test_transfer.py` asserts the two modules'
+  vocabularies are equal. This is why the refit numbers never rode into `metrics`
+  under a suffix: `_split_key` would have mislabelled them, and the regime
+  labeller would have called them clean held-out numbers.
 - **A fixed-theta number is reported only where a source vector BELONGS.**
   `selection._source_theta` allows exactly two cases: the source fitted this same
   group (use its own constants) or the source has a single constant vector (what
@@ -283,10 +330,10 @@ State persists by replaying `submissions.jsonl` through the vendored
   completed one with no parseable equation, records a FAILED Execution plus the
   raw artifact and fabricates no Script or Finding. Provenance is two-sided off
   that one Execution (`output -[WAS_GENERATED_BY]-> Execution -[USED]-> input`).
-  Idempotent throughout: Execution on `(service, session_id)`, Script on file
-  hash via `ensure_artifact`, Finding on a deterministic id (which now includes
-  the SPLIT, with `train` as the historic default so existing ids still resolve),
-  every edge through `link_once`.
+  Idempotent throughout: Execution on `(service, session_id)`, Script and Dataset
+  on path via `ensure_artifact`, Finding on a deterministic id (which now
+  includes the SPLIT and the CLAIM, with `train` and `constants` as the historic
+  defaults so existing ids still resolve), every edge through `link_once`.
 - **The parser never raises.** A shape-drifted or partial `best.json` counts and
   skips; ingest is never aborted by a missing piece.
 - **Sequential writes only.** Never `asyncio.gather`: Neo4j forbids concurrent
