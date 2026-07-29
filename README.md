@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.11.0-blue" alt="v0.11.0">
+  <img src="https://img.shields.io/badge/v0.12.0-blue" alt="v0.12.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -184,7 +184,7 @@ The graph is an index over files, not a document store. Each node stores an ID, 
 
 **14 relationship types:** 6 W3C PROV standard (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH) + 8 Wheeler semantic (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS).
 
-**50 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
+**51 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module dependency map, PROV schema, MCP tool listing, hardening patterns, design decisions.
 
@@ -199,6 +199,17 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.12.0</b> (2026-07-28): batch review and bring-your-own objectives</summary>
+
+- **A harvested batch is reviewed, not endorsed inline**: an Asta Research Assistant harvest now renders a self-contained `harvest.html` (verdicts, summaries, the figures the assistant produced), tags every node with its batch, and queues the decisions for `/wh:discuss <batch>` later, instead of asking you to rule on a dozen outcomes from a terminal summary you have not read.
+- **Bring your own LLM-SR error function**: the metric contract takes an arbitrary objective registered from your own module, a declared data shape (so a candidate can be a simulator returning variable-length output, not just a tabular predictor), and hard constraints that reject a candidate outright rather than penalizing it in the loss.
+- **Per-group equation fitting**: `wheeler llmsr init --group-by <column>` refits each cell, trial, or subject's own constants under the same candidate form, so a law whose constants vary across individuals is scored on its FORM instead of being rejected by a single pooled fit.
+- **`update_node` can clear a field**: an empty string is now a real value that clears a string field, so a dangling path is repairable; omitting an argument still means leave unchanged.
+- **Asta and LLM-SR reliability**: Paper Finder sends positive-only queries, Theorizer surfaces real failure reasons, papers dedupe on normalized title, never-assessed work-logs are flagged rather than presented as reviewed, and the LLM-SR CLI no longer vanishes when scipy is absent.
+
+</details>
+
+<details>
 <summary><b>v0.11.0</b> (2026-07-18): the Asta Research Assistant, seeded and harvested</summary>
 
 - **Asta Research Assistant, into the graph**: seed a long-range autonomous research mission from a Question or Plan, drive it with the asta-assistant loop in a separate terminal, then harvest the completed work back into Wheeler with full provenance.
@@ -217,16 +228,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 
 </details>
 
-<details>
-<summary><b>v0.9.15</b> (2026-06-15): Asta router, three ways in</summary>
-
-- **Name a service, give an intent, or be asked**: `/wh:asta` now takes three routes in: name a service directly (`/wh:asta paper-finder`) and it dispatches straightaway, hand it a task and it matches the right adapter, or invoke it bare and it asks what you want before doing anything.
-- **It asks to nail down the right service**: when more than one adapter could fit a request, the router uses AskUserQuestion to offer the candidate services (each labeled with its description and cost) instead of silently guessing.
-- **Intent first, graph second**: with no intent it asks you before touching the graph (the graph cannot tell it what you want), then reads the graph only once it knows the task, so it never grounds on the wrong thing.
-- **Plan and execute route through it**: a `/wh:plan` or `/wh:execute` step can call the router and forward its plan id, so the dispatched run anchors `AROSE_FROM` the right plan, and the service descriptions it routes on now match the shipped adapters exactly.
-
-</details>
-
 ---
 
 ## Architecture
@@ -238,12 +239,12 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (50 tools)
+    ├── MCP Servers (51 tools)
     │       ├── wheeler_core (12): health, status, context, search, cypher
     │       ├── wheeler_query (10): read-only query_* tools
     │       ├── wheeler_mutations (18): add_*, link, delete, update, merge
     │       ├── wheeler_ops (10): staleness, citations, consistency
-    │       └── wheeler (legacy monolith): same 50 tools, one server
+    │       └── wheeler (legacy monolith): its original 50 tools, one server
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -271,7 +272,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 2008 tests
+tests/                        # 2163 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -283,7 +284,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (2008 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (2163 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
