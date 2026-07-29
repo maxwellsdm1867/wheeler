@@ -24,6 +24,22 @@ def _header(data_path: str) -> list[str]:
         return [c.strip() for c in fh.readline().strip().split(",")]
 
 
+def input_columns(data_path: str, group_by: str = "") -> tuple[str, ...]:
+    """Name the columns of ``X``, in order, for the same file ``_load_xy`` reads.
+
+    Derived from the same header and the same two exclusions (the trailing target
+    column, and the group column when one is named), so the names line up with
+    the array positions by construction rather than by a second convention.
+    """
+    header = _header(data_path)
+    if not group_by or group_by not in header:
+        return tuple(header[:-1])
+    # By INDEX, not by name, so this drops exactly the column `_load_xy` drops
+    # even when a header repeats a name.
+    gi = header.index(group_by)
+    return tuple(c for i, c in enumerate(header[:-1]) if i != gi)
+
+
 def _load_xy(data_path: str, group_by: str = "") -> tuple[np.ndarray, np.ndarray, object]:
     """Load (X, y, labels). ``labels`` is None unless ``group_by`` names a column.
 

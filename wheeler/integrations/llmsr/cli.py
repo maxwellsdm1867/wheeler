@@ -35,6 +35,7 @@ import numpy as np
 import typer
 
 from . import fit as fit_mod
+from . import loaders as loaders_mod
 from . import metrics as metrics_mod
 from . import runs as runs_mod
 from .data import _as_groups, _load_data
@@ -183,6 +184,29 @@ def metrics() -> None:
             for key, m in sorted(metrics_mod.METRICS.items())
         ],
         "sources": metrics_mod.user_metric_sources(),
+        "errors": [{"source": f.source, "error": f.error} for f in failures],
+    }, indent=2))
+
+
+@llmsr_app.command()
+def loaders() -> None:
+    """List every registered data loader: the built-in csv plus the scientist's own.
+
+    Computed at call time after the user loader modules are imported, so it is
+    the truthful listing of what could read a recording right now. A loader is
+    also where a bad group gets EXCLUDED before the strict per-group fit sees it.
+    """
+    failures = loaders_mod.load_user_loaders()
+    typer.echo(json.dumps({
+        "loaders": [
+            {
+                "key": key,
+                "label": ldr.label,
+                "builtin": key in loaders_mod.BUILTIN_LOADERS,
+            }
+            for key, ldr in sorted(loaders_mod.LOADERS.items())
+        ],
+        "sources": loaders_mod.user_loader_sources(),
         "errors": [{"source": f.source, "error": f.error} for f in failures],
     }, indent=2))
 
