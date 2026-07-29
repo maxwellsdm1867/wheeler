@@ -116,7 +116,12 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   records and breaks the "prefer a Question over an unendorsed Finding" rule). So
   the ingest writes a curation manifest `.harvest.json` (per-log slug, verdict,
   summary, `document_id`, `data_ids` + the `execution_id`/`link_to`), and the
-  `/wh:asta-assistant` act presents each outcome for the scientist to ENDORSE:
+  `/wh:asta-assistant` act presents each outcome for the scientist to ENDORSE.
+  A log whose README has NO Assessment section (the `review-work` critic never ran
+  on it) carries `verdict=unassessed`, distinct from the `""` of a log a reviewer
+  read but recorded no verdict for; the count rides on `ImportReport.unassessed`
+  and the CLI prints an `UNASSESSED` caveat, so an unreviewed self-report is never
+  offered for promotion as though it had been checked. Endorsement:
   endorsed ones get `add_finding` in the ACT, wired `WAS_GENERATED_BY` the
   Execution, `AROSE_FROM` the seed, and `WAS_DERIVED_FROM` the log's data. Dedupe
   is native (path-based via `ensure_artifact`; no persisted index). Produces NO
