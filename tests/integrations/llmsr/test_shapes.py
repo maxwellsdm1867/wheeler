@@ -91,12 +91,12 @@ class TestSpikeTrainLoading:
     def test_event_column_is_read_as_padded(self):
         metrics_mod.load_user_metrics()
         metric = metrics_mod.get_metric("spike_count")
-        X, y = _load_data("train.csv", metric)
+        X, y, _ = _load_data("train.csv", metric)
         assert X.shape == (5, 1)
         assert y == [0.2, 0.35]  # shorter than the stimulus, and a plain sequence
 
     def test_regression_loading_is_untouched(self):
-        X, y = _load_data("train.csv", metrics_mod.MSE)
+        X, y, _ = _load_data("train.csv", metrics_mod.MSE)
         assert X.shape == (5, 1)
         assert isinstance(y, np.ndarray) and len(y) == 5
 
