@@ -272,7 +272,9 @@ def evaluate_fixed(
     """Apply an equation with FIXED (already-fitted) params and report the metric.
 
     No fitting: used to score a train-fitted equation on held-out ID/OOD test
-    sets (the paper's generalization protocol). In-process (the winner already
+    sets. That generalization step is WHEELER'S addition, not upstream's: LLM-SR
+    ships the test splits with its datasets, but its own ``main.py`` loads only
+    ``train.csv`` and never scores against them. In-process (the winner already
     passed the sandbox); defensive, returns None on any failure.
     """
     try:

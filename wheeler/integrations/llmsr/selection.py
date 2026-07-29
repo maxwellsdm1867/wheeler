@@ -24,11 +24,91 @@ _SELECT_MODES = ("fit", "ood", "parsimony")
 _PARSIMONY_TOL = 10.0  # a candidate within this factor of the best error is "as good"
 
 
+def _grouped_footer(
+    group_by: str,
+    params_per_group: dict,
+    value_per_group: dict,
+    metric_key: str,
+    value,
+    data_path: str,
+    fte: str,
+) -> str:
+    """The footer for a GROUPED run: the per-group constant table + a main that
+    applies each group's own constants to that group's own rows.
+
+    A grouped run has no single parameter vector, and that is the point: every
+    group refits its OWN constants under one shared form. Writing the flat
+    ``FITTED_PARAMS`` here would write ``[]`` and a file that calls the equation
+    with an empty array, so the artifact Wheeler advertises as durable and
+    re-runnable would be neither.
+
+    The row filter mirrors ``data.py::_load_xy`` exactly: the group column
+    identifies who a row belongs to and is EXCLUDED from the inputs, and the
+    labels are read as text, because a label like ``c01`` is not a float and
+    would come back NaN through the numeric read.
+    """
+    table = {
+        str(label): [float(v) for v in vals]
+        for label, vals in params_per_group.items()
+    }
+    per_group_value = {
+        str(label): float(v) for label, v in (value_per_group or {}).items()
+    }
+    return (
+        "\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n"
+        "# GROUPED run: each group refit its OWN constants under this one shared\n"
+        "# form, so there is no single parameter vector. Each entry below is one\n"
+        "# group's answer, and METRIC['value'] is the mean over them.\n"
+        f"GROUP_BY = {group_by!r}\n"
+        f"FITTED_PARAMS_PER_GROUP = {table!r}\n"
+        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
+        f"'per_group': {per_group_value!r}}}\n\n"
+        "if __name__ == '__main__':\n"
+        "    import numpy as _np\n"
+        f"    _path = r{data_path!r}\n"
+        "    with open(_path) as _fh:\n"
+        "        _header = [_c.strip() for _c in _fh.readline().strip().split(',')]\n"
+        "    _d = _np.genfromtxt(_path, delimiter=',', skip_header=1)\n"
+        "    if _d.ndim == 1:\n"
+        "        _d = _d.reshape(1, -1)\n"
+        "    _gi = _header.index(GROUP_BY)\n"
+        "    _labels = _np.atleast_1d(_np.genfromtxt(\n"
+        "        _path, delimiter=',', skip_header=1, usecols=[_gi], dtype=str))\n"
+        "    _keep = [_i for _i in range(_d.shape[1] - 1) if _i != _gi]\n"
+        "    _X, _y = _d[:, _keep], _d[:, -1].reshape(-1)\n"
+        f"    _n = {fte}.__code__.co_argcount - 1\n"
+        "    print('metric', METRIC)\n"
+        "    for _g in sorted(FITTED_PARAMS_PER_GROUP):\n"
+        "        _mask = _np.asarray([str(_v) == _g for _v in _labels.tolist()])\n"
+        "        _gX = _X[_mask]\n"
+        f"        _pred = {fte}(*[_gX[:, _i] for _i in range(_n)],\n"
+        "                      _np.array(FITTED_PARAMS_PER_GROUP[_g]))\n"
+        "        print('group', _g, 'n_rows', int(_mask.sum()),\n"
+        "              'prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n"
+    )
+
+
 def _runnable_program(
     program: str, params, metric_key: str, value, data_path: str, fte: str,
     data_shape: str = metrics_mod.REGRESSION,
+    *,
+    group_by: str = "",
+    params_per_group: dict | None = None,
+    value_per_group: dict | None = None,
 ) -> str:
-    """Append fitted constants + a runnable main so the .py reproduces the answer."""
+    """Append fitted constants + a runnable main so the .py reproduces the answer.
+
+    A grouped run takes the per-group branch: its constants are a TABLE, not a
+    vector. Grouping is only reachable for the regression shape (``data.py``
+    refuses ``--group-by`` for any other, since recorded events do not line up
+    row-for-row with stimulus samples), so the grouped footer is written against
+    the tabular convention.
+    """
+    if group_by and params_per_group:
+        return program + _grouped_footer(
+            group_by, params_per_group, value_per_group or {}, metric_key, value,
+            data_path, fte,
+        )
     if data_shape == metrics_mod.REGRESSION:
         bind = f"    _n = {fte}.__code__.co_argcount - 1\n"
         show = "    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n"
@@ -133,11 +213,14 @@ def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
 def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
     """Score the train-fitted winner on train + sibling test_id / test_ood sets.
 
-    Both MSE and NMSE per split for a regression run (the paper's protocol). For
-    any other data shape those two are meaningless, so the run's own metric is
-    reported instead. The LLM-SR datasets store
+    Both MSE and NMSE per split for a regression run. For any other data shape
+    those two are meaningless, so the run's own metric is reported instead.
+
+    The held-out scoring is WHEELER'S, not upstream's. The LLM-SR datasets store
     ``<problem>/{train,test_id,test_ood}.csv``, so the test splits are siblings of
-    the training file. Applies the fitted constants without re-fitting.
+    the training file, but upstream's own ``main.py`` loads only ``train.csv`` and
+    nothing in its pipeline opens the test splits. The splits are theirs; scoring
+    against them is ours. Applies the fitted constants without re-fitting.
     """
     # Lazy: cli imports this module, so resolving the metric at module level would
     # close the cycle.
