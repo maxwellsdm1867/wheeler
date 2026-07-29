@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.12.0-blue" alt="v0.12.0">
+  <img src="https://img.shields.io/badge/v0.13.0-blue" alt="v0.13.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -199,6 +199,17 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.13.0</b> (2026-07-29): score the FORM, not the parameterization</summary>
+
+- **One law, many recordings**: `--data` is now repeatable and nameable, and `--seed-from` / `--score-on` keep two roles apart, so a form extracted from one cell can be scored on cells it never saw, each refitting its own constants. That is a test of the FORM rather than of one lucky parameterization.
+- **`wheeler llmsr transfer`**: asks whether the LAW carries over to a recording the search never scored, and reports it beside the different question of whether the CONSTANTS carry over, both labelled and both landing in the graph with provenance.
+- **Declarable optimizer that notices when it is stuck**: `--optimizer` takes your own, and the default `auto` escalates from BFGS to Nelder-Mead when no start moved off its init, which is what a flat gradient looks like. Optimizer failure on one cell used to be indistinguishable from the form being wrong there.
+- **Bring your own metric, loader, optimizer or recipe**: four open registries, all offerable by the interview, plus `wheeler llmsr scaffold-spec` and a cookbook of executed recipes. A loader is also how one dead cell gets excluded before strict per-group validity rejects a correct law.
+- **Upstream's own scoring door, selectable**: `--use-spec-evaluate` runs the spec's `@evaluate.run`, so a spec that trains its own model inside `evaluate` runs unmodified. Every number now travels named after the quantity that produced it rather than after the metric you declared.
+
+</details>
+
+<details>
 <summary><b>v0.12.0</b> (2026-07-28): batch review and bring-your-own objectives</summary>
 
 - **A harvested batch is reviewed, not endorsed inline**: an Asta Research Assistant harvest now renders a self-contained `harvest.html` (verdicts, summaries, the figures the assistant produced), tags every node with its batch, and queues the decisions for `/wh:discuss <batch>` later, instead of asking you to rule on a dozen outcomes from a terminal summary you have not read.
@@ -216,15 +227,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **A work-log is not a finding**: harvested work-logs are saved as indexed Documents (their computed artifacts as Datasets and Scripts), and you decide which outcomes get promoted to Findings, so Wheeler never fabricates an unendorsed result.
 - **Validated end to end**: the adapter ships with a live-Neo4j test that walks a real mission through seed, harvest, and re-harvest, checking both provenance sides, idempotency, and the curation manifest.
 - **Semantic Scholar author lookup**: the Asta Semantic Scholar adapter gained an `author` sub-query, so an author's papers can be pulled into the graph.
-
-</details>
-
-<details>
-<summary><b>v0.10.0</b> (2026-07-18): equation discovery + service invocation</summary>
-
-- **LLM-SR equation discovery**: discover a closed-form equation from a dataset via LLM-guided evolutionary search, run on your Max subscription with no API keys, landed as a provenance-tracked Script plus a Finding with in-domain and out-of-domain metrics.
-- **Discover the law, not the best fit**: the run selects the winner by parsimony or out-of-domain generalization, so it recovers the true equation instead of an overfit that merely scores lower training error.
-- **Invoke services from a plan**: name a service (LLM-SR, Asta, ...) in `/wh:plan`; a cross-provider router interviews you for that service's inputs, shows the assembled request, and dispatches it, with the run wired into the plan's provenance.
 
 </details>
 
@@ -272,7 +274,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 2163 tests
+tests/                        # 2567 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -284,7 +286,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (2163 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (2567 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 

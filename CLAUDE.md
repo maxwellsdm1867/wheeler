@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.12.0`. 2531 tests (2466 outside `tests/e2e/`, 65 in it), 51 MCP tools across the four split servers (the deprecated monolith still carries its original 50).
+Version is `0.13.0`. 2567 tests (2502 outside `tests/e2e/`, 65 in it), 51 MCP tools across the four split servers (the deprecated monolith still carries its original 50).
 
 ## Commands
 
@@ -56,7 +56,7 @@ wh dream            # graph consolidation (promotes tiers, detects communities, 
 # MCP servers (launched by Claude Code via .mcp.json — not typically invoked by hand)
 python -m wheeler.mcp_server       # legacy monolith (50 tools in one process)
 python -m wheeler.mcp_core         # split: health/context/search/cypher/schema (12)
-python -m wheeler.mcp_query        # split: read-only query_* (10)
+python -m wheeler.mcp_query        # split: read-only query_* (11)
 python -m wheeler.mcp_mutations    # split: add_*, link, unlink, delete, merge, update (18)
 python -m wheeler.mcp_ops          # split: staleness, citations, consistency, ops (10)
 ```
