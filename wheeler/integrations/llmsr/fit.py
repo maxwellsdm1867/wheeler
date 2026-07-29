@@ -46,6 +46,27 @@ class FitResult:
     value: float | None = None  # reported metric value
     params: list[float] = field(default_factory=list)
     error: str = ""
+    # why an invalid candidate was rejected: "constraint" (a hard constraint said
+    # no, whatever it scored) or "numeric" (no finite metric value was produced).
+    # Empty on a valid fit. Conflating the two hides a truncated frontier.
+    rejection_reason: str = ""
+
+
+def _first_violation(metric: Metric, y_pred, y_true, params) -> str:
+    """Name of the first hard constraint the fitted candidate fails, else ''.
+
+    A constraint that raises counts as failed: an inconclusive check cannot admit
+    a candidate.
+    """
+    for constraint in metric.hard_constraints:
+        try:
+            holds = constraint.holds(y_pred, y_true, params)
+        except Exception as exc:
+            logger.warning("constraint %r raised, rejecting: %s", constraint.name, exc)
+            return constraint.name
+        if not holds:
+            return constraint.name
+    return ""
 
 
 def _bind_inputs(metric: Metric, equation, X, y) -> tuple[list, object, str]:
@@ -120,9 +141,21 @@ def _worker(program_str, function_to_evolve, X, y, metric: Metric, max_nparams, 
             params = np.asarray(best.x, dtype=float)
             y_pred = equation(*cols, params)
             value = float(metric.report(y_pred, y_true))
+            violated = _first_violation(metric, y_pred, y_true, params) if np.isfinite(value) else ""
 
         if not np.isfinite(value):
             q.put({"valid": False, "error": "non-finite metric value"})
+            return
+        if violated:
+            # Keep the value and the constants: a candidate the guard rejected
+            # often scored WELL, and hiding that hides why it was thrown out.
+            q.put({
+                "valid": False,
+                "rejection_reason": "constraint",
+                "error": f"rejected by hard constraint {violated!r}",
+                "value": value,
+                "params": params.tolist(),
+            })
             return
         q.put({
             "valid": True,
@@ -178,7 +211,8 @@ def evaluate_body(
     """Fit ``program_str``'s constants under ``metric``; never raises.
 
     Returns a ``FitResult``: ``valid`` false on compile error, wrong arity,
-    non-finite result, or timeout.
+    non-finite result, or timeout (``rejection_reason`` ``numeric``), and also
+    when a hard constraint rejected the fitted candidate (``constraint``).
     """
     queue = _MP_CONTEXT.Queue()
     proc = _MP_CONTEXT.Process(
@@ -190,13 +224,25 @@ def evaluate_body(
     if proc.is_alive():
         proc.terminate()
         proc.join()
-        return FitResult(valid=False, error=f"timeout after {timeout_seconds}s")
+        return FitResult(
+            valid=False,
+            error=f"timeout after {timeout_seconds}s",
+            rejection_reason="numeric",
+        )
 
     if queue.empty():
-        return FitResult(valid=False, error="worker produced no result")
+        return FitResult(
+            valid=False, error="worker produced no result", rejection_reason="numeric"
+        )
     out = queue.get_nowait()
     if not out.get("valid"):
-        return FitResult(valid=False, error=out.get("error", "invalid"))
+        return FitResult(
+            valid=False,
+            error=out.get("error", "invalid"),
+            rejection_reason=out.get("rejection_reason", "numeric"),
+            value=out.get("value"),
+            params=out.get("params", []),
+        )
     return FitResult(
         valid=True,
         score=out["score"],

@@ -131,10 +131,17 @@ def _append_submission(run_dir: Path, record: dict) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+def _n_constraint_rejected(subs: list[dict]) -> int:
+    """Candidates a hard constraint threw out, whatever they scored. Reported so
+    a frontier truncated by the guard is visible rather than silent."""
+    return sum(1 for s in subs if s.get("rejection_reason") == "constraint")
+
+
 def _progress(run_dir: Path, meta: dict) -> dict:
     """Current run state: how many samples, how many valid, and the best so far."""
     subs = _read_submissions(run_dir)
     valid = [s for s in subs if s.get("valid") and s.get("score") is not None]
+    rejected = _n_constraint_rejected(subs)
     best = max(valid, key=lambda s: s["score"]) if valid else None
     created_epoch = meta.get("created_epoch")
     elapsed = round(time.time() - created_epoch, 2) if created_epoch else None
@@ -144,6 +151,8 @@ def _progress(run_dir: Path, meta: dict) -> dict:
         "generator": meta["generator"],
         "n_samples": len(subs),
         "n_valid": len(valid),
+        "n_constraint_rejected": rejected,
+        "n_failed": len(subs) - len(valid) - rejected,
         "best_value": best["value"] if best else None,
         "best_equation": best["body"].strip("\n") if best else None,
         "best_sample_order": best["sample_order"] if best else None,
@@ -204,7 +213,15 @@ def _score_body(
     """Build the program from a body, fit + score it. Returns (result, program, fn)."""
     fn, program = evaluator._sample_to_program(body, version_generated, template, fte)
     if evaluator._calls_ancestor(program, fte):
-        return fit_mod.FitResult(valid=False, error="calls an ancestor version"), program, fn
+        return (
+            fit_mod.FitResult(
+                valid=False,
+                error="calls an ancestor version",
+                rejection_reason="numeric",
+            ),
+            program,
+            fn,
+        )
     result = fit_mod.evaluate_body(
         program, fte, X, y, metric, max_nparams=max_nparams, timeout_seconds=timeout
     )
@@ -299,6 +316,7 @@ def init(
         "version_generated": None,
         "seed": True,
         "error": result.error,
+        "rejection_reason": result.rejection_reason,
         "fit_seconds": round(time.time() - _t0, 4),
         "at_epoch": time.time(),
     })
@@ -395,6 +413,7 @@ def submit(
         "version_generated": version_generated,
         "seed": False,
         "error": result.error,
+        "rejection_reason": result.rejection_reason,
         "fit_seconds": round(fit_seconds, 4),
         "at_epoch": time.time(),
     })
@@ -404,6 +423,7 @@ def submit(
         "value": result.value,
         "score": result.score,
         "error": result.error,
+        "rejection_reason": result.rejection_reason,
         "sample_order": sample_order,
     }))
 
@@ -426,6 +446,11 @@ def best(
         raise typer.BadParameter(f"select must be one of {_SELECT_MODES}")
     subs = _read_submissions(run_dir)
     valid = [s for s in subs if s.get("valid") and s.get("score") is not None]
+    # A candidate a hard constraint rejected is not in `valid`, so it can never
+    # win however well it scored. The count is reported so that truncation of the
+    # frontier is visible rather than silent.
+    rejected = _n_constraint_rejected(subs)
+
     # best.json is the FINAL result only. The full per-candidate search trail
     # (bodies, programs, params, scores) stays in submissions.jsonl in the run
     # dir; the graph adapter records the winner, never intermediate candidates.
@@ -444,10 +469,16 @@ def best(
             "timing": _timing(meta, subs),
             "n_samples": len(subs),
             "n_valid": 0,
+            "n_constraint_rejected": rejected,
             "error": "no valid equation was found",
         }
         (run_dir / "best.json").write_text(json.dumps(payload, indent=2))
-        typer.echo(json.dumps({"status": "failed", "n_samples": len(subs), "n_valid": 0}))
+        typer.echo(json.dumps({
+            "status": "failed",
+            "n_samples": len(subs),
+            "n_valid": 0,
+            "n_constraint_rejected": rejected,
+        }))
         raise typer.Exit(code=1)
 
     winner = _select_winner(valid, meta, mode)
@@ -481,6 +512,7 @@ def best(
         "timing": _timing(meta, subs),
         "n_samples": len(subs),
         "n_valid": len(valid),
+        "n_constraint_rejected": rejected,
     }
     (run_dir / "best.json").write_text(json.dumps(payload, indent=2))
     typer.echo(json.dumps({
@@ -489,6 +521,7 @@ def best(
         "value": winner["value"],
         "n_samples": len(subs),
         "n_valid": len(valid),
+        "n_constraint_rejected": rejected,
         "best_json": str(run_dir / "best.json"),
     }))
 

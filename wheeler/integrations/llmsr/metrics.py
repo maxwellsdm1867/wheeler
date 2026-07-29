@@ -32,6 +32,10 @@ case: the candidate returns a variable-length sequence of event times, scored
 against a recorded sequence of a different length, so nothing lines up row-wise
 and the metric owns the comparison (a Victor-Purpura distance, for instance).
 An unsupported shape is rejected when the metric is declared, not at scoring time.
+
+A metric may also declare HARD CONSTRAINTS through ``guard``: accept/reject checks
+evaluated per candidate, separately from the scalar loss, so a candidate that
+violates one is rejected whatever it scored (see ``Constraint``).
 """
 
 from __future__ import annotations
@@ -42,7 +46,7 @@ import importlib.util
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -58,6 +62,44 @@ DATA_SHAPES = (REGRESSION, SPIKE_TRAIN)
 
 
 @dataclass(frozen=True)
+class Constraint:
+    """A hard accept/reject check on a fitted candidate.
+
+    ``check(y_pred, y_true, params) -> bool``, where True means admissible. This
+    is NOT a weighted penalty in the loss: a candidate that fails a constraint is
+    rejected whatever it scored, so it cannot buy a large gain on the primary
+    objective by paying a small penalty on a secondary one.
+    """
+
+    name: str
+    check: Callable[[Any, Any, np.ndarray], bool]
+
+    def holds(self, y_pred: Any, y_true: Any, params: np.ndarray) -> bool:
+        return bool(self.check(y_pred, y_true, params))
+
+
+def _as_constraints(guard: Any, key: str) -> tuple[Constraint, ...]:
+    """Normalize a declared guard into constraints. One callable, or several."""
+    if guard is None:
+        return ()
+    items = list(guard) if isinstance(guard, (list, tuple)) else [guard]
+    out: list[Constraint] = []
+    for i, item in enumerate(items):
+        if isinstance(item, Constraint):
+            out.append(item)
+        elif callable(item):
+            out.append(
+                Constraint(name=getattr(item, "__name__", "") or f"constraint_{i}", check=item)
+            )
+        else:
+            raise TypeError(
+                f"metric {key!r}: guard entry {item!r} is neither a Constraint nor "
+                "a callable taking (y_pred, y_true, params)"
+            )
+    return tuple(out)
+
+
+@dataclass(frozen=True)
 class Metric:
     """A named scoring metric.
 
@@ -70,6 +112,10 @@ class Metric:
     ``data_shape`` is one of ``DATA_SHAPES``. It decides how the fit path calls
     the candidate and what it hands the metric, so an unknown shape is a hard
     error here rather than a silent no-op at scoring time.
+
+    ``guard`` declares hard constraints: one ``Constraint`` or callable, or a
+    sequence of them. They are normalized into ``hard_constraints`` and evaluated
+    per candidate AFTER the fit, separately from the scalar loss.
     """
 
     key: str
@@ -78,17 +124,27 @@ class Metric:
     lower_is_better: bool
     loss: Scorer
     report: Scorer
+    guard: InitVar[Any] = None
+    hard_constraints: tuple[Constraint, ...] = field(init=False, default=())
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, guard: Any) -> None:
         if self.data_shape not in DATA_SHAPES:
             raise ValueError(
                 f"metric {self.key!r} declares data_shape {self.data_shape!r}, "
                 f"which the fit path cannot dispatch; supported: {list(DATA_SHAPES)}"
             )
+        object.__setattr__(self, "hard_constraints", _as_constraints(guard, self.key))
 
     def score_from_value(self, value: float) -> float:
         """Convert a reported value into a maximize-me buffer score."""
         return -value if self.lower_is_better else value
+
+
+# ``guard`` is consumed by __post_init__, so no instance ever stores it. Dropping
+# the class-level default the dataclass leaves behind keeps that honest: reading
+# ``metric.guard`` raises instead of answering None for a metric that does carry
+# constraints. ``metric.hard_constraints`` is the one place they live.
+delattr(Metric, "guard")
 
 
 def _as_arrays(y_pred, y_true) -> tuple[np.ndarray, np.ndarray]:

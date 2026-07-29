@@ -66,6 +66,9 @@ class RunMeta:
     run_id: str = ""
     generator: str = ""
     duration_seconds: float | None = None
+    # candidates a hard constraint threw out. Carried onto the Execution only
+    # when non-zero, so a run that declared no constraints lands exactly as before
+    n_constraint_rejected: int = 0
 
     def custom_bag(self) -> dict[str, Any]:
         bag: dict[str, Any] = {"service": _SERVICE_TAG}
@@ -75,6 +78,8 @@ class RunMeta:
             bag["generator"] = self.generator
         if self.duration_seconds is not None:
             bag["duration_seconds"] = self.duration_seconds
+        if self.n_constraint_rejected:
+            bag["n_constraint_rejected"] = self.n_constraint_rejected
         return bag
 
 
@@ -139,9 +144,11 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
         logger.warning("parse_discover: doc is not a dict, got %s", type(doc).__name__)
         return [], RunMeta()
 
+    rejected = _as_float(doc.get("n_constraint_rejected"))
     meta = RunMeta(
         run_id=_as_str(doc.get("run_id")),
         generator=_as_str(doc.get("generator")),
+        n_constraint_rejected=int(rejected) if rejected else 0,
     )
     timing = doc.get("timing")
     if isinstance(timing, dict):
@@ -310,6 +317,8 @@ async def ingest_discover(
             run_custom["generator"] = run_meta.generator
         if run_meta.duration_seconds is not None:
             run_custom["duration_seconds"] = run_meta.duration_seconds
+        if run_meta.n_constraint_rejected:
+            run_custom["n_constraint_rejected"] = run_meta.n_constraint_rejected
         if run_custom:
             await execute_tool(
                 "update_node", {"node_id": exec_id, "custom": run_custom}, config
