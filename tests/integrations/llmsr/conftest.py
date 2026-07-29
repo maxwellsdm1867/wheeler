@@ -1,12 +1,13 @@
 """Shared isolation for the LLM-SR tests.
 
 The registries are process-wide and open: `load_user_metrics()` /
-`load_user_loaders()` import whatever `$WHEELER_LLMSR_METRICS` /
-`$WHEELER_LLMSR_LOADERS` or `.wheeler/llmsr/{metrics,loaders}.py` point at, and
-register it for the rest of the process. Several of these tests write their own
-metric or loader into a scratch project on purpose, so without a snapshot the
-first such test would leak its registration into every test that ran after it,
-and the order tests happen to run in would decide whether they pass.
+`load_user_loaders()` / `load_user_optimizers()` import whatever
+`$WHEELER_LLMSR_METRICS` / `$WHEELER_LLMSR_LOADERS` / `$WHEELER_LLMSR_OPTIMIZERS`
+or `.wheeler/llmsr/{metrics,loaders,optimizers}.py` point at, and register it for
+the rest of the process. Several of these tests write their own metric, loader or
+optimizer into a scratch project on purpose, so without a snapshot the first such
+test would leak its registration into every test that ran after it, and the order
+tests happen to run in would decide whether they pass.
 
 Every test in this directory therefore runs in its own scratch cwd (run dirs and
 `.wheeler/` are created relative to it) and leaves every registry exactly as it
@@ -25,11 +26,13 @@ import pytest
 from wheeler.integrations.llmsr import _userland
 from wheeler.integrations.llmsr import loaders as loaders_mod
 from wheeler.integrations.llmsr import metrics as metrics_mod
+from wheeler.integrations.llmsr import optimizers as optimizers_mod
 
 # Every open registry: (the live dict, the env var that feeds it).
 _REGISTRIES = (
     (metrics_mod.METRICS, metrics_mod._USER_METRICS_ENV),
     (loaders_mod.LOADERS, loaders_mod._USER_LOADERS_ENV),
+    (optimizers_mod.OPTIMIZERS, optimizers_mod._USER_OPTIMIZERS_ENV),
 )
 
 

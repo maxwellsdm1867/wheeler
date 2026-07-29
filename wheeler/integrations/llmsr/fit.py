@@ -3,10 +3,23 @@
 This is the seam that makes the metric pluggable and extracts the fitted
 constants the plan requires on the winning program. Given the full program
 (spec preface + a concrete ``equation`` body), it execs the program, reads the
-``equation`` callable, and fits ``params`` by minimizing ``metric.loss`` with
-scipy BFGS (the same optimizer the upstream spec uses). The input-column calling
-convention is derived from the ``equation`` signature (every parameter except the
-trailing ``params``), so no per-spec coupling is needed.
+``equation`` callable, and fits ``params`` by minimizing ``metric.loss`` from
+several starts. The input-column calling convention is derived from the
+``equation`` signature (every parameter except the trailing ``params``), so no
+per-spec coupling is needed.
+
+WHICH optimizer runs is declarable (``optimizers.py``) and defaults to ``auto``:
+BFGS from every start, escalating to Nelder-Mead FROM THE SAME STARTS when no
+start moved off its init. That signature means the optimizer could not see the
+objective at all (BFGS's numerical gradient is identically zero on a
+piecewise-constant loss), and it matters here more than anywhere: under
+``--group-by`` one failed group invalidates the whole candidate, so an optimizer
+blind to a single cell rejects a CORRECT form. This is a deliberate behaviour
+change from the BFGS-only fit. Where BFGS moved, every number is bit-for-bit what
+it was; where BFGS did not move, the result changes, for the better. The concrete
+optimizer behind the winning constants is recorded on the ``FitResult`` and
+surfaced in ``best.json``, because a number whose provenance is a silent fallback
+is exactly what this project exists to prevent.
 
 ``metric.data_shape`` decides how the candidate is called and what the metric is
 handed (see ``_bind_inputs``). The optimizer is the same either way: what changes
@@ -43,17 +56,30 @@ from pathlib import Path
 import numpy as np
 
 from .metrics import REGRESSION, Metric
+from .optimizers import AUTO, Optimizer, resolve
 from .vendor.evaluator import _MP_CONTEXT
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_NPARAMS = 10
 _DEFAULT_TIMEOUT = 30
-_N_RESTARTS = 6  # extra BFGS starts beyond all-ones, to escape flat/local regions
+
+# Extra starts beyond all-ones, to escape flat/local regions, and the seed that
+# draws them. Public and reachable (``wheeler llmsr init --restarts/--seed``): a
+# constant nobody can change is a constant nobody can rule out. The values are
+# the ones the fit has always used, so a run that names neither replays exactly.
+DEFAULT_RESTARTS = 6
+DEFAULT_SEED = 0
 
 # The group label for an ungrouped run. Matches the key Wheeler has always passed
 # to the vendored buffer, so submissions written before grouping replay unchanged.
 UNGROUPED = "data"
+
+# What ``FitResult.optimizer`` says when a grouped fit escalated for some groups
+# and not others. Escalation is decided per group because it is a property of
+# THAT group's objective; claiming one name for a candidate whose groups disagree
+# would be a claim the fit never made. ``optimizer_per_group`` always resolves it.
+MIXED = "mixed"
 
 
 @dataclass
@@ -76,6 +102,12 @@ class FitResult:
     per_group: dict[str, float] = field(default_factory=dict)
     per_group_value: dict[str, float] = field(default_factory=dict)
     params_per_group: dict[str, list[float]] = field(default_factory=dict)
+    # The CONCRETE optimizer that produced the reported constants, never the
+    # strategy that chose it: `auto` reports `bfgs` or `nelder-mead`, so the
+    # winner says which optimizer is behind its numbers. `MIXED` when a grouped
+    # fit escalated for some groups only. Empty when nothing was fitted.
+    optimizer: str = ""
+    optimizer_per_group: dict[str, str] = field(default_factory=dict)
 
 
 def _first_violation(metric: Metric, y_pred, y_true, params) -> str:
@@ -120,12 +152,62 @@ def _bind_inputs(metric: Metric, equation, X, y) -> tuple[list, object, str]:
     return [np.asarray(X[:, i], dtype=float) for i in range(n_cols)], y, ""
 
 
-def _fit_one_group(opt, equation, metric: Metric, X, y, max_nparams) -> dict:
+def _run_starts(minimize, loss, inits) -> tuple[tuple | None, bool]:
+    """Run ONE optimizer from every start. Returns ``(best, moved)``.
+
+    ``best`` is the ``(x, fun)`` with the lowest finite objective, selected
+    exactly as the single-optimizer loop always selected it: strict ``<``, so the
+    FIRST start to reach a value keeps it. A start whose optimizer raises or
+    returns ``None`` is skipped, which is what ``except Exception: continue`` did.
+    ``None`` when no start produced a finite objective.
+
+    ``moved`` is False when NOT ONE usable start ended anywhere other than where
+    it began. That is the fingerprint of an optimizer that cannot see this
+    objective at all, and it is what ``_fit_one_group`` escalates on. It is
+    measured rather than predicted from the data shape, so it catches any
+    non-smooth objective and not merely the ones we anticipated. Only starts that
+    produced a finite objective are asked whether they moved: a start that came
+    back NaN did not explore anywhere, it failed, and counting it as movement
+    would suppress the escalation exactly where it is most needed.
+    """
+    best = None
+    moved = False
+    for x0 in inits:
+        try:
+            out = minimize(loss, x0)
+        except Exception:
+            continue
+        if out is None:
+            continue
+        x, fun = out
+        if np.isfinite(fun):
+            if not np.allclose(x, x0):
+                moved = True
+            if best is None or fun < best[1]:
+                best = (x, fun)
+    return best, moved
+
+
+def _fit_one_group(
+    equation,
+    metric: Metric,
+    X,
+    y,
+    max_nparams,
+    primary: Optimizer,
+    escalation: Optimizer | None = None,
+    restarts: int = DEFAULT_RESTARTS,
+    seed: int = DEFAULT_SEED,
+) -> dict:
     """Fit this group's OWN constants and score it. One group, one theta.
 
-    Pulled out of ``_worker`` unchanged so that the single-group case stays
-    numerically identical: the restart RNG is seeded per group, so group 1 of a
-    grouped run draws exactly the inits an ungrouped run drew.
+    Pulled out of ``_worker`` so that the single-group case stays numerically
+    identical: the restart RNG is seeded per group, so group 1 of a grouped run
+    draws exactly the inits an ungrouped run drew.
+
+    The escalation decision is per group, and deliberately so: whether an
+    optimizer can see the objective is a property of THIS group's data, and under
+    strict validity one blind group throws away the whole candidate.
     """
     cols, y_true, bind_error = _bind_inputs(metric, equation, X, y)
     if bind_error:
@@ -136,30 +218,32 @@ def _fit_one_group(opt, equation, metric: Metric, X, y, max_nparams) -> dict:
             y_pred = equation(*cols, np.asarray(p, dtype=float))
             return metric.loss(y_pred, y_true)
 
-        # Multi-start BFGS: a single all-ones init leaves forms whose constants
-        # live far from 1 (a temperature optimum, a saturation constant) stuck in
-        # a flat region and mis-scored, so the search would reject a CORRECT form.
+        # Multi-start: a single all-ones init leaves forms whose constants live
+        # far from 1 (a temperature optimum, a saturation constant) stuck in a
+        # flat region and mis-scored, so the search would reject a CORRECT form.
         # Deterministic restarts (fixed seed) keep the fit reproducible.
-        restart_rng = np.random.default_rng(0)
+        restart_rng = np.random.default_rng(seed)
         inits = [np.ones(max_nparams)]
         inits += [
-            restart_rng.uniform(-12.0, 12.0, max_nparams) for _ in range(_N_RESTARTS)
+            restart_rng.uniform(-12.0, 12.0, max_nparams) for _ in range(restarts)
         ]
-        best = None
-        for x0 in inits:
-            try:
-                res = opt.minimize(loss, x0, method="BFGS")
-            except Exception:
-                continue
-            if np.isfinite(res.fun) and (best is None or res.fun < best.fun):
-                best = res
+        best, moved = _run_starts(primary.minimize, loss, inits)
+        used = primary.key
+        if escalation is not None and not moved:
+            # Nothing moved, so the primary optimizer never saw a slope: its
+            # "best" is just whichever init sat lowest, and a correct form would
+            # be rejected on that alone. Rerun from the SAME starts, and keep the
+            # escalated answer only if it actually improved on that init.
+            alt, _alt_moved = _run_starts(escalation.minimize, loss, inits)
+            if alt is not None and (best is None or alt[1] < best[1]):
+                best, used = alt, escalation.key
         if best is None:
             return {
                 "valid": False,
                 "error": "no successful fit from any start",
                 "rejection_reason": "numeric",
             }
-        params = np.asarray(best.x, dtype=float)
+        params = np.asarray(best[0], dtype=float)
         y_pred = equation(*cols, params)
         value = float(metric.report(y_pred, y_true))
         violated = _first_violation(metric, y_pred, y_true, params) if np.isfinite(value) else ""
@@ -179,12 +263,14 @@ def _fit_one_group(opt, equation, metric: Metric, X, y, max_nparams) -> dict:
             "error": f"rejected by hard constraint {violated!r}",
             "value": value,
             "params": params.tolist(),
+            "optimizer": used,
         }
     return {
         "valid": True,
         "value": value,
         "score": metric.score_from_value(value),
         "params": params.tolist(),
+        "optimizer": used,
     }
 
 
@@ -225,7 +311,8 @@ def _emit_progress(
 
 
 def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams, q,
-            progress_path=None):
+            progress_path=None, primary=None, escalation=None,
+            restarts=DEFAULT_RESTARTS, seed=DEFAULT_SEED):
     """Fit one candidate FORM against every group, each with its own constants.
 
     ``groups`` is a list of ``(label, X, y)``. The form is shared; theta is not.
@@ -236,7 +323,11 @@ def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams
     anything until the whole candidate is done.
     """
     try:
-        import scipy.optimize as opt  # local: only needed in the child
+        # Local, and deliberately here rather than inside the optimizer: an
+        # ImportError raised per start would be swallowed by the skip-this-start
+        # rule and reported as "no successful fit from any start". A missing extra
+        # has to name itself.
+        import scipy.optimize  # noqa: F401
 
         # `np` is pre-bound because a candidate body is written against the numpy
         # calling convention but need not carry its own import; a spec preface
@@ -254,7 +345,10 @@ def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams
         total = len(groups)
         fitted: dict[str, dict] = {}
         for done, (label, gX, gy) in enumerate(groups, start=1):
-            fitted[label] = _fit_one_group(opt, equation, metric, gX, gy, max_nparams)
+            fitted[label] = _fit_one_group(
+                equation, metric, gX, gy, max_nparams,
+                primary, escalation, restarts, seed,
+            )
             _emit_progress(progress_path, label, done, total)
         q.put({"groups": fitted})
     except Exception as exc:  # any failure in untrusted body -> invalid, never raise
@@ -301,6 +395,9 @@ def evaluate_body(
     *,
     max_nparams: int = _DEFAULT_MAX_NPARAMS,
     timeout_seconds: int = _DEFAULT_TIMEOUT,
+    optimizer: str = AUTO,
+    restarts: int = DEFAULT_RESTARTS,
+    seed: int = DEFAULT_SEED,
 ) -> FitResult:
     """Fit ``program_str``'s constants under ``metric``; never raises.
 
@@ -315,6 +412,9 @@ def evaluate_body(
         metric,
         max_nparams=max_nparams,
         timeout_seconds=timeout_seconds,
+        optimizer=optimizer,
+        restarts=restarts,
+        seed=seed,
     )
     # One group, so the aggregate IS that group and `params` is already flat.
     # sum([v]) / 1 is exact in IEEE, so this stays bit-for-bit identical to the
@@ -331,6 +431,9 @@ def evaluate_body_grouped(
     max_nparams: int = _DEFAULT_MAX_NPARAMS,
     timeout_seconds: int = _DEFAULT_TIMEOUT,
     progress_path: str | Path | None = None,
+    optimizer: str = AUTO,
+    restarts: int = DEFAULT_RESTARTS,
+    seed: int = DEFAULT_SEED,
 ) -> FitResult:
     """Fit one FORM against every group, each refitting its own constants.
 
@@ -355,7 +458,22 @@ def evaluate_body_grouped(
     lands, so a submit that refits forty groups can be asked where it is instead
     of being silent for minutes. It is pure telemetry: passing ``None`` (the
     default) leaves every byte of the result and every number in it unchanged.
+
+    ``optimizer`` names a declared choice (``optimizers.resolve``), ``restarts``
+    and ``seed`` control the multi-start inits. The defaults are what the fit has
+    always used, except that ``auto`` will escalate off a flat gradient where
+    plain BFGS could only report the init it never left.
     """
+    try:
+        primary, escalation = resolve(optimizer)
+    except KeyError as exc:
+        # A configuration error, not a bad candidate. Reported rather than raised,
+        # because this function's contract is that it never raises, and named
+        # loudly on every candidate rather than quietly turning a whole search
+        # invalid.
+        return FitResult(
+            valid=False, error=str(exc).strip("'"), rejection_reason="numeric"
+        )
     # Ping before forking, so that a fit which wedges on its FIRST group is still
     # visibly a fit in flight rather than an idle run. Done in the parent because
     # by definition the child has not started yet.
@@ -364,7 +482,7 @@ def evaluate_body_grouped(
     proc = _MP_CONTEXT.Process(
         target=_worker,
         args=(program_str, function_to_evolve, groups, metric, max_nparams, queue,
-              progress_path),
+              progress_path, primary, escalation, restarts, seed),
     )
     proc.start()
     proc.join(timeout=timeout_seconds * max(1, len(groups)))
@@ -410,11 +528,16 @@ def evaluate_body_grouped(
             per_group_value={
                 label: r["value"] for label, r in per.items() if r.get("value") is not None
             },
+            optimizer=first.get("optimizer", ""),
+            optimizer_per_group={
+                label: r["optimizer"] for label, r in per.items() if r.get("optimizer")
+            },
         )
 
     per_group = {label: r["score"] for label, r in per.items()}
     per_group_value = {label: r["value"] for label, r in per.items()}
     params_per_group = {label: r["params"] for label, r in per.items()}
+    optimizer_per_group = {label: r["optimizer"] for label, r in per.items()}
     # With a single group there IS one parameter vector, so publish it flat: every
     # existing caller (best.json, OOD scoring via evaluate_fixed) reads `params`,
     # and an ungrouped run must keep behaving exactly as it did.
@@ -430,4 +553,14 @@ def evaluate_body_grouped(
         per_group=per_group,
         per_group_value=per_group_value,
         params_per_group=params_per_group,
+        optimizer=_common_optimizer(optimizer_per_group),
+        optimizer_per_group=optimizer_per_group,
     )
+
+
+def _common_optimizer(per_group: dict[str, str]) -> str:
+    """The one optimizer behind every group, or ``MIXED`` when they disagree."""
+    names = set(per_group.values())
+    if not names:
+        return ""
+    return next(iter(names)) if len(names) == 1 else MIXED

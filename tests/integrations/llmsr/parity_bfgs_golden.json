@@ -1,0 +1,122 @@
+{
+  "bactgrow-2group": {
+    "error": "",
+    "params": [],
+    "params_per_group": {
+      "even": [
+        "0x1.d7855babe78e0p-7",
+        "-0x1.5e2bc4d380000p-19",
+        "0x1.64b28033a7f5fp-8",
+        "0x1.2506b28e21b40p-7",
+        "-0x1.613e192e78720p-3",
+        "-0x1.f2316644eba94p+2",
+        "0x1.16ebe1ae44926p+3",
+        "0x1.fd79b8b10f968p-1",
+        "-0x1.33a47d3f8481ap+2",
+        "-0x1.db027c8c745c8p+0"
+      ],
+      "odd": [
+        "0x1.9931f5d299a00p-9",
+        "-0x1.03cb02847cb80p-7",
+        "0x1.d72b5709da190p-9",
+        "-0x1.98bf0df410040p-8",
+        "0x1.58ec0074de500p-6",
+        "0x1.2bbb0f4efc09ep+3",
+        "-0x1.a315ffec6a9bbp+2",
+        "0x1.7a6e500491f00p+1",
+        "-0x1.3f79e94cdab76p+3",
+        "0x1.fef1004c4348fp+2"
+      ]
+    },
+    "per_group": {
+      "even": "-0x1.73117604ca9b2p-1",
+      "odd": "-0x1.aa23670dfb8cep-1"
+    },
+    "per_group_value": {
+      "even": "0x1.73117604ca9b2p-1",
+      "odd": "0x1.aa23670dfb8cep-1"
+    },
+    "score": "-0x1.8e9a6e8963140p-1",
+    "valid": true,
+    "value": "0x1.8e9a6e8963140p-1"
+  },
+  "bactgrow-ungrouped": {
+    "error": "",
+    "params": [
+      "0x1.352f35964bcb4p-9",
+      "-0x1.36d9754a8f0bcp-9",
+      "0x1.22409d71a0871p-8",
+      "-0x1.b2f4864ba8e9cp-11",
+      "-0x1.7a47ab59d44cap-5",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0"
+    ],
+    "params_per_group": {
+      "data": [
+        "0x1.352f35964bcb4p-9",
+        "-0x1.36d9754a8f0bcp-9",
+        "0x1.22409d71a0871p-8",
+        "-0x1.b2f4864ba8e9cp-11",
+        "-0x1.7a47ab59d44cap-5",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "per_group": {
+      "data": "-0x1.6241e7d489eecp-7"
+    },
+    "per_group_value": {
+      "data": "0x1.6241e7d489eecp-7"
+    },
+    "score": "-0x1.6241e7d489eecp-7",
+    "valid": true,
+    "value": "0x1.6241e7d489eecp-7"
+  },
+  "exp-2group": {
+    "error": "",
+    "params": [],
+    "params_per_group": {
+      "g1": [
+        "0x1.fff52285e3123p+0",
+        "0x1.333a06382d256p-2",
+        "-0x1.ffeafe2492e2ep-1",
+        "0x1.5434c25979320p+2",
+        "0x1.378dcd5895438p-1",
+        "-0x1.2377ee3fbf5c5p+2",
+        "-0x1.5c1c3777655d0p-2",
+        "0x1.2b206c94280e1p+3",
+        "0x1.4d586d763805ep+3",
+        "-0x1.b4da68699fb68p+1"
+      ],
+      "g2": [
+        "0x1.1936c32750810p+9",
+        "-0x1.f66ba8c2c71c0p-10",
+        "-0x1.1809616985360p+9",
+        "-0x1.f1efcc91f26d4p+1",
+        "-0x1.4cf24942df414p+1",
+        "0x1.2bbb0f4efc09ep+3",
+        "-0x1.a315ffec6a9bbp+2",
+        "0x1.7a6e500491f00p+1",
+        "-0x1.3f79e94cdab76p+3",
+        "0x1.fef1004c4348fp+2"
+      ]
+    },
+    "per_group": {
+      "g1": "-0x1.3942d2cc6c48ep-36",
+      "g2": "-0x1.b0f27c48ad98dp-7"
+    },
+    "per_group_value": {
+      "g1": "0x1.3942d2cc6c48ep-36",
+      "g2": "0x1.b0f27c48ad98dp-7"
+    },
+    "score": "-0x1.b0f27c5277af6p-8",
+    "valid": true,
+    "value": "0x1.b0f27c5277af6p-8"
+  }
+}
