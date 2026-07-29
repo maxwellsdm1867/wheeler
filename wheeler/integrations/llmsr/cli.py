@@ -36,6 +36,7 @@ import typer
 
 from . import fit as fit_mod
 from . import metrics as metrics_mod
+from . import optimizers as optimizers_mod
 from . import runs as runs_mod
 from .data import _as_groups, _load_data
 from .runs import (
@@ -81,6 +82,16 @@ _METRIC_HELP = (
 )
 
 
+_OPTIMIZER_HELP = (
+    "constant-fit optimizer; built in: "
+    + ", ".join(sorted(optimizers_mod.BUILTIN_OPTIMIZERS))
+    + f", plus {optimizers_mod.AUTO} (the default: BFGS, escalating to "
+    "Nelder-Mead when no start moves off its init, which is what a flat "
+    "gradient looks like). Run `wheeler llmsr optimizers` for every "
+    "registered one, yours included."
+)
+
+
 def _metric_for(key: str) -> metrics_mod.Metric:
     """Resolve a metric by name, importing the scientist's metric modules first."""
     metrics_mod.load_user_metrics()
@@ -88,6 +99,20 @@ def _metric_for(key: str) -> metrics_mod.Metric:
         return metrics_mod.get_metric(key)
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+def _optimizer_for(key: str) -> str:
+    """Validate an optimizer choice, importing the scientist's modules first.
+
+    Returns the canonical key to bind into the run. Checked HERE, at ``init``,
+    because a name the fit cannot resolve would otherwise invalidate every
+    candidate in the search rather than failing one command.
+    """
+    optimizers_mod.load_user_optimizers()
+    try:
+        return optimizers_mod.canonical(key)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc).strip("'")) from exc
 
 
 # ---------------------------------------------------------------- search state
@@ -132,11 +157,18 @@ def _score_body(
     max_nparams: int,
     timeout: int,
     progress_path: Optional[Path] = None,
+    optimizer: str = optimizers_mod.AUTO,
+    restarts: int = fit_mod.DEFAULT_RESTARTS,
+    seed: int = fit_mod.DEFAULT_SEED,
 ) -> tuple[fit_mod.FitResult, str, object]:
     """Build the program from a body, fit + score it. Returns (result, program, fn).
 
     ``progress_path`` is the during-the-fit channel: the fit refreshes it as each
     group lands, so ``status`` can answer where a long refit has got to.
+
+    ``optimizer``, ``restarts`` and ``seed`` are the run's fit knobs, bound at
+    ``init`` and read back off ``meta.json`` for every later submit, so one run
+    fits every candidate the same way.
     """
     fn, program = evaluator._sample_to_program(body, version_generated, template, fte)
     if evaluator._calls_ancestor(program, fte):
@@ -157,8 +189,45 @@ def _score_body(
         max_nparams=max_nparams,
         timeout_seconds=timeout,
         progress_path=progress_path,
+        optimizer=optimizer,
+        restarts=restarts,
+        seed=seed,
     )
     return result, program, fn
+
+
+def _optimizer_report(meta: dict, winner: Optional[dict]) -> dict:
+    """What produced the winning constants, and under which knobs.
+
+    ``requested`` is the run's declared choice; ``used`` is the CONCRETE optimizer
+    behind the number. The two differ exactly when ``auto`` escalated, and that
+    difference is the whole point: a reader of ``best.json`` must never have to
+    guess whether a silent fallback happened. Empty ``used`` means the winner was
+    fitted before the optimizer was recorded.
+    """
+    knobs = _fit_knobs(meta)
+    return {
+        "requested": knobs["optimizer"],
+        "used": (winner or {}).get("optimizer", ""),
+        "restarts": knobs["restarts"],
+        "seed": knobs["seed"],
+    }
+
+
+def _fit_knobs(meta: dict) -> dict:
+    """The optimizer knobs this run was created with, as ``_score_body`` kwargs.
+
+    Every default is what the fit used before these were declarable, so a run
+    created by an older Wheeler replays identically, save for the escalation
+    ``auto`` adds where BFGS could not move off its inits at all.
+    """
+    restarts = meta.get("restarts")
+    seed = meta.get("seed")
+    return {
+        "optimizer": meta.get("optimizer") or optimizers_mod.AUTO,
+        "restarts": fit_mod.DEFAULT_RESTARTS if restarts is None else int(restarts),
+        "seed": fit_mod.DEFAULT_SEED if seed is None else int(seed),
+    }
 
 
 # --------------------------------------------------------------------- verbs
@@ -188,6 +257,39 @@ def metrics() -> None:
 
 
 @llmsr_app.command()
+def optimizers() -> None:
+    """List every registered optimizer: the built-ins plus the scientist's own.
+
+    Computed at call time, after the user optimizer modules are imported, so it
+    is the truthful listing the act offers from. ``escalation`` states the rule
+    ``auto`` applies, because a default that silently changes which optimizer
+    produced a number would be the opposite of what this engine is for.
+    """
+    failures = optimizers_mod.load_user_optimizers()
+    typer.echo(json.dumps({
+        "optimizers": [
+            {
+                "key": key,
+                "label": o.label,
+                "builtin": key in optimizers_mod.BUILTIN_OPTIMIZERS,
+                "escalates_to": o.escalates_to,
+            }
+            for key, o in sorted(optimizers_mod.OPTIMIZERS.items())
+        ],
+        "choices": optimizers_mod.choices(),
+        "default": optimizers_mod.AUTO,
+        "escalation": {
+            "strategy": optimizers_mod.AUTO,
+            "primary": optimizers_mod.AUTO_PRIMARY,
+            "escalates_to": optimizers_mod.AUTO_ESCALATION,
+            "when": "no start moved off its init",
+        },
+        "sources": optimizers_mod.user_optimizer_sources(),
+        "errors": [{"source": f.source, "error": f.error} for f in failures],
+    }, indent=2))
+
+
+@llmsr_app.command()
 def init(
     spec: Path = typer.Option(..., exists=True, readable=True, help="spec .txt (skeleton + evaluate)"),
     data: Path = typer.Option(..., exists=True, readable=True, help="training CSV (last column = target)"),
@@ -205,12 +307,28 @@ def init(
             "Default: ungrouped, one shared parameter set."
         ),
     ),
+    optimizer: str = typer.Option(optimizers_mod.AUTO, help=_OPTIMIZER_HELP),
+    restarts: int = typer.Option(
+        fit_mod.DEFAULT_RESTARTS,
+        help=(
+            "extra optimizer starts beyond the all-ones init. More starts means "
+            "a form whose constants live far from 1 is less likely to be rejected "
+            "for a fit that never left a flat region, at linear cost in fit time."
+        ),
+    ),
+    seed: int = typer.Option(
+        fit_mod.DEFAULT_SEED,
+        help="RNG seed for the random restarts; fixed, so a run replays exactly",
+    ),
 ) -> None:
-    """Create a run: bind spec + data + metric + generator, seed the buffer."""
+    """Create a run: bind spec + data + metric + generator + optimizer, seed the buffer."""
     metric_obj = _metric_for(metric)
+    opt_key = _optimizer_for(optimizer)
     gen = generator.strip().lower()
     if gen not in _GENERATORS:
         raise typer.BadParameter(f"generator must be one of {_GENERATORS}")
+    if restarts < 0:
+        raise typer.BadParameter("restarts must be >= 0")
 
     spec_text = spec.read_text()
     fte, ftr = _extract_names(spec_text)
@@ -235,6 +353,10 @@ def init(
         "max_nparams": max_nparams,
         "timeout": timeout,
         "group_by": group_by.strip(),
+        # The fit knobs, bound to the run so every later submit fits the same way.
+        "optimizer": opt_key,
+        "restarts": restarts,
+        "seed": seed,
         "created": _now(),
         "created_epoch": time.time(),
     }
@@ -250,6 +372,7 @@ def init(
         seed_body, None, template, fte,
         _as_groups(X, y, labels), metric_obj, max_nparams, timeout,
         progress_path=run_dir / runs_mod.PROGRESS_FILE,
+        **_fit_knobs(meta),
     )
     _append_submission(run_dir, {
         "sample_order": 0,
@@ -262,6 +385,8 @@ def init(
         "per_group": result.per_group,
         "per_group_value": result.per_group_value,
         "params_per_group": result.params_per_group,
+        "optimizer": result.optimizer,
+        "optimizer_per_group": result.optimizer_per_group,
         "island_id": None,
         "version_generated": None,
         "seed": True,
@@ -277,6 +402,7 @@ def init(
         "run_dir": str(run_dir),
         "metric": metric_obj.key,
         "generator": gen,
+        "optimizer": opt_key,
         "function_to_evolve": fte,
         "seed_valid": result.valid,
         "seed_value": result.value,
@@ -348,6 +474,7 @@ def submit(
         body, version_generated, template, fte, _as_groups(X, y, labels),
         metric_obj, meta["max_nparams"], meta["timeout"],
         progress_path=run_dir / runs_mod.PROGRESS_FILE,
+        **_fit_knobs(meta),
     )
     fit_seconds = time.time() - _t0
     if result.valid:
@@ -369,6 +496,8 @@ def submit(
         "per_group": result.per_group,
         "per_group_value": result.per_group_value,
         "params_per_group": result.params_per_group,
+        "optimizer": result.optimizer,
+        "optimizer_per_group": result.optimizer_per_group,
         "island_id": island_id,
         "version_generated": version_generated,
         "seed": False,
@@ -382,6 +511,7 @@ def submit(
         "valid": result.valid,
         "value": result.value,
         "score": result.score,
+        "optimizer": result.optimizer,
         "error": result.error,
         "rejection_reason": result.rejection_reason,
         "sample_order": sample_order,
@@ -426,6 +556,7 @@ def best(
             "params": [],
             "program": None,
             "metrics": {},
+            "optimizer": _optimizer_report(meta, None),
             "timing": _timing(meta, subs),
             "n_samples": len(subs),
             "n_valid": 0,
@@ -471,12 +602,16 @@ def best(
                 "group_by": meta.get("group_by", ""),
                 "params_per_group": winner.get("params_per_group") or {},
                 "value_per_group": winner.get("per_group_value") or {},
+                # Escalation is per group, so a grouped winner can be "mixed";
+                # this is what resolves that into which group used what.
+                "optimizer_per_group": winner.get("optimizer_per_group") or {},
             }
             if meta.get("group_by")
             else {}
         ),
         "program": program,
         "metrics": metrics_out,
+        "optimizer": _optimizer_report(meta, winner),
         "selection": {
             "mode": mode,
             "complexity": _equation_complexity(winner["body"]),
@@ -491,6 +626,7 @@ def best(
     typer.echo(json.dumps({
         "status": "completed",
         "metric": metric_key,
+        "optimizer": winner.get("optimizer", ""),
         "value": winner["value"],
         "n_samples": len(subs),
         "n_valid": len(valid),
