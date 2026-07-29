@@ -14,7 +14,8 @@ orchestration loop cannot be used as shipped. Instead the evolutionary loop is
 INVERTED into four CLI verbs, and Claude Code steps it:
 
 ```
-wheeler llmsr init   --spec S --data D --metric M [--group-by COL]  -> run dir
+wheeler llmsr init   --spec S --data D... --metric M [--group-by COL]
+                     [--seed-from NAME] [--score-on NAMES]           -> run dir
 wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
    ... the ACT generates a candidate body with a sub-agent (no API key) ...
 wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
@@ -38,11 +39,16 @@ State persists by replaying `submissions.jsonl` through the vendored
   achieved), `progress.json` (written DURING a fit: where that fit has got to).
   The two status files are deliberately separate, because only the second can
   answer "is it wedged?" for a submit that refits forty groups in silence.
-- `data.py` -- reads the training table in the shape its metric declares. The
-  tabular convention is upstream's (last column is the target). What varies is
-  whether a column NAMES THE GROUP each row belongs to (excluded from the inputs,
-  read as text so a label like `c01` is not NaN) and whether the target is one
-  value per row (`regression`) or a padded column of recorded event times.
+- `data.py` -- reads a run's training tables in the shape its metric declares,
+  and NAMES them. The tabular convention is upstream's (last column is the
+  target). What varies is whether a column NAMES THE GROUP each row belongs to
+  (excluded from the inputs, read as text so a label like `c01` is not NaN) and
+  whether the target is one value per row (`regression`) or a padded column of
+  recorded event times. It also owns the dataset vocabulary: `parse_datasets`
+  (`--data path` or `--data NAME=path`), the `--seed-from` / `--score-on` role
+  split, `key_scheme` / `score_key` (how a unit is named in the score vector),
+  and `load_units`, which composes with the loader registry rather than around
+  it.
 - `metrics.py` -- the metric registry. `mse` and `nmse` ship built in; a
   scientist registers their own from `$WHEELER_LLMSR_METRICS` or
   `.wheeler/llmsr/metrics.py` WITHOUT editing the installed package. A metric
@@ -93,6 +99,53 @@ State persists by replaying `submissions.jsonl` through the vendored
   reaches the vendored buffer (`_reduce_score` ranks islands, `_get_signature`
   clusters forms by their per-group profile). An ungrouped run is the one-group
   case and is bit-for-bit unchanged. See `docs/llmsr-objective-formulation.md`.
+- **A run may bind SEVERAL datasets, and the unit of fitting is the (dataset,
+  group) pair.** `--data` is repeatable and nameable (`--data B=cellB.csv`).
+  `--seed-from` says which table shapes the prompt (where the FORM comes from);
+  `--score-on` says which tables enter the objective (what it is judged on).
+  Keeping the two roles apart is the point: a form extracted from one cell and
+  then REFITTED on cells it never saw is a test of the FORM, not of one lucky
+  parameterization, and that is fair precisely because the same law is assumed
+  across cells and only the constants differ. This is upstream's shape restored,
+  not an invention: `vendor/evaluator.py` loops `self._inputs` and builds
+  `scores_per_test` per named input; Wheeler had collapsed it to one hardcoded
+  key.
+- **The score-key SCHEME is fixed at `init` and recorded in `meta.json`.** Two
+  candidates in one run must present the vendored buffer with identical keys, so
+  the scheme is decided once (`data.key_scheme`) and read back off the run
+  forever after, never re-derived from a later command line. `scheme=group`
+  means the key is the bare group label (`data` ungrouped, `c01` grouped) and is
+  used for exactly one shape: a single scored dataset carrying the default name,
+  which is precisely the run an older Wheeler could have created. `scheme=dataset`
+  means the key names the dataset (`A`) and the group too (`A:c01`). **An unnamed
+  single `--data` is byte-for-byte what it was**, and this is not politeness:
+  `buffer._get_signature` clusters candidates on the sorted score signature and
+  `_reduce_score` means over the keys in insertion order, so a changed key SET
+  would silently invalidate the buffer state of every run already on disk without
+  raising anything. `tests/integrations/llmsr/parity_singledata.py` is the gate,
+  comparing a whole `init` -> `prompt` -> `submit` -> `best` walk against a golden
+  captured from the pre-change code. Regenerate it per its docstring; never
+  delete it. (`meta.json` may GAIN keys, since the scheme has to be recorded
+  there; `submissions.jsonl` and `best.json` may not change at all.)
+- **`best.json` labels every dataset by REGIME.** A multi-dataset run carries a
+  `datasets` block whose entries are `scored` (the search refitted constants on
+  it and ranked candidates by the result) or `held_out` (it did neither), reusing
+  `discover.py`'s vocabulary rather than a parallel one. A split that scores the
+  search is NOT a holdout: 40 rounds scored on B means the search optimized
+  against B. A dataset that only ever seeded the prompt is held out by that rule
+  and says so in `regime_reason`, carrying `seed: true`, because the generator
+  did see it even though the search never scored it. Held-out entries carry no
+  value: computing one means refitting the winner on data the run never touched,
+  which is a separate act with its own provenance (`wheeler llmsr transfer`), not
+  a footnote on this one. The block is ABSENT on a single-default-dataset run, so
+  existing readers see the file they always saw.
+- **KNOWN GAP (slice S8): the runnable footer still assumes one file.**
+  `selection._runnable_program` writes `FITTED_PARAMS = []` for a multi-unit
+  run (there is no single vector, by the same construction that empties it for a
+  grouped run), so the emitted `program` raises; the grouped branch matches keys
+  like `A:c01` against one file's cell labels and silently reports zero rows. The
+  answer is not lost: `best.json["datasets"].entries[].params_per_key` carries
+  every unit's own constants. Fixing the footer is S8's job.
 - **A grouped run's answer is the TABLE, everywhere.** `params` is EMPTY by
   construction whenever there is more than one group, so anything that reads it
   alone records nothing. `best.json` carries `params_per_group` /
@@ -154,3 +207,13 @@ State persists by replaying `submissions.jsonl` through the vendored
 - Tests live in `tests/integrations/llmsr/`, whose `conftest.py` gives every test
   a scratch cwd and restores the process-wide metric registry. Do not hand-copy
   it into a new test file: it is autouse for the whole directory.
+- Two parity gates run inside the suite and must stay green: `parity_bfgs.py`
+  (the optimizer registry moved no bit where BFGS moved) and
+  `parity_singledata.py` (the dataset seam moved no bit for an unnamed single
+  `--data`). Both compare against a golden captured from an earlier commit. If a
+  legitimate change alters the numbers, REGENERATE the golden per the script's
+  docstring and say so loudly; do not delete the gate.
+- `test_multidata.py` exports the reusable multi-dataset surface: `walk_case`
+  (one `init` -> `submit` -> `best` walk returning everything it wrote),
+  `scored_keys` / `scored_datasets`, and `SCORE_ON_MATRIX` (the four `--score-on`
+  shapes as a plain parametrize table). Import them rather than restating them.

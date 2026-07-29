@@ -241,7 +241,8 @@ class TestPingPayload:
         assert ping["group"] == "g2"
         assert ping["done"] == 3
         assert ping["total"] == 3
-        # Placeholder until S2 gives a run more than one dataset to score against.
+        # No `dataset_of` map, so every unit reports the default name: this call
+        # scores one table. A run naming several is covered in test_multidata.py.
         assert ping["dataset"] == fit_mod.UNGROUPED
         assert ping["at"]
 

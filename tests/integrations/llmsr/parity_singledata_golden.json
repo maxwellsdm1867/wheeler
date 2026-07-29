@@ -1,0 +1,309 @@
+{
+  "grouped": {
+    "best": {
+      "data_path": "<DATA:two_cells.csv>",
+      "equation": "    return params[0]*x + params[1]*x**2",
+      "generator": "claude",
+      "group_by": "cell",
+      "metric": "mse",
+      "metrics": {},
+      "n_constraint_rejected": 0,
+      "n_samples": 2,
+      "n_valid": 2,
+      "optimizer": {
+        "requested": "auto",
+        "restarts": 6,
+        "seed": 0,
+        "used": "bfgs"
+      },
+      "optimizer_per_group": {
+        "c01": "bfgs",
+        "c02": "bfgs"
+      },
+      "params": [],
+      "params_per_group": {
+        "c01": [
+          "0x1.fffffffd9f0e4p+0",
+          "-0x1.00000018f380ap-1",
+          "0x1.06143ff60cb97p+2",
+          "0x1.c42a8abe4eb28p+1"
+        ],
+        "c02": [
+          "-0x1.4000003d8667ap+0",
+          "0x1.7fffffe8508bdp+1",
+          "0x1.60c0322e96deep+2",
+          "-0x1.f2316644eba94p+2"
+        ]
+      },
+      "program": "\"\"\"two-group toy\"\"\"\nimport numpy as np\n\nMAX_NPARAMS = 4\n\n\ndef evaluate(data: dict) -> float:\n    return 0.0\n\n\ndef equation(x: np.ndarray, params: np.ndarray) -> np.ndarray:\n    return params[0]*x + params[1]*x**2\n\n\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n# GROUPED run: each group refit its OWN constants under this one shared\n# form, so there is no single parameter vector. Each entry below is one\n# group's answer, and METRIC['value'] is the mean over them.\nGROUP_BY = 'cell'\nFITTED_PARAMS_PER_GROUP = {'c01': [1.9999999994461684, -0.5000000029046998, 4.094985952647128, 3.532548277782002], 'c02': [-1.2500000143249097, 2.9999999889706417, 5.511730714318658, -7.784265105538584]}\nMETRIC = {'name': 'mse', 'value': 2.2717225966253693e-16, 'per_group': {'c01': 3.1359478076655073e-17, 'c02': 4.2298504124841883e-16}}\n\nif __name__ == '__main__':\n    import numpy as _np\n    _path = r'<DATA:two_cells.csv>'\n    with open(_path) as _fh:\n        _header = [_c.strip() for _c in _fh.readline().strip().split(',')]\n    _d = _np.genfromtxt(_path, delimiter=',', skip_header=1)\n    if _d.ndim == 1:\n        _d = _d.reshape(1, -1)\n    _gi = _header.index(GROUP_BY)\n    _labels = _np.atleast_1d(_np.genfromtxt(\n        _path, delimiter=',', skip_header=1, usecols=[_gi], dtype=str))\n    _keep = [_i for _i in range(_d.shape[1] - 1) if _i != _gi]\n    _X, _y = _d[:, _keep], _d[:, -1].reshape(-1)\n    _n = equation.__code__.co_argcount - 1\n    print('metric', METRIC)\n    for _g in sorted(FITTED_PARAMS_PER_GROUP):\n        _mask = _np.asarray([str(_v) == _g for _v in _labels.tolist()])\n        _gX = _X[_mask]\n        _pred = equation(*[_gX[:, _i] for _i in range(_n)],\n                      _np.array(FITTED_PARAMS_PER_GROUP[_g]))\n        print('group', _g, 'n_rows', int(_mask.sum()),\n              'prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n",
+      "run_id": "parity-grouped",
+      "selection": {
+        "candidates": 2,
+        "complexity": 4,
+        "mode": "fit"
+      },
+      "spec_path": "<SPEC:group_spec.txt>",
+      "status": "completed",
+      "value_per_group": {
+        "c01": "0x1.213d795e45de7p-55",
+        "c02": "0x1.e7ab261ad0c88p-52"
+      }
+    },
+    "meta": {
+      "data_path": "<DATA:two_cells.csv>",
+      "function_to_evolve": "equation",
+      "function_to_run": "evaluate",
+      "generator": "claude",
+      "group_by": "cell",
+      "max_nparams": 4,
+      "metric": "mse",
+      "optimizer": "auto",
+      "restarts": 6,
+      "run_id": "parity-grouped",
+      "seed": 0,
+      "spec_path": "<SPEC:group_spec.txt>",
+      "timeout": 30
+    },
+    "submissions": [
+      {
+        "body": "    return params[0]*x",
+        "error": "",
+        "island_id": null,
+        "optimizer": "bfgs",
+        "optimizer_per_group": {
+          "c01": "bfgs",
+          "c02": "bfgs"
+        },
+        "params": [],
+        "params_per_group": {
+          "c01": [
+            "0x1.e1d15c06d4dfep+0",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0"
+          ],
+          "c02": [
+            "-0x1.8a55d0a07c721p+1",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0"
+          ]
+        },
+        "per_group": {
+          "c01": "-0x1.bb304fb949c6bp-1",
+          "c02": "-0x1.9a343cc13796cp+4"
+        },
+        "per_group_value": {
+          "c01": "0x1.bb304fb949c6bp-1",
+          "c02": "0x1.9a343cc13796cp+4"
+        },
+        "program": "\"\"\"two-group toy\"\"\"\nimport numpy as np\n\nMAX_NPARAMS = 4\n\n\ndef evaluate(data: dict) -> float:\n    return 0.0\n\n\ndef equation(x: np.ndarray, params: np.ndarray) -> np.ndarray:\n    return params[0]*x\n\n",
+        "rejection_reason": "",
+        "sample_order": 0,
+        "score": "-0x1.a80dbf3f01e4fp+3",
+        "seed": true,
+        "valid": true,
+        "value": "0x1.a80dbf3f01e4fp+3",
+        "version_generated": null
+      },
+      {
+        "body": "    return params[0]*x + params[1]*x**2\n",
+        "error": "",
+        "island_id": 0,
+        "optimizer": "bfgs",
+        "optimizer_per_group": {
+          "c01": "bfgs",
+          "c02": "bfgs"
+        },
+        "params": [],
+        "params_per_group": {
+          "c01": [
+            "0x1.fffffffd9f0e4p+0",
+            "-0x1.00000018f380ap-1",
+            "0x1.06143ff60cb97p+2",
+            "0x1.c42a8abe4eb28p+1"
+          ],
+          "c02": [
+            "-0x1.4000003d8667ap+0",
+            "0x1.7fffffe8508bdp+1",
+            "0x1.60c0322e96deep+2",
+            "-0x1.f2316644eba94p+2"
+          ]
+        },
+        "per_group": {
+          "c01": "-0x1.213d795e45de7p-55",
+          "c02": "-0x1.e7ab261ad0c88p-52"
+        },
+        "per_group_value": {
+          "c01": "0x1.213d795e45de7p-55",
+          "c02": "0x1.e7ab261ad0c88p-52"
+        },
+        "program": "\"\"\"two-group toy\"\"\"\nimport numpy as np\n\nMAX_NPARAMS = 4\n\n\ndef evaluate(data: dict) -> float:\n    return 0.0\n\n\ndef equation(x: np.ndarray, params: np.ndarray) -> np.ndarray:\n    return params[0]*x + params[1]*x**2\n\n",
+        "rejection_reason": "",
+        "sample_order": 1,
+        "score": "-0x1.05e96aa34cc22p-52",
+        "seed": false,
+        "valid": true,
+        "value": "0x1.05e96aa34cc22p-52",
+        "version_generated": 0
+      }
+    ]
+  },
+  "ungrouped": {
+    "best": {
+      "data_path": "<DATA:train_small.csv>",
+      "equation": "    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]",
+      "generator": "claude",
+      "metric": "mse",
+      "metrics": {
+        "mse_train": "0x1.6241e7d489eecp-7",
+        "nmse_train": "0x1.9c27d96984aa9p-1"
+      },
+      "n_constraint_rejected": 0,
+      "n_samples": 2,
+      "n_valid": 2,
+      "optimizer": {
+        "requested": "auto",
+        "restarts": 6,
+        "seed": 0,
+        "used": "bfgs"
+      },
+      "params": [
+        "0x1.352f35964bcb4p-9",
+        "-0x1.36d9754a8f0bcp-9",
+        "0x1.22409d71a0871p-8",
+        "-0x1.b2f4864ba8e9cp-11",
+        "-0x1.7a47ab59d44cap-5",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ],
+      "program": "\"\"\"\nFind the mathematical function skeleton that represents E. Coli bacterial growth rate, given data on population density, substrate concentration, temperature, and pH level. \n\"\"\"\n\n\nimport numpy as np\n\n#Initialize parameters\nMAX_NPARAMS = 10\nPRAMS_INIT = [1.0]*MAX_NPARAMS\n\n\ndef evaluate(data: dict) -> float:\n    \"\"\" Evaluate the equation on data observations.\"\"\"\n    inputs, outputs = data['inputs'], data['outputs']\n    b, s, temp, pH = inputs[:,0], inputs[:,1], inputs[:,2], inputs[:,3]\n    \n    # Optimize parameters based on data\n    from scipy.optimize import minimize\n    def loss(params):\n        y_pred = equation(b, s, temp, pH, params)\n        return np.mean((y_pred - outputs) ** 2)\n\n    loss_partial = lambda params: loss(params)\n    result = minimize(loss_partial, [1.0]*MAX_NPARAMS, method='BFGS')\n    \n    # Return evaluation score\n    optimized_params = result.x\n    loss = result.fun\n\n    if np.isnan(loss) or np.isinf(loss):\n        return None\n    else:\n        return -loss\n\n\ndef equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:\n    \"\"\" Mathematical function for bacterial growth rate\n\n    Args:\n        b: A numpy array representing observations of population density of the bacterial species.\n        s: A numpy array representing observations of substrate concentration.\n        temp: A numpy array representing observations of temperature.\n        pH: A numpy array representing observations of pH level.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing bacterial growth rate as the result of applying the mathematical function to the inputs.\n    \"\"\"\n    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]\n\n\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\nFITTED_PARAMS = [0.0023588898576672682, -0.002371593063143688, 0.0044289001831448885, -0.0008296111568210809, -0.04617675272914708, 1.0, 1.0, 1.0, 1.0, 1.0]\nMETRIC = {'name': 'mse', 'value': 0.010811079214433993}\n\nif __name__ == '__main__':\n    import numpy as _np\n    _d = _np.genfromtxt(r'<DATA:train_small.csv>', delimiter=',', skip_header=1)\n    _X, _y = _d[:, :-1], _d[:, -1].reshape(-1)\n    _n = equation.__code__.co_argcount - 1\n    _cols = [_X[:, i] for i in range(_n)]\n    _pred = equation(*_cols, _np.array(FITTED_PARAMS))\n    print('metric', METRIC)\n    print('prediction[:5]', _np.asarray(_pred).reshape(-1)[:5])\n",
+      "run_id": "parity-ungrouped",
+      "selection": {
+        "candidates": 2,
+        "complexity": 8,
+        "mode": "fit"
+      },
+      "spec_path": "<SPEC:spec_bactgrow.txt>",
+      "status": "completed"
+    },
+    "meta": {
+      "data_path": "<DATA:train_small.csv>",
+      "function_to_evolve": "equation",
+      "function_to_run": "evaluate",
+      "generator": "claude",
+      "group_by": "",
+      "max_nparams": 10,
+      "metric": "mse",
+      "optimizer": "auto",
+      "restarts": 6,
+      "run_id": "parity-ungrouped",
+      "seed": 0,
+      "spec_path": "<SPEC:spec_bactgrow.txt>",
+      "timeout": 30
+    },
+    "submissions": [
+      {
+        "body": "    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]",
+        "error": "",
+        "island_id": null,
+        "optimizer": "bfgs",
+        "optimizer_per_group": {
+          "data": "bfgs"
+        },
+        "params": [
+          "0x1.352f35964bcb4p-9",
+          "-0x1.36d9754a8f0bcp-9",
+          "0x1.22409d71a0871p-8",
+          "-0x1.b2f4864ba8e9cp-11",
+          "-0x1.7a47ab59d44cap-5",
+          "0x1.0000000000000p+0",
+          "0x1.0000000000000p+0",
+          "0x1.0000000000000p+0",
+          "0x1.0000000000000p+0",
+          "0x1.0000000000000p+0"
+        ],
+        "params_per_group": {
+          "data": [
+            "0x1.352f35964bcb4p-9",
+            "-0x1.36d9754a8f0bcp-9",
+            "0x1.22409d71a0871p-8",
+            "-0x1.b2f4864ba8e9cp-11",
+            "-0x1.7a47ab59d44cap-5",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0",
+            "0x1.0000000000000p+0"
+          ]
+        },
+        "per_group": {
+          "data": "-0x1.6241e7d489eecp-7"
+        },
+        "per_group_value": {
+          "data": "0x1.6241e7d489eecp-7"
+        },
+        "program": "\"\"\"\nFind the mathematical function skeleton that represents E. Coli bacterial growth rate, given data on population density, substrate concentration, temperature, and pH level. \n\"\"\"\n\n\nimport numpy as np\n\n#Initialize parameters\nMAX_NPARAMS = 10\nPRAMS_INIT = [1.0]*MAX_NPARAMS\n\n\ndef evaluate(data: dict) -> float:\n    \"\"\" Evaluate the equation on data observations.\"\"\"\n    inputs, outputs = data['inputs'], data['outputs']\n    b, s, temp, pH = inputs[:,0], inputs[:,1], inputs[:,2], inputs[:,3]\n    \n    # Optimize parameters based on data\n    from scipy.optimize import minimize\n    def loss(params):\n        y_pred = equation(b, s, temp, pH, params)\n        return np.mean((y_pred - outputs) ** 2)\n\n    loss_partial = lambda params: loss(params)\n    result = minimize(loss_partial, [1.0]*MAX_NPARAMS, method='BFGS')\n    \n    # Return evaluation score\n    optimized_params = result.x\n    loss = result.fun\n\n    if np.isnan(loss) or np.isinf(loss):\n        return None\n    else:\n        return -loss\n\n\ndef equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:\n    \"\"\" Mathematical function for bacterial growth rate\n\n    Args:\n        b: A numpy array representing observations of population density of the bacterial species.\n        s: A numpy array representing observations of substrate concentration.\n        temp: A numpy array representing observations of temperature.\n        pH: A numpy array representing observations of pH level.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing bacterial growth rate as the result of applying the mathematical function to the inputs.\n    \"\"\"\n    return params[0] * b + params[1] * s + params[2] * temp + params[3] * pH + params[4]\n\n",
+        "rejection_reason": "",
+        "sample_order": 0,
+        "score": "-0x1.6241e7d489eecp-7",
+        "seed": true,
+        "valid": true,
+        "value": "0x1.6241e7d489eecp-7",
+        "version_generated": null
+      },
+      {
+        "body": "    return params[0]*b*s/(params[1]+s) - params[2]*b + params[3]*temp\n",
+        "error": "",
+        "island_id": 0,
+        "optimizer": "bfgs",
+        "optimizer_per_group": {
+          "data": "bfgs"
+        },
+        "params": [
+          "-0x1.1a14e06ac5afap-12",
+          "-0x1.5968ea565c0b1p+1",
+          "0x1.0e0858001da5cp-7",
+          "0x1.ce041a76aaff1p-9",
+          "0x1.378dcd5895438p-1",
+          "-0x1.2377ee3fbf5c5p+2",
+          "-0x1.5c1c3777655d0p-2",
+          "0x1.2b206c94280e1p+3",
+          "0x1.4d586d763805ep+3",
+          "-0x1.b4da68699fb68p+1"
+        ],
+        "params_per_group": {
+          "data": [
+            "-0x1.1a14e06ac5afap-12",
+            "-0x1.5968ea565c0b1p+1",
+            "0x1.0e0858001da5cp-7",
+            "0x1.ce041a76aaff1p-9",
+            "0x1.378dcd5895438p-1",
+            "-0x1.2377ee3fbf5c5p+2",
+            "-0x1.5c1c3777655d0p-2",
+            "0x1.2b206c94280e1p+3",
+            "0x1.4d586d763805ep+3",
+            "-0x1.b4da68699fb68p+1"
+          ]
+        },
+        "per_group": {
+          "data": "-0x1.6a65941b3705ap-7"
+        },
+        "per_group_value": {
+          "data": "0x1.6a65941b3705ap-7"
+        },
+        "program": "\"\"\"\nFind the mathematical function skeleton that represents E. Coli bacterial growth rate, given data on population density, substrate concentration, temperature, and pH level. \n\"\"\"\n\n\nimport numpy as np\n\n#Initialize parameters\nMAX_NPARAMS = 10\nPRAMS_INIT = [1.0]*MAX_NPARAMS\n\n\ndef evaluate(data: dict) -> float:\n    \"\"\" Evaluate the equation on data observations.\"\"\"\n    inputs, outputs = data['inputs'], data['outputs']\n    b, s, temp, pH = inputs[:,0], inputs[:,1], inputs[:,2], inputs[:,3]\n    \n    # Optimize parameters based on data\n    from scipy.optimize import minimize\n    def loss(params):\n        y_pred = equation(b, s, temp, pH, params)\n        return np.mean((y_pred - outputs) ** 2)\n\n    loss_partial = lambda params: loss(params)\n    result = minimize(loss_partial, [1.0]*MAX_NPARAMS, method='BFGS')\n    \n    # Return evaluation score\n    optimized_params = result.x\n    loss = result.fun\n\n    if np.isnan(loss) or np.isinf(loss):\n        return None\n    else:\n        return -loss\n\n\ndef equation(b: np.ndarray, s: np.ndarray, temp: np.ndarray, pH: np.ndarray, params: np.ndarray) -> np.ndarray:\n    \"\"\" Mathematical function for bacterial growth rate\n\n    Args:\n        b: A numpy array representing observations of population density of the bacterial species.\n        s: A numpy array representing observations of substrate concentration.\n        temp: A numpy array representing observations of temperature.\n        pH: A numpy array representing observations of pH level.\n        params: Array of numeric constants or parameters to be optimized\n\n    Return:\n        A numpy array representing bacterial growth rate as the result of applying the mathematical function to the inputs.\n    \"\"\"\n    return params[0]*b*s/(params[1]+s) - params[2]*b + params[3]*temp\n\n",
+        "rejection_reason": "",
+        "sample_order": 1,
+        "score": "-0x1.6a65941b3705ap-7",
+        "seed": false,
+        "valid": true,
+        "value": "0x1.6a65941b3705ap-7",
+        "version_generated": 0
+      }
+    ]
+  }
+}
