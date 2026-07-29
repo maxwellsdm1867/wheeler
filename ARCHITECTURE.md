@@ -434,17 +434,33 @@ A declarative manifest, read by `integrations/registry.py`, so commands never ha
 The second integration, and the one that bends the sandwich: **there is no external service to call.** LLM-SR (Shojaee et al., ICLR 2025, building on DeepMind's FunSearch) is an evolutionary search that asks an LLM for candidate equation bodies, and Wheeler has no API key. So instead of a transport, the loop is INVERTED into four CLI verbs that Claude Code steps, and the sub-agent that proposes candidates IS the sampler:
 
 ```
-wheeler llmsr init   --spec S --data D --metric M [--group-by COL]  -> run dir
+wheeler llmsr scaffold-spec --data D [--recipe R]   -> a filled spec + its command
+wheeler llmsr init   --spec S --data D... --metric M [--group-by COL]
+                     [--seed-from NAME] [--score-on NAMES] [--loader K]
+                     [--optimizer K] [--use-spec-evaluate]           -> run dir
 wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
    ... the act generates a candidate body with a sub-agent ...
 wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
 wheeler llmsr best   --run R [--select fit|ood|parsimony]           -> best.json
+wheeler llmsr transfer --run R --data HELD_OUT.csv                  -> transfer.json
 wheeler integrate ingest llmsr-discover best.json --link-to Q --used D  -> graph
 ```
 
+Plus five listings computed at call time, so they are truthful about the open
+registries: `metrics`, `loaders`, `optimizers`, `recipes`, and `specs` for what
+ships. `--data` is repeatable and nameable (`--data B=cellB.csv`); `--seed-from`
+says which table shapes the PROMPT and `--score-on` which tables enter the
+OBJECTIVE, because a form extracted from one cell and refitted on cells it never
+saw is a test of the FORM. `transfer` is outside the loop: it refits the
+discovered form on data the search never touched and writes `transfer.json`,
+never appending to `submissions.jsonl` (a holdout that fed back into the search
+would stop being a holdout).
+
 Run state lives on disk under `.wheeler/llmsr/runs/<run_id>` (`meta.json`, an append-only `submissions.jsonl`, `heartbeat.json` after a fit, `progress.json` during one) and is reconstructed by replaying the log through the vendored `register_program`. No pickles, no daemon.
 
-**What is vendored and what is not.** `integrations/llmsr/vendor/` carries six upstream modules (buffer, code_manipulation, config, evaluator, evaluator_accelerate, profile) under their MIT / Apache-2.0 licences, with only mechanical changes (package-relative imports, Python 3.12 AST renames, dropped `absl` / `torch`, a macOS `fork` context, a numpy softmax so `scipy` stays optional). Upstream's `sampler.py` and `pipeline.py` are substituted, and so is one thing that is easy to misdescribe: **the scoring seam.** A spec declares an `@evaluate.run` that fits the candidate's constants and returns its score; the driver parses its name and never calls it, scoring through `fit.py` + `metrics.py` instead. That is what makes the metric pluggable and the fitted constants recoverable. The search algorithm, the island model, and the program-manipulation logic are upstream's, unaltered. Held-out `test_id` / `test_ood` scoring is likewise Wheeler's: upstream ships those CSVs but its `main.py` opens only `train.csv`. PLANNED (issue #107, slice S4): make the spec's `@evaluate.run` selectable, so the scoring substitution becomes a choice.
+**What is vendored and what is not.** `integrations/llmsr/vendor/` carries six upstream modules (buffer, code_manipulation, config, evaluator, evaluator_accelerate, profile) under their MIT / Apache-2.0 licences, with only mechanical changes (package-relative imports, Python 3.12 AST renames, dropped `absl` / `torch`, a macOS `fork` context, a numpy softmax so `scipy` stays optional). Upstream's `sampler.py` and `pipeline.py` are substituted, and so is one thing that is easy to misdescribe: **the scoring seam.** A spec declares an `@evaluate.run` that fits the candidate's constants and returns its score. By DEFAULT the driver parses its name and never calls it, scoring through `fit.py` + `metrics.py` instead, which is what makes the metric pluggable, the fitted constants recoverable, and the per-unit refit possible. A run created with `--use-spec-evaluate` takes the OTHER door (`spec_eval.py`): the spec's own `evaluate` scores every candidate, once per (dataset, group) unit, owning the loss, the optimizer and whatever it imports. The door is chosen by FLAG, never sniffed off the spec text, and is fixed at `init` in `meta.json`. The search algorithm, the island model, and the program-manipulation logic are upstream's, unaltered. Held-out `test_id` / `test_ood` scoring is likewise Wheeler's: upstream ships those CSVs but its `main.py` opens only `train.csv`.
+
+**Through the spec door, the run's numbers are not the declared metric.** The spec owns its loss and never reports what it computed, and nothing checks that it equals `--metric` (every bundled recipe and every upstream spec minimizes mean squared error, whatever the run declared). So the search's own numbers travel under the SPEC's name, `spec:<function_to_run>` (`runs.scored_metric`), and `best.json` gains a `scored_metric` block naming it, the declared metric, and why they are two quantities. The emitted `.py`'s `METRIC`, `status`'s `best_value_metric`, and the graph Finding all use that name. The declared metric still labels everything `fit.py` computed, which is the `metrics` / `metrics_refit` blocks on BOTH doors. A number is never published under the name of a metric that did not produce it, in either direction: a held-out split computed by the fit seam under a run the spec scored carries a "second opinion" caveat, and a search number the spec produced carries one saying it is the spec's objective.
 
 **Per-group refit.** A run may declare `--group-by COL`, and then every group refits its OWN constants under the SAME form. Symbolic regression is looking for the FORM, and a single pooled fit charges the form for variation that belongs to the PARAMETERS, so a correct law governing 40 cells with 40 constant sets gets rejected. The per-group score VECTOR is the primary object and is what reaches the vendored buffer (`_reduce_score` ranks islands, `_get_signature` clusters forms by their per-group profile). The consequence that reaches the graph: a grouped run has NO single parameter vector, so its answer is a TABLE. `best.json` carries `params_per_group` / `value_per_group`, the generated `.py` emits `FITTED_PARAMS_PER_GROUP` and filters rows by group, and the Script node carries `custom_params_per_group` + the group coverage.
 
@@ -452,11 +468,16 @@ Run state lives on disk under `.wheeler/llmsr/runs/<run_id>` (`meta.json`, an ap
 
 | Node | What it is |
 |------|------------|
-| Script | the full discovered program written to `.wheeler/llmsr/discoveries/<run>.py`, hashed via `ensure_artifact`, carrying the equation and the fitted constants (a vector, or the per-group table) |
-| Finding | one per scored split, each carrying `custom_regime` |
+| Script | the full discovered program written to `.wheeler/llmsr/discoveries/<run>.py`, hashed via `ensure_artifact`, carrying the equation and the fitted constants (a vector, the per-group table, or the per-unit table) |
+| Finding | one per reported split and claim, each carrying `custom_regime`, `custom_claim` and `custom_measured_by` |
+| Dataset | one per DECLARED input table, on the `USED` side (never `WAS_GENERATED_BY`), each carrying its own regime |
 | Document | `best.json` itself, in the durable raw store |
 
-**Regime labelling is the scientific guardrail here.** Every metric Finding records whether the search optimized against the data behind its number: `scored`, `held_out`, or `unknown`. Two things count as optimizing against data, fitting the constants (train) and choosing the winner (`--select ood` ranks candidates by their `test_ood` error, making that split a selection set). Forty rounds scored on a dataset makes that number a training number however good it looks, and the graph must never present it as a generalization claim. Where the artifact does not record enough to tell (no selection mode, an unplaceable metric key), the Finding says `unknown` rather than guessing. Multi-dataset scoring and a `transfer` verb are issue #107 slices S2/S3.
+**Regime labelling is the scientific guardrail here.** Every metric Finding records whether the search optimized against the data behind its number: `scored`, `held_out`, `held_out_form`, or `unknown`. Two things count as optimizing against data, fitting the constants (train) and choosing the winner (`--select ood` ranks candidates by their `test_ood` error, making that split a selection set). Forty rounds scored on a dataset makes that number a training number however good it looks, and the graph must never present it as a generalization claim. Where the artifact does not record enough to tell (no selection mode, an unplaceable metric key), the Finding says `unknown` rather than guessing.
+
+`held_out_form` is the fourth label and NOT a synonym for the third: "does it generalize" is two questions, and they travel separately. Applying the winner's constants unchanged asks whether the CONSTANTS transfer; REFITTING them under the same form asks whether the FORM does, which is what symbolic regression is actually looking for. `best.json` carries them in `metrics` and `metrics_refit`, `transfer.json` carries them as two blocks, and each Finding carries `custom_claim` (`constants` or `form`) as part of its id, so the two numbers on one split are two nodes. A refit fitted its constants on the very split it reports, so it is held out for the FORM only, and calling it plain `held_out` would claim more than the measurement supports.
+
+**A multi-dataset run's answer spans tables.** `--data` is repeatable, the unit of fitting is a (dataset, group) pair, and `best.json` gains a `datasets` block labelling every declared table by regime (absent on a single-default-dataset run, so existing readers see the file they always saw). Every declared table lands as a Dataset node on the USED side carrying its own `custom_regime`, because which tables a form was NOT fitted on is the more interesting half of the question. The Script carries exactly ONE of three constant shapes, never two: `custom_params_per_key` (spanning datasets), `custom_params_per_group` (one grouped table), or `custom_params` (a genuine one-unit run). Which shape is read off the run's UNITS and not off its constants, since upstream's bare-float `evaluate` returns none, and a run with no constants records that as a fact (`custom_no_constants`) rather than as an empty list.
 
 See `wheeler/integrations/llmsr/CLAUDE.md` for the per-module reference, `wheeler/integrations/llmsr/vendor/NOTICE.md` for full attribution, and `docs/llmsr-objective-formulation.md` for the objective design.
 

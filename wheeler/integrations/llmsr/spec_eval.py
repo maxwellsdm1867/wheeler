@@ -45,9 +45,12 @@ The return contract is additive over upstream's:
 ``float`` (or ``int``)
     Exactly upstream's contract (``isinstance(results, (int, float))`` in
     ``vendor/evaluator.py``): the number is the MAXIMIZE-ME score, which is why
-    every upstream spec ends ``return -loss``. Wheeler reads the reported metric
-    value back off it under the run's metric orientation, and there are no
-    constants, because upstream's contract has nowhere to put them.
+    every upstream spec ends ``return -loss``. Wheeler orients it the way the
+    run's metric is oriented and reports it as the SPEC'S own objective, under
+    the spec's own name (see ``_value_from_score`` and ``runs.scored_metric``):
+    the spec owns its loss and never says what it computed, so this number is
+    not the declared metric and is never labelled as it. There are no constants
+    either, because upstream's contract has nowhere to put them.
 ``dict``
     ``{"score": float, "params": [...], "per_group": {...}}``, carrying what
     Wheeler needs and upstream throws away: every upstream spec computes
@@ -275,13 +278,25 @@ def _spec_worker(program_str, function_to_run, units, grouped, progress_path,
 
 
 def _value_from_score(metric: Metric, score: float) -> float:
-    """Read the reported metric value back off the spec's maximize-me score.
+    """Orient the spec's maximize-me score the way the run's metric is oriented.
 
     The exact inverse of ``metric.score_from_value``: negate when lower is
-    better, identity otherwise. The spec owns its loss and does not tell us what
-    it was, so this is an ORIENTATION, not a claim that the number is the run's
-    declared metric. ``best.json`` says which door scored the run
-    (``optimizer.scored_by``) so the two can never be confused.
+    better, identity otherwise. Orienting is ALL it does. The spec owns its loss
+    and never says what it computed, so the number that comes out is the SPEC'S
+    objective, not the run's declared metric, and nothing anywhere checks that
+    the two are the same quantity (every bundled recipe minimizes mean squared
+    error whatever ``--metric`` says).
+
+    Which is why the value that leaves here does not travel under the declared
+    metric's name. ``runs.scored_metric`` names it ``spec:<function_to_run>``,
+    and ``best.json``, the emitted ``.py``, ``status`` and the graph Finding all
+    use that name; ``optimizer.scored_by`` says which door, which is a different
+    question and was never enough on its own. The declared metric labels only
+    what ``fit.py`` computed.
+
+    The orientation itself is load bearing and stays: ``selection`` ranks through
+    ``metric.score_from_value``, so a value that did not round-trip would rank a
+    ``lower_is_better=False`` metric backwards.
     """
     return -score if metric.lower_is_better else score
 

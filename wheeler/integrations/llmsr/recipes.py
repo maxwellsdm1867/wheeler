@@ -409,15 +409,26 @@ def _bound_names(template: str) -> frozenset[str]:
     asked what it binds: assignment targets, loop targets, function names and
     their arguments, and imported names.
 
-    Falls back to the empty set if a template cannot be parsed. The caller only
-    loses collision-avoidance, and ``scaffold`` will fail loudly at the parse it
-    does next anyway.
+    RAISES when a template cannot be parsed, and does not fall back to the empty
+    set. An empty set is not a degraded answer here, it is the WRONG one: the
+    caller seeds ``taken`` with it and would then be told that a column called
+    ``y`` collides with nothing, which is precisely the silent mis-scoring this
+    function exists to prevent. ``scaffold`` performs no other parse to catch it
+    later, so this is the only place the failure can be made loud, and
+    ``cli.py::scaffold_spec`` turns the ValueError into a BadParameter. A recipe
+    registry that is CLOSED and executed by ``test_recipes.py`` means reaching
+    this is a Wheeler bug, and a Wheeler bug should say so rather than emit a
+    spec whose column names may shadow its own locals.
     """
     try:
         tree = ast.parse(_render(template, _PROBE_TOKENS))
-    except (SyntaxError, ValueError):
-        logger.warning("recipe template could not be parsed for its bound names")
-        return frozenset()
+    except (SyntaxError, ValueError) as exc:
+        logger.error("recipe template could not be parsed for its bound names")
+        raise ValueError(
+            "this recipe's template could not be parsed, so the names it binds "
+            "are unknown and a column sharing one of them would silently shadow "
+            f"it: {exc}"
+        ) from exc
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):

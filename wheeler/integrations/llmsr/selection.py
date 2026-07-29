@@ -40,6 +40,38 @@ _PARSIMONY_TOL = 10.0  # a candidate within this factor of the best error is "as
 _SIBLING_SPLITS = (("test_id", "test_id.csv"), ("test_ood", "test_ood.csv"))
 
 
+def _metric_entry(metric_key: str, value, declared_metric: str, extra: str = "") -> str:
+    """The emitted ``.py``'s ``METRIC`` line, whose NAME must be what produced the value.
+
+    ``metric_key`` is the run's SCORED metric (``runs.scored_metric``), not
+    necessarily its declared one: through the spec door the spec's own
+    ``@evaluate.run`` owns the loss, so the number below is the spec's objective
+    and is named after it. ``declared_metric`` is passed only when the two differ,
+    and then it rides along under its own key, never as this number's name. A .py
+    that printed ``{'name': 'nmse', 'value': <an MSE>}`` would be the durable half
+    of the run asserting the one thing this engine exists to prevent.
+    """
+    parts = [f"'name': {metric_key!r}", f"'value': {value!r}"]
+    if extra:
+        parts.append(extra)
+    if declared_metric:
+        parts.append(f"'declared_metric': {declared_metric!r}")
+    return "METRIC = {" + ", ".join(parts) + "}\n"
+
+
+def _declared_metric_comment(declared_metric: str) -> str:
+    """The comment that goes above a ``METRIC`` whose name is not the declared one."""
+    if not declared_metric:
+        return ""
+    return (
+        "# The value below is the SPEC'S OWN objective (--use-spec-evaluate): its\n"
+        "# @evaluate.run owns the loss and never reports what it computed, so this\n"
+        f"# number is NOT the run's declared metric {declared_metric!r} and nothing\n"
+        "# checks that the two are equal. The declared metric appears only where\n"
+        "# Wheeler's fit seam computed it, in best.json's `metrics` block.\n"
+    )
+
+
 def _grouped_footer(
     group_by: str,
     params_per_group: dict,
@@ -48,6 +80,7 @@ def _grouped_footer(
     value,
     data_path: str,
     fte: str,
+    declared_metric: str = "",
 ) -> str:
     """The footer for a GROUPED run: the per-group constant table + a main that
     applies each group's own constants to that group's own rows.
@@ -77,8 +110,11 @@ def _grouped_footer(
         "# group's answer, and METRIC['value'] is the mean over them.\n"
         f"GROUP_BY = {group_by!r}\n"
         f"FITTED_PARAMS_PER_GROUP = {table!r}\n"
-        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
-        f"'per_group': {per_group_value!r}}}\n\n"
+        + _declared_metric_comment(declared_metric)
+        + _metric_entry(
+            metric_key, value, declared_metric, f"'per_group': {per_group_value!r}"
+        )
+        + "\n"
         "if __name__ == '__main__':\n"
         "    import numpy as _np\n"
         f"    _path = r{data_path!r}\n"
@@ -111,6 +147,7 @@ def _multidata_footer(
     group_by: str,
     fte: str,
     data_shape: str = metrics_mod.REGRESSION,
+    declared_metric: str = "",
 ) -> str:
     """The footer for a MULTI-DATASET run: the constants, and a runner that loops.
 
@@ -187,8 +224,11 @@ def _multidata_footer(
         f"HELD_OUT_DATASETS = {held_out_paths!r}\n"
         f"GROUP_BY = {group_by!r}\n"
         f"FITTED_PARAMS_PER_KEY = {params_per_key!r}\n"
-        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
-        f"'per_key': {value_per_key!r}}}\n\n"
+        + _declared_metric_comment(declared_metric)
+        + _metric_entry(
+            metric_key, value, declared_metric, f"'per_key': {value_per_key!r}"
+        )
+        + "\n"
         "if __name__ == '__main__':\n"
         "    import numpy as _np\n"
         "    print('metric', METRIC)\n"
@@ -243,7 +283,9 @@ def _multidata_footer(
     )
 
 
-def _no_constants_footer(metric_key: str, value, value_per_key: dict | None) -> str:
+def _no_constants_footer(
+    metric_key: str, value, value_per_key: dict | None, declared_metric: str = "",
+) -> str:
     """The footer for a winner that has NO constants: the score, and no runner.
 
     Reachable only through the spec's own ``@evaluate.run`` (``spec_eval.py``),
@@ -270,8 +312,9 @@ def _no_constants_footer(metric_key: str, value, value_per_key: dict | None) -> 
         "#     {'score': <float>, 'params': [...]}\n"
         "# or drop --use-spec-evaluate and let Wheeler's fit seam fit them.\n"
         "FITTED_PARAMS = None\n"
-        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
-        f"'per_key': {per_key!r}}}\n\n"
+        + _declared_metric_comment(declared_metric)
+        + _metric_entry(metric_key, value, declared_metric, f"'per_key': {per_key!r}")
+        + "\n"
         "if __name__ == '__main__':\n"
         "    raise SystemExit(\n"
         "        'No runner is emitted: this run scored through the spec\\'s own\\n'\n"
@@ -291,6 +334,7 @@ def _runnable_program(
     value_per_group: dict | None = None,
     dataset_report: dict | None = None,
     no_constants: bool = False,
+    declared_metric: str = "",
 ) -> str:
     """Append fitted constants + a runnable main so the .py reproduces the answer.
 
@@ -309,17 +353,29 @@ def _runnable_program(
     file, and it is checked next: both footers below address a single table, so
     a caller that passes neither reaches exactly the branch it always reached,
     byte for byte. See ``_multidata_footer``.
+
+    ``metric_key`` is the run's SCORED metric, the name of whatever actually
+    produced ``value`` (``runs.scored_metric``), and every footer below labels its
+    number with it. ``declared_metric`` is passed only when the run declared a
+    DIFFERENT metric from the one that scored it, which is the spec door: the
+    spec's ``@evaluate.run`` owns the loss and nothing checks it equals the
+    declared metric. It then rides along under its own key with a comment, never
+    as the number's name. Empty on every default-door run, so those .py files are
+    byte for byte what they were.
     """
     if no_constants:
-        return program + _no_constants_footer(metric_key, value, value_per_group)
+        return program + _no_constants_footer(
+            metric_key, value, value_per_group, declared_metric
+        )
     if dataset_report:
         return program + _multidata_footer(
-            dataset_report, metric_key, value, group_by, fte, data_shape
+            dataset_report, metric_key, value, group_by, fte, data_shape,
+            declared_metric,
         )
     if group_by and params_per_group:
         return program + _grouped_footer(
             group_by, params_per_group, value_per_group or {}, metric_key, value,
-            data_path, fte,
+            data_path, fte, declared_metric,
         )
     if data_shape == metrics_mod.REGRESSION:
         bind = f"    _n = {fte}.__code__.co_argcount - 1\n"
@@ -335,7 +391,9 @@ def _runnable_program(
     footer = (
         "\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n"
         f"FITTED_PARAMS = {list(params)!r}\n"
-        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}}}\n\n"
+        + _declared_metric_comment(declared_metric)
+        + _metric_entry(metric_key, value, declared_metric)
+        + "\n"
         "if __name__ == '__main__':\n"
         "    import numpy as _np\n"
         f"    _d = _np.genfromtxt(r{data_path!r}, delimiter=',', skip_header=1)\n"

@@ -55,6 +55,74 @@ def _read_meta(run_dir: Path) -> dict:
     return json.loads((run_dir / "meta.json").read_text())
 
 
+# How the SPEC's own objective is named when it is the thing that scored a run.
+# A prefix rather than a bare word, so the name says where the number came from
+# and can never be confused with a registered metric key (a metric key holds no
+# colon; ``data.KEY_SEP`` reserves it for the same reason).
+SPEC_METRIC_PREFIX = "spec:"
+
+# Why the spec door's numbers do not travel under the declared metric's name.
+# Carried onto ``best.json``, and (in the graph writer's own copy of the wording)
+# onto every Finding the spec door produced.
+SPEC_METRIC_NOTE = (
+    "This run scored through the spec's own @evaluate.run, which owns its loss "
+    "and does not report what it computed. Every per-unit number the SEARCH "
+    "produced (value_per_group, datasets[*].value / value_per_key, the winner's "
+    "own value) is therefore the SPEC'S objective read back under the declared "
+    "metric's orientation, not the declared metric measured again, and nothing "
+    "checks that the two are equal. The declared metric appears only where "
+    "Wheeler's fit seam computed it: the `metrics` and `metrics_refit` blocks."
+)
+
+
+def scored_metric(meta: dict) -> str:
+    """The name of the quantity a run's OWN numbers are in. Never assumed.
+
+    This is the one question every value a run reports has to answer, and the two
+    doors answer it differently.
+
+    On the DEFAULT door ``fit.py`` minimizes ``metric.loss`` and reports
+    ``metric.report``, so the number IS the declared metric and this returns its
+    key, exactly as before.
+
+    Through the spec door (``--use-spec-evaluate``) the spec's own
+    ``@evaluate.run`` owns the loss. It returns upstream's maximize-me score and
+    never says what it computed, and NOTHING checks that the quantity equals the
+    run's declared metric: a stock recipe minimizing mean squared error under a
+    run declaring ``--metric nmse`` returns an MSE. So the number is the SPEC'S
+    objective and is named after it, ``spec:<function_to_run>``. Calling it the
+    declared metric would publish a number under a name that did not produce it,
+    which is the exact failure this engine exists to remove.
+
+    The declared metric is still the run's declared metric, and still labels
+    every number ``fit.py`` computed (``best.json``'s ``metrics`` /
+    ``metrics_refit``, which run through the fit seam on BOTH doors). The two
+    names coexist because they name two different quantities.
+    """
+    if meta.get("use_spec_evaluate"):
+        return SPEC_METRIC_PREFIX + (str(meta.get("function_to_run") or "").strip() or "evaluate")
+    return str(meta.get("metric") or "")
+
+
+def scored_metric_report(meta: dict) -> dict:
+    """The ``scored_metric`` block for ``best.json``, or ``{}`` on the default door.
+
+    Absent on the default door because there is nothing to disambiguate there:
+    the search's numbers and the declared metric are the same quantity, and every
+    existing reader of a default run sees the file it always saw.
+    """
+    if not meta.get("use_spec_evaluate"):
+        return {}
+    return {
+        "scored_metric": {
+            "name": scored_metric(meta),
+            "declared": str(meta.get("metric") or ""),
+            "measured_by": "spec-evaluate",
+            "note": SPEC_METRIC_NOTE,
+        }
+    }
+
+
 def _scores_per_test(sub: dict) -> dict[str, float]:
     """The score vector a submission contributes to the vendored buffer.
 
@@ -229,9 +297,17 @@ def _progress_core(run_dir: Path, meta: dict) -> dict:
     best = max(valid, key=lambda s: s["score"]) if valid else None
     created_epoch = meta.get("created_epoch")
     elapsed = round(time.time() - created_epoch, 2) if created_epoch else None
+    # ``metric`` is the run's DECLARED metric, which is a property of the run.
+    # ``best_value`` is a number, and a number carries the name of whatever
+    # produced it: on the spec door that is the spec's own objective, not the
+    # declared metric, so it is named here rather than left to be read off the
+    # neighbouring field. Absent on the default door, where the two are the same
+    # quantity and an extra key would only be noise.
+    scored = scored_metric(meta)
     return {
         "run_id": meta["run_id"],
         "metric": meta["metric"],
+        **({"best_value_metric": scored} if scored != meta["metric"] else {}),
         "generator": meta["generator"],
         "n_samples": len(subs),
         "n_valid": len(valid),

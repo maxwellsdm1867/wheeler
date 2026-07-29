@@ -16,8 +16,8 @@ INVERTED into four CLI verbs, and Claude Code steps it:
 ```
 wheeler llmsr scaffold-spec --data D [--recipe R]  -> a filled spec + its command
 wheeler llmsr init   --spec S --data D... --metric M [--group-by COL]
-                     [--seed-from NAME] [--score-on NAMES]
-                     [--use-spec-evaluate]                           -> run dir
+                     [--seed-from NAME] [--score-on NAMES] [--loader K]
+                     [--optimizer K] [--use-spec-evaluate]           -> run dir
 wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
    ... the ACT generates a candidate body with a sub-agent (no API key) ...
 wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
@@ -43,7 +43,10 @@ State persists by replaying `submissions.jsonl` through the vendored
   is registered right now, computed at call time). The CLI NEVER calls a model:
   generation happens in the act. `_metric_for` is the one place a metric name is
   resolved, and it imports the scientist's metric modules first.
-- `runs.py` -- on-disk run state under `.wheeler/llmsr/runs/<run_id>`:
+- `runs.py` -- on-disk run state under `.wheeler/llmsr/runs/<run_id>`, plus
+  `scored_metric` / `scored_metric_report`, the one place the question "what
+  quantity are this run's own numbers in" is answered (see the spec-door
+  invariant below):
   `meta.json` (what the run is bound to), `submissions.jsonl` (append-only, every
   candidate in order), `heartbeat.json` (written AFTER a fit: what the search has
   achieved), `progress.json` (written DURING a fit: where that fit has got to).
@@ -147,20 +150,56 @@ State persists by replaying `submissions.jsonl` through the vendored
   Anything else is an INVALID candidate with a truthful error, never a fabricated
   score. Both doors normalize into the same `FitResult`, so `submit`, `best`,
   `transfer`, selection and `discover.py` are unchanged downstream.
+- **Through the spec door the run's numbers are NOT the declared metric, and are
+  never named as if they were.** The spec owns its loss and never reports what it
+  computed, and NOTHING checks that it equals `--metric`: every bundled recipe and
+  every upstream spec minimizes mean squared error whatever the run declared. So
+  a run has a SCORED metric distinct from its DECLARED one (`runs.scored_metric`:
+  `spec:<function_to_run>` on that door, the declared key on the default door),
+  and every number carries the name of what produced it.
+  - `best.json` gains a `scored_metric` block (name / declared / measured_by /
+    note), present exactly when the two differ, so a default-door run is the file
+    it always was. `metrics` and `metrics_refit` stay in the DECLARED metric on
+    both doors, because `fit.py` computed them.
+  - the emitted `.py`'s `METRIC` is built from the SCORED name, with
+    `declared_metric` beside it and a comment, in all four footers.
+  - `status` gains `best_value_metric`; `best` and `init` echo `value_metric` /
+    `seed_value_metric`. Only when the names differ.
+  - the marshal-out reads the block off the artifact (`discover._scored_metric`,
+    never reconstructed) and labels the derived train Finding with it. That path
+    is every grouped and every multi-dataset run, which is exactly the shape the
+    per-group protocol exists for.
+  This invariant previously said the opposite for half the seam: that a mean
+  derived from the spec's own per-unit vector is "the run's own objective and is
+  labelled `spec-evaluate` with no caveat". True of the QUANTITY, false of its
+  NAME, and that is how a stock recipe's MSE reached `best.json`, the emitted
+  `.py`, `status` and the graph labelled `nmse`, 19x away from the real one.
 - **What the spec door does NOT reach.** Held-out split scoring (`_split_metrics`,
   `transfer.py`) still runs through `fit.py`, under the run's DECLARED metric, so
   under `--use-spec-evaluate` those numbers are a second opinion computed by
   different machinery than the search used, not the run's own objective measured
   again. `best.json` says which door scored the run in `optimizer.scored_by`, and
   the marshal-out reads it: every Finding carries `custom_measured_by`
-  (`wheeler-fit` or `spec-evaluate`), and one measured by machinery OTHER than
-  what scored the search also carries `custom_measurement_note` saying so, which
-  the description repeats. The per-unit value vector is the exception: the spec's
-  own `evaluate` produced it, so a mean derived from it is the run's own
-  objective and is labelled `spec-evaluate` with no caveat. Where the spec
-  returned no constants at all (upstream's bare float),
+  (`wheeler-fit` or `spec-evaluate`) and `custom_measurement_note`. BOTH sides of
+  the seam get a note (`_RunContext.note_for`), because neither is the plain
+  thing: `_SECOND_OPINION_NOTE` for a number the fit seam measured in a run the
+  spec scored, `_SPEC_OBJECTIVE_NOTE` for a number the spec produced. A
+  default-door run has one piece of machinery and still gets no note at all.
+  Where the spec returned no constants at all (upstream's bare float),
   `selection._no_constants_footer` writes the score and refuses to emit a runner,
   because there is genuinely nothing to run.
+- **Which constant SHAPE a run has is a property of its UNITS, not of its
+  constants.** `discover._is_multi` / `_is_grouped` ask `value_per_key` /
+  `value_per_group` as well as the constant tables, because upstream's bare-float
+  return hands back no constants at all. Reading the shape off the constants
+  alone filed every grouped or multi-dataset bare-float run under the FLAT arm:
+  a three-cell discovery landed as `custom_params "[]"` with no `group_by`, no
+  `n_groups` and no per-group values, presented as one pooled fit. A run that
+  genuinely has no constants records that (`custom_no_constants` +
+  `custom_no_constants_reason`), because "none were returned" and "they are
+  missing from the graph" look identical to a reader and are not the same fact.
+  `selection._no_constants_footer` already handled this case at length; the graph
+  writer now does too.
 - **Held-out ID/OOD scoring is WHEELER'S, not the paper's protocol.** The LLM-SR
   datasets ship `<problem>/{train,test_id,test_ood}.csv`, but upstream's own
   `main.py` loads only `train.csv` and nothing in its pipeline opens the test
@@ -387,6 +426,26 @@ State persists by replaying `submissions.jsonl` through the vendored
   the noise) so the tables regenerate reproducibly, and the test reruns it and
   compares. Never describe them as the paper's data, and never drop the
   `synthetic_demo_data` flag from the `specs` listing.
+- **Every open registry is SELECTABLE at `init`, not merely registerable.** A
+  registry a scientist can add to but cannot choose from does not exist, however
+  green its own tests are. `--metric`, `--loader` and `--optimizer` each bind
+  their choice onto `meta.json` at `init`, each validated THERE (`_metric_for`,
+  `_loader_for`, `_optimizer_for`) so an unresolvable name fails one command
+  rather than invalidating every candidate in the search. The loader is the
+  sharpest case: it decides which units exist, and per-group validity is strict,
+  so a run that silently fell back to `csv` would hand the fit the very cells the
+  scientist meant to exclude and reject a correct law.
+  `tests/integrations/llmsr/test_cli_surface.py` is the gate: it asserts the flag
+  exists on the built command, drives a userland registration of each kind
+  THROUGH `init`, and proves the excluded cell really was excluded. A
+  library-level test of `loaders.load_groups` cannot see any of that, which is
+  why the loader registry shipped unreachable with 0 failing tests.
+- **Every emitted `METRIC` label is checked against the same run's `best.json`.**
+  Same file, `assert_metric_label_is_earned`, across all four footer shapes: the
+  name must be the run's scored metric, and wherever `best.json` records a number
+  under that same name, the .py's number must BE it. The .py is the durable half
+  of a discovery, so a wrong label there outlives the run dir, the terminal and
+  the conversation.
 - **Every port reads its registry, and the dataset port takes SEVERAL.** The
   `llmsr-discover` contract in `services.default.yaml` points `metric`, `recipe`,
   `loader` and `optimizer` at their registries through `options_from`, so a

@@ -135,6 +135,21 @@ _SECOND_OPINION_NOTE = (
     "computed by different machinery and not this run's own objective measured "
     "again."
 )
+# The caveat on the OTHER side of the same seam, and the one that was missing.
+# A number the spec's own `@evaluate.run` produced is the SPEC'S objective: the
+# spec owns its loss and never reports what it computed, and nothing checks that
+# it equals the run's declared metric (a stock recipe minimizing MSE under a run
+# declaring nmse returns an MSE). So it never travels under the declared metric's
+# name, and it says why. This used to be omitted on the grounds that a number the
+# search itself produced is "the run's own objective with no caveat", which is
+# true of the OBJECTIVE and false of its NAME.
+_SPEC_OBJECTIVE_NOTE = (
+    "Measured by the spec's own @evaluate.run, which scored this search and owns "
+    "its loss. The spec does not report what it computed and nothing checks that "
+    "it equals the run's declared metric, so this number is named after the spec "
+    "rather than after the declared metric. The declared metric appears only "
+    "where Wheeler's fit seam computed it."
+)
 
 
 @dataclass
@@ -201,6 +216,28 @@ def _finding_id(
     if claim and claim != CLAIM_CONSTANTS:
         key += f":{claim}"
     return "F-" + hashlib.sha256(key.encode()).hexdigest()[:8]
+
+
+def _scored_metric(doc: dict[str, Any], declared: str) -> str:
+    """The name of the quantity the SEARCH's own numbers are in. Never guessed.
+
+    ``best.json`` carries a ``scored_metric`` block exactly when that is not the
+    declared metric, which is the spec door (``runs.scored_metric_report``). The
+    name is read out of the artifact rather than reconstructed here, for the same
+    reason the regimes are: only the RUN knows how it was scored, and a
+    reconstruction would drift.
+
+    An artifact written before the block existed, or one whose block is
+    shape-drifted, falls back to the declared metric. That is the pre-spec-door
+    answer and it is right for every default-door run, which is all an older
+    artifact could be that this module can tell apart.
+    """
+    block = doc.get("scored_metric")
+    if isinstance(block, dict):
+        name = _as_str(block.get("name"))
+        if name:
+            return name
+    return declared
 
 
 def _split_key(key: str) -> tuple[str, str]:
@@ -293,10 +330,31 @@ class _RunContext:
     scored_by: str = ""
 
     def note_for(self, measured_by: str) -> str:
-        """Why this number's machinery differs from what scored the search, if it does."""
-        if self.scored_by == SCORED_BY_SPEC_EVALUATE and measured_by != self.scored_by:
-            return _SECOND_OPINION_NOTE
-        return ""
+        """What produced this number, whenever that is worth saying. BOTH sides.
+
+        A run that took the spec door has its numbers split across two pieces of
+        machinery, and neither of them is "the run's declared metric measured by
+        the thing that scored the search":
+
+        - Wheeler's fit seam computed the held-out splits under the DECLARED
+          metric, so those are a second opinion (``_SECOND_OPINION_NOTE``).
+        - the spec's own ``@evaluate.run`` computed everything the SEARCH ranked,
+          under a loss the spec owns and never names, so those are the spec's
+          objective and not the declared metric (``_SPEC_OBJECTIVE_NOTE``).
+
+        The second used to return ``""`` on the reasoning that a number the
+        search itself produced is the run's own objective needing no caveat. That
+        holds for the QUANTITY and fails for its NAME, which is how the spec's
+        MSE reached the graph labelled ``nmse``. A default-door run has one piece
+        of machinery and still gets no note at all.
+        """
+        if self.scored_by != SCORED_BY_SPEC_EVALUATE:
+            return ""
+        return (
+            _SPEC_OBJECTIVE_NOTE
+            if measured_by == self.scored_by
+            else _SECOND_OPINION_NOTE
+        )
 
 
 def _split_record(
@@ -436,15 +494,24 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
     by_split = _bucket_by_split(doc.get("metrics"))
     refit_by_split = _bucket_by_split(doc.get("metrics_refit"))
 
+    # What the SEARCH'S own per-unit numbers are in, which is the declared metric
+    # on the default door and the SPEC'S objective through the spec door. Every
+    # number derived from `value_per_group` / `value_per_key` is labelled with
+    # this, never with the declared metric, because through that door the spec
+    # owns the loss and nothing checks the two are the same quantity.
+    scored_name = _scored_metric(doc, metric)
+
     # The headline number is the TRAIN one, and only the train one: a held-out
     # number stands in for it nowhere, which is the whole point of the labels.
     train_values = by_split.pop("train", {})
     # `metrics` is computed by `fit.py` on both doors, so a number read out of it
-    # is a Wheeler-fit number whatever scored the search.
+    # is a Wheeler-fit number under the DECLARED metric, whatever scored the search.
     train_measured_by = MEASURED_BY_FIT
+    value_metric = metric
     value = train_values.get(metric)
     if value is None and train_values:
         value = train_values[sorted(train_values)[0]]
+        value_metric = sorted(train_values)[0]
     value_is_group_mean = False
     value_is_unit_mean = False
     if value is None and value_per_key:
@@ -457,17 +524,27 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
         value = sum(value_per_key.values()) / len(value_per_key)
         value_is_unit_mean = True
         train_measured_by = ctx.scored_by or MEASURED_BY_FIT
+        # Derived from the numbers the SEARCH produced, so it is in the quantity
+        # the search was scored on, whatever that is. This is the path every
+        # grouped and every multi-dataset run takes, which is precisely the shape
+        # the per-group protocol exists for, so getting the name right here is
+        # not an edge case.
+        value_metric = scored_name
     elif value is None and value_per_group:
         # The same derivation one level down: a grouped single-table run.
         value = sum(value_per_group.values()) / len(value_per_group)
         value_is_group_mean = True
         train_measured_by = ctx.scored_by or MEASURED_BY_FIT
+        value_metric = scored_name
 
     # Train first (always present, even when the run reported no number, so the
-    # discovery still lands), then any held-out splits the run scored.
+    # discovery still lands), then any held-out splits the run scored. The train
+    # entry is labelled with what PRODUCED its number (`value_metric`), which is
+    # the declared metric wherever `fit.py` computed it and the spec's own
+    # objective wherever the search's per-unit table was averaged.
     splits = [
         _split_record(
-            "train", metric, value, train_values, ctx,
+            "train", value_metric, value, train_values, ctx,
             measured_by=train_measured_by,
         )
     ]
@@ -497,7 +574,15 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
         "equation": equation,
         "program": program,
         "params": params,
+        # Three metric names, because a run can genuinely hold three answers to
+        # "which quantity is this". `metric` is what the run DECLARED (and what
+        # `metrics` / `metrics_refit` are in, on both doors). `scored_metric` is
+        # what the SEARCH'S own per-unit numbers are in. `value_metric` is what
+        # the headline `value` below is in, which is one or the other depending
+        # on where it came from. They coincide on every default-door run.
         "metric": metric,
+        "scored_metric": scored_name,
+        "value_metric": value_metric,
         "value": value,
         "value_is_group_mean": value_is_group_mean,
         "value_is_unit_mean": value_is_unit_mean,
@@ -815,16 +900,9 @@ async def _bucket_result(
     produced_ids: list[str],
 ) -> None:
     """Create the Script (program + constants), the input Datasets, the Findings."""
-    metric = record["metric"]
     value = record["value"]
-    # Exactly one of three constant shapes is the answer, and which one is a
-    # property of the run, not a preference. A run whose keys span DATASETS keeps
-    # its table keyed by unit (`A` or `A:c01`); a grouped single-table run keeps
-    # it keyed by group; only a genuine one-unit run has a flat vector. Writing
-    # two of them would put the same numbers in the graph twice under names that
-    # invite a reader to compare them.
-    multi = bool(record["params_per_key"])
-    grouped = bool(record["group_by"] and record["params_per_group"])
+    multi = _is_multi(record)
+    grouped = _is_grouped(record)
 
     # 1. The full generated program -> a durable .py -> a hashed Script.
     program = record["program"]
@@ -859,11 +937,16 @@ async def _bucket_result(
                 produced_ids.append(script_id)
                 custom: dict[str, Any] = {
                     "equation": record["equation"],
-                    "metric": metric,
+                    # `metric` sits next to `value`, so it names what produced
+                    # `value`, not what the run declared. The two differ only
+                    # through the spec door, and then the declared one rides
+                    # alongside under its own name rather than over this number.
+                    "metric": record["value_metric"],
                     "value": value,
                     "run_dir": f".wheeler/llmsr/runs/{run_meta.run_id}",
                     "generator": run_meta.generator,
                 }
+                custom.update(_declared_metric_custom(record, record["value_metric"]))
                 if multi:
                     # The TABLE is the answer, keyed by UNIT: a run that spans
                     # datasets fitted one constant vector per (dataset, group)
@@ -874,18 +957,35 @@ async def _bucket_result(
                 elif grouped:
                     # The same, one level down: a grouped single-table run keys
                     # its table by group label.
+                    # The units are the GROUPS, and they are named off whichever
+                    # per-group table the run actually reported. A bare-float
+                    # spec run has values and no constants, and a three-group
+                    # discovery must not land as a one-unit run because of it.
+                    labels = sorted(
+                        record["params_per_group"] or record["value_per_group"]
+                    )
                     custom.update(
                         {
                             "group_by": record["group_by"],
-                            "n_groups": len(record["params_per_group"]),
-                            "groups": json.dumps(sorted(record["params_per_group"])),
-                            "params_per_group": json.dumps(record["params_per_group"]),
+                            "n_groups": len(labels),
+                            "groups": json.dumps(labels),
                             "value_per_group": json.dumps(record["value_per_group"]),
                             "value_is_group_mean": record["value_is_group_mean"],
                         }
                     )
-                else:
+                    if record["params_per_group"]:
+                        custom["params_per_group"] = json.dumps(
+                            record["params_per_group"]
+                        )
+                elif record["params"]:
                     custom["params"] = json.dumps(record["params"])
+                # No constants of ANY shape, which only upstream's bare-float
+                # return can produce. Said outright rather than left as an empty
+                # list: `params "[]"` reads as "it fitted nothing", and what
+                # happened is that the spec never handed them back.
+                if _no_constants(record):
+                    custom["no_constants"] = True
+                    custom["no_constants_reason"] = _NO_CONSTANTS_NOTE
                 await execute_tool(
                     "update_node",
                     {"node_id": script_id, "custom": custom},
@@ -912,6 +1012,80 @@ async def _bucket_result(
         )
 
 
+def _is_multi(record: dict[str, Any]) -> bool:
+    """Do this run's units span several DATASETS? Asked of the units, not the constants.
+
+    A unit exists because the run FITTED it, and it reported a value for it; the
+    constants are what the fit chose to hand back, and upstream's bare-float
+    contract hands back none (``spec_eval``, ``selection._no_constants_footer``).
+    Reading the shape off the constants alone therefore misfiled every
+    bare-float run as a one-unit run, and the graph then presented a
+    many-unit discovery as a single flat fit.
+    """
+    return bool(record["params_per_key"] or record["value_per_key"])
+
+
+def _is_grouped(record: dict[str, Any]) -> bool:
+    """Is this run a GROUPED single table? Same rule, one level down.
+
+    A run that declared ``--group-by`` and refitted every group is grouped
+    whether or not the constants survived the return trip. ``value_per_group``
+    is the run's per-group answer and it is present either way, so it is what the
+    question is asked of.
+    """
+    return bool(
+        record["group_by"]
+        and (record["params_per_group"] or record["value_per_group"])
+    )
+
+
+def _no_constants(record: dict[str, Any]) -> bool:
+    """Did this run report units but NO constants for any of them?
+
+    True only for upstream's bare-float return through the spec door, where the
+    contract has nowhere to put the fitted constants: every upstream spec
+    computes ``optimized_params = result.x`` inside ``evaluate`` and discards it.
+    Recorded on the node rather than left to be inferred from an absent field,
+    because "no constants were returned" and "the constants are missing from the
+    graph" look identical to a reader and are not the same fact.
+    """
+    return not (
+        record["params"] or record["params_per_group"] or record["params_per_key"]
+    )
+
+
+# What a node says when the run genuinely had no constants to record. Named here
+# so the Script node and `selection._no_constants_footer` say the same thing.
+_NO_CONSTANTS_NOTE = (
+    "The spec's own @evaluate.run returned upstream's bare score and no fitted "
+    "constants (upstream's contract has nowhere to put them), so this run has "
+    "none to record. The form and its per-unit values are the discovery. To "
+    "recover the constants, have the spec's evaluate return {'score': ..., "
+    "'params': [...]}, or drop --use-spec-evaluate."
+)
+
+
+def _declared_metric_custom(
+    record: dict[str, Any], label: str, *, with_note: bool = True
+) -> dict[str, Any]:
+    """Name the run's DECLARED metric beside a number that is not in it.
+
+    Empty whenever the number IS in the declared metric, which is every
+    default-door run: a node that gained a ``declared_metric`` equal to its own
+    ``metric`` would invite a reader to look for a distinction that is not there.
+
+    ``with_note=False`` for a Finding, which carries its own per-split
+    ``measurement_note`` from ``_RunContext.note_for`` and must not have it
+    overwritten by this more general one.
+    """
+    if label == record["metric"]:
+        return {}
+    out: dict[str, Any] = {"declared_metric": record["metric"]}
+    if with_note:
+        out["measurement_note"] = _SPEC_OBJECTIVE_NOTE
+    return out
+
+
 def _unit_table_custom(record: dict[str, Any]) -> dict[str, Any]:
     """The per-unit constant table plus the dataset roles, for the Script node.
 
@@ -924,10 +1098,18 @@ def _unit_table_custom(record: dict[str, Any]) -> dict[str, Any]:
     entries = report.get("entries", [])
     scored = sorted(e["name"] for e in entries if e["regime"] == REGIME_SCORED)
     held_out = sorted(e["name"] for e in entries if e["regime"] != REGIME_SCORED)
+    # The units are named off whichever per-key table the run reported. A
+    # bare-float spec run has values and no constants, and the unit COUNT is a
+    # property of the run either way.
+    keys = sorted(record["params_per_key"] or record["value_per_key"])
     custom: dict[str, Any] = {
-        "n_keys": len(record["params_per_key"]),
-        "keys": json.dumps(sorted(record["params_per_key"])),
-        "params_per_key": json.dumps(record["params_per_key"]),
+        "n_keys": len(keys),
+        "keys": json.dumps(keys),
+        **(
+            {"params_per_key": json.dumps(record["params_per_key"])}
+            if record["params_per_key"]
+            else {}
+        ),
         "value_per_key": json.dumps(record["value_per_key"]),
         "value_is_unit_mean": record["value_is_unit_mean"],
         "n_datasets_scored": len(scored),
@@ -1019,8 +1201,12 @@ async def _record_datasets(
             "regime": entry["regime"],
             "regime_reason": entry["regime_reason"],
             "seeded_the_prompt": entry["seed"],
-            "metric": record["metric"],
+            # `value` / `value_per_key` below are the numbers the SEARCH produced
+            # on this table, so they carry the search's own metric name, which is
+            # the spec's objective through the spec door.
+            "metric": record["scored_metric"],
             "score_keys": json.dumps(entry["keys"]),
+            **_declared_metric_custom(record, record["scored_metric"]),
         }
         if entry["value"] is not None:
             custom["value"] = entry["value"]
@@ -1066,8 +1252,8 @@ async def _record_split_finding(
     reason = entry["regime_reason"]
     claim = entry["claim"]
     refit = claim == CLAIM_FORM
-    multi = bool(record["params_per_key"])
-    grouped = bool(record["group_by"] and record["params_per_group"])
+    multi = _is_multi(record)
+    grouped = _is_grouped(record)
 
     finding_id = _finding_id(run_meta.run_id, metric, split, claim)
     dataset_name = _dataset_label(record["data_path"])
@@ -1148,6 +1334,10 @@ async def _record_split_finding(
     }
     if entry["measurement_note"]:
         custom["measurement_note"] = entry["measurement_note"]
+    # A Finding whose number is not in the run's declared metric names that
+    # metric too, so a reader who came looking for `nmse` finds out here that
+    # this number is a different quantity rather than concluding it is a bad one.
+    custom.update(_declared_metric_custom(record, metric, with_note=False))
     # the same split under the run's other reported metric (nmse beside mse)
     for other_key, other_val in entry["others"].items():
         custom[f"value_{other_key}"] = other_val
