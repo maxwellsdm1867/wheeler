@@ -80,11 +80,28 @@ The goal is a folder the scientist can `cd` into and just keep going, with the g
    ```markdown
    # <slug> - Asta research mission
 
-   To continue this mission, in this directory:
-       /goal <N> work items
+   To continue this mission, `cd` here and enter the two commands below as TWO
+   SEPARATE prompts, waiting for the first to come back before sending the second.
+   Pasting them together does not work: everything after `/goal` is swallowed into
+   the goal condition, so the loop never starts and the plan/do/review skills never
+   run.
+
+   Prompt 1:
+
+       /goal <N> work items, each with a written Assessment
+
+   Prompt 2:
+
        /loop /asta-assistant:run
-   Add "skip all user interviews and use your own judgement" for autonomous operation.
-   The mission and its background are in project.md. Work lands in work/<slug>/.
+
+   Append "skip all user interviews and use your own judgement" to prompt 2 for
+   autonomous operation. The mission and its background are in project.md. Work
+   lands in work/<slug>/.
+
+   Mid-run check: `grep -l "# Assessment" work/*/README.md` lists the work items a
+   reviewer has assessed (it matches the level-1 `# Assessment` heading review-work
+   writes, and `## Assessment` too). If that count trails the number of finished
+   items, review-work is being skipped, so the loop is probably not running.
 
    When the work is done, return to your Wheeler session and run
    `/wh:asta-assistant harvest <slug>` to index it into the graph.
@@ -95,14 +112,19 @@ The goal is a folder the scientist can `cd` into and just keep going, with the g
    git -C .wheeler/asta-assistant/<slug> add -A
    git -C .wheeler/asta-assistant/<slug> commit -m "seed: <slug> mission from Wheeler graph"
    ```
-6. **Hand off.** Print this block, do not run it:
+6. **Hand off.** Print this block, do not run it. Say plainly that `/goal` and `/loop` are TWO SEPARATE prompts: a single message that begins with `/goal` captures the `/loop` line as part of the goal condition, so the loop never starts and the mission runs with none of the plan/do/review machinery.
    > Mission seeded at `.wheeler/asta-assistant/<slug>/`. Open a new terminal and:
    > ```
    > cd .wheeler/asta-assistant/<slug>
    > claude
-   > /goal 5 work items
+   >
+   > (prompt 1, on its own, wait for the reply)
+   > /goal 5 work items, each with a written Assessment
+   >
+   > (prompt 2, on its own, only after prompt 1 comes back)
    > /loop /asta-assistant:run
    > ```
+   > Send the two prompts separately. A combined paste is captured whole by the goal condition and the loop never runs.
    > When the loop is done, come back here and run `/wh:asta-assistant harvest <slug>`.
 
    Then stop. If plan-routed, note that the plan step is in progress, awaiting the external loop; the plan resumes at harvest. Do NOT run the loop from this act.
