@@ -10,18 +10,33 @@ This test verifies that:
 2. The response reports the change (not "No fields to update")
 3. The change is recorded in the node's change_log
 4. Omitting a parameter still means "leave unchanged"
+5. The clear propagates through execute_tool to all three triple-write
+   layers (Neo4j, knowledge/{id}.json, synthesis/{id}.md)
 """
 
-import asyncio
 import json
+import re
+import uuid
 from pathlib import Path
 
 import pytest
 
 from wheeler.config import load_config
 from wheeler.graph.backend import get_backend
-from wheeler.graph.schema import generate_node_id, PREFIX_TO_LABEL
-from wheeler.tools.graph_tools import mutations
+from wheeler.graph.schema import generate_node_id
+from wheeler.tools.graph_tools import execute_tool, mutations
+
+# render.py emits "**Path**: <value>" only when the model's path is truthy,
+# and joins it with the other metadata using " | ". Matching the live entry
+# specifically matters: a cleared path can still appear elsewhere in the
+# file as audit history, so scanning for the raw string would be wrong.
+_LIVE_PATH_RE = re.compile(r"\*\*Path\*\*:\s*([^|\n]*)")
+
+
+def _live_path(markdown: str) -> str | None:
+    """Return the live Path value rendered in synthesis markdown, or None."""
+    match = _LIVE_PATH_RE.search(markdown)
+    return match.group(1).strip() if match else None
 
 
 @pytest.fixture
@@ -215,6 +230,118 @@ class TestUpdateNodeClearString:
                 await backend.delete_node("Hypothesis", node_id)
             except Exception:
                 pass
+
+
+class TestClearPropagatesThroughTripleWrite:
+    """Clearing a field must reach all three triple-write layers.
+
+    The tests above call the mutation handler directly, which skips both
+    validate_and_normalize and the triple-write in execute_tool. That
+    leaves JSON and synthesis propagation unguarded, so this routes
+    through execute_tool and reads every layer back off disk.
+    """
+
+    @pytest.mark.asyncio
+    async def test_clear_path_reaches_graph_json_and_synthesis(
+        self, backend_and_config, tmp_path,
+    ):
+        backend, config = backend_and_config
+
+        marker = f"issue101-triplewrite-{uuid.uuid4().hex[:8]}"
+        artifact = tmp_path / "issue101_artifact.md"
+        artifact.write_text("placeholder artifact\n")
+        # execute_tool normalizes path to absolute, so compare against the
+        # resolved form (on macOS tmp_path is a symlink into /private).
+        resolved = str(artifact.resolve())
+
+        created = json.loads(await execute_tool(
+            "add_document",
+            {
+                "title": "Issue 101 triple-write guard",
+                "path": str(artifact),
+                "status": "draft",
+                "session_id": marker,
+            },
+            config,
+        ))
+        node_id = created.get("node_id")
+        assert node_id, f"add_document did not create a node: {created}"
+
+        knowledge_file = Path(config.knowledge_path) / f"{node_id}.json"
+        synthesis_file = Path(config.synthesis_path) / f"{node_id}.md"
+
+        try:
+            # All three layers carry the path before the clear.
+            graph_before = await backend.get_node("Document", node_id)
+            assert graph_before is not None
+            assert graph_before.get("path") == resolved
+
+            assert knowledge_file.exists(), f"no knowledge file at {knowledge_file}"
+            json_before = json.loads(knowledge_file.read_text())
+            assert json_before.get("path") == resolved
+
+            assert synthesis_file.exists(), f"no synthesis file at {synthesis_file}"
+            assert _live_path(synthesis_file.read_text()) == resolved
+
+            # Clear it through the dispatch path, not the handler.
+            result = json.loads(await execute_tool(
+                "update_node",
+                {"node_id": node_id, "path": "", "session_id": marker},
+                config,
+            ))
+            assert result.get("status") == "updated", (
+                f"clearing path through execute_tool failed: {result}"
+            )
+            assert result.get("changes", {}).get("path") == {
+                "old": resolved, "new": "",
+            }, f"unexpected changes payload: {result.get('changes')}"
+
+            # Layer 1: Neo4j.
+            graph_after = await backend.get_node("Document", node_id)
+            assert graph_after is not None
+            assert graph_after.get("path") == "", (
+                f"graph path not cleared: {repr(graph_after.get('path'))}"
+            )
+
+            # Layer 2: knowledge JSON, re-read off disk.
+            json_after = json.loads(knowledge_file.read_text())
+            assert json_after.get("path") == "", (
+                f"knowledge JSON path not cleared (layer drift): "
+                f"{repr(json_after.get('path'))}"
+            )
+
+            # The clear is recorded in change_log as old -> new.
+            path_entries = [
+                entry for entry in json_after.get("change_log", [])
+                if "path" in entry.get("changes", {})
+            ]
+            assert path_entries, (
+                f"no change_log entry for the cleared path: "
+                f"{json_after.get('change_log')}"
+            )
+            assert path_entries[-1]["changes"]["path"] == [resolved, ""]
+
+            # Layer 3: synthesis no longer renders a live Path entry. The old
+            # value may survive as audit history, which is by design, so this
+            # asserts on the live entry rather than on the raw string.
+            assert _live_path(synthesis_file.read_text()) is None, (
+                "synthesis still renders a live Path entry after the clear"
+            )
+
+            # _field_specs._check_path short-circuits on the empty string. If
+            # that guard regresses, the path is resolved against the process
+            # cwd instead of staying cleared.
+            for layer, value in (
+                ("graph", graph_after.get("path")),
+                ("knowledge JSON", json_after.get("path")),
+            ):
+                assert value != str(Path.cwd()), (
+                    f"{layer} path was resolved to the cwd instead of cleared"
+                )
+        finally:
+            await execute_tool(
+                "delete_node", {"node_id": node_id, "session_id": marker}, config,
+            )
 
 
 if __name__ == "__main__":
