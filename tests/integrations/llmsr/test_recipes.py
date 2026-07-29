@@ -430,6 +430,20 @@ class TestTheScaffolder:
         with pytest.raises(ValueError, match="--sigma-col"):
             recipes_mod.scaffold("chi_squared", tables["sigma"])
 
+    def test_a_recipe_that_does_not_read_sigma_refuses_to_set_a_column_aside(
+        self, tables
+    ):
+        """Because the resulting spec would be silently wrong, not merely useless.
+
+        Setting a column aside drops it from the equation's arguments but not
+        from the input array, and Wheeler's default fit binds the leading columns
+        POSITIONALLY. Unless the set-aside column happened to be the last one,
+        the equation would receive the wrong arrays and still fit, still score,
+        and still report a number.
+        """
+        with pytest.raises(ValueError, match="does not read a per-point error"):
+            recipes_mod.scaffold("pooled", tables["sigma"], sigma_col="sigma")
+
     @pytest.mark.parametrize("bad,fragment", [
         ({"group_by": "nope"}, "not a column"),
         ({"group_by": "y"}, "is the target column"),

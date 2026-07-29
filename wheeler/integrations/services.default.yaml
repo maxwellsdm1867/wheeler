@@ -121,12 +121,28 @@ services:
     available: "wheeler llmsr --help"
     when: "discover or fit a closed-form equation / symbolic model from a dataset"
     inputs:
-      - { name: dataset, kind: node, node_type: Dataset, source: datasets, required: true, prompt: "Which dataset should the equation be fit to?" }
+      # `--data` is REPEATABLE and the unit of fitting is a (dataset, group) pair,
+      # so this port is `multi`. A single-valued dataset port could not interview
+      # for the run the engine is actually built around: ONE form scored across
+      # several tables, each refitting its own constants, which tests the FORM
+      # rather than one lucky parameterization.
+      - { name: datasets, kind: node, node_type: Dataset, source: datasets, multi: true, required: true, prompt: "Which dataset(s) should the equation be fit to? Name several to ask whether ONE form governs them all." }
+      # The two roles a table can play, kept apart on purpose. They choose among
+      # the datasets just named, which no static list can know, hence `from`.
+      - { name: seed_from, kind: text, from: datasets, required: false, prompt: "Which dataset should shape the prompt? That is where the FORM comes from. Default: the first one named." }
+      - { name: score_on, kind: text, from: datasets, multi: true, required: false, prompt: "Which datasets should enter the objective? A dataset named here IS optimized against, so its error is a training number. Default: all of them." }
+      - { name: group_by, kind: text, required: false, prompt: "Which column names the group each row belongs to (cell, trial, subject)? Each group refits its OWN constants under the same form. Leave empty for one pooled fit." }
       - { name: question, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this address?" }
-      # The metric registry is OPEN: a scientist registers their own metric and it
-      # must be offerable. `options_from` asks the registry at read time; the
-      # static `options` stay as the fallback if that resolution ever fails.
+      # Four OPEN registries: a scientist registers their own metric, loader,
+      # optimizer or picks a recipe, and every one of them must be offerable.
+      # `options_from` asks the registry at read time; the static `options` stay
+      # as the fallback if that resolution ever fails.
       - { name: metric, kind: choice, options_from: "wheeler.integrations.llmsr.metrics:available", options: [nmse, mse], default: nmse, required: true, prompt: "Which scoring metric should the search optimize?" }
+      - { name: recipe, kind: choice, options_from: "wheeler.integrations.llmsr.recipes:available", options: [pooled, refit_per_group, transfer], default: pooled, required: false, prompt: "Which scoring recipe should the spec use? `wheeler llmsr recipes` says what each one measures, assumes and costs." }
+      - { name: loader, kind: choice, options_from: "wheeler.integrations.llmsr.loaders:available", options: [csv], default: csv, required: false, prompt: "How should the recording be read off disk?" }
+      # `choices`, not `available`: the strategy `auto` is a legal answer and is
+      # the default, but it is not a concrete registered optimizer.
+      - { name: optimizer, kind: choice, options_from: "wheeler.integrations.llmsr.optimizers:choices", options: [auto, bfgs, nelder-mead], default: auto, required: false, prompt: "Which optimizer should fit the free constants? `auto` runs BFGS and escalates to Nelder-Mead where no start moved." }
       - { name: select, kind: choice, options: [parsimony, ood, fit], default: parsimony, required: false, prompt: "How should the winning equation be selected?" }
     output:
       raw_node: document

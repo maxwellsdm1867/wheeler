@@ -595,6 +595,21 @@ def scaffold(
             "error, so it needs --sigma-col <column>. Name the column holding the "
             f"per-point standard deviation; input columns: {columns}"
         )
+    if sigma_col and not recipe.sigma:
+        # Refused because the resulting spec would be silently wrong under the
+        # DEFAULT door. Setting a column aside removes it from the equation's
+        # arguments but not from the input array, and the default fit binds the
+        # first n columns POSITIONALLY, so unless the set-aside column happened
+        # to be the last one the equation would receive the wrong arrays and
+        # still fit, still score, and still report.
+        raise ValueError(
+            f"recipe {recipe.key!r} does not read a per-point error column, so "
+            f"--sigma-col {sigma_col!r} would set that column aside without "
+            "anything using it. Wheeler's default fit binds the leading input "
+            "columns positionally, so the equation could silently receive the "
+            "wrong ones. Use --recipe chi_squared to weight by it, or drop the "
+            "flag."
+        )
     sigma_name = names[columns.index(sigma_col)] if sigma_col else ""
     # The equation never takes the sigma column: it is a property of the
     # MEASUREMENT, not an input to the law. The spec's own evaluate reads it

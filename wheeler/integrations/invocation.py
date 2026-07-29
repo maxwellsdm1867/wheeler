@@ -11,6 +11,11 @@ Input port schema (per dict in a contract's ``inputs``):
   name         the input's name (becomes a request key)
   kind         node | choice | text
   required     bool; a required port must be answered before dispatch
+  multi        bool; the port takes a LIST. A single-valued port handed a list of
+               several is INVALID rather than silently taking one of them, which
+               is the failure this field exists to remove: a service whose tool
+               accepts several inputs but whose contract declared one could not be
+               interviewed for the others, and nothing said so
   prompt       the question the interview asks
   node_type    (kind=node) the graph label to offer, e.g. Dataset / Question
   source       (kind=node) the graph query that lists the options
@@ -22,6 +27,11 @@ Input port schema (per dict in a contract's ``inputs``):
                the static ``options`` on any failure, so a broken or missing
                resolver degrades to today's behavior instead of emptying the port
   default      (kind=choice/text) value used when an OPTIONAL port is unanswered
+  from         (kind=text) the name of an EARLIER port whose answers this one
+               chooses among (``score_on`` picks from the datasets just named).
+               Carried for the interview to render; not validated here, because
+               the legal set is whatever the scientist answered a moment ago and
+               is not knowable from the manifest
 
 Note the layering: this module stays generic. WHICH callable a port asks is the
 service's own business and lives in its registry entry, never here.
@@ -54,6 +64,14 @@ class InputPort:
     # list came from, and so a test can assert the wiring without importing the
     # target.
     options_from: str = ""
+    # The port takes a LIST of values rather than one. Declared per port because
+    # it is a property of the TOOL: `wheeler llmsr init --data` is repeatable and
+    # scoring one form against several tables is the point of the run, so a
+    # contract that offered one dataset made the interview unable to ask for what
+    # the tool can do.
+    multi: bool = False
+    # kind=text: the earlier port whose answers this one chooses among.
+    from_: str = ""
 
 
 def _resolve_options(spec: str) -> tuple[str, ...]:
@@ -132,13 +150,28 @@ def input_ports(contract: Any) -> list[InputPort]:
                 options=options,
                 default=raw.get("default"),
                 options_from=options_from,
+                multi=bool(raw.get("multi", False)),
+                from_=str(raw.get("from", "")),
             )
         )
     return ports
 
 
 def _has_value(provided: dict, name: str) -> bool:
-    return name in provided and provided[name] not in (None, "")
+    """Whether a port has an answer. An EMPTY list is not one.
+
+    Checked explicitly because a multi port answered ``[]`` would otherwise pass
+    ``not in (None, "")`` and count as answered, so a required port with no
+    selections would dispatch instead of being asked again.
+    """
+    if name not in provided:
+        return False
+    value = provided[name]
+    if value is None or value == "":
+        return False
+    if isinstance(value, (list, tuple)) and not value:
+        return False
+    return True
 
 
 def missing_inputs(contract: Any, provided: dict) -> list[str]:
@@ -154,9 +187,16 @@ def missing_inputs(contract: Any, provided: dict) -> list[str]:
 def validate_request(contract: Any, provided: dict) -> ValidationResult:
     """Check ``provided`` against the schema and assemble the request.
 
-    ``ok`` iff no required port is missing and no choice value is illegal.
+    ``ok`` iff no required port is missing and no value is illegal.
     Optional ports fall back to their ``default``; required ports are never
     silently defaulted (a required port with no value is reported ``missing``).
+
+    Two things count as illegal. A ``choice`` value outside the port's options,
+    which is the historic rule and is now applied to EVERY element of a multi
+    port. And a list handed to a single-valued port, which is reported rather
+    than truncated: quietly keeping one of several answers is precisely how a
+    multi-input tool ends up running against one input while the scientist
+    believes otherwise.
     """
     ports = input_ports(contract)
     missing: list[str] = []
@@ -165,8 +205,13 @@ def validate_request(contract: Any, provided: dict) -> ValidationResult:
     for p in ports:
         if _has_value(provided, p.name):
             val = provided[p.name]
-            if p.kind == "choice" and p.options and val not in p.options:
+            values = list(val) if isinstance(val, (list, tuple)) else [val]
+            if not p.multi and len(values) > 1:
                 invalid.append((p.name, val))
+            elif p.kind == "choice" and p.options:
+                invalid.extend(
+                    (p.name, v) for v in values if v not in p.options
+                )
             inputs[p.name] = val
         elif p.required:
             missing.append(p.name)
