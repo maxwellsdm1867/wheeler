@@ -40,17 +40,13 @@ violates one is rejected whatever it scored (see ``Constraint``).
 
 from __future__ import annotations
 
-import hashlib
-import importlib
-import importlib.util
 import logging
-import os
-import sys
 from dataclasses import InitVar, dataclass, field
-from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
+
+from . import _userland
 
 logger = logging.getLogger(__name__)
 
@@ -201,19 +197,16 @@ BUILTIN_METRICS: dict[str, Metric] = {MSE.key: MSE, NMSE.key: NMSE}
 METRICS: dict[str, Metric] = dict(BUILTIN_METRICS)
 
 _REQUIRED_ATTRS = ("key", "label", "data_shape", "lower_is_better", "loss", "report")
-_USER_METRICS_ENV = "WHEELER_LLMSR_METRICS"
-_PROJECT_METRICS_FILE = Path(".wheeler/llmsr/metrics.py")
 
-
-@dataclass(frozen=True)
-class MetricSourceError:
-    """A user metric module that failed to import, and why."""
-
-    source: str
-    error: str
-
-
-_loaded_sources: set[str] = set()
+# The user-module convention lives in `_userland`, shared with the other open
+# registries. These are the metric-flavoured names for it, kept because they are
+# what callers and tests already say. `_loaded_sources` is an ALIAS for the one
+# process-wide set: mutate it in place, never rebind it.
+_KIND = "metrics"
+_USER_METRICS_ENV = _userland.env_var(_KIND)
+_PROJECT_METRICS_FILE = _userland.project_file(_KIND)
+MetricSourceError = _userland.SourceError
+_loaded_sources = _userland._loaded_sources
 
 
 def _normalize_key(key: object) -> str:
@@ -260,35 +253,7 @@ def register_metric(metric: Metric, *, replace: bool = False) -> Metric:
 
 def user_metric_sources() -> list[str]:
     """Where to look for the scientist's metric modules, in order."""
-    raw = os.environ.get(_USER_METRICS_ENV, "")
-    sources = [
-        part.strip()
-        for chunk in raw.split(os.pathsep)
-        for part in chunk.split(",")
-        if part.strip()
-    ]
-    if _PROJECT_METRICS_FILE.exists():
-        sources.append(str(_PROJECT_METRICS_FILE.resolve()))
-    return sources
-
-
-def _import_source(source: str) -> None:
-    """Import one metric source: a .py path, or an importable module path."""
-    if not source.endswith(".py"):
-        importlib.import_module(source)
-        return
-    path = Path(source).resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"no such metrics file: {path}")
-    name = "wheeler_llmsr_user_metrics_" + hashlib.sha256(
-        str(path).encode()
-    ).hexdigest()[:8]
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load metrics from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module  # so the module behaves like any other import
-    spec.loader.exec_module(module)
+    return _userland.sources(_KIND)
 
 
 def load_user_metrics() -> list[MetricSourceError]:
@@ -300,19 +265,7 @@ def load_user_metrics() -> list[MetricSourceError]:
     Each source is imported at most once per process. A source that raises is
     REPORTED, not raised: one broken file must not take down every verb.
     """
-    failures: list[MetricSourceError] = []
-    for source in user_metric_sources():
-        if source in _loaded_sources:
-            continue
-        _loaded_sources.add(source)
-        try:
-            _import_source(source)
-        except Exception as exc:
-            logger.error("could not load metrics from %s: %s", source, exc)
-            failures.append(
-                MetricSourceError(source=source, error=f"{type(exc).__name__}: {exc}")
-            )
-    return failures
+    return _userland.load(_KIND)
 
 
 def get_metric(key: str) -> Metric:
