@@ -51,6 +51,28 @@ MISSION so incremental re-harvests accrue under one run):
     artifacts). When a work-log is later endorsed as a Finding, the act links the
     Finding ``-[WAS_DERIVED_FROM]-> the data``.
 
+Because this adapter is the LONG-HORIZON one (the loop runs for hours and one
+harvest lands a whole batch at once), two things exist here that the one-shot
+adapters do not need:
+
+  - **A brief, by default.** Every harvest writes ``harvest.html`` beside the
+    manifest (``harvest_brief.py``): the mission goal, one card per work item with
+    its verdict and summary, the figures the assistant actually produced embedded
+    inline, and the review state of each. Nobody can rule on a dozen outcomes from
+    a terminal summary they have not read, so the harvest hands the scientist a
+    page to READ before it asks for a single decision.
+  - **A review queue, not an inline interrogation.** Every node in one harvest
+    carries ``custom_batch`` = the mission slug (the batch key), and each
+    DECISION-BEARING node (the work-logs: the things with a verdict a human must
+    judge) also carries ``custom_review_state`` = ``undiscussed``. The harvest
+    STOPS there. Working through the queue is ``/wh:discuss``, which reads it via
+    ``query_review_queue``, walks the items with the scientist, and flips each to
+    ``discussed`` with its outcome. The incidental artifacts (data files, the
+    mission Document) carry the batch tag but no review state, so the queue does
+    not fill with things nobody needs to rule on. A re-harvest never resets an
+    already-discussed item (guarded by ``_review_state``), so settled decisions
+    stay settled as the mission keeps running.
+
 Input-side provenance: the marshal-in act SEEDED the mission FROM graph nodes
 (the mission Question/Plan, the seeded Findings, the Dataset paths), so the run
 ``Execution -[USED]-> each seed id``. The act passes them via ``--used`` and the
@@ -92,6 +114,8 @@ from typing import Any
 
 from wheeler.config import WheelerConfig
 from wheeler.integrations.asta._marshal import (
+    REVIEW_DISCUSSED,
+    REVIEW_UNDISCUSSED,
     ImportReport,
     JobOutcome,
     _edge_exists,
@@ -99,9 +123,14 @@ from wheeler.integrations.asta._marshal import (
     _link_execution_to_plan,
     _link_once,
     _record_used,
+    _review_state,
     job_outcome,
     mark_execution_completed,
     mark_execution_failed,
+)
+from wheeler.integrations.asta.harvest_brief import (
+    render_harvest_brief,
+    write_harvest_brief,
 )
 
 logger = logging.getLogger(__name__)
@@ -543,6 +572,13 @@ async def ingest_assistant(
         exec_id = exec_result.get("node_id", "")
     report.execution_id = exec_id
 
+    # Benchmark + batch identity on the run itself, so the Execution answers
+    # "which batch is this?" with the same scalar its output nodes carry.
+    if exec_id:
+        await _stamp_custom(
+            execute_tool, config, exec_id, {**run_meta.custom_bag(), "batch": record.slug}
+        )
+
     # Plan lifecycle: anchor the run Execution to its Plan (Execution -[AROSE_FROM]
     # -> Plan) when link_to is a PL- id. No-op otherwise; link_once.
     if exec_id and await _link_execution_to_plan(backend, config, exec_id, link_to):
@@ -569,6 +605,9 @@ async def ingest_assistant(
         description=f"Asta Research Assistant mission: {record.title}"[:200],
         exec_id=exec_id,
         report=report,
+        # The batch tag, but NO review state: the mission statement is not an
+        # outcome anyone rules on, it is the thing the outcomes hang off.
+        custom={"batch": record.slug},
     )
     if doc_id:
         report.artifact = doc_id
@@ -577,8 +616,8 @@ async def ingest_assistant(
 
     # Output bucketing: each completed work item -> a SAVED work-log Document plus
     # its data artifacts. Findings are NOT minted here (a work-log is not an
-    # endorsed finding): the ingest collects curation candidates, and the
-    # /wh:asta-assistant act lets the scientist ENDORSE which become Findings.
+    # endorsed finding): the ingest saves the work and leaves each outcome marked
+    # undiscussed, and /wh:discuss walks that queue with the scientist later.
     # Wrapped so a partial-ingest exception marks the run failed (no clean masquerade).
     candidates: list[dict[str, Any]] = []
     try:
@@ -610,12 +649,13 @@ async def ingest_assistant(
         )
         report.failed = True
         report.job_state = "ingest-error"
-        _write_manifest(record, exec_id, doc_id, link_to, candidates)
+        _finish_harvest(record, exec_id, doc_id, link_to, candidates, report)
         return report
 
-    # Write the curation manifest so the act can present the outcomes and the
-    # scientist can endorse which work-logs become Findings.
-    _write_manifest(record, exec_id, doc_id, link_to, candidates)
+    # Write the curation manifest + the HTML brief. A partial harvest above still
+    # gets both (same call), so a failed run leaves the scientist the same page
+    # showing exactly how far it got rather than nothing at all.
+    _finish_harvest(record, exec_id, doc_id, link_to, candidates, report)
 
     logger.info(
         "ingest_assistant: created=%d deduped=%d linked=%d skipped=%d used=%d "
@@ -642,11 +682,13 @@ async def _register_artifact(
     description: str,
     exec_id: str,
     report: ImportReport,
+    custom: dict[str, Any] | None = None,
 ) -> str | None:
     """Register a file (project.md or a data artifact) as an in-place graph node.
 
     Registers via ``ensure_artifact`` (deduped on path, points at the LIVE file),
-    stamps the service tag, and links the node ``-[WAS_GENERATED_BY]-> exec_id``.
+    stamps the service tag plus any ``custom`` bag scalars (the batch key), and
+    links the node ``-[WAS_GENERATED_BY]-> exec_id``.
     The WAS_GENERATED_BY edge's newness is the created/deduped signal (a new edge
     means a first-time registration this run), so re-harvest counts as deduped and
     the idempotency assertion holds. Best-effort: any failure returns None and
@@ -681,19 +723,13 @@ async def _register_artifact(
         logger.warning("ingest_assistant: ensure_artifact failed for %s", path)
         report.skipped += 1
         return None
-    # ensure_artifact does not forward `service` into create_node, so stamp it
-    # (mirrors register_output_artifact step 3) so these artifact nodes are
-    # service-scoped-queryable like the Findings, not left un-tagged.
-    try:
-        await execute_tool(
-            "update_node", {"node_id": node_id, "service": _SERVICE_TAG}, config
-        )
-    except Exception:
-        logger.warning(
-            "ingest_assistant: service stamp failed for %s (best-effort)",
-            node_id,
-            exc_info=True,
-        )
+    # ensure_artifact forwards neither `service` nor `custom` into create_node, so
+    # stamp both here (mirrors register_output_artifact step 3): the service tag so
+    # these artifact nodes are service-scoped-queryable like the Findings, and the
+    # batch key so every node from ONE harvest is filterable in one hop-free query.
+    await _stamp_custom(
+        execute_tool, config, node_id, {"service": _SERVICE_TAG, **(custom or {})}
+    )
     # Provenance + created/deduped signal. Distinguish "edge already existed"
     # (a genuine re-harvest dedupe) from "the link write failed" (transient), so a
     # flaky first pass is not mislabeled deduped and then counted created on the
@@ -733,9 +769,12 @@ async def _ingest_work_log(
     cause). Provenance: Document ``-[WAS_GENERATED_BY]-> Execution``,
     ``-[AROSE_FROM]-> the mission Document`` (and the seed Question/Plan). Its data
     artifacts register as Dataset/Script nodes ``-[WAS_GENERATED_BY]-> Execution``,
-    and the work-log Document ``-[CONTAINS]-> each``. Returns a curation candidate
-    dict (or None if the log could not be saved) so the act can present the outcome
-    for the scientist to ENDORSE as a Finding.
+    and the work-log Document ``-[CONTAINS]-> each``.
+
+    The work-log is the DECISION-BEARING node of the batch (it carries a verdict a
+    human has to judge), so it is the node that gets ``custom_review_state``.
+    Returns a curation candidate dict (or None if the log could not be saved) for
+    the manifest and the brief.
     """
     work_key = f"{mission_slug}/{item.slug}"
     log_id = await _register_artifact(
@@ -749,9 +788,15 @@ async def _ingest_work_log(
         )[:200],
         exec_id=exec_id,
         report=report,
+        custom={"batch": mission_slug},
     )
     if not log_id:
         return None
+    # A re-harvest must not resurrect a settled decision: read the state first and
+    # only mark a work-log undiscussed the FIRST time it is saved. Without this,
+    # every incremental pass would flip already-discussed items back into the
+    # queue and the scientist would re-litigate the same outcomes forever.
+    review_state = await _review_state(backend, config, log_id) or REVIEW_UNDISCUSSED
     # Park the outcome so it is queryable and the act can read it for curation.
     await _stamp_custom(
         execute_tool,
@@ -764,6 +809,8 @@ async def _ingest_work_log(
             "verdict": item.verdict,
             "root_cause": item.root_cause[:500],
             "kind": "work-log",
+            "batch": mission_slug,
+            "review_state": review_state,
             "service": _SERVICE_TAG,
         },
     )
@@ -778,6 +825,7 @@ async def _ingest_work_log(
     # scientist later endorses this log as a Finding, the act links the Finding
     # WAS_DERIVED_FROM these data ids.
     data_ids: list[str] = []
+    data_files: list[str] = []
     for data_path in item.data_files:
         data_id = await _register_artifact(
             execute_tool,
@@ -788,42 +836,73 @@ async def _ingest_work_log(
             description=f"{item.slug} artifact: {Path(data_path).name}"[:200],
             exec_id=exec_id,
             report=report,
+            # The batch tag, but NO review state: an artifact is not a claim, so
+            # it is not something a human rules on. It is reachable through the
+            # work-log that CONTAINS it.
+            custom={"batch": mission_slug},
         )
         if data_id:
             data_ids.append(data_id)
+            data_files.append(data_path)
             if await _link_once(backend, config, log_id, "CONTAINS", data_id):
                 report.linked += 1
 
     return {
         "slug": item.slug,
+        "title": item.title,
         "verdict": item.verdict,
         "status": item.status,
         "summary": item.result_summary,
+        "root_cause": item.root_cause,
         "document_id": log_id,
         "data_ids": data_ids,
+        # Paths (not just ids) so the brief can embed the figures the assistant
+        # actually produced without a second walk of the mission tree.
+        "data_files": data_files,
+        "review_state": review_state,
     }
 
 
-def _write_manifest(
+def _finish_harvest(
     record: ProjectRecord,
     exec_id: str,
     doc_id: str | None,
     link_to: str | None,
     candidates: list[dict[str, Any]],
+    report: ImportReport,
 ) -> None:
-    """Write the curation manifest ``.harvest.json`` into the mission directory.
+    """Write the curation manifest and the HTML brief, and count the backlog.
 
-    The ``/wh:asta-assistant`` act reads it to present each work-log outcome so the
-    scientist can ENDORSE which become Findings: the synthesis from work-log to
-    knowledge node is a human decision, not the parser's. Best-effort: a write
-    failure never breaks the harvest.
+    Two deliverables, both best-effort so neither can break a harvest that has
+    already written the graph:
+
+      - ``.harvest.json``: the machine-readable manifest the review pass reads to
+        walk the queue (per-log slug, verdict, summary, node ids, review state)
+        plus the run's anchor ids.
+      - ``harvest.html``: the page the SCIENTIST reads, written on EVERY harvest.
+        A batch of a dozen outcomes is not something anyone can judge from a
+        terminal summary, so the harvest hands over something to read first.
+
+    Also sets ``report.pending_review`` / ``report.brief_path`` so the caller can
+    say how many items still need a human read without querying the graph.
     """
+    mission_dir = Path(record.project_md_path).parent
+    pending = [
+        c for c in candidates
+        if (c.get("review_state") or REVIEW_UNDISCUSSED) != REVIEW_DISCUSSED
+    ]
+    report.pending_review = len(pending)
+    generated = _now_iso()
+
     try:
-        mission_dir = Path(record.project_md_path).parent
         payload = {
             "execution_id": exec_id,
             "mission_document": doc_id or "",
             "link_to": link_to or "",
+            "batch": record.slug,
+            "mission_title": record.title,
+            "harvested": generated,
+            "pending_review": len(pending),
             "work_logs": candidates,
         }
         (mission_dir / _HARVEST_MANIFEST).write_text(json.dumps(payload, indent=2))
@@ -832,6 +911,34 @@ def _write_manifest(
             "ingest_assistant: could not write curation manifest (best-effort)",
             exc_info=True,
         )
+
+    try:
+        html_text = render_harvest_brief(
+            title=record.title,
+            slug=record.slug,
+            goal=record.goal,
+            background=record.background,
+            items=candidates,
+            execution_id=exec_id,
+            mission_document=doc_id or "",
+            link_to=link_to or "",
+            generated=generated,
+        )
+    except Exception:  # a rendering bug must never cost the scientist the harvest
+        logger.warning(
+            "ingest_assistant: brief rendering raised (best-effort)", exc_info=True
+        )
+        return
+    written = write_harvest_brief(mission_dir, html_text)
+    if written:
+        report.brief_path = written
+
+
+def _now_iso() -> str:
+    """UTC timestamp for the manifest and the brief footer."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 async def _stamp_custom(

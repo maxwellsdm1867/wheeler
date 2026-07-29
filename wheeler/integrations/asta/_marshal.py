@@ -81,7 +81,17 @@ class ImportReport:
     failed: bool = False
     job_state: str = ""
     error_reason: str = ""
+    # Work-logs nothing independently reviewed (no Assessment section at all),
+    # distinct from a log a reviewer read but recorded no verdict for. Kept
+    # separate from pending_review: "nobody assessed it" and "nobody has ruled on
+    # it yet" are different claims and conflating them hides the first.
     unassessed: int = 0
+    # A batch ingest (one that lands more nodes than a scientist can rule on in
+    # one sitting) leaves its decision-bearing nodes marked undiscussed. These
+    # surface that backlog on the ingest output itself, so the caller does not
+    # have to query the graph to learn that N things still need a human read.
+    pending_review: int = 0
+    brief_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +108,8 @@ class ImportReport:
             "job_state": self.job_state,
             "error_reason": self.error_reason,
             "unassessed": self.unassessed,
+            "pending_review": self.pending_review,
+            "brief_path": self.brief_path,
         }
 
 
@@ -361,6 +373,58 @@ async def _node_exists(backend, config: WheelerConfig, node_id: str) -> bool:
         params = {"id": node_id}
     rows = await backend.run_cypher(query, params)
     return bool(rows)
+
+
+# ---------------------------------------------------------------------------
+# Review-queue convention (shared, not adapter-specific)
+# ---------------------------------------------------------------------------
+
+# A long-horizon service lands a BATCH of nodes in one harvest, more than a
+# scientist can rule on in one sitting. Two custom-bag scalars make that backlog
+# visible and resumable instead of evaporating with the session:
+#   custom_batch        -- the run key every node in one harvest shares.
+#   custom_review_state -- undiscussed until a human rules on it, then discussed.
+# The read side is the project-scoped ``query_review_queue`` tool; the write side
+# is whatever act walks the queue. Only DECISION-BEARING nodes carry the review
+# state (the things with an outcome a human must judge), so the queue does not
+# fill with the batch's incidental artifacts.
+REVIEW_UNDISCUSSED = "undiscussed"
+REVIEW_DISCUSSED = "discussed"
+
+
+async def _review_state(backend, config: WheelerConfig, node_id: str) -> str:
+    """Return the review state stamped on a node, or "" when absent.
+
+    Label-agnostic (keyed on the globally-unique id) and project-scoped, like
+    ``_node_exists``. Adapters read this BEFORE stamping so a re-harvest never
+    resets an item a human already discussed back to undiscussed, which would
+    silently resurrect settled decisions into the queue on every incremental
+    pass. Defensive: any read failure yields "" (treated as not-yet-stamped).
+    """
+    if not node_id:
+        return ""
+    ptag = getattr(config.neo4j, "project_tag", "") or ""
+    if ptag:
+        query = (
+            "MATCH (n {id: $id}) WHERE n._wheeler_project = $ptag "
+            "RETURN n.custom_review_state AS state LIMIT 1"
+        )
+        params = {"id": node_id, "ptag": ptag}
+    else:
+        query = "MATCH (n {id: $id}) RETURN n.custom_review_state AS state LIMIT 1"
+        params = {"id": node_id}
+    try:
+        rows = await backend.run_cypher(query, params)
+    except Exception:
+        logger.warning(
+            "_review_state: read failed for %s (treating as unstamped)",
+            node_id,
+            exc_info=True,
+        )
+        return ""
+    if not rows:
+        return ""
+    return rows[0].get("state") or ""
 
 
 async def _link_execution_to_plan(

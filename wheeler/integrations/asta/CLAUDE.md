@@ -113,22 +113,44 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   classified by extension) `WAS_GENERATED_BY` the run and `CONTAINS`ed by its
   work-log Document. The parser creates **NO Finding**: promoting a work-log to an
   endorsed Finding is a HUMAN decision (mechanically minting one per log forges
-  records and breaks the "prefer a Question over an unendorsed Finding" rule). So
-  the ingest writes a curation manifest `.harvest.json` (per-log slug, verdict,
-  summary, `document_id`, `data_ids` + the `execution_id`/`link_to`), and the
-  `/wh:asta-assistant` act presents each outcome for the scientist to ENDORSE.
-  A log whose README has NO Assessment section (the `review-work` critic never ran
-  on it) carries `verdict=unassessed`, distinct from the `""` of a log a reviewer
-  read but recorded no verdict for; the count rides on `ImportReport.unassessed`
-  and the CLI prints an `UNASSESSED` caveat, so an unreviewed self-report is never
-  offered for promotion as though it had been checked. Endorsement:
-  endorsed ones get `add_finding` in the ACT, wired `WAS_GENERATED_BY` the
-  Execution, `AROSE_FROM` the seed, and `WAS_DERIVED_FROM` the log's data. Dedupe
-  is native (path-based via `ensure_artifact`; no persisted index). Produces NO
-  Paper nodes (a corpus_id is not reliably recoverable from arbitrary work output;
-  a literature-heavy mission records papers via `/wh:asta-lit` directly). Imports
-  `execute_tool` lazily and reuses `_marshal.py`'s `_link_once` / `_record_used` /
-  `_find_execution` / `_link_execution_to_plan` / `job_outcome` helpers.
+  records and breaks the "prefer a Question over an unendorsed Finding" rule).
+  **This is also the BATCH adapter**, and the two things that follow from that are
+  the review queue and the brief (see the "Batch harvests" invariant below): the
+  ingest stamps `custom_batch` on every node it touches, marks each work-log
+  `custom_review_state=undiscussed`, writes the manifest `.harvest.json` (per-log
+  slug, title, verdict, summary, root cause, `document_id`, `data_ids`,
+  `data_files`, `review_state` + the `execution_id` / `link_to` / `batch` /
+  `pending_review`), and renders `harvest.html`. A log whose README has NO
+  Assessment section (the `review-work` critic never ran on it) carries
+  `verdict=unassessed`, distinct from the `""` of a log a reviewer read but
+  recorded no verdict for; the count rides on `ImportReport.unassessed` and the
+  CLI prints an `UNASSESSED` caveat, so an unreviewed self-report is never
+  offered for promotion as though it had been checked. The harvest then STOPS: endorsing
+  is `/wh:discuss <batch>`, which reads the queue via `query_review_queue`, walks
+  it with the scientist, and per item calls `add_finding` (wired `WAS_GENERATED_BY`
+  the Execution, `AROSE_FROM` the work-log and the seed, `WAS_DERIVED_FROM` the
+  log's data) or `add_question`, then flips `custom_review_state` to `discussed`
+  with a `custom_review_outcome`. Dedupe is native (path-based via
+  `ensure_artifact`; no persisted index). Produces NO Paper nodes (a corpus_id is
+  not reliably recoverable from arbitrary work output; a literature-heavy mission
+  records papers via `/wh:asta-lit` directly). Imports `execute_tool` lazily and
+  reuses `_marshal.py`'s `_link_once` / `_record_used` / `_find_execution` /
+  `_link_execution_to_plan` / `_review_state` / `job_outcome` helpers.
+- `harvest_brief.py` -- `render_harvest_brief(...) -> str` and
+  `write_harvest_brief(mission_dir, html) -> str | None`. The HTML page every
+  assistant harvest writes to `<mission>/harvest.html`. Leaf module: stdlib only,
+  no graph import, no config, pure function over already-parsed values, so it is
+  unit-tested without Neo4j and a rendering bug can never abort a harvest (the
+  caller wraps it and logs). Renders the mission goal, one card per work item
+  (verdict pill, review-state pill, summary, collapsed root cause, node id
+  badges), the figures the assistant produced embedded as base64 data URIs
+  (capped: 1.5 MB per image, 12 images, anything past the cap is still LISTED,
+  never silently dropped), and a footer pointing at `/wh:discuss <batch>`.
+  Self-contained (no external request) and theme-aware. Deliberately NOT the
+  `wheeler-brief` skill: that skill is optional in shipped installs and its spec
+  is plan-shaped ("what will the figure look like under each hypothesis"), while
+  this must exist BY DEFAULT on every harvest, including headless, and answers a
+  different question ("what came back, and which of it still needs a human").
 - `cli.py` -- `integrate_app` Typer sub-app, one verb: `ingest <tool> <artifact>
   [--link-to ID] [--used IDS] [--target ID] [--find-results JSON]`. Registered in
   `wheeler/tools/cli.py` guarded by try/except. The `scholar-qa` /
@@ -144,15 +166,16 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
 ## Invariants
 
 - **Chokepoint.** The marshal-out modules (`ingest.py`, `theorizer.py`,
-  `semantic_scholar.py`, `artifacts.py`) plus the shared `_marshal.py` are the
-  only callers of `execute_tool`, and each imports it lazily (function-local).
+  `semantic_scholar.py`, `artifacts.py`, `scholar_qa.py`, `assistant.py`) plus the
+  shared `_marshal.py` are the only callers of `execute_tool`, and each imports it
+  lazily (function-local). `harvest_brief.py` and `schemas.py` call nothing.
   `_marshal.py` holds the shared read/link/dedupe helpers (`_load_index` /
   `_save_index` / `_find_paper_by_corpus_id` / `_find_paper_by_normalized_title` /
-  `_find_execution` / `_paper_exists` / `_edge_exists` / `_link_once` +
-  `ImportReport`); the four
-  adapters import them from there rather than from `ingest.py`. This keeps
-  `graph_tools/` asta-free and preserves strict layering. `transport.py` and
-  `schemas.py` have no graph dependency.
+  `_find_execution` / `_paper_exists` / `_edge_exists` / `_link_once` /
+  `_review_state` + `REVIEW_UNDISCUSSED` / `REVIEW_DISCUSSED` + `ImportReport`);
+  the adapters import them from there rather than from `ingest.py`. This keeps
+  `graph_tools/` asta-free and preserves strict layering. `transport.py`,
+  `schemas.py`, and `harvest_brief.py` have no graph dependency.
 - **corpus_id normalization.** Dedupe keys on `corpus_id`, always coerced to a
   digit-string (`str(int(...))`), so an int or a digit-string artifact value map
   to the same Paper. The key is INDEXED on `Paper.corpus_id` and promoted onto
@@ -251,6 +274,33 @@ side plus the subprocess boundary. No workflow engine, daemon, or router.
   transitive, so any Asta result traces back to the exact graph context that
   shaped its request. The linked-USED count surfaces as `ImportReport.used`
   (`to_dict` + the printed summary).
+- **Batch harvests: tag the batch, queue the decisions, render the brief.** Most
+  adapters are one-shot: one call, a handful of nodes, and the act wires the
+  semantics on the spot. A LONG-HORIZON service (the Research Assistant, whose
+  loop runs for hours) is different: one harvest lands more outcomes than a
+  scientist can rule on in one sitting, and if it demands a dozen endorsement
+  decisions inline it gets rubber-stamped, half-answered, or abandoned, with no
+  record of which outcomes were considered and passed over versus never read at
+  all. Three mechanics fix that, and any future batch adapter should reuse them:
+  (1) **Batch tag.** Every node one harvest touches carries `custom_batch` = the
+  run key (for the assistant, the mission slug, which is also the Execution's
+  `session_id`), and so does the Execution. The batch is already recoverable by
+  traversing `WAS_GENERATED_BY`, but the scalar makes it one hop-free, filterable
+  query. (2) **Review state on the DECISION-BEARING nodes only.**
+  `custom_review_state` (`undiscussed` -> `discussed`, plus a
+  `custom_review_outcome` of `endorsed` / `parked` / `logged`) goes on the nodes
+  carrying an outcome a human must judge (the work-logs), NOT on the incidental
+  artifacts (data files, the mission statement), else the queue fills with things
+  nobody needs to rule on. The constants and the `_review_state` read helper live
+  in `_marshal.py`; the read side is the project-scoped `query_review_queue` tool
+  (raw `run_cypher` is NOT project-scoped and would leak other projects' queues);
+  the write side is `/wh:discuss`. **A re-harvest must never reset an already
+  discussed item**: read the current state first and only stamp `undiscussed` the
+  first time, else every incremental pass resurrects settled decisions and the
+  scientist re-litigates them forever. (3) **A brief, by default.** The ingest
+  itself renders the HTML page (`harvest_brief.py`), never the act and never an
+  optional skill, so it exists on every harvest including headless runs. The
+  scientist reads the page BEFORE being asked for a single decision.
 - **Failure isolation.** A failed or canceled CLI run writes nothing. Retries,
   auth, and timeouts stay inside the asta CLI.
 - **External-call failsafe (honest Execution status, no fabricated outputs).**

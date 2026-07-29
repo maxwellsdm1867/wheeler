@@ -688,6 +688,115 @@ def _cap_text(value):  # noqa: ANN202
     return value
 
 
+_REVIEW_STATE_PROP = "custom_review_state"
+_REVIEW_BATCH_PROP = "custom_batch"
+
+
+def _review_label(model, record: dict) -> str:
+    """Best label for a queued node: the model's primary text, else the graph's.
+
+    Coalesces across node types (a work-log Document has ``title``, a Finding a
+    ``description``, a Hypothesis a ``statement``) so the review queue reads as
+    one list regardless of what the batch produced.
+    """
+    if model is not None:
+        for field in ("title", "description", "statement", "question", "content"):
+            value = getattr(model, field, "")
+            if value:
+                return _cap_text(value)
+    return _cap_text(record.get("display_name") or "") or ""
+
+
+async def query_review_queue(backend, args: dict) -> str:
+    """List nodes awaiting human review, newest batch first.
+
+    A batch ingest (an Asta Research Assistant harvest, and any future
+    service that lands many nodes at once) stamps its decision-bearing
+    nodes ``custom_review_state="undiscussed"`` and ``custom_batch=<run
+    key>``. This is the read side of that convention: it answers "what
+    came back that nobody has looked at yet", which raw traversal cannot
+    do cheaply and which ``run_cypher`` cannot do SAFELY (raw Cypher is
+    not project-tag scoped, so on Community Edition it would surface
+    other projects' queues).
+
+    Label-agnostic by design: the queue spans whatever node types the
+    batch produced.
+
+    Optional args:
+        ``batch``  -- restrict to one batch key (default: all).
+        ``state``  -- review state to list (default ``undiscussed``).
+        ``limit``  -- cap on returned items (default 20).
+
+    Returns the capped ``items`` plus an UNCAPPED ``batches`` roll-up
+    (batch key -> pending count), so a caller can report the true backlog
+    even when it only walks the first page.
+    """
+    ctx = _extract_context(args)
+    batch = args.get("batch", "")
+    state = args.get("state", "") or "undiscussed"
+    limit = int(args.get("limit", 20))
+
+    where = f"n.{_REVIEW_STATE_PROP} = $state"
+    params: dict = {"state": state, "limit": limit}
+    if batch:
+        where += f" AND n.{_REVIEW_BATCH_PROP} = $batch"
+        params["batch"] = batch
+    where += _project_where("n", ctx.project_tag, has_existing_where=True)
+
+    records = await backend.run_cypher(
+        f"MATCH (n) WHERE {where} "
+        "RETURN n.id AS id, labels(n)[0] AS label, "
+        f"n.{_REVIEW_BATCH_PROP} AS batch, n.{_REVIEW_STATE_PROP} AS review_state, "
+        "n.custom_verdict AS verdict, n.custom_work_key AS work_key, "
+        "n.service AS service, n.display_name AS display_name, "
+        "n.path AS path, n.updated AS updated "
+        "ORDER BY n.updated DESC, n.id ASC LIMIT $limit",
+        _inject_ptag(params, ctx.project_tag),
+    )
+
+    items = []
+    for r in records:
+        model = _read_knowledge_node(ctx.knowledge_path, r["id"])
+        items.append({
+            "id": r["id"],
+            "label": r["label"],
+            "title": _review_label(model, dict(r)),
+            "batch": r["batch"] or "",
+            "review_state": r["review_state"] or "",
+            "verdict": r["verdict"] or "",
+            "work_key": r["work_key"] or "",
+            "service": r["service"] or "",
+            "path": r["path"] or "",
+            "updated": r["updated"] or "",
+        })
+
+    # Uncapped roll-up: the true backlog per batch, so a caller paging
+    # through `items` can still say how many are left.
+    roll_params: dict = {"state": state}
+    roll_where = f"n.{_REVIEW_STATE_PROP} = $state"
+    if batch:
+        roll_where += f" AND n.{_REVIEW_BATCH_PROP} = $batch"
+        roll_params["batch"] = batch
+    roll_where += _project_where("n", ctx.project_tag, has_existing_where=True)
+    roll = await backend.run_cypher(
+        f"MATCH (n) WHERE {roll_where} "
+        f"RETURN n.{_REVIEW_BATCH_PROP} AS batch, count(n) AS pending "
+        "ORDER BY pending DESC",
+        _inject_ptag(roll_params, ctx.project_tag),
+    )
+    batches = [
+        {"batch": r["batch"] or "", "pending": r["pending"]} for r in roll
+    ]
+
+    return json.dumps({
+        "items": items,
+        "count": len(items),
+        "state": state,
+        "batches": batches,
+        "total_pending": sum(b["pending"] for b in batches),
+    })
+
+
 async def graph_gaps(backend, args: dict | None = None) -> str:
     """Find knowledge gaps: unlinked questions, unsupported hypotheses, idle executions.
 

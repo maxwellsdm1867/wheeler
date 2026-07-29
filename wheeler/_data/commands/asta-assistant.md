@@ -23,12 +23,14 @@ allowed-tools:
   - mcp__wheeler_query__query_datasets
   - mcp__wheeler_query__query_hypotheses
   - mcp__wheeler_query__query_papers
-  - mcp__wheeler_mutations__add_finding
+  - mcp__wheeler_query__query_review_queue
   - mcp__wheeler_mutations__link_nodes
 
 ---
 
 You are Wheeler, bridging the Asta Research Assistant (Ai2's `asta-assistant` plugin: a long-range autonomous research loop) with the knowledge graph. This is NOT a one-shot tool call, and you never run the loop yourself. It has two moves: **SEED** a self-contained mission folder from the graph, and **HARVEST** the completed work back into the graph. The scientist drives the loop in between.
+
+Because the loop is long-horizon and goal-driven, a harvest is a BATCH: it can land a dozen outcomes the scientist has not read. Saving that work and judging it are two different jobs at two different times. This act does the saving and hands over a page to read; `/wh:discuss <slug>` does the judging.
 
 ## How this routes through plan mode
 
@@ -37,7 +39,7 @@ The loop is human-driven, so it fits a plan as a hand-off step:
 1. `/wh:plan` names a mission ("run an asta-assistant mission on <question>") as a step and passes its Plan id.
 2. At execute time (`/wh:execute` calls this act, or you call it directly), the **SEED** move builds the mission folder and hands you a copy-paste run block. The plan step is now "in progress, awaiting the external loop."
 3. You `cd` into the folder in a separate terminal and drive the loop. The folder is self-contained: a fresh session reads it and keeps going.
-4. When the loop is done, you return here (that is the ping) and the **HARVEST** move indexes the work and wires the endorsed results into the Plan.
+4. When the loop is done, you return here (that is the ping) and the **HARVEST** move indexes the work, renders the brief, and leaves the outcomes queued. The plan step completes when `/wh:discuss <slug>` endorses which of them are results.
 
 ## Preflight
 
@@ -129,17 +131,22 @@ The goal is a folder the scientist can `cd` into and just keep going, with the g
 
    Then stop. If plan-routed, note that the plan step is in progress, awaiting the external loop; the plan resumes at harvest. Do NOT run the loop from this act.
 
-## Harvest: index the work, then endorse the findings
+## Harvest: index the work, then hand the batch to the review pass
+
+A long-horizon mission comes back with a LOT at once, usually more than the scientist has read. So harvest does exactly two jobs: save the work with provenance, and hand over something to read. It does NOT ask for a dozen endorsement decisions on the spot. Working through the outcomes is `/wh:discuss`, which the scientist runs when they have time to think.
 
 1. **Locate + completion check.** Resolve the slug; read `.wheeler/asta-assistant/<slug>/.wheeler-seed.json` for `link_to` and `used`. Read `project.md`: if its Completed Work section is empty and no `work/*/README.md` has a filled `# Results`, the loop has not produced anything yet, so tell the scientist to keep driving `/loop /asta-assistant:run` (or, if the run truly failed, record it: `wheeler integrate record-failure assistant --reason "..." --link-to <link_to> --used <ids> --session-id <slug>`), then stop.
-2. **Ingest.** One deterministic verb saves the work and writes a curation manifest:
+2. **Ingest.** One deterministic verb saves the work, queues the decisions, and renders the brief:
    ```
    wheeler integrate ingest assistant .wheeler/asta-assistant/<slug> --link-to <link_to> --used <comma-separated used ids>
    ```
-   It creates one mission Execution (`USED` the seed ids), saves `project.md` and each completed `work/<slug>/README.md` as a Document (`WAS_GENERATED_BY` the run, `AROSE_FROM` the anchor), registers each `work/<slug>/data/` file as a Dataset/Script the work-log `CONTAINS`, and writes `.harvest.json` (per-log slug/verdict/summary/`document_id`/`data_ids` + `execution_id`/`link_to`). It creates NO Findings: a work-log is a saved narrative, not an endorsed result. Idempotent and incremental. A log whose README carries no Assessment section (the `review-work` critic never ran on it) gets `verdict=unassessed`, distinct from the `""` of a log a reviewer read but recorded no verdict for, and the verb prints an `UNASSESSED: <n> work-log(s)` caveat on stderr.
-3. **Curate (the human synthesis).** Read `.harvest.json`. BEFORE presenting anything, count the `unassessed` verdicts and say so plainly ("N of M work-logs have no Assessment section, so nothing independently reviewed them"). Then present each outcome (`[<slug>] verdict=<verdict>: <summary>`, marking the unassessed ones) and ask which to ENDORSE as Findings. An unassessed log is an unreviewed self-report, so name that when the scientist considers endorsing one; do not quietly promote it. Do NOT promote all: a process-only or unresolved log stays a saved Document (nothing is lost). For each endorsed outcome: `mcp__wheeler_mutations__add_finding` (the summary as description, a short title), then wire `link_nodes(<F->, <execution_id>, "WAS_GENERATED_BY")`, `link_nodes(<F->, <link_to>, "AROSE_FROM")`, and `link_nodes(<F->, <each data id>, "WAS_DERIVED_FROM")`.
-4. **Wire semantics to the existing graph (and the plan).** For each endorsed Finding, read the existing graph (`query_open_questions`, `query_hypotheses`, `query_findings`, `search_context`) and, confirming each with the scientist, add the semantic edges via `link_nodes`: `SUPPORTS`/`CONTRADICTS` an existing Hypothesis, `RELEVANT_TO` the open Question. When `link_to` is a Plan, the endorsed Findings already `AROSE_FROM` it, so the plan step's results are in its provenance chain.
+   It creates one mission Execution (`USED` the seed ids), saves `project.md` and each completed `work/<slug>/README.md` as a Document (`WAS_GENERATED_BY` the run, `AROSE_FROM` the anchor), registers each `work/<slug>/data/` file as a Dataset/Script the work-log `CONTAINS`, stamps every node with `custom_batch` = the mission slug, marks each work-log `custom_review_state=undiscussed`, writes `.harvest.json`, and writes `harvest.html`. It creates NO Findings: a work-log is a saved narrative, not an endorsed result. Idempotent and incremental, and a re-harvest never resets an item already discussed. A log whose README carries no Assessment section (the `review-work` critic never ran on it) gets `verdict=unassessed`, distinct from the `""` of a log a reviewer read but recorded no verdict for, and the verb prints an `UNASSESSED: <n> work-log(s)` caveat on stderr.
+3. **Show them the page.** Print the path to `.wheeler/asta-assistant/<slug>/harvest.html` and tell them to open it. That page IS the report: mission goal, one card per work item with its verdict and summary, the figures the assistant produced, and what is still undiscussed. Do not re-narrate every outcome in the terminal; say how many items came back, how many are undiscussed, and what the verdict spread was (for example "6 items: 4 accomplished, 1 partial, 1 not accomplished"). If the ingest reported any `unassessed` logs, say that count separately and plainly ("N of M work-logs have no Assessment section, so nothing independently reviewed them"): it is a different claim from "undiscussed" and it is the one that matters before anything gets endorsed.
+4. **Hand off to the review pass.** Tell them:
+   > `<N>` outcomes are saved and waiting on you. Nothing is a Finding yet. When you have time to go through them, run `/wh:discuss <slug>`.
+
+   Do NOT endorse anything here, and do not press for decisions now. If plan-routed, note the plan step's work is captured and the plan completes when the review pass endorses its results.
 
 ## Report
 
-Relay the ingest summary (`created`/`deduped`/`linked`/`used`, any `unassessed` count, the Execution and mission Document ids) in a sentence, then state which work-logs were ENDORSED as Findings and which stayed logged Documents. If plan-routed, note the plan step is complete. Suggest `query_documents` (filter `custom_work_key` / `custom_verdict`) to browse the saved work-logs and `query_findings` for the endorsed results. Re-running `harvest <slug>` after more work is safe and incremental. Do not editorialize the science. Never use em dashes.
+Relay the ingest summary in a sentence (`created`/`deduped`/`linked`/`used`, the Execution and mission Document ids), then the brief path, the pending count, and any `unassessed` count. Suggest `query_review_queue(batch=<slug>)` to see what is still undiscussed, and `/wh:discuss <slug>` to work through it. Re-running `harvest <slug>` after more work is safe and incremental. Do not editorialize the science. Never use em dashes.

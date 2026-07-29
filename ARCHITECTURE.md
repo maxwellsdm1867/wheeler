@@ -716,7 +716,7 @@ Wheeler uses lazy imports (inside functions) in four situations:
 |-------------|--------|---------|
 | `wheeler-mcp` | `wheeler.mcp_server:main` | Legacy monolith MCP server (50 tools, stdio transport) |
 | `wheeler-core-mcp` | `wheeler.mcp_core:main` | Split server: reads + search + cypher + schema (12) |
-| `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (10) |
+| `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (11) |
 | `wheeler-mutations-mcp` | `wheeler.mcp_mutations:main` | Split server: add_*, link, unlink, delete, merge (18) |
 | `wheeler-ops-mcp` | `wheeler.mcp_ops:main` | Split server: staleness, citations, consistency, ops (10) |
 | `wheeler` | `wheeler.tools.cli:app` | Typer CLI (show, graph, validate, install) |
@@ -735,7 +735,7 @@ As of v0.9.1 the MCP surface is available as a monolith **and** as four focused 
 |--------|--------|-------|-------|
 | `wheeler` | `wheeler/mcp_server.py` | 50 | Legacy monolith, all tools in one process |
 | `wheeler_core` | `wheeler/mcp_core.py` | 12 | Reads + search + raw cypher + schema |
-| `wheeler_query` | `wheeler/mcp_query.py` | 10 | Read-only `query_*` tools |
+| `wheeler_query` | `wheeler/mcp_query.py` | 11 | Read-only `query_*` tools |
 | `wheeler_mutations` | `wheeler/mcp_mutations.py` | 18 | Writes: add_*, link, unlink, delete, merge, set_tier, update_node |
 | `wheeler_ops` | `wheeler/mcp_ops.py` | 10 | Ops: staleness, citations, consistency, communities, contracts |
 
@@ -747,10 +747,19 @@ Shared request logging, trace ID generation, and backend access live in `wheeler
 `propose_merge`, `run_cypher` (read-only), `init_schema`, `index_node`,
 `request_log_summary`
 
-### wheeler_query (8)
+### wheeler_query (11)
 `query_findings`, `query_hypotheses`, `query_open_questions`, `query_datasets`,
-`query_papers`, `query_documents`, `query_notes`, `query_analyses`
-(legacy alias for `query_scripts`)
+`query_papers`, `query_documents`, `query_plans`, `query_notes`,
+`query_analyses` (legacy alias for `query_scripts`), `query_executions`,
+`query_review_queue`
+
+`query_review_queue` is the odd one out: every other tool here lists ONE node
+type, but a batch ingest can produce several, so it matches on the
+`custom_review_state` stamp rather than a label. It is the read side of the
+review-queue convention (see "Service Integrations"): a long-horizon service can
+land more nodes in one harvest than a scientist can rule on in one sitting, so
+the decision-bearing ones are marked `undiscussed` and this answers "what came
+back that nobody has looked at yet". Project-tag scoped, unlike `run_cypher`.
 
 ### wheeler_mutations (14)
 `add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`,
@@ -895,7 +904,7 @@ wheeler/
 +-- mcp_server.py                # Legacy monolith MCP server (50 tools)
 +-- mcp_shared.py                # Shared helpers: trace IDs, @_logged, backend access
 +-- mcp_core.py                  # Split server: reads + search + cypher + schema (12 tools)
-+-- mcp_query.py                 # Split server: query_* read-only tools (10 tools)
++-- mcp_query.py                 # Split server: query_* read-only tools (11 tools)
 +-- mcp_mutations.py             # Split server: add_*, link, unlink, delete, merge (18 tools)
 +-- mcp_ops.py                   # Split server: staleness, citations, consistency, ops (10 tools)
 +-- knowledge/

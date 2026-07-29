@@ -534,3 +534,155 @@ class TestIngestAssistantE2E:
             xid=xid, tag=self._e2e_tag,
         )
         assert docs2 == 3
+
+    @pytest.mark.asyncio
+    async def test_batch_tag_review_state_and_brief(self, e2e_config):
+        """A harvest is a BATCH: it tags every node, queues the decisions, briefs.
+
+        The Research Assistant is the long-horizon adapter, so one harvest lands
+        more outcomes than a scientist can rule on in one sitting. Three things
+        have to hold for that backlog to survive the session:
+
+          1. Every node from ONE harvest carries the same batch key, so the whole
+             batch is one hop-free query.
+          2. Only the DECISION-BEARING nodes (the work-logs, the things with a
+             verdict a human must judge) are queued as undiscussed, so the queue
+             does not fill with the incidental artifacts.
+          3. The mission directory holds a brief the scientist can actually read.
+
+        Plus the invariant that makes the queue trustworthy across a long-running
+        mission: a re-harvest never resurrects a settled decision.
+        """
+        import json
+
+        from wheeler.integrations.asta._marshal import (
+            REVIEW_DISCUSSED,
+            REVIEW_UNDISCUSSED,
+        )
+        from wheeler.integrations.asta.assistant import ingest_assistant
+        from wheeler.integrations.asta.harvest_brief import BRIEF_FILENAME
+        from wheeler.tools.graph_tools import execute_tool
+
+        mission_root = self._tmp / ".wheeler" / "asta-assistant"
+        mission_root.mkdir(parents=True, exist_ok=True)
+        mission = _build_mission(mission_root, self._slug)
+        # A figure the assistant "produced", so the brief has something to embed.
+        (mission / "work" / "analyze-widget" / "data" / "curve.png").write_bytes(
+            b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+        )
+
+        report = await ingest_assistant(str(mission), config=e2e_config)
+        await self._tag_all(e2e_config, report)
+        xid = report.execution_id
+        assert xid and not report.failed
+
+        batch = json.loads((mission / ".harvest.json").read_text())["batch"]
+        assert batch  # the mission slug doubles as the batch key
+
+        # 1. Every node this harvest produced carries the batch key, and so does
+        #    the run Execution itself.
+        produced = await self._count(
+            e2e_config,
+            "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
+            "WHERE n.e2e_tag=$tag RETURN count(n)",
+            xid=xid, tag=self._e2e_tag,
+        )
+        tagged = await self._count(
+            e2e_config,
+            "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id:$xid}) "
+            "WHERE n.e2e_tag=$tag AND n.custom_batch=$batch RETURN count(n)",
+            xid=xid, tag=self._e2e_tag, batch=batch,
+        )
+        assert produced >= 5  # mission doc + 2 work-logs + csv + py + png
+        assert tagged == produced
+        exec_batch = await self._count(
+            e2e_config,
+            "MATCH (x:Execution {id:$xid}) WHERE x.custom_batch=$batch RETURN count(x)",
+            xid=xid, batch=batch,
+        )
+        assert exec_batch == 1
+
+        # 2. Only the work-logs are queued. The mission Document and the data
+        #    artifacts carry the batch tag but NO review state: an artifact is not
+        #    a claim, so nobody has to rule on it.
+        queued = await self._count(
+            e2e_config,
+            "MATCH (n) WHERE n.e2e_tag=$tag AND n.custom_review_state=$state "
+            "RETURN count(n)",
+            tag=self._e2e_tag, state=REVIEW_UNDISCUSSED,
+        )
+        assert queued == 2  # the two completed work-logs, nothing else
+        work_logs_queued = await self._count(
+            e2e_config,
+            "MATCH (d:Document) WHERE d.e2e_tag=$tag AND d.custom_kind='work-log' "
+            "AND d.custom_review_state=$state RETURN count(d)",
+            tag=self._e2e_tag, state=REVIEW_UNDISCUSSED,
+        )
+        assert work_logs_queued == 2
+        assert report.pending_review == 2
+
+        # The read side the review pass uses finds exactly that queue, scoped to
+        # this batch.
+        queue = json.loads(
+            await execute_tool(
+                "query_review_queue", {"batch": batch, "limit": 50}, e2e_config
+            )
+        )
+        assert queue["count"] == 2
+        assert queue["total_pending"] == 2
+        assert {i["label"] for i in queue["items"]} == {"Document"}
+        assert all(i["batch"] == batch for i in queue["items"])
+        assert all(i["title"] for i in queue["items"])  # labeled, not bare ids
+
+        # 3. The brief exists, is self-contained, and names the pending work.
+        brief = mission / BRIEF_FILENAME
+        assert brief.is_file()
+        assert report.brief_path == str(brief)
+        html = brief.read_text(encoding="utf-8")
+        assert html.startswith("<!doctype html>")
+        assert "https://" not in html and "http://" not in html
+        assert "not discussed" in html
+        assert batch in html
+
+        # --- A human rules on one item, then the mission runs further. ---
+        target = queue["items"][0]["id"]
+        await execute_tool(
+            "update_node",
+            {
+                "node_id": target,
+                "custom": {
+                    "review_state": REVIEW_DISCUSSED,
+                    "review_outcome": "logged",
+                },
+            },
+            e2e_config,
+        )
+        # The flip must not have wiped the rest of the bag (graph and JSON both
+        # merge the custom bag; a replace here would lose work_key and verdict).
+        kept = await self._count(
+            e2e_config,
+            "MATCH (n {id:$id}) WHERE n.custom_work_key IS NOT NULL "
+            "AND n.custom_verdict IS NOT NULL RETURN count(n)",
+            id=target,
+        )
+        assert kept == 1
+
+        report2 = await ingest_assistant(str(mission), config=e2e_config)
+        await self._tag_all(e2e_config, report2)
+
+        # The settled decision stays settled: a re-harvest never resurrects it.
+        still_discussed = await self._count(
+            e2e_config,
+            "MATCH (n {id:$id}) WHERE n.custom_review_state=$state RETURN count(n)",
+            id=target, state=REVIEW_DISCUSSED,
+        )
+        assert still_discussed == 1
+        assert report2.pending_review == 1
+
+        queue2 = json.loads(
+            await execute_tool(
+                "query_review_queue", {"batch": batch, "limit": 50}, e2e_config
+            )
+        )
+        assert queue2["count"] == 1
+        assert queue2["items"][0]["id"] != target

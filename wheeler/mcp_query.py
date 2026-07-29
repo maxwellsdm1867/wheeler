@@ -20,7 +20,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_query",
-    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_plans, query_notes, query_scripts, query_executions, graph_gaps. Returns lists of one node type. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
+    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_plans, query_notes, query_scripts, query_executions, graph_gaps. Returns lists of one node type. query_review_queue is the exception: it lists nodes of ANY type left awaiting human review by a batch ingest. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
 )
 
 
@@ -133,6 +133,32 @@ async def query_executions(keyword: str = "", kind: str = "", limit: int = 10) -
     result = await graph_tools.execute_tool(
         "query_executions",
         {"keyword": keyword, "kind": kind, "limit": limit},
+        _config,
+    )
+    return json.loads(result)
+
+
+@mcp.tool()
+@_logged
+async def query_review_queue(
+    batch: str = "", state: str = "undiscussed", limit: int = 20
+) -> dict:
+    """List Wheeler knowledge graph nodes awaiting human review after a batch ingest.
+
+    A service harvest (for example an Asta Research Assistant mission) can land
+    many nodes at once, more than a scientist can rule on in one sitting. Those
+    nodes are stamped `custom_review_state="undiscussed"` and `custom_batch=<run
+    key>`; this lists them so a review pass can walk the backlog and know what is
+    left. Label-agnostic: the queue spans whatever node types the batch produced.
+
+    Args:
+        batch: Restrict to one batch key (default: every batch).
+        state: Review state to list, `undiscussed` or `discussed`.
+        limit: Max items returned. The `batches` roll-up is uncapped.
+    """
+    result = await graph_tools.execute_tool(
+        "query_review_queue",
+        {"batch": batch, "state": state, "limit": limit},
         _config,
     )
     return json.loads(result)

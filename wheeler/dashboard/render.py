@@ -184,8 +184,9 @@ def render_question_card(q: dict) -> str:
     prio = q.get("priority")
     prio_pill = pill(f"P{prio}", "prio") if prio is not None else ""
     return (
-        '<div class="card">'
-        f'<div class="card-head">{node_badge(q.get("id", "?"))}{prio_pill}</div>'
+        f'<div class="card card-open" data-nodeid="{esc(q.get("id", ""))}">'
+        f'<div class="card-head">{node_badge(q.get("id", "?"))}{prio_pill}'
+        '<span class="open-hint">details &rsaquo;</span></div>'
         f'<p class="desc">{linkify_nodes(q.get("question", ""))}</p>'
         "</div>"
     )
@@ -198,9 +199,10 @@ def render_plan_card(p: dict) -> str:
     path = esc(p.get("path", ""))
     meta = " &middot; ".join(x for x in [f"updated {esc(updated)}" if updated else "", path] if x)
     return (
-        '<div class="card">'
+        f'<div class="card card-open" data-nodeid="{esc(p.get("id", ""))}">'
         f'<div class="card-head">{node_badge(p.get("id", "?"))}'
-        f'<span class="card-title">{esc(p.get("title", "Untitled plan"))}</span>{status_pill}</div>'
+        f'<span class="card-title">{esc(p.get("title", "Untitled plan"))}</span>{status_pill}'
+        '<span class="open-hint">details &rsaquo;</span></div>'
         f'<div class="meta">{meta}</div>'
         "</div>"
     )
@@ -218,9 +220,10 @@ def render_result_card(f: dict) -> str:
         if len(desc) > 200 else ""
     )
     return (
-        '<div class="card">'
+        f'<div class="card card-open" data-nodeid="{esc(f.get("id", ""))}">'
         f'<div class="card-head">{node_badge(f.get("id", "?"))}'
-        f'<span class="card-title">{esc(title)}</span>{conf_pill}{stale}</div>'
+        f'<span class="card-title">{esc(title)}</span>{conf_pill}{stale}'
+        '<span class="open-hint">details &rsaquo;</span></div>'
         f'<p class="desc">{linkify_nodes(short)}</p>{more}'
         "</div>"
     )
@@ -247,9 +250,10 @@ def render_figure_card(f: dict, root: Path, budget: dict, missing: list, *, hero
         if note_id else ""
     )
     return (
-        f'<div class="{cls}">'
+        f'<div class="{cls} card-open" data-nodeid="{esc(fid)}">'
         f'<div class="card-head">{node_badge(fid)}'
-        f'<span class="card-title">{esc(title)}</span>{conf_pill}</div>'
+        f'<span class="card-title">{esc(title)}</span>{conf_pill}'
+        '<span class="open-hint">details &rsaquo;</span></div>'
         f'<div class="fig-media" data-figid="{esc(fid)}" data-title="{esc(title)}">{media}</div>'
         f"{legend}{durable}"
         '<div class="note-wrap">'
@@ -330,8 +334,14 @@ def render(data: dict) -> tuple[str, list[str]]:
         "<code>wheeler dashboard note</code>."
     )
 
+    # Click-through detail payload, embedded as JSON in a <script type=json>.
+    # Escape "<" to < so a "</script>" inside any field cannot close the
+    # block; JSON.parse restores it. Valid JSON, no executable surface.
+    details_json = json.dumps(data.get("details") or {}).replace("<", "\\u003c")
+
     out = Template(DASHBOARD_TEMPLATE).safe_substitute(
         TITLE=esc(data.get("title") or "Wheeler Research Dashboard"),
+        DETAILS_JSON=details_json,
         GENERATED_LINE=gen_line,
         PROJECT=project_label,
         # Defuse a "</script>" inside the project tag from breaking out of the

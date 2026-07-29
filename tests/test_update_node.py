@@ -347,6 +347,67 @@ class TestUpdateNodeKnowledgeFile:
             "original description", "updated description",
         ]
 
+    def test_custom_bag_merges_rather_than_replaces(self, tmp_path):
+        """A partial custom update must not drop the bag's other keys.
+
+        The Neo4j backend flattens ``custom`` to discrete ``custom_<key>`` props
+        and SETs only the keys it is handed, so the graph layer MERGES. The JSON
+        layer must do the same, else flipping one flag (a review state) silently
+        wipes every other key (work_key, verdict) from knowledge/*.json and the
+        two layers drift.
+        """
+        from wheeler.tools.graph_tools import _update_knowledge_node
+        from wheeler.knowledge.store import write_node, read_node
+        from wheeler.config import WheelerConfig
+        from wheeler.models import DocumentModel
+
+        config = WheelerConfig()
+        config.knowledge_path = str(tmp_path / "knowledge")
+        config.synthesis_path = str(tmp_path / "synthesis")
+
+        node = DocumentModel(
+            id="W-test1234",
+            title="Work-log: analyze the widget",
+            created="2026-07-25T00:00:00+00:00",
+            updated="2026-07-25T00:00:00+00:00",
+            custom={
+                "work_key": "mission-abc/analyze-widget",
+                "verdict": "accomplished",
+                "review_state": "undiscussed",
+            },
+        )
+        write_node(Path(config.knowledge_path), node)
+
+        result_str = json.dumps({
+            "node_id": "W-test1234",
+            "label": "Document",
+            "updated_fields": ["custom"],
+            "changes": {
+                "custom": {
+                    "old": {
+                        "work_key": "mission-abc/analyze-widget",
+                        "verdict": "accomplished",
+                        "review_state": "undiscussed",
+                    },
+                    "new": {"review_state": "discussed", "review_outcome": "endorsed"},
+                },
+            },
+            "status": "updated",
+        })
+
+        json_ok, _ = _update_knowledge_node(
+            {"node_id": "W-test1234", "session_id": "test"}, result_str, config
+        )
+        assert json_ok is True
+
+        updated = read_node(Path(config.knowledge_path), "W-test1234")
+        # The flipped keys took effect...
+        assert updated.custom["review_state"] == "discussed"
+        assert updated.custom["review_outcome"] == "endorsed"
+        # ...and the untouched keys survived.
+        assert updated.custom["work_key"] == "mission-abc/analyze-widget"
+        assert updated.custom["verdict"] == "accomplished"
+
     def test_update_knowledge_node_no_file(self, tmp_path):
         """If no knowledge file exists, helper returns (False, False) gracefully."""
         from wheeler.tools.graph_tools import _update_knowledge_node

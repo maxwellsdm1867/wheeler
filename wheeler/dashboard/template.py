@@ -87,6 +87,11 @@ section.zone {
 .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .card-title { font-weight: 600; }
 .empty { color: var(--muted); font-style: italic; }
+/* clickable cards -> detail drawer */
+.card-open { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.card-open:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.open-hint { margin-left: auto; color: var(--muted); font-size: 12px; opacity: 0; transition: opacity .15s; }
+.card-open:hover .open-hint { opacity: .85; }
 /* badges + pills */
 .node-id {
   font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -144,6 +149,48 @@ details[open] > summary { margin-bottom: 6px; }
   margin: 6px 0; padding: 7px 9px; border-left: 3px solid var(--pl);
   background: var(--pill-bg); border-radius: 0 8px 8px 0; font-size: 13px;
 }
+/* detail drawer */
+.drawer-back {
+  display: none; position: fixed; inset: 0; background: rgba(8,12,20,.45); z-index: 70;
+}
+.drawer-back.open { display: block; }
+.drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: 460px; max-width: 92vw;
+  background: var(--panel); border-left: 1px solid var(--line); box-shadow: -4px 0 24px rgba(0,0,0,.22);
+  z-index: 71; transform: translateX(100%); transition: transform .2s ease; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: translateX(0); }
+@media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
+.drawer-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 14px 16px;
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel);
+}
+.drawer-head .kind { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.drawer-body { padding: 14px 16px; }
+.drawer h3 { margin: 0 0 4px; font-size: 17px; }
+.dr-section-h { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 6px; }
+.dr-content { white-space: pre-wrap; word-wrap: break-word; }
+.dr-fields { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dr-fields td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.dr-fields td.k { color: var(--muted); width: 38%; }
+.dr-fields td.v { word-break: break-word; }
+.dr-rels { list-style: none; margin: 0; padding: 0; }
+.dr-rel {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--line);
+  border-radius: 8px; margin-bottom: 6px; background: var(--bg);
+}
+.dr-rel .rel-type { font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.dr-rel .rel-arrow { color: var(--accent); font-weight: 700; }
+.dr-rel .rel-title { flex: 1 1 auto; font-size: 13px; color: var(--ink); }
+.dr-rel.hop { cursor: pointer; }
+.dr-rel.hop:hover { border-color: var(--accent); }
+.dr-empty { color: var(--muted); font-style: italic; font-size: 13px; }
+.drawer-close {
+  background: none; border: 0; color: var(--muted); font-size: 22px; line-height: 1;
+  cursor: pointer; padding: 2px 6px; margin-left: auto;
+}
+.drawer-close:hover { color: var(--ink); }
 /* lightbox */
 .lightbox {
   display: none; position: fixed; inset: 0; background: rgba(8,12,20,.86);
@@ -216,6 +263,17 @@ $HERO_HTML
 <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Figure zoom">
   <img id="lightbox-img" src="" alt="">
 </div>
+
+<script type="application/json" id="wh-details">$DETAILS_JSON</script>
+<div class="drawer-back" id="drawer-back"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true">
+  <div class="drawer-head">
+    <span class="kind" id="drawer-kind"></span>
+    <span id="drawer-badge"></span>
+    <button class="drawer-close" id="drawer-close" type="button" aria-label="Close details">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
 
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -457,10 +515,149 @@ $HERO_HTML
     else if (ev.key === "-") { view.s = Math.max(0.2, view.s / 1.2); applyView(); }
   });
 
+  // --- detail drawer: click any card to open full content + metadata + links ---
+  var details = {};
+  try {
+    var dEl = document.getElementById("wh-details");
+    if (dEl) details = JSON.parse(dEl.textContent || "{}");
+  } catch (e) { details = {}; }
+
+  var drawer = document.getElementById("drawer");
+  var drawerBack = document.getElementById("drawer-back");
+  var drawerBody = document.getElementById("drawer-body");
+  var drawerKind = document.getElementById("drawer-kind");
+  var drawerBadgeBox = document.getElementById("drawer-badge");
+  var drawerTrigger = null;
+
+  function prefixOf(id) { return id.indexOf("-") >= 0 ? id.charAt(0).toUpperCase() : ""; }
+  function makeBadge(id) {
+    var s = document.createElement("span");
+    var p = prefixOf(id);
+    s.className = "node-id" + (p ? " t-" + p : "");
+    s.setAttribute("data-nodeid", id);
+    s.setAttribute("role", "button");
+    s.setAttribute("tabindex", "0");
+    s.setAttribute("title", "Click to copy [" + id + "]");
+    s.textContent = id;
+    return s;
+  }
+  function idLabel(id) {  // non-copyable colored id, for relationship rows
+    var s = document.createElement("span");
+    var p = prefixOf(id);
+    s.className = "node-id" + (p ? " t-" + p : "");
+    s.textContent = id;
+    return s;
+  }
+
+  function renderDrawer(id) {
+    var d = details[id];
+    if (!d) return false;
+    drawerKind.textContent = d.kind || "";
+    drawerBadgeBox.innerHTML = "";
+    drawerBadgeBox.appendChild(makeBadge(id));
+    drawerBody.innerHTML = "";
+
+    var h = document.createElement("h3");
+    h.textContent = d.title || id;
+    drawerBody.appendChild(h);
+
+    if (d.content) {
+      var cb = document.createElement("div"); cb.className = "dr-content"; cb.textContent = d.content;
+      drawerBody.appendChild(cb);
+    }
+    if (d.note) {
+      var nh = document.createElement("div"); nh.className = "dr-section-h"; nh.textContent = "Note";
+      drawerBody.appendChild(nh);
+      var nb = document.createElement("div"); nb.className = "durable-note";
+      if (d.note_id) { nb.appendChild(idLabel(d.note_id)); nb.appendChild(document.createTextNode(" ")); }
+      nb.appendChild(document.createTextNode(d.note));
+      drawerBody.appendChild(nb);
+    }
+    var fields = d.fields || [];
+    if (fields.length) {
+      var fh = document.createElement("div"); fh.className = "dr-section-h"; fh.textContent = "Metadata";
+      drawerBody.appendChild(fh);
+      var tbl = document.createElement("table"); tbl.className = "dr-fields";
+      fields.forEach(function (kv) {
+        var tr = document.createElement("tr");
+        var tdk = document.createElement("td"); tdk.className = "k"; tdk.textContent = kv[0];
+        var tdv = document.createElement("td"); tdv.className = "v"; tdv.textContent = kv[1];
+        tr.appendChild(tdk); tr.appendChild(tdv); tbl.appendChild(tr);
+      });
+      drawerBody.appendChild(tbl);
+    }
+    var rh = document.createElement("div"); rh.className = "dr-section-h"; rh.textContent = "Linked nodes";
+    drawerBody.appendChild(rh);
+    var rels = d.rels || [];
+    if (!rels.length) {
+      var empty = document.createElement("div"); empty.className = "dr-empty";
+      empty.textContent = "No linked nodes."; drawerBody.appendChild(empty);
+    } else {
+      var ul = document.createElement("ul"); ul.className = "dr-rels";
+      rels.forEach(function (r) {
+        var li = document.createElement("li");
+        var hoppable = !!details[r.id];
+        li.className = "dr-rel" + (hoppable ? " hop" : "");
+        if (hoppable) li.setAttribute("data-go", r.id);
+        li.title = hoppable ? "Open this node" : "Not in the current view";
+        var rt = document.createElement("span"); rt.className = "rel-type"; rt.textContent = r.rel || "";
+        var ar = document.createElement("span"); ar.className = "rel-arrow";
+        ar.textContent = r.dir === "out" ? "\\u2192" : "\\u2190";
+        var title = document.createElement("span"); title.className = "rel-title";
+        title.textContent = r.title || (r.label ? "(" + r.label + ")" : "");
+        li.appendChild(rt); li.appendChild(ar); li.appendChild(title); li.appendChild(idLabel(r.id));
+        ul.appendChild(li);
+      });
+      drawerBody.appendChild(ul);
+    }
+    return true;
+  }
+
+  function openDrawer(id, trigger) {
+    if (!renderDrawer(id)) return;
+    if (trigger) drawerTrigger = trigger;
+    drawerBack.classList.add("open");
+    drawer.classList.add("open");
+    drawer.setAttribute("aria-hidden", "false");
+    drawerBody.scrollTop = 0;
+    var cl = document.getElementById("drawer-close");
+    if (cl) cl.focus();
+  }
+  function closeDrawer() {
+    drawer.classList.remove("open");
+    drawerBack.classList.remove("open");
+    drawer.setAttribute("aria-hidden", "true");
+    if (drawerTrigger) { try { drawerTrigger.focus(); } catch (e) {} drawerTrigger = null; }
+  }
+
+  // Open the drawer on a card click, but never steal clicks meant for a badge
+  // (copy), the figure image (lightbox), or the note controls.
+  document.addEventListener("click", function (ev) {
+    var t = ev.target;
+    if (t.closest && t.closest(".drawer")) return;
+    if (t.closest && t.closest(".node-id[data-nodeid]")) return;     // badge copy
+    if (t.tagName === "IMG" && t.closest && t.closest(".fig-media")) return;  // lightbox
+    if (t.closest && t.closest("textarea, button, a, summary, label, .note-wrap")) return;
+    var card = t.closest && t.closest(".card-open");
+    if (!card) return;
+    var id = card.getAttribute("data-nodeid");
+    if (id && details[id]) openDrawer(id, card);
+  });
+  drawerBody.addEventListener("click", function (ev) {
+    var row = ev.target.closest && ev.target.closest(".dr-rel.hop");
+    if (!row) return;
+    var go = row.getAttribute("data-go");
+    if (go && details[go]) openDrawer(go, drawerTrigger);
+  });
+  var dc = document.getElementById("drawer-close");
+  if (dc) dc.addEventListener("click", closeDrawer);
+  drawerBack.addEventListener("click", closeDrawer);
+
   // --- global escape ---
   document.addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape") return;
     if (nodemenu.classList.contains("open")) nodemenu.classList.remove("open");
+    else if (drawer.classList.contains("open")) closeDrawer();
     else if (canvas.classList.contains("open")) closeCanvas();
     else if (lb.classList.contains("open")) closeLB();
   });

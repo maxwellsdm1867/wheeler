@@ -212,6 +212,127 @@ async def list_all_figure_notes(config: WheelerConfig) -> list[dict]:
         await backend.close()
 
 
+async def fetch_relationships(backend, ids: list[str], project_tag: str) -> dict[str, list[dict]]:
+    """Return 1-hop neighbors for each given node id, as a map
+    ``{node_id: [{rel, dir, id, label, title}, ...]}``. One Cypher query over all
+    ids; project-tag scoped on both endpoints. Deduplicated per node by
+    (rel, dir, neighbor_id) so a doubled edge is shown once. Read-only."""
+    if not ids:
+        return {}
+    pw = ""
+    params: dict = {"ids": ids}
+    if project_tag:
+        pw = " AND n._wheeler_project = $ptag AND m._wheeler_project = $ptag"
+        params["ptag"] = project_tag
+    rows = await backend.run_cypher(
+        "MATCH (n)-[r]-(m) "
+        f"WHERE n.id IN $ids{pw} "
+        "RETURN n.id AS nid, type(r) AS rel, (startNode(r).id = n.id) AS outgoing, "
+        "m.id AS oid, labels(m) AS olabels, "
+        "coalesce(m.title, m.display_name, m.question, m.statement, m.description, '') "
+        "AS otitle",
+        params,
+    )
+    out: dict[str, list[dict]] = {}
+    seen: dict[str, set] = {}
+    for r in rows:
+        r = dict(r)
+        nid, oid = r.get("nid"), r.get("oid")
+        if not nid or not oid:
+            continue
+        direction = "out" if r.get("outgoing") else "in"
+        key = (r.get("rel"), direction, oid)
+        bucket = seen.setdefault(nid, set())
+        if key in bucket:
+            continue
+        bucket.add(key)
+        labels = r.get("olabels") or []
+        title = (r.get("otitle") or "").strip()
+        out.setdefault(nid, []).append({
+            "rel": r.get("rel", ""),
+            "dir": direction,
+            "id": oid,
+            "label": labels[0] if labels else "",
+            "title": title[:80],
+        })
+    # Stable order: outgoing first, then by relationship, then neighbor id.
+    for nid in out:
+        out[nid].sort(key=lambda e: (e["dir"] != "out", e["rel"], e["id"]))
+    return out
+
+
+def _detail_for(node: dict, kind: str) -> dict:
+    """Build the clickable-detail record for one node (pure)."""
+    def num(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f
+
+    fields: list[list[str]] = []
+    if kind == "OpenQuestion":
+        content = str(node.get("question") or "")
+        title = (node.get("title") or "").strip() or "Open question"
+        prio = node.get("priority")
+        if prio is not None:
+            fields.append(["Priority", str(prio)])
+    elif kind == "Plan":
+        content = str(node.get("description") or node.get("title") or "")
+        title = (node.get("title") or "").strip() or "Plan"
+        if node.get("status"):
+            fields.append(["Status", str(node["status"])])
+        if node.get("updated"):
+            fields.append(["Updated", str(node["updated"])])
+    else:  # Finding (results, figures, hero)
+        content = str(node.get("description") or "")
+        title = (node.get("title") or "").strip() or "Finding"
+        c = num(node.get("confidence"))
+        if c is not None and c > 0:
+            fields.append(["Confidence", f"{c:.2f}"])
+        if node.get("artifact_type"):
+            fields.append(["Type", str(node["artifact_type"])])
+        if node.get("stale"):
+            fields.append(["Stale", "yes"])
+        s = num(node.get("stability"))
+        if s is not None and s > 0:
+            fields.append(["Stability", f"{s:.2f}"])
+    if node.get("tier"):
+        fields.append(["Tier", str(node["tier"])])
+    if node.get("path"):
+        fields.append(["Path", str(node["path"])])
+    rec = {"kind": kind, "title": title, "content": content, "fields": fields}
+    if node.get("note"):
+        rec["note"] = str(node["note"])
+        rec["note_id"] = str(node.get("note_id") or "")
+    return rec
+
+
+def build_details(
+    sections: list[tuple[str, list[dict]]], rels_by_id: dict[str, list[dict]]
+) -> dict[str, dict]:
+    """Assemble the id -> detail map from (kind, nodes) sections. A node that
+    appears in more than one section (e.g. a figure also in results) is built
+    once; the later section may enrich it (e.g. a note on the figure card).
+    Relationships are attached from ``rels_by_id``. Pure."""
+    details: dict[str, dict] = {}
+    for kind, nodes in sections:
+        for node in nodes:
+            nid = node.get("id")
+            if not nid:
+                continue
+            rec = _detail_for(node, kind)
+            if nid in details:
+                # Keep first kind/content; fold in a note if this copy has one.
+                if rec.get("note") and not details[nid].get("note"):
+                    details[nid]["note"] = rec["note"]
+                    details[nid]["note_id"] = rec.get("note_id", "")
+                continue
+            rec["rels"] = rels_by_id.get(nid, [])
+            details[nid] = rec
+    return details
+
+
 def attach_graph_notes(figures: list[dict], note_rows: list[dict]) -> None:
     """Attach the newest ResearchNote per figure (content + id) to each figure
     dict. Pure; rows are pre-sorted newest-first. Replaces each entry with a
@@ -347,13 +468,36 @@ async def gather_dashboard_data(
         note_rows = await fetch_figure_notes(
             backend, [str(f.get("id", "")) for f in all_figures], project_tag
         )
+
+        attach_graph_notes(all_figures, note_rows)
+        hero, rest_figures = split_pinned(all_figures, pins)
+        results = rank_results(enriched)[:limit]
+        figures = rest_figures[:limit]
+
+        # 1-hop relationships for every node shown, for the click-through detail
+        # panel. Gathered inside the open backend (one extra read), then folded
+        # into a pure id -> detail map.
+        shown_ids = {
+            str(n.get("id"))
+            for group in (questions, open_plans, results, hero, figures)
+            for n in group
+            if n.get("id")
+        }
+        rels_by_id = await fetch_relationships(backend, sorted(shown_ids), project_tag)
         counts = await backend.count_all()
     finally:
         await backend.close()
 
-    attach_graph_notes(all_figures, note_rows)
-    hero, rest_figures = split_pinned(all_figures, pins)
-    results = rank_results(enriched)[:limit]
+    details = build_details(
+        [
+            ("OpenQuestion", questions),
+            ("Plan", open_plans),
+            ("Finding", results),
+            ("Finding", hero),
+            ("Finding", figures),
+        ],
+        rels_by_id,
+    )
     clean_counts = {k: v for k, v in (counts or {}).items() if not str(k).startswith("_")}
 
     return {
@@ -367,7 +511,8 @@ async def gather_dashboard_data(
         "questions": questions,
         "plans": open_plans,
         "results": results,
-        "figures": rest_figures[:limit],
+        "figures": figures,
+        "details": details,
     }
 
 

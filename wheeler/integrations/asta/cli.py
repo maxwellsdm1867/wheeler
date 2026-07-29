@@ -106,6 +106,12 @@ def _echo_report(report) -> None:
         typer.echo(f"artifact: {report.artifact}")
     if report.paper_ids:
         typer.echo("papers: " + ", ".join(report.paper_ids))
+    # A batch ingest leaves work for a human. Surface it here so the caller does
+    # not have to query the graph to learn the harvest is only half the job.
+    if getattr(report, "brief_path", ""):
+        typer.echo(f"brief: {report.brief_path}")
+    if getattr(report, "pending_review", 0):
+        typer.echo(f"awaiting review: {report.pending_review}")
 
 
 @integrate_app.command("record-failure")

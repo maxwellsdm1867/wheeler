@@ -17,6 +17,7 @@ allowed-tools:
   - mcp__wheeler_query__query_open_questions
   - mcp__wheeler_ops__detect_stale
   - mcp__wheeler_query__query_plans
+  - mcp__wheeler_query__query_review_queue
 ---
 
 ## Connectivity Check
@@ -67,6 +68,7 @@ Use wheeler MCP tools:
 - `query_open_questions` — top 5 open questions by priority
 - `graph_gaps` — unsupported hypotheses, unlinked questions
 - `detect_stale` — analyses with changed scripts
+- `query_review_queue` — results a service harvest landed that nobody has read yet. This one is easy to lose track of: the work is paid for and sitting in the graph, unjudged. Report it per batch (`<N> undiscussed from <batch>`) whenever it is non-empty.
 
 ## Step 4: Present and Route
 
@@ -94,6 +96,7 @@ This is a scannable status board, so follow the **action-prompt labeling rule** 
 | `.continue-here.md` exists | `/wh:resume` — pick up paused work |
 | Active team with completed tasks | `/wh:reconvene` — review team results |
 | Unreviewed headless task logs | `/wh:reconvene` — review results |
+| `query_review_queue` non-empty | `/wh:discuss <batch>` — work down the undiscussed results |
 | CONTEXT.md without matching plan | `/wh:plan` — plan the discussed investigation |
 | Approved plan not yet executed | `/wh:execute` or `/wh:handoff` — start execution |
 | Flagged checkpoints | Present inline for quick decisions |

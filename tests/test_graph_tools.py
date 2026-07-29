@@ -37,6 +37,7 @@ class TestToolDefinitions:
             "query_notes",
             "query_scripts",
             "query_executions",
+            "query_review_queue",
             "graph_gaps",
             "add_dataset",
             "query_datasets",
@@ -606,7 +607,7 @@ class TestToolImports:
 
     def test_tool_definitions_accessible(self):
         from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 29
+        assert len(TOOL_DEFINITIONS) == 30
 
 
 class TestAddDatasetMetadata:
@@ -802,3 +803,118 @@ class TestOpenQuestionFiltering:
         be = self._CaptureBackend()
         await query_open_questions(be, {"limit": 5, "include_answered": True})
         assert "q.status" not in be.query
+
+
+class TestQueryReviewQueue:
+    """query_review_queue lists what a batch ingest left for a human to rule on."""
+
+    class _RecordingBackend:
+        """Captures each query and replays canned rows per call."""
+
+        def __init__(self, rows: list[list[dict]]):
+            self.queries: list[str] = []
+            self.params: list[dict] = []
+            self._rows = rows
+
+        async def run_cypher(self, query, params=None):
+            self.queries.append(query)
+            self.params.append(params or {})
+            return self._rows.pop(0) if self._rows else []
+
+    @staticmethod
+    def _row(node_id: str, **over):
+        row = {
+            "id": node_id,
+            "label": "Document",
+            "batch": "widget-mission-ab12cd34",
+            "review_state": "undiscussed",
+            "verdict": "accomplished",
+            "work_key": "widget-mission-ab12cd34/analyze-widget",
+            "service": "asta:assistant",
+            "display_name": "Work-log: analyze the widget",
+            "path": "/m/work/analyze-widget/README.md",
+            "updated": "2026-07-25T00:00:00+00:00",
+        }
+        row.update(over)
+        return row
+
+    @pytest.mark.asyncio
+    async def test_lists_undiscussed_items_by_default(self):
+        from wheeler.tools.graph_tools.queries import query_review_queue
+
+        be = self._RecordingBackend([
+            [self._row("W-aaaa1111"), self._row("W-bbbb2222")],
+            [{"batch": "widget-mission-ab12cd34", "pending": 2}],
+        ])
+        result = json.loads(await query_review_queue(be, {}))
+
+        assert result["state"] == "undiscussed"
+        assert result["count"] == 2
+        assert [i["id"] for i in result["items"]] == ["W-aaaa1111", "W-bbbb2222"]
+        assert result["items"][0]["verdict"] == "accomplished"
+        assert result["items"][0]["title"] == "Work-log: analyze the widget"
+        assert be.params[0]["state"] == "undiscussed"
+
+    @pytest.mark.asyncio
+    async def test_is_label_agnostic(self):
+        """The queue spans whatever types the batch produced, so no label filter."""
+        from wheeler.tools.graph_tools.queries import query_review_queue
+
+        be = self._RecordingBackend([[], []])
+        await query_review_queue(be, {})
+        assert "MATCH (n) WHERE" in be.queries[0]
+        assert "custom_review_state" in be.queries[0]
+
+    @pytest.mark.asyncio
+    async def test_batch_filter_applies_to_both_queries(self):
+        from wheeler.tools.graph_tools.queries import query_review_queue
+
+        be = self._RecordingBackend([[], []])
+        await query_review_queue(be, {"batch": "widget-mission-ab12cd34"})
+        for query, params in zip(be.queries, be.params):
+            assert "custom_batch = $batch" in query
+            assert params["batch"] == "widget-mission-ab12cd34"
+
+    @pytest.mark.asyncio
+    async def test_project_tag_scopes_both_queries(self):
+        """Raw run_cypher is unscoped; this tool must not leak across projects."""
+        from unittest.mock import MagicMock
+
+        from wheeler.tools.graph_tools.queries import query_review_queue
+
+        config = MagicMock()
+        config.knowledge_path = None
+        config.neo4j.project_tag = "proj-a"
+
+        be = self._RecordingBackend([[], []])
+        await query_review_queue(be, {"_config": config})
+        for query, params in zip(be.queries, be.params):
+            assert "n._wheeler_project = $ptag" in query
+            assert params["ptag"] == "proj-a"
+
+    @pytest.mark.asyncio
+    async def test_rollup_is_uncapped_by_limit(self):
+        """A caller paging through items still learns the true backlog."""
+        from wheeler.tools.graph_tools.queries import query_review_queue
+
+        be = self._RecordingBackend([
+            [self._row("W-aaaa1111")],
+            [
+                {"batch": "widget-mission-ab12cd34", "pending": 9},
+                {"batch": "other-mission-ef56gh78", "pending": 3},
+            ],
+        ])
+        result = json.loads(await query_review_queue(be, {"limit": 1}))
+
+        assert result["count"] == 1
+        assert result["total_pending"] == 12
+        assert "LIMIT" not in be.queries[1]
+
+    @pytest.mark.asyncio
+    async def test_explicit_state_is_honored(self):
+        from wheeler.tools.graph_tools.queries import query_review_queue
+
+        be = self._RecordingBackend([[], []])
+        result = json.loads(await query_review_queue(be, {"state": "discussed"}))
+        assert result["state"] == "discussed"
+        assert be.params[0]["state"] == "discussed"

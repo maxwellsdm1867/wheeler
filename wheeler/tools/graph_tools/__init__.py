@@ -77,6 +77,7 @@ _TOOL_REGISTRY: dict[str, _ToolHandler] = {
     "query_notes": queries.query_notes,
     "query_scripts": queries.query_scripts,
     "query_executions": queries.query_executions,
+    "query_review_queue": queries.query_review_queue,
     "graph_gaps": queries.graph_gaps,
 }
 
@@ -413,6 +414,21 @@ TOOL_DEFINITIONS = [
         "required": [],
     },
     {
+        "name": "query_review_queue",
+        "description": (
+            "List nodes a batch ingest left awaiting human review (custom_review_state). "
+            "Use after a service harvest lands many nodes at once to see what nobody has "
+            "looked at yet. Label-agnostic: spans whatever types the batch produced. "
+            "Returns capped items plus an uncapped per-batch pending roll-up."
+        ),
+        "parameters": {
+            "batch": {"type": "string", "description": "Restrict to one batch key (default: all batches)", "default": ""},
+            "state": {"type": "string", "description": "Review state to list: undiscussed or discussed (default undiscussed)", "default": "undiscussed"},
+            "limit": {"type": "integer", "description": "Max items returned (default 20)", "default": 20},
+        },
+        "required": [],
+    },
+    {
         "name": "ensure_artifact",
         "description": (
             "Register a file in the knowledge graph, or update its hash if already registered. "
@@ -623,8 +639,23 @@ def _update_knowledge_node(
         now = _now()
         for field, change in changes.items():
             new_val = change["new"]
-            if hasattr(node, field):
-                setattr(node, field, new_val)
+            if not hasattr(node, field):
+                continue
+            if field == "custom" and isinstance(new_val, dict):
+                # The custom bag MERGES, matching the graph layer. The Neo4j
+                # backend flattens `custom` to discrete `custom_<key>` props and
+                # SETs only the keys it was handed, so a partial update there
+                # leaves the other keys intact. Assigning the partial dict here
+                # would instead REPLACE the whole bag, silently dropping every
+                # key the caller did not resend (e.g. flipping a review flag
+                # would wipe custom_work_key / custom_verdict) and drifting the
+                # JSON layer from the graph.
+                current_bag = getattr(node, field, None)
+                merged = dict(current_bag) if isinstance(current_bag, dict) else {}
+                merged.update(new_val)
+                setattr(node, field, merged)
+                continue
+            setattr(node, field, new_val)
         node.updated = now
 
         # Append change_log entry
