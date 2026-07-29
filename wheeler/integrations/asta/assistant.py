@@ -139,7 +139,7 @@ class WorkItem:
     title: str = ""            # the one-line summary
     goal: str = ""
     result_summary: str = ""   # the # Results narrative (or its ## Summary)
-    verdict: str = ""          # accomplished | partial | not accomplished
+    verdict: str = ""          # accomplished | partial | not accomplished | unassessed
     root_cause: str = ""
     readme_path: str = ""      # abs path to work/<slug>/README.md
     data_files: list[str] = field(default_factory=list)  # abs paths
@@ -277,17 +277,25 @@ def _first_heading(md: str) -> str:
 # reads as a clean success and inverts the verdict).
 _VERDICT_TOKENS = ("not accomplished", "partial", "accomplished")
 
+# A work item with no Assessment body was never put through the review-work
+# critic, so its Results are an unreviewed self-report. That is a different claim
+# from "a reviewer looked and recorded no verdict" (which stays ""), and the
+# curator must be able to tell them apart before endorsing one as a Finding.
+UNASSESSED = "unassessed"
+
 
 def _verdict(assessment: str) -> str:
-    """Best-effort verdict from an ``# Assessment`` body. "" when none found.
+    """Best-effort verdict from an ``# Assessment`` body.
 
-    Prefers a ``## Verdict`` subsection value; else scans the text for the
-    review-work verdict tokens in specificity order (see ``_VERDICT_TOKENS``), so
-    "not accomplished" and "partially accomplished" are not mis-read as the bare
-    "accomplished". Never raises.
+    Returns ``UNASSESSED`` when there is no Assessment body at all (review-work
+    never ran on this item), "" when a reviewer wrote one but recorded no verdict,
+    else the verdict token. Prefers a ``## Verdict`` subsection value; else scans
+    the text for the review-work verdict tokens in specificity order (see
+    ``_VERDICT_TOKENS``), so "not accomplished" and "partially accomplished" are
+    not mis-read as the bare "accomplished". Never raises.
     """
     if not assessment:
-        return ""
+        return UNASSESSED
     verdict_section = _section(assessment, "Verdict")
     hay = (verdict_section or assessment).lower()
     for token in _VERDICT_TOKENS:
@@ -588,6 +596,8 @@ async def ingest_assistant(
             )
             if cand:
                 candidates.append(cand)
+                if cand["verdict"] == UNASSESSED:
+                    report.unassessed += 1
     except Exception:
         logger.error(
             "ingest_assistant: output bucketing raised partway; marking run failed",
@@ -609,13 +619,14 @@ async def ingest_assistant(
 
     logger.info(
         "ingest_assistant: created=%d deduped=%d linked=%d skipped=%d used=%d "
-        "plan_linked=%d (exec=%s)",
+        "plan_linked=%d unassessed=%d (exec=%s)",
         report.created,
         report.deduped,
         report.linked,
         report.skipped,
         report.used,
         report.plan_linked,
+        report.unassessed,
         exec_id,
     )
     return report

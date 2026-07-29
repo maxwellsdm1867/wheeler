@@ -80,11 +80,28 @@ The goal is a folder the scientist can `cd` into and just keep going, with the g
    ```markdown
    # <slug> - Asta research mission
 
-   To continue this mission, in this directory:
-       /goal <N> work items
+   To continue this mission, `cd` here and enter the two commands below as TWO
+   SEPARATE prompts, waiting for the first to come back before sending the second.
+   Pasting them together does not work: everything after `/goal` is swallowed into
+   the goal condition, so the loop never starts and the plan/do/review skills never
+   run.
+
+   Prompt 1:
+
+       /goal <N> work items, each with a written Assessment
+
+   Prompt 2:
+
        /loop /asta-assistant:run
-   Add "skip all user interviews and use your own judgement" for autonomous operation.
-   The mission and its background are in project.md. Work lands in work/<slug>/.
+
+   Append "skip all user interviews and use your own judgement" to prompt 2 for
+   autonomous operation. The mission and its background are in project.md. Work
+   lands in work/<slug>/.
+
+   Mid-run check: `grep -l "# Assessment" work/*/README.md` lists the work items a
+   reviewer has assessed (it matches the level-1 `# Assessment` heading review-work
+   writes, and `## Assessment` too). If that count trails the number of finished
+   items, review-work is being skipped, so the loop is probably not running.
 
    When the work is done, return to your Wheeler session and run
    `/wh:asta-assistant harvest <slug>` to index it into the graph.
@@ -95,14 +112,19 @@ The goal is a folder the scientist can `cd` into and just keep going, with the g
    git -C .wheeler/asta-assistant/<slug> add -A
    git -C .wheeler/asta-assistant/<slug> commit -m "seed: <slug> mission from Wheeler graph"
    ```
-6. **Hand off.** Print this block, do not run it:
+6. **Hand off.** Print this block, do not run it. Say plainly that `/goal` and `/loop` are TWO SEPARATE prompts: a single message that begins with `/goal` captures the `/loop` line as part of the goal condition, so the loop never starts and the mission runs with none of the plan/do/review machinery.
    > Mission seeded at `.wheeler/asta-assistant/<slug>/`. Open a new terminal and:
    > ```
    > cd .wheeler/asta-assistant/<slug>
    > claude
-   > /goal 5 work items
+   >
+   > (prompt 1, on its own, wait for the reply)
+   > /goal 5 work items, each with a written Assessment
+   >
+   > (prompt 2, on its own, only after prompt 1 comes back)
    > /loop /asta-assistant:run
    > ```
+   > Send the two prompts separately. A combined paste is captured whole by the goal condition and the loop never runs.
    > When the loop is done, come back here and run `/wh:asta-assistant harvest <slug>`.
 
    Then stop. If plan-routed, note that the plan step is in progress, awaiting the external loop; the plan resumes at harvest. Do NOT run the loop from this act.
@@ -114,10 +136,10 @@ The goal is a folder the scientist can `cd` into and just keep going, with the g
    ```
    wheeler integrate ingest assistant .wheeler/asta-assistant/<slug> --link-to <link_to> --used <comma-separated used ids>
    ```
-   It creates one mission Execution (`USED` the seed ids), saves `project.md` and each completed `work/<slug>/README.md` as a Document (`WAS_GENERATED_BY` the run, `AROSE_FROM` the anchor), registers each `work/<slug>/data/` file as a Dataset/Script the work-log `CONTAINS`, and writes `.harvest.json` (per-log slug/verdict/summary/`document_id`/`data_ids` + `execution_id`/`link_to`). It creates NO Findings: a work-log is a saved narrative, not an endorsed result. Idempotent and incremental.
-3. **Curate (the human synthesis).** Read `.harvest.json`. Present each outcome (`[<slug>] verdict=<verdict>: <summary>`) and ask which to ENDORSE as Findings. Do NOT promote all: a process-only or unresolved log stays a saved Document (nothing is lost). For each endorsed outcome: `mcp__wheeler_mutations__add_finding` (the summary as description, a short title), then wire `link_nodes(<F->, <execution_id>, "WAS_GENERATED_BY")`, `link_nodes(<F->, <link_to>, "AROSE_FROM")`, and `link_nodes(<F->, <each data id>, "WAS_DERIVED_FROM")`.
+   It creates one mission Execution (`USED` the seed ids), saves `project.md` and each completed `work/<slug>/README.md` as a Document (`WAS_GENERATED_BY` the run, `AROSE_FROM` the anchor), registers each `work/<slug>/data/` file as a Dataset/Script the work-log `CONTAINS`, and writes `.harvest.json` (per-log slug/verdict/summary/`document_id`/`data_ids` + `execution_id`/`link_to`). It creates NO Findings: a work-log is a saved narrative, not an endorsed result. Idempotent and incremental. A log whose README carries no Assessment section (the `review-work` critic never ran on it) gets `verdict=unassessed`, distinct from the `""` of a log a reviewer read but recorded no verdict for, and the verb prints an `UNASSESSED: <n> work-log(s)` caveat on stderr.
+3. **Curate (the human synthesis).** Read `.harvest.json`. BEFORE presenting anything, count the `unassessed` verdicts and say so plainly ("N of M work-logs have no Assessment section, so nothing independently reviewed them"). Then present each outcome (`[<slug>] verdict=<verdict>: <summary>`, marking the unassessed ones) and ask which to ENDORSE as Findings. An unassessed log is an unreviewed self-report, so name that when the scientist considers endorsing one; do not quietly promote it. Do NOT promote all: a process-only or unresolved log stays a saved Document (nothing is lost). For each endorsed outcome: `mcp__wheeler_mutations__add_finding` (the summary as description, a short title), then wire `link_nodes(<F->, <execution_id>, "WAS_GENERATED_BY")`, `link_nodes(<F->, <link_to>, "AROSE_FROM")`, and `link_nodes(<F->, <each data id>, "WAS_DERIVED_FROM")`.
 4. **Wire semantics to the existing graph (and the plan).** For each endorsed Finding, read the existing graph (`query_open_questions`, `query_hypotheses`, `query_findings`, `search_context`) and, confirming each with the scientist, add the semantic edges via `link_nodes`: `SUPPORTS`/`CONTRADICTS` an existing Hypothesis, `RELEVANT_TO` the open Question. When `link_to` is a Plan, the endorsed Findings already `AROSE_FROM` it, so the plan step's results are in its provenance chain.
 
 ## Report
 
-Relay the ingest summary (`created`/`deduped`/`linked`/`used`, the Execution and mission Document ids) in a sentence, then state which work-logs were ENDORSED as Findings and which stayed logged Documents. If plan-routed, note the plan step is complete. Suggest `query_documents` (filter `custom_work_key` / `custom_verdict`) to browse the saved work-logs and `query_findings` for the endorsed results. Re-running `harvest <slug>` after more work is safe and incremental. Do not editorialize the science. Never use em dashes.
+Relay the ingest summary (`created`/`deduped`/`linked`/`used`, any `unassessed` count, the Execution and mission Document ids) in a sentence, then state which work-logs were ENDORSED as Findings and which stayed logged Documents. If plan-routed, note the plan step is complete. Suggest `query_documents` (filter `custom_work_key` / `custom_verdict`) to browse the saved work-logs and `query_findings` for the endorsed results. Re-running `harvest <slug>` after more work is safe and incremental. Do not editorialize the science. Never use em dashes.

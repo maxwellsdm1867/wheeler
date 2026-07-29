@@ -61,6 +61,12 @@ class ImportReport:
     diagnostic from the ingest output instead of having to query the graph. A
     bare ``state=failed`` says nothing about whether the run hit auth, quota, a
     malformed input, or a transient server error.
+
+    ``unassessed`` counts saved outputs that no independent critic ever reviewed
+    (currently only the Research Assistant's work-logs, which carry no Assessment
+    section). It is 0 for the adapters that have no review step. The count rides
+    on the report so the caller sees the caveat in the ingest output rather than
+    having to open every saved log to notice it.
     """
 
     created: int = 0
@@ -75,6 +81,7 @@ class ImportReport:
     failed: bool = False
     job_state: str = ""
     error_reason: str = ""
+    unassessed: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -90,6 +97,7 @@ class ImportReport:
             "failed": self.failed,
             "job_state": self.job_state,
             "error_reason": self.error_reason,
+            "unassessed": self.unassessed,
         }
 
 

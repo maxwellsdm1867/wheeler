@@ -90,6 +90,18 @@ def _echo_report(report) -> None:
             "The Execution is recorded as failed; no outputs were ingested.",
             err=True,
         )
+    if getattr(report, "unassessed", 0):
+        # Saved, but never put through the review-work critic: the curator must
+        # see that before deciding whether to endorse a self-report as a Finding.
+        # On stderr, like the failure diagnostic: it is a caveat, not part of the
+        # machine-read summary.
+        typer.echo(
+            f"UNASSESSED: {report.unassessed} work-log(s) have no Assessment "
+            "section, so nothing independently reviewed them. They are saved "
+            "(verdict=unassessed in .harvest.json); weigh that before endorsing "
+            "any of them as Findings.",
+            err=True,
+        )
     if report.artifact:
         typer.echo(f"artifact: {report.artifact}")
     if report.paper_ids:
