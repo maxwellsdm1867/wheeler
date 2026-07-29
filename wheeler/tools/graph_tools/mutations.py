@@ -999,9 +999,12 @@ async def update_node(backend, args: dict) -> str:
     allow_provenance=true is passed, which permits explicit repair of a
     broken Execution record.
 
-    Only non-empty, non-None fields are applied. The 'updated' timestamp
-    is set automatically. Returns the node_id, label, list of updated
-    fields, and a changes dict showing old vs new values.
+    ``None`` is the "not provided" sentinel: a field whose value is None
+    (or absent from args) is left unchanged. An empty string is a real
+    value, so passing ``path=""`` clears the field, which is how a node
+    with a dangling path is repaired. The 'updated' timestamp is set
+    automatically. Returns the node_id, label, list of updated fields,
+    and a changes dict showing old vs new values.
     """
     node_id = args["node_id"]
 
@@ -1025,7 +1028,7 @@ async def update_node(backend, args: dict) -> str:
     for k, v in args.items():
         if k in exclude_keys:
             continue
-        if v is None or v == "":
+        if v is None:
             continue
         if k not in allowed_fields:
             if k in _UPDATE_PROVENANCE_FIELDS:

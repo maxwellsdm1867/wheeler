@@ -636,21 +636,27 @@ async def set_tier(node_id: str, tier: str) -> dict:
 @_logged
 async def update_node(
     node_id: str,
-    description: str = "",
+    description: str | None = None,
     confidence: float | None = None,
-    statement: str = "",
-    status: str = "",
-    title: str = "",
-    content: str = "",
-    question: str = "",
+    statement: str | None = None,
+    status: str | None = None,
+    title: str | None = None,
+    content: str | None = None,
+    question: str | None = None,
     priority: int | None = None,
-    path: str = "",
-    tier: str = "",
-    started_at: str = "",
-    ended_at: str = "",
+    path: str | None = None,
+    tier: str | None = None,
+    started_at: str | None = None,
+    ended_at: str | None = None,
     allow_provenance: bool = False,
 ) -> dict:
-    """Update fields on an existing Wheeler knowledge graph node. Only non-empty fields are applied.
+    """Update fields on an existing Wheeler knowledge graph node. Omitted fields are left unchanged.
+
+    Omitting an argument (or passing null) means "leave this field alone".
+    Passing an empty string is a real value that CLEARS the field, which is
+    how a node whose file was deleted or moved gets its dangling path reset
+    (path=""). The clear is reported in changes and recorded in change_log
+    like any other update.
 
     Fields are validated against the node type's schema: a field that does
     not exist on the node type is rejected with an error naming it, never
@@ -679,7 +685,7 @@ async def update_node(
         ("path", path), ("tier", tier),
         ("started_at", started_at), ("ended_at", ended_at),
     ]:
-        if val is not None and val != "":
+        if val is not None:
             update_args[field] = val
     if allow_provenance:
         update_args["allow_provenance"] = True
