@@ -16,7 +16,8 @@ import pytest
 from typer.testing import CliRunner
 
 from wheeler.integrations.llmsr import metrics as metrics_mod
-from wheeler.integrations.llmsr.cli import _load_data, llmsr_app
+from wheeler.integrations.llmsr.cli import llmsr_app
+from wheeler.integrations.llmsr.data import _load_data
 
 runner = CliRunner()
 

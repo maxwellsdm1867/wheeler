@@ -172,7 +172,7 @@ class TestSelection:
         return [cand(true_form), cand(poly)], meta
 
     def test_ood_and_parsimony_recover_true_law(self, tmp_path):
-        from wheeler.integrations.llmsr.cli import _candidate_ood, _select_winner
+        from wheeler.integrations.llmsr.selection import _candidate_ood, _select_winner
 
         valid, meta = self._candidates(tmp_path)
         true_c, poly_c = valid
