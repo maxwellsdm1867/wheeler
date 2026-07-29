@@ -9,6 +9,10 @@ asserts the right questions get asked and the right request gets assembled.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
 from wheeler.integrations.invocation import (
     input_ports,
     validate_request,
@@ -32,10 +36,13 @@ class TestSchema:
         assert ports["dataset"].required is True
         assert ports["dataset"].kind == "node"
         assert ports["dataset"].node_type == "Dataset"
-        # the metric must be asked (never silently defaulted) and offers mse/nmse
+        # the metric must be asked (never silently defaulted) and offers at least
+        # the built-ins. A SUPERSET check, not equality: the port reads the metric
+        # registry at call time, which is open (see TestOptionsFrom), so a
+        # scientist's registered metric legitimately widens this list.
         assert ports["metric"].required is True
         assert ports["metric"].kind == "choice"
-        assert set(ports["metric"].options) == {"mse", "nmse"}
+        assert {"mse", "nmse"} <= set(ports["metric"].options)
         # selection strategy is offered with parsimony as the default
         assert ports["select"].kind == "choice"
         assert set(ports["select"].options) == {"parsimony", "ood", "fit"}
@@ -54,6 +61,88 @@ class TestSchema:
         contract = _contract("graph-status")
         assert input_ports(contract) == []
         assert validate_request(contract, {}).ok is True
+
+
+# ---------------------------------------------------------------------------
+# 1b. options_from: a choice port whose legal answers are OPEN
+# ---------------------------------------------------------------------------
+
+
+def _fake_options() -> list[str]:
+    return ["alpha", "beta", "gamma"]
+
+
+def _raising_options() -> list[str]:
+    raise RuntimeError("the scientist's registry blew up")
+
+
+def _empty_options() -> list:
+    return []
+
+
+def _wrong_shape_options() -> str:
+    return "not a list"
+
+
+class TestOptionsFrom:
+    """A port whose legal answers come from a plug-in registry must offer what is
+    actually registered, and must DEGRADE to the frozen list rather than to an
+    empty one: an empty choice port makes every possible answer invalid."""
+
+    _HERE = "tests.integrations.test_invocation"
+
+    def _contract(self, **port):
+        base = {
+            "name": "metric",
+            "kind": "choice",
+            "options": ["mse", "nmse"],
+            "required": True,
+        }
+        base.update(port)
+        return SimpleNamespace(id="fake", act="/wh:fake", inputs=[base])
+
+    def _options(self, **port) -> set[str]:
+        return set(input_ports(self._contract(**port))[0].options)
+
+    def test_resolved_options_replace_the_static_list(self):
+        assert self._options(options_from=f"{self._HERE}:_fake_options") == {
+            "alpha", "beta", "gamma",
+        }
+
+    def test_the_spec_stays_on_the_port(self):
+        spec = f"{self._HERE}:_fake_options"
+        assert input_ports(self._contract(options_from=spec))[0].options_from == spec
+
+    def test_no_options_from_leaves_the_static_list_untouched(self):
+        assert self._options() == {"mse", "nmse"}
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            "wheeler.integrations.no_such_module:available",  # unimportable
+            "tests.integrations.test_invocation:no_such_callable",  # missing attr
+            "tests.integrations.test_invocation:_raising_options",  # raises
+            "tests.integrations.test_invocation:_empty_options",  # empty answer
+            "tests.integrations.test_invocation:_wrong_shape_options",  # not a list
+            "not-a-spec",  # malformed
+            "",  # blank
+        ],
+    )
+    def test_every_failure_falls_back_to_the_static_options(self, spec):
+        assert self._options(options_from=spec) == {"mse", "nmse"}
+
+    def test_a_dynamically_offered_value_validates(self):
+        # the point of the wiring: an answer the YAML never listed is accepted
+        contract = self._contract(options_from=f"{self._HERE}:_fake_options")
+        assert validate_request(contract, {"metric": "beta"}).ok is True
+        assert validate_request(contract, {"metric": "mse"}).ok is False
+
+    def test_llmsr_metric_port_is_wired_to_the_metric_registry(self):
+        ports = {p.name: p for p in input_ports(_contract("llmsr-discover"))}
+        assert (
+            ports["metric"].options_from
+            == "wheeler.integrations.llmsr.metrics:available"
+        )
 
 
 # ---------------------------------------------------------------------------
