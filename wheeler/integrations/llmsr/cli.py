@@ -52,6 +52,8 @@ from .runs import (
     _scores_per_test,
     _timing,
     _write_heartbeat,
+    scored_metric,
+    scored_metric_report,
     status_payload,
 )
 from .selection import (
@@ -105,6 +107,16 @@ _SCORE_ON_HELP = (
 )
 
 
+_LOADER_HELP = (
+    "how a recording is READ off disk; built in: "
+    + ", ".join(sorted(loaders_mod.BUILTIN_LOADERS))
+    + ". A loader is also where a bad unit gets EXCLUDED before the fit sees it, "
+    "which matters because the per-group fit is strict: one unfittable cell "
+    "invalidates an otherwise correct law. Run `wheeler llmsr loaders` for every "
+    "registered one, yours included."
+)
+
+
 _OPTIMIZER_HELP = (
     "constant-fit optimizer; built in: "
     + ", ".join(sorted(optimizers_mod.BUILTIN_OPTIMIZERS))
@@ -122,6 +134,25 @@ def _metric_for(key: str) -> metrics_mod.Metric:
         return metrics_mod.get_metric(key)
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+def _loader_for(key: str) -> str:
+    """Validate a loader choice, importing the scientist's modules first.
+
+    Returns the canonical key to bind onto the run. Checked HERE, at ``init``,
+    for the same reason ``_optimizer_for`` checks the optimizer: a name nothing
+    can resolve would otherwise surface at whatever later verb first reaches for
+    the tables. It is worse than that for a loader, in fact. The loader is what
+    decides which units even exist, and the per-group fit is STRICT, so a run
+    that silently fell back to csv when a registered loader was asked for would
+    hand the search the very cells the scientist meant to exclude, and one
+    unfittable cell invalidates a correct law.
+    """
+    loaders_mod.load_user_loaders()
+    try:
+        return loaders_mod.get_loader(key).key
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc).strip("'")) from exc
 
 
 def _optimizer_for(key: str) -> str:
@@ -673,6 +704,7 @@ def init(
             "Default: ungrouped, one shared parameter set."
         ),
     ),
+    loader: str = typer.Option(loaders_mod.DEFAULT_LOADER, help=_LOADER_HELP),
     optimizer: str = typer.Option(optimizers_mod.AUTO, help=_OPTIMIZER_HELP),
     restarts: int = typer.Option(
         fit_mod.DEFAULT_RESTARTS,
@@ -704,6 +736,7 @@ def init(
 ) -> None:
     """Create a run: bind spec + data + metric + generator + optimizer, seed the buffer."""
     metric_obj = _metric_for(metric)
+    loader_key = _loader_for(loader)
     opt_key = _optimizer_for(optimizer)
     gen = generator.strip().lower()
     if gen not in _GENERATORS:
@@ -755,6 +788,11 @@ def init(
         "max_nparams": max_nparams,
         "timeout": timeout,
         "group_by": group_by.strip(),
+        # How the tables are READ, bound to the run for the same reason the key
+        # scheme is: the loader decides which units exist, and two candidates
+        # scored over different unit sets are not comparable. `_units_for` reads
+        # it back off here for every later verb rather than re-deriving it.
+        "loader": loader_key,
         # The fit knobs, bound to the run so every later submit fits the same way.
         "optimizer": opt_key,
         "restarts": restarts,
@@ -777,6 +815,7 @@ def init(
     if held_out:
         data_mod.load_units(
             held_out, metric_obj, group_by=group_by.strip(), scheme=scheme,
+            loader=loader_key,
         )
     seed_body = template.get_function(fte).body
     _t0 = time.time()
@@ -814,6 +853,7 @@ def init(
         "run_dir": str(run_dir),
         "metric": metric_obj.key,
         "generator": gen,
+        "loader": loader_key,
         "optimizer": opt_key,
         "function_to_evolve": fte,
         "datasets": [d.as_dict() for d in datasets],
@@ -824,6 +864,14 @@ def init(
         "use_spec_evaluate": bool(use_spec_evaluate),
         "seed_valid": result.valid,
         "seed_value": result.value,
+        # `seed_value` is the seed candidate's own score, so it is named by what
+        # produced it and not by the `metric` two lines up. They differ exactly
+        # on the spec door, where the spec owns the loss.
+        **(
+            {"seed_value_metric": scored_metric(meta)}
+            if scored_metric(meta) != metric_obj.key
+            else {}
+        ),
     }))
 
 
@@ -993,6 +1041,7 @@ def best(
             "spec_path": meta["spec_path"],
             "data_path": meta["data_path"],
             "metric": meta["metric"],
+            **scored_metric_report(meta),
             "generator": meta["generator"],
             "equation": None,
             "params": [],
@@ -1018,6 +1067,12 @@ def best(
 
     winner = _select_winner(valid, meta, mode)
     metric_key = meta["metric"]
+    # What the winner's own numbers are IN, which is not always the declared
+    # metric: through the spec door the spec's `@evaluate.run` owns the loss and
+    # never says what it computed. Everything derived from the search's own
+    # values (the emitted .py's METRIC, the echo below) is labelled with this,
+    # never with `metric_key`. See `runs.scored_metric`.
+    scored_key = scored_metric(meta)
     report = _dataset_report(meta, winner) if multi else None
     # A grouped run's constants are a TABLE, not a vector (`winner["params"]` is
     # empty for it by construction), so the per-group fields are passed through
@@ -1035,14 +1090,15 @@ def best(
         and not winner["params"]
         and not (winner.get("params_per_group") or {})
     )
-    program = _runnable_program(winner["program"], winner["params"], metric_key,
+    program = _runnable_program(winner["program"], winner["params"], scored_key,
                                 winner["value"], meta["data_path"], meta["function_to_evolve"],
                                 _metric_for(metric_key).data_shape,
                                 group_by=str(meta.get("group_by", "") or ""),
                                 params_per_group=winner.get("params_per_group") or {},
                                 value_per_group=winner.get("per_group_value") or {},
                                 dataset_report=None if one_file else report,
-                                no_constants=no_constants)
+                                no_constants=no_constants,
+                                declared_metric="" if scored_key == metric_key else metric_key)
 
     # Generalization, asked BOTH ways on the sibling in-domain / out-of-domain
     # test sets. `metrics` applies the winner's constants unchanged (do the
@@ -1061,6 +1117,12 @@ def best(
         "spec_path": meta["spec_path"],
         "data_path": meta["data_path"],
         "metric": metric_key,
+        # Spec door only, and placed here so it reads beside the declared metric
+        # it is NOT. Names the quantity every number the SEARCH produced is in,
+        # because through that door the spec owns the loss and nothing checks it
+        # equals the declared metric. Absent on the default door, where the two
+        # are the same quantity. See `runs.scored_metric_report`.
+        **scored_metric_report(meta),
         "generator": meta["generator"],
         "equation": winner["body"].strip("\n"),
         "params": winner["params"],
@@ -1112,6 +1174,9 @@ def best(
     typer.echo(json.dumps({
         "status": "completed",
         "metric": metric_key,
+        # `value` is a number, so it carries the name of what produced it, which
+        # on the spec door is not `metric`. Emitted only when they differ.
+        **({"value_metric": scored_key} if scored_key != metric_key else {}),
         "optimizer": winner.get("optimizer", ""),
         "value": winner["value"],
         "n_samples": len(subs),

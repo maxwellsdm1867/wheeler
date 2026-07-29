@@ -42,6 +42,9 @@ from wheeler.integrations.llmsr.discover import (
     SCORED_BY_SPEC_EVALUATE,
     RunMeta,
     _finding_id,
+    _is_grouped,
+    _is_multi,
+    _no_constants,
     parse_discover,
 )
 
@@ -166,6 +169,62 @@ class TestParseGroupedRun:
         rec = parse_discover(_completed(metrics={"nmse_train": 0.1}))[0][0]
         assert rec["value"] == pytest.approx(0.1)
         assert rec["value_is_group_mean"] is False
+
+
+class TestShapeIsAPropertyOfTheRun:
+    """Which of the three constant shapes a run has is asked of its UNITS.
+
+    The constants are what the fit chose to hand back, and upstream's bare-float
+    ``evaluate`` hands back none. Reading the shape off the constants alone
+    therefore filed a grouped or a multi-dataset run as a flat one-unit run
+    whenever the spec door returned a bare float: the graph then recorded
+    ``params "[]"`` with no ``group_by``, no ``n_groups`` and no per-group
+    values, presenting a many-cell discovery as a single pooled fit.
+    """
+
+    def _bare_float_grouped(self, **extra) -> dict:
+        """What a grouped run scored through the spec door with a bare float writes."""
+        fields = {
+            "params": [],
+            "group_by": "cell_id",
+            "params_per_group": {},  # upstream's contract returns none
+            "value_per_group": {"c01": 0.02, "c02": 0.04, "c03": 0.06},
+        }
+        fields.update(extra)
+        return _completed(**fields)
+
+    def test_a_grouped_bare_float_run_is_still_grouped(self):
+        rec = parse_discover(self._bare_float_grouped())[0][0]
+        assert _is_grouped(rec) is True
+        assert _is_multi(rec) is False
+        assert _no_constants(rec) is True
+        # the mean over the three cells, derived and labelled as one
+        assert rec["value"] == pytest.approx(0.04)
+        assert rec["value_is_group_mean"] is True
+
+    def test_a_multi_dataset_bare_float_run_is_still_multi(self):
+        rec = parse_discover(_completed(
+            params=[],
+            datasets={
+                "seed_from": "A", "score_on": ["A", "B"], "score_key_scheme": "dataset",
+                "entries": [
+                    {"name": "A", "path": "/d/a.csv", "regime": "scored",
+                     "keys": ["A"], "value_per_key": {"A": 0.1}, "params_per_key": {}},
+                    {"name": "B", "path": "/d/b.csv", "regime": "scored",
+                     "keys": ["B"], "value_per_key": {"B": 0.3}, "params_per_key": {}},
+                ],
+            },
+        ))[0][0]
+        assert _is_multi(rec) is True
+        assert _no_constants(rec) is True
+        assert rec["value"] == pytest.approx(0.2)
+        assert rec["value_is_unit_mean"] is True
+
+    def test_a_genuine_one_unit_run_is_still_flat(self):
+        rec = parse_discover(_completed(metrics={"nmse_train": 0.1}))[0][0]
+        assert _is_grouped(rec) is False
+        assert _is_multi(rec) is False
+        assert _no_constants(rec) is False
 
 
 class TestRegimeLabelling:
@@ -443,13 +502,21 @@ class TestParseRefitSplits:
 
 
 class TestSpecEvaluateMeasurement:
-    """Under ``--use-spec-evaluate`` the split numbers are a SECOND OPINION.
+    """Under ``--use-spec-evaluate`` NEITHER side of the seam is unremarkable.
 
     The spec's own ``@evaluate.run`` scored the search, owning the loss and the
     optimizer. Held-out split scoring still runs through ``fit.py`` under the
     run's DECLARED metric, so those numbers were computed by different machinery
-    than the search used. Presenting one as the run's own objective measured
-    again would assert something the artifact does not support.
+    than the search used: a SECOND OPINION, not the run's own objective measured
+    again.
+
+    And the numbers the spec door itself produced are not the declared metric
+    either. The spec owns its loss and never reports what it computed, and
+    nothing checks that it equals the declared metric, so those travel under the
+    SPEC'S name with a caveat of their own. This class used to assert the
+    opposite for that half (``measurement_note == ""``, on the reasoning that a
+    number the search produced is the run's own objective), and that reasoning
+    is how a stock recipe's MSE reached the graph labelled ``nmse``.
     """
 
     def _spec_run(self, **extra) -> dict:
@@ -484,18 +551,87 @@ class TestSpecEvaluateMeasurement:
             assert "second opinion" in entry["measurement_note"]
             assert "DECLARED metric" in entry["measurement_note"]
 
-    def test_a_number_the_spec_door_itself_produced_is_not_flagged(self):
-        """The per-unit vector IS the run's own objective: the spec computed it."""
-        rec = parse_discover(self._spec_run(
+    def _grouped_spec_run(self, **extra) -> dict:
+        """A grouped spec-door run: `metrics` is empty, so the train number is DERIVED."""
+        return self._spec_run(
             params=[], metrics={},
             group_by="cell_id",
             params_per_group={"c01": [1.0], "c02": [2.0]},
             value_per_group={"c01": 0.02, "c02": 0.04},
-        ))[0][0]
+            scored_metric={
+                "name": "spec:evaluate",
+                "declared": "nmse",
+                "measured_by": SCORED_BY_SPEC_EVALUATE,
+                "note": "the spec owns its loss",
+            },
+            **extra,
+        )
+
+    def test_a_number_the_spec_door_produced_is_named_after_the_spec(self):
+        """The per-unit vector is the SPEC'S objective, and never the declared metric.
+
+        This is the shape every grouped and every multi-dataset spec-door run
+        takes (``metrics`` is empty, so the train number is the mean over the
+        per-unit table the spec produced). The mean is genuinely the run's own
+        objective; what it is NOT is the run's declared ``nmse``, because a stock
+        recipe minimizes mean squared error and nothing checks the two agree.
+        """
+        rec = parse_discover(self._grouped_spec_run())[0][0]
         train = rec["splits"][0]
         assert train["value"] == pytest.approx(0.03)
         assert train["measured_by"] == SCORED_BY_SPEC_EVALUATE
-        assert train["measurement_note"] == ""
+        # named after what produced it, not after what the run declared
+        assert train["metric"] == "spec:evaluate"
+        assert rec["metric"] == "nmse"
+        assert rec["value_metric"] == "spec:evaluate"
+        assert rec["scored_metric"] == "spec:evaluate"
+        assert "spec's own @evaluate.run" in train["measurement_note"]
+        assert "declared metric" in train["measurement_note"]
+
+    def test_a_spec_run_whose_train_number_fit_py_computed_keeps_the_declared_metric(self):
+        """The other half of the same rule: where fit.py DID compute it, it is `nmse`.
+
+        An ungrouped single-table spec run still gets ``<metric>_train`` out of
+        ``fit.py``, under the declared metric. That number is the declared metric
+        and says so; it is only a second opinion about which machinery measured
+        it, which is the caveat it already carried.
+        """
+        rec = parse_discover(self._spec_run(
+            metrics={"nmse_train": 0.1},
+            scored_metric={
+                "name": "spec:evaluate", "declared": "nmse",
+                "measured_by": SCORED_BY_SPEC_EVALUATE, "note": "...",
+            },
+        ))[0][0]
+        train = rec["splits"][0]
+        assert train["metric"] == "nmse"
+        assert rec["value_metric"] == "nmse"
+        assert train["measured_by"] == MEASURED_BY_FIT
+        assert "second opinion" in train["measurement_note"]
+
+    def test_an_artifact_with_no_scored_metric_block_falls_back_to_the_declared_one(self):
+        """A best.json written before the block existed is a DEFAULT-door run.
+
+        Never guessed: the parser reads the name out of the artifact, and an
+        artifact that does not carry one can only be a run whose numbers were the
+        declared metric, which is every run the block is absent from.
+        """
+        rec = parse_discover(_completed(
+            params=[], metrics={},
+            group_by="cell_id",
+            params_per_group={"c01": [1.0]},
+            value_per_group={"c01": 0.02},
+        ))[0][0]
+        assert rec["scored_metric"] == "nmse"
+        assert rec["splits"][0]["metric"] == "nmse"
+
+    def test_the_two_doors_mint_different_finding_ids_for_the_train_number(self):
+        """Two different quantities are two nodes, never one overwriting the other."""
+        from wheeler.integrations.llmsr.discover import _finding_id
+
+        assert _finding_id("r1", "nmse", "train") != _finding_id(
+            "r1", "spec:evaluate", "train"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -820,7 +956,25 @@ class TestIngestGroupedDiscoverE2E:
                     xid=report.execution_id, tag=self._e2e_tag,
                 )
 
-    def _grouped_best_json(self) -> dict:
+    # An ``evaluate`` returning UPSTREAM's bare float: it fits this unit's
+    # constants and throws them away, which is what every upstream spec does
+    # (``optimized_params = result.x``, then discarded). Reached only with
+    # ``--use-spec-evaluate``.
+    _BARE_FLOAT_EVALUATE = (
+        "    from scipy.optimize import minimize\n"
+        "    inputs, outputs = data['inputs'], data['outputs']\n"
+        "    def loss(params):\n"
+        "        return float(np.mean((equation(inputs[:, 0], params) - outputs) ** 2))\n"
+        "    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')\n"
+        "    if not np.isfinite(result.fun):\n"
+        "        return None\n"
+        "    return -float(result.fun)\n"
+    )
+
+    def _grouped_best_json(
+        self, run_id: str = "e2egrouped", evaluate_body: str = "    return 0.0\n",
+        extra: tuple[str, ...] = (),
+    ) -> dict:
         """Run a real grouped search and return its best.json."""
         import numpy as np
 
@@ -835,15 +989,16 @@ class TestIngestGroupedDiscoverE2E:
             "MAX_NPARAMS = 4\n\n"
             "@evaluate.run\n"
             "def evaluate(data):\n"
-            "    return 0.0\n\n"
-            "@equation.evolve\n"
+            + evaluate_body
+            + "\n@equation.evolve\n"
             "def equation(x1, params):\n"
             "    return params[0] * x1 + params[1]\n"
         )
         for argv in (
             ["init", "--spec", "spec.txt", "--data", "train.csv",
-             "--metric", "mse", "--group-by", "cell_id", "--run-id", "e2egrouped"],
-            ["best", "--run", "e2egrouped"],
+             "--metric", "mse", "--group-by", "cell_id", "--run-id", run_id,
+             *extra],
+            ["best", "--run", run_id],
         ):
             out = subprocess.run(
                 [sys.executable, "-m", "wheeler.tools.cli", "llmsr", *argv],
@@ -851,7 +1006,7 @@ class TestIngestGroupedDiscoverE2E:
             )
             assert out.returncode == 0, out.stderr or out.stdout
         best = json.loads(
-            (self._tmp / ".wheeler/llmsr/runs/e2egrouped/best.json").read_text()
+            (self._tmp / f".wheeler/llmsr/runs/{run_id}/best.json").read_text()
         )
         assert best["params"] == []  # the defect's precondition, from real output
         return best
@@ -930,6 +1085,68 @@ class TestIngestGroupedDiscoverE2E:
         assert run.returncode == 0, run.stderr
         for name in CELLS:
             assert f"group {name} n_rows {N_PER_CELL}" in run.stdout
+
+    @pytest.mark.asyncio
+    async def test_a_grouped_run_with_no_constants_keeps_its_grouping(
+        self, e2e_config
+    ):
+        """A three-group discovery is not a one-unit run because of a return type.
+
+        Through the spec door with upstream's bare-float ``evaluate``, BOTH
+        constant tables come back empty: the contract has nowhere to put them.
+        The shape used to be read off the constants alone, so this run fell to
+        the FLAT arm and landed as ``params "[]"`` with no ``group_by``, no
+        ``n_groups`` and no ``value_per_group``: a discovery over three cells
+        presented as a single pooled fit with an empty constant vector.
+
+        The grouping is a property of the RUN, so it is read off whichever
+        per-group table the run reported, and the absence of constants is
+        recorded as the fact it is rather than as an empty list.
+        """
+        from wheeler.graph.driver import get_async_driver
+        from wheeler.integrations.llmsr.discover import ingest_discover
+
+        doc = self._grouped_best_json(
+            run_id="e2egroupedbare",
+            evaluate_body=self._BARE_FLOAT_EVALUATE,
+            extra=("--use-spec-evaluate",),
+        )
+        # the precondition, from real output: no constants of EITHER shape
+        assert doc["params_per_group"] == {}
+        assert sorted(doc["value_per_group"]) == sorted(CELLS)
+
+        artifact_path = self._tmp / "best_bare.json"
+        artifact_path.write_text(json.dumps(doc))
+        report = await ingest_discover(
+            doc, config=e2e_config, artifact_path=str(artifact_path),
+        )
+        await self._tag_run(e2e_config, report)
+        assert report.failed is False
+
+        driver = get_async_driver(e2e_config)
+        async with driver.session(database=e2e_config.neo4j.database) as s:
+            res = await s.run(
+                "MATCH (n:Script)-[:WAS_GENERATED_BY]->(x:Execution {id:$x}) "
+                "RETURN n.custom_group_by AS group_by, "
+                "n.custom_n_groups AS n_groups, n.custom_groups AS groups, "
+                "n.custom_value_per_group AS values, n.custom_params AS flat, "
+                "n.custom_params_per_group AS table, "
+                "n.custom_no_constants AS no_constants, "
+                "n.custom_no_constants_reason AS reason",
+                x=report.execution_id,
+            )
+            rec = await res.single()
+            script = dict(rec) if rec else None
+
+        assert script["group_by"] == "cell_id"
+        assert script["n_groups"] == len(CELLS)
+        assert json.loads(script["groups"]) == sorted(CELLS)
+        assert sorted(json.loads(script["values"])) == sorted(CELLS)
+        # no constants exist, and that is RECORDED, never faked as an empty list
+        assert script["flat"] is None
+        assert script["table"] is None
+        assert script["no_constants"] is True
+        assert "nowhere to put them" in script["reason"]
 
 
 # ---------------------------------------------------------------------------
