@@ -52,17 +52,22 @@ class TestMetricPort:
     def test_a_registered_metric_validates_as_an_answer(self):
         _register("spikeloss")
         contract = _llmsr_contract()
-        request = {"dataset": "D-1", "metric": "spikeloss"}
+        request = {"datasets": ["D-1"], "metric": "spikeloss"}
         assert validate_request(contract, request).ok is True
         # and an unregistered one is still rejected: the port stayed a choice
-        assert validate_request(contract, {"dataset": "D-1", "metric": "nope"}).ok is False
+        assert validate_request(
+            contract, {"datasets": ["D-1"], "metric": "nope"}
+        ).ok is False
 
-    def test_a_project_metrics_file_is_offerable_once_loaded(self):
+    def test_a_project_metrics_file_is_offerable(self):
         """The scientist's real path: a metric declared in the project's
-        ``.wheeler/llmsr/metrics.py``. It becomes offerable once the registry has
-        imported it. NOTE: ``available()`` does not import the userland sources
-        itself, so a caller that has not run ``load_user_metrics()`` in its own
-        process still sees only the built-ins (see llmsr/CLAUDE.md)."""
+        ``.wheeler/llmsr/metrics.py``.
+
+        ``load_user_metrics()`` is called here for its RETURN VALUE, which is the
+        list of sources that failed to import: asserting it is empty is what
+        makes a later failure read as "the port did not offer it" rather than
+        "the file did not parse". The port itself does not depend on that call,
+        because ``available()`` imports the userland sources first."""
         source = Path(".wheeler/llmsr/metrics.py")
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text(

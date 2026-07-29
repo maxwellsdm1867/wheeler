@@ -32,10 +32,14 @@ def _contract(service_id: str):
 class TestSchema:
     def test_llmsr_declares_the_right_inputs(self):
         ports = {p.name: p for p in input_ports(_contract("llmsr-discover"))}
-        # a dataset is required, and it is a Dataset graph node
-        assert ports["dataset"].required is True
-        assert ports["dataset"].kind == "node"
-        assert ports["dataset"].node_type == "Dataset"
+        # A dataset is required, it is a Dataset graph node, and the port takes
+        # SEVERAL. `wheeler llmsr init --data` is repeatable and the unit of
+        # fitting is a (dataset, group) pair, so a single-valued port could not
+        # interview for the run the engine is built around.
+        assert ports["datasets"].required is True
+        assert ports["datasets"].kind == "node"
+        assert ports["datasets"].node_type == "Dataset"
+        assert ports["datasets"].multi is True
         # the metric must be asked (never silently defaulted) and offers at least
         # the built-ins. A SUPERSET check, not equality: the port reads the metric
         # registry at call time, which is open (see TestOptionsFrom), so a
@@ -49,6 +53,36 @@ class TestSchema:
         assert ports["select"].default == "parsimony"
         # the linking question is optional
         assert ports["question"].required is False
+
+    def test_llmsr_can_be_interviewed_for_the_two_dataset_ROLES(self):
+        """Which table shapes the prompt and which tables are scored.
+
+        Keeping them apart is the point of the multi-dataset run: a form
+        extracted from one cell and refitted on cells it never saw is a test of
+        the FORM. A contract that only asked "which dataset" made that run
+        unreachable through the interview.
+        """
+        ports = {p.name: p for p in input_ports(_contract("llmsr-discover"))}
+        assert ports["seed_from"].from_ == "datasets"
+        assert ports["score_on"].from_ == "datasets"
+        assert ports["score_on"].multi is True
+        # both optional: the defaults (first table seeds, every table scores) are
+        # the single-dataset behaviour
+        assert ports["seed_from"].required is False
+        assert ports["score_on"].required is False
+        # and the per-group protocol is offerable
+        assert ports["group_by"].kind == "text"
+        assert ports["group_by"].required is False
+
+    def test_llmsr_offers_every_open_registry_it_has(self):
+        """Metric, recipe, loader and optimizer are all extensible at runtime."""
+        ports = {p.name: p for p in input_ports(_contract("llmsr-discover"))}
+        assert {"pooled", "refit_per_group"} <= set(ports["recipe"].options)
+        assert "csv" in ports["loader"].options
+        # `auto` is the default and must therefore be a legal explicit answer,
+        # which is why the port asks `choices` and not `available`.
+        assert "auto" in ports["optimizer"].options
+        assert ports["optimizer"].default == "auto"
 
     def test_asta_services_require_a_query(self):
         for sid in ("paper-finder", "theorizer", "semantic-scholar", "scholar-qa"):
@@ -155,21 +189,23 @@ class TestValidator:
         contract = _contract("llmsr-discover")
         r = validate_request(contract, {})
         assert r.ok is False
-        assert set(r.missing) == {"dataset", "metric"}  # exactly the must-asks
+        assert set(r.missing) == {"datasets", "metric"}  # exactly the must-asks
 
     def test_bad_choice_value_is_rejected(self):
         contract = _contract("llmsr-discover")
-        r = validate_request(contract, {"dataset": "D-x", "metric": "banana"})
+        r = validate_request(contract, {"datasets": ["D-x"], "metric": "banana"})
         assert r.ok is False
         assert ("metric", "banana") in r.invalid
 
     def test_complete_request_is_assembled_with_defaults(self):
         contract = _contract("llmsr-discover")
-        r = validate_request(contract, {"dataset": "D-abc12345", "metric": "nmse"})
+        r = validate_request(
+            contract, {"datasets": ["D-abc12345"], "metric": "nmse"}
+        )
         assert r.ok is True
         assert r.assembled["service"] == "llmsr-discover"
         assert r.assembled["act"] == "/wh:llmsr-discover"
-        assert r.assembled["inputs"]["dataset"] == "D-abc12345"
+        assert r.assembled["inputs"]["datasets"] == ["D-abc12345"]
         assert r.assembled["inputs"]["metric"] == "nmse"
         # the optional select port fell back to its default (shown to the user)
         assert r.assembled["inputs"]["select"] == "parsimony"
@@ -180,10 +216,61 @@ class TestValidator:
         contract = _contract("llmsr-discover")
         # metric has a default (nmse) but is required: with no answer it is MISSING,
         # not quietly filled in.
-        r = validate_request(contract, {"dataset": "D-x"})
+        r = validate_request(contract, {"datasets": ["D-x"]})
         assert r.ok is False
         assert "metric" in r.missing
         assert "metric" not in r.assembled["inputs"]
+
+
+class TestMultiValuedPorts:
+    """A port that takes SEVERAL, and one that must not be handed several.
+
+    Both halves matter. Without the first, a tool whose CLI is repeatable can
+    only ever be interviewed for one input. Without the second, a list handed to
+    a single-valued port would be passed through and the adapter would take one
+    of them, so the run would silently answer a smaller question than the
+    scientist asked.
+    """
+
+    def test_a_multi_port_accepts_several_values(self):
+        contract = _contract("llmsr-discover")
+        r = validate_request(contract, {
+            "datasets": ["D-a", "D-b", "D-c"],
+            "metric": "mse",
+            "score_on": ["D-b", "D-c"],
+        })
+        assert r.ok is True
+        assert r.assembled["inputs"]["datasets"] == ["D-a", "D-b", "D-c"]
+        assert r.assembled["inputs"]["score_on"] == ["D-b", "D-c"]
+
+    def test_a_multi_port_still_accepts_one(self):
+        contract = _contract("llmsr-discover")
+        assert validate_request(
+            contract, {"datasets": "D-a", "metric": "mse"}
+        ).ok is True
+
+    def test_an_empty_list_is_not_an_answer(self):
+        contract = _contract("llmsr-discover")
+        r = validate_request(contract, {"datasets": [], "metric": "mse"})
+        assert r.ok is False
+        assert "datasets" in r.missing
+
+    def test_a_single_valued_port_refuses_a_list_rather_than_truncating(self):
+        contract = _contract("llmsr-discover")
+        r = validate_request(contract, {
+            "datasets": ["D-a"], "metric": "mse", "seed_from": ["D-a", "D-b"],
+        })
+        assert r.ok is False
+        assert ("seed_from", ["D-a", "D-b"]) in r.invalid
+
+    def test_every_element_of_a_multi_choice_is_checked(self):
+        contract = SimpleNamespace(id="fake", act="/wh:fake", inputs=[{
+            "name": "flavour", "kind": "choice", "multi": True,
+            "options": ["a", "b"], "required": True,
+        }])
+        r = validate_request(contract, {"flavour": ["a", "zzz"]})
+        assert r.ok is False
+        assert ("flavour", "zzz") in r.invalid
 
 
 # ---------------------------------------------------------------------------
@@ -211,22 +298,22 @@ class TestFakeUserInterview:
     def test_interview_asks_the_right_questions_and_assembles_the_request(self):
         contract = _contract("llmsr-discover")
         # what a scientist would answer
-        fake_answers = {"dataset": "D-deadbeef", "metric": "mse"}
+        fake_answers = {"datasets": ["D-deadbeef"], "metric": "mse"}
         asked, result = _run_interview(contract, fake_answers)
 
         # the interview ASKED for the dataset and the metric (the required inputs)
-        assert "dataset" in asked
+        assert "datasets" in asked
         assert "metric" in asked
         # it converged to a valid, correctly-filled request
         assert result.ok is True
-        assert result.assembled["inputs"]["dataset"] == "D-deadbeef"
+        assert result.assembled["inputs"]["datasets"] == ["D-deadbeef"]
         assert result.assembled["inputs"]["metric"] == "mse"  # fake user's choice, not the default
         assert result.assembled["inputs"]["select"] == "parsimony"  # default for the optional port
 
     def test_interview_recovers_from_a_bad_answer(self):
         contract = _contract("llmsr-discover")
         # the fake user first gives a bad metric, then the correct one on retry
-        provided = {"dataset": "D-1", "metric": "banana"}
+        provided = {"datasets": ["D-1"], "metric": "banana"}
         r1 = validate_request(contract, provided)
         assert not r1.ok and ("metric", "banana") in r1.invalid
         provided["metric"] = "nmse"  # fake user corrects it

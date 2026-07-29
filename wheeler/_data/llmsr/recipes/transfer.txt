@@ -1,0 +1,56 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit whatever table this call is handed, and report the constants.
+
+    Identical in body to refit_per_group, and that is the point: the recipe is
+    not in the loss, it is in the ROLES the command line gives the tables.
+    --seed-from names the table the generator is SHOWN, which is where the FORM
+    comes from. --score-on names the tables the objective is taken over, which is
+    what the form is JUDGED on. Naming them apart means a form extracted from one
+    cell is scored by refitting it on cells it never saw, which tests the FORM
+    rather than one lucky parameterization.
+
+    That is fair only because the same law is assumed across tables and only the
+    constants differ. If two tables can hold different laws, this recipe answers
+    nothing.
+
+    A table the search scored is NOT a holdout, however good its number looks: 40
+    rounds ranked on B means the search optimized against B. The genuine holdout
+    is the separate `wheeler llmsr transfer --run <R> --data <held out>` call at
+    the end, which refits the winning form on a table the run never touched and
+    reports it beside the fixed-constant number.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+
+    def loss(params):
+        return float(np.mean((equation(%%EQ_ARGS%%, params) - outputs) ** 2))
+
+    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%.
+    """
+    return %%EQ_RETURN%%

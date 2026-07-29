@@ -1,0 +1,53 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit THIS unit's own constants and report them.
+
+    There is no loop over cells here, and that absence is the whole recipe. The
+    unit of fitting is a (dataset, group) pair, and the driver refits every unit
+    separately, whichever door scores the run: it calls this function once per
+    unit with that unit's rows. Writing the loop yourself would fit the pooled
+    data and throw the protocol away.
+
+    Declare the grouping on the command line with --group-by <column>. The score
+    is then a VECTOR, one entry per cell, and the search ranks forms on the whole
+    vector, so a law that governs 40 cells with 40 different constant sets is not
+    charged for variation that belongs to the PARAMETERS.
+
+    Returns Wheeler's additive dict rather than upstream's bare float, so the
+    fitted constants survive into best.json instead of being discarded. Both
+    shapes are accepted; only this one carries the answer.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+
+    def loss(params):
+        return float(np.mean((equation(%%EQ_ARGS%%, params) - outputs) ** 2))
+
+    result = minimize(loss, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%.
+    """
+    return %%EQ_RETURN%%

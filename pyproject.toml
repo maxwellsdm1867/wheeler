@@ -105,10 +105,14 @@ wheeler-ops-mcp = "wheeler.mcp_ops:main"
 # ---------------------------------------------------------------------------
 # Hatch build configuration
 # ---------------------------------------------------------------------------
-# The `wheeler/_data/` tree (slash commands, agents, hooks, mcp.json template)
-# is required at runtime by `wheeler.installer` and `wheeler init`. Hatchling
-# includes all files inside listed packages by default, so no explicit
-# package-data block is needed; the `force-include` below covers the LICENSE.
+# The `wheeler/_data/` tree is required at runtime: slash commands, agents,
+# hooks and the mcp.json template (read by `wheeler.installer` / `wheeler init`),
+# plus `_data/llmsr/` (recipe templates, bundled specs and synthetic demo tables,
+# read by `wheeler.integrations.llmsr.recipes` via importlib.resources). Hatchling
+# includes ALL files inside listed packages by default, whatever their extension,
+# so no package-data glob is needed for any of it; `tests/integrations/llmsr/
+# test_bundled.py` pins the one property that matters, which is that the tree
+# stays under `wheeler/`. The `force-include` below covers the LICENSE.
 
 [tool.hatch.build.targets.wheel]
 packages = ["wheeler"]

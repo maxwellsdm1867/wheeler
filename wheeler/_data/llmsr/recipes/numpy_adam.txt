@@ -1,0 +1,80 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+# The optimizer's own knobs. They belong to the SPEC here, not to the run:
+# --optimizer, --restarts and --seed are read by Wheeler's fit seam and this
+# door never consults them.
+STEPS = 400
+LEARNING_RATE = 0.1
+FD_STEP = 1e-6
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Fit the constants with a hand-rolled Adam, no third-party optimizer at all.
+
+    The point is the DOOR, not the algorithm: --use-spec-evaluate lets the spec
+    run an arbitrary optimization loop, which is how upstream's torch
+    specification trains a module for thousands of steps inside evaluate. This
+    recipe proves the same width on the base install, so it can be run and
+    checked anywhere, and torch_adam is the same shape with real autograd.
+
+    Honest about what it is: this is NOT autograd. The gradient is a central
+    finite difference, which costs 2*MAX_NPARAMS extra evaluations per step and
+    degrades on a badly scaled objective. Reach for torch_adam when torch is
+    installed and the generated body is differentiable; reach for `pooled` when
+    a quasi-Newton fit is all you actually wanted, because scipy will beat this
+    on both speed and accuracy for a smooth least-squares problem.
+    """
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+    y = np.asarray(outputs, dtype=float).reshape(-1)
+
+    def loss(params):
+        pred = np.asarray(equation(%%EQ_ARGS%%, params), dtype=float).reshape(-1)
+        return float(np.mean((pred - y) ** 2))
+
+    def gradient(params):
+        g = np.zeros_like(params)
+        for i in range(params.size):
+            step = np.zeros_like(params)
+            step[i] = FD_STEP
+            g[i] = (loss(params + step) - loss(params - step)) / (2.0 * FD_STEP)
+        return g
+
+    theta = np.ones(MAX_NPARAMS, dtype=float)
+    first = np.zeros_like(theta)
+    second = np.zeros_like(theta)
+    with np.errstate(all='ignore'):
+        for step_number in range(1, STEPS + 1):
+            g = gradient(theta)
+            if not np.all(np.isfinite(g)):
+                return None
+            first = 0.9 * first + 0.1 * g
+            second = 0.999 * second + 0.001 * g * g
+            first_hat = first / (1.0 - 0.9 ** step_number)
+            second_hat = second / (1.0 - 0.999 ** step_number)
+            theta = theta - LEARNING_RATE * first_hat / (np.sqrt(second_hat) + 1e-8)
+        final = loss(theta)
+
+    if not np.isfinite(final):
+        return None
+    return {'score': -float(final), 'params': [float(p) for p in theta]}
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%.
+    """
+    return %%EQ_RETURN%%

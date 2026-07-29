@@ -1,0 +1,70 @@
+"""%%DOCSTRING%%"""
+
+import numpy as np
+
+# The free-constant budget. `params` is this long; a form may use fewer.
+MAX_NPARAMS = %%MAX_NPARAMS%%
+
+# Where the Huber loss stops being quadratic and starts being linear, IN THE
+# UNITS OF THE RESIDUAL. 1.0 is a placeholder, not a calibration: set it from
+# what a normal residual looks like in this recording (a robust spread estimate
+# such as 1.4826 * median absolute deviation is the usual starting point).
+HUBER_DELTA = 1.0
+
+
+@evaluate.run
+def evaluate(data: dict) -> dict:
+    """Huber loss: quadratic near zero, linear in the tail.
+
+    A squared error charges a single artifact point the square of its residual,
+    so one bad sweep can outrank a correct law. Huber charges the tail linearly,
+    so the fit follows the bulk of the data. Needs --use-spec-evaluate.
+
+    A trimmed alternative, if the artifacts are a known fraction rather than a
+    heavy tail, is to sort the squared residuals and average the smallest 90%:
+
+        r2 = np.sort((pred - y) ** 2)
+        return float(np.mean(r2[:max(1, int(0.9 * r2.size))]))
+
+    Prefer a registered METRIC over this recipe when the robust loss is all you
+    want: metrics.py documents exactly this Huber as a `Metric`, and going that
+    way keeps Wheeler's fit seam, so the constants land in best.json and the
+    per-group refit still applies. Come here instead when the spec also has to
+    own the optimizer, or when the loss needs something a two-argument scorer
+    cannot see.
+
+    The standing risk is scientific, not numerical: downweighting outliers
+    downweights exactly the points where a correct law and a wrong one disagree
+    most. Use it when the outliers are ARTIFACTS, and say so in the write-up.
+    """
+    from scipy.optimize import minimize
+
+    inputs, outputs = data['inputs'], data['outputs']
+    %%UNPACK%%
+    y = np.asarray(outputs, dtype=float).reshape(-1)
+
+    def huber(params):
+        pred = np.asarray(equation(%%EQ_ARGS%%, params), dtype=float).reshape(-1)
+        r = np.abs(pred - y)
+        quadratic = 0.5 * r ** 2
+        linear = HUBER_DELTA * (r - 0.5 * HUBER_DELTA)
+        return float(np.mean(np.where(r <= HUBER_DELTA, quadratic, linear)))
+
+    result = minimize(huber, [1.0] * MAX_NPARAMS, method='BFGS')
+    if not np.isfinite(result.fun):
+        return None
+    return {'score': -float(result.fun), 'params': [float(p) for p in result.x]}
+
+
+@equation.evolve
+def equation(%%EQ_SIGNATURE%%) -> np.ndarray:
+    """%%EQ_DOC%%
+
+    Args:
+%%EQ_ARG_DOCS%%
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array of %%TARGET%%.
+    """
+    return %%EQ_RETURN%%
