@@ -487,6 +487,19 @@ class TestTheScaffolder:
         # and the recipe's own binding is untouched
         assert "y = np.asarray(outputs, dtype=float).reshape(-1)" in out.text
 
+    def test_an_unparseable_template_fails_loudly_instead_of_reserving_nothing(self):
+        """An empty reserved set is the WRONG answer, not a degraded one.
+
+        ``_bound_names`` used to swallow a parse failure and return the empty
+        set, on the stated grounds that ``scaffold`` would fail at the parse it
+        does next. It does no other parse: the empty set would simply have told
+        the caller that a column named ``y`` collides with nothing, which is the
+        exact silent mis-scoring the reserved set exists to prevent.
+        """
+        recipes_mod._bound_names.cache_clear()
+        with pytest.raises(ValueError, match="could not be parsed"):
+            recipes_mod._bound_names("def evaluate(:\n    this is not python\n")
+
     def test_the_printed_command_is_the_recipe_it_filled(self, tables, tmp_path):
         spec = tmp_path / "s.txt"
         out = recipes_mod.scaffold(
