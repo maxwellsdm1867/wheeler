@@ -149,6 +149,39 @@ services:
       nodes: [Script, Finding]
     # implemented by wheeler/integrations/llmsr/discover.py
 
+  - id: llmsr-transfer
+    provider: llmsr
+    name: LLM-SR Form Transfer
+    description: refit a discovered equation's constants on data the search never saw, to ask whether the FORM generalizes
+    kind: local
+    act: /wh:llmsr-transfer
+    # One refit per group on one table, using the source run's own fit knobs. No
+    # search, no generator, no sub-agent rounds: this is the cheap half of the
+    # discovery workflow, and its cost scales with the number of groups.
+    cost: "fast (one refit per group on the held-out table, seconds to minutes)"
+    available: "wheeler llmsr --help"
+    when: "test whether a discovered equation's FORM generalizes to a recording the search never scored"
+    inputs:
+      # The RUN is the form. It is named by id, not chosen from the graph: run
+      # dirs live on disk under `.wheeler/llmsr/runs/` and are not graph nodes.
+      - { name: run, kind: text, required: true, prompt: "Which LLM-SR run holds the form to transfer? Its run id or run dir." }
+      # ONE table, deliberately: `wheeler llmsr transfer --data` is single-valued,
+      # unlike `init --data`, and a port that offered a list would interview for
+      # a call the verb cannot make.
+      - { name: dataset, kind: node, node_type: Dataset, source: datasets, required: true, prompt: "Which held-out recording should the form be transferred onto? It must be data the search never scored, or the answer is a training number." }
+      - { name: group_by, kind: text, required: false, prompt: "Which column names the group each row of the HELD-OUT table belongs to? Each group refits its OWN constants. Default: the source run's own --group-by." }
+      # No `options_from` on this contract: nothing here is backed by an open
+      # registry. The metric, loader and optimizer are the SOURCE RUN'S and are
+      # read off its meta.json, because a transfer fitted differently from the
+      # search that produced the form is not comparable with it.
+      - { name: select, kind: choice, options: [fit, ood, parsimony], default: fit, required: false, prompt: "How should the candidate be picked when none is named explicitly? The same rules as `best`." }
+      - { name: candidate, kind: text, required: false, prompt: "Which candidate (sample_order) should be transferred? Leave empty to transfer the winner the run's own selection rules pick." }
+      - { name: question, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this generalization test address?" }
+    output:
+      raw_node: document
+      nodes: [Finding, Dataset]
+    # implemented by wheeler/integrations/llmsr/transfer_ingest.py
+
   - id: asta-assistant
     provider: asta
     name: Asta Research Assistant
