@@ -238,25 +238,56 @@ def _diff(want, got, path: str = "") -> list[str]:
     return [] if want == got else [f"{path}: {want!r} -> {got!r}"]
 
 
+# Fields a later slice deliberately ADDED to ``best.json``, each reviewed against
+# the claim this gate defends. An addition that is NOT listed here still fails,
+# which is the point: a reviewed field passes, an accidental one is caught.
+#
+# The claim is that an unnamed single ``--data`` produces the same ANSWER it
+# always produced, so no existing value may change. A brand new key is a
+# different thing from a changed one: ``discover.py`` reads ``best.json`` by name
+# and ignores what it does not know, and ``best.json`` is never replayed into the
+# vendored buffer, so an addition cannot alter a score, a key set or a constant.
+_ALLOWED_BEST_ADDITIONS = {
+    # S3: which quantity ``--select ood`` actually ranked on. Added because S3
+    # fixed ``_candidate_ood`` hardcoding nmse regardless of the run's metric,
+    # and a ranking whose quantity goes unstated is the class of bug this whole
+    # issue exists to remove.
+    ".best.selection.ranked_on",
+    # S3: held-out scoring under the new REFIT mode, reported beside the
+    # fixed-theta numbers rather than instead of them. Empty on a single-dataset
+    # run, which is why it appears as ``{}``.
+    ".best.metrics_refit",
+}
+
+
 def _compare(want: dict, got: dict) -> list[str]:
-    """Diff one case: ``meta`` may GAIN keys, the result may not change at all.
+    """Diff one case: ``meta`` and reviewed ``best`` keys may be GAINED, values may not.
 
     ``meta.json`` is the run's own bookkeeping and every slice adds to it (the
     score-key scheme has to be recorded there, by construction). So its golden
     keys are compared exactly and additions are tolerated: a new key is fine, a
     changed or vanished one is not.
 
-    ``submissions.jsonl`` and ``best.json`` are the RESULT, and they are compared
-    with no tolerance at all. An added field there is a failure, because the claim
-    this gate defends is that an unnamed single ``--data`` produces the file it
-    always produced.
+    ``submissions.jsonl`` is compared with NO tolerance, because it is replayed
+    through the vendored ``register_program`` on every verb. It is the one file
+    whose drift could silently invalidate a run's buffer state.
+
+    ``best.json`` is the RESULT: no existing value may change, but a field ADDED
+    by a reviewed slice is permitted via ``_ALLOWED_BEST_ADDITIONS``. Blanket
+    tolerance would have let the result grow fields nobody looked at; an explicit
+    list keeps the gate's teeth while still letting a slice record honest
+    provenance (which optimizer produced a number, which quantity ranked it).
     """
     meta_want, meta_got = want["meta"], got["meta"]
     failures = _diff(
         meta_want, {k: v for k, v in meta_got.items() if k in meta_want}, ".meta"
     )
-    for part in ("submissions", "best"):
-        failures.extend(_diff(want[part], got[part], f".{part}"))
+    failures.extend(_diff(want["submissions"], got["submissions"], ".submissions"))
+    failures.extend(
+        line
+        for line in _diff(want["best"], got["best"], ".best")
+        if not (line.split(":")[0] in _ALLOWED_BEST_ADDITIONS and "ADDED" in line)
+    )
     return failures
 
 

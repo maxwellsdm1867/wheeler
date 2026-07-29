@@ -7,8 +7,21 @@ those that fit comparably well (Occam). The same held-out machinery scores the
 winner on train / test_id / test_ood for ``best.json``, and the runnable footer
 turns the winning program into a .py that reproduces the answer.
 
-Split out of ``cli.py`` so the verbs stay readable; the rules themselves are
-unchanged.
+Held-out scoring reports TWO quantities, and they answer different questions:
+
+``fixed-theta``
+    the winner's own constants applied unchanged. This asks whether the
+    CONSTANTS transfer.
+``refit``
+    the constants fitted from scratch on the held-out data, under the same form.
+    This asks whether the FORM transfers, which is the question symbolic
+    regression is actually asking.
+
+They travel in separate, labelled dicts (``metrics`` and ``metrics_refit`` in
+``best.json``) precisely so neither can stand in for the other. The on-demand
+version of the same comparison, against an arbitrary file, is ``transfer.py``.
+
+Split out of ``cli.py`` so the verbs stay readable.
 """
 
 from __future__ import annotations
@@ -18,10 +31,13 @@ from pathlib import Path
 
 from . import fit as fit_mod
 from . import metrics as metrics_mod
-from .data import _load_data
+from .data import _as_groups, _load_data
 
 _SELECT_MODES = ("fit", "ood", "parsimony")
 _PARSIMONY_TOL = 10.0  # a candidate within this factor of the best error is "as good"
+
+# The held-out splits `best` scores, as `<split>: <sibling filename>`.
+_SIBLING_SPLITS = (("test_id", "test_id.csv"), ("test_ood", "test_ood.csv"))
 
 
 def _grouped_footer(
@@ -154,10 +170,109 @@ def _equation_complexity(body: str) -> int:
     )
 
 
+def _source_theta(source: dict, label: str) -> tuple[list[float] | None, str]:
+    """The source constants that legitimately apply to group ``label``, and why.
+
+    Never an arbitrary pick. There are exactly two cases where a fixed-theta
+    number is defined: the source fitted THIS group (so it has that group's own
+    constants), or the source has a single constant vector, which is what an
+    ungrouped run's constants are and what "apply the source's constants" means
+    for it. A source that fitted per-group constants and has none for this group
+    gets ``None``: substituting some other group's theta would answer a question
+    nobody asked, dressed as this one.
+    """
+    per_group = source.get("params_per_group") or {}
+    own = per_group.get(label)
+    if own:
+        return [float(v) for v in own], "the source fitted this same group"
+    vectors = [v for v in per_group.values() if v]
+    if len(vectors) == 1:
+        return [float(v) for v in vectors[0]], "the source has a single constant vector"
+    flat = source.get("params") or []
+    if flat and not vectors:
+        return [float(v) for v in flat], "the source has a single constant vector"
+    return None, (
+        "the source fitted its constants per group and none of them belongs to "
+        "this group"
+    )
+
+
+def _fixed_theta_per_group(
+    program: str, fte: str, groups: list, source: dict, metric: metrics_mod.Metric
+) -> tuple[dict[str, float | None], dict[str, list[float]], dict[str, str]]:
+    """Score every group with the SOURCE constants, refitting nothing.
+
+    Returns ``(value_per_group, theta_per_group, reason_per_group)``. A group with
+    no defensible source vector, or whose evaluation failed, gets ``None``, and
+    the reason says which.
+    """
+    values: dict[str, float | None] = {}
+    thetas: dict[str, list[float]] = {}
+    reasons: dict[str, str] = {}
+    for label, gX, gy in groups:
+        theta, why = _source_theta(source, label)
+        reasons[label] = why
+        if theta is None:
+            values[label] = None
+            continue
+        thetas[label] = theta
+        value = fit_mod.evaluate_fixed(program, fte, gX, gy, theta, metric)
+        values[label] = value
+        if value is None:
+            reasons[label] = (
+                why + ", but the equation produced no finite value under them"
+            )
+    return values, thetas, reasons
+
+
+def _strict_mean(values: dict[str, float | None]) -> float | None:
+    """The mean over groups, or ``None`` when ANY group is missing a number.
+
+    Strict for the reason ``evaluate_body_grouped`` is strict: a mean over the
+    subset that happened to work is not the number a reader would take it for,
+    and it silently flatters a form that failed somewhere.
+    """
+    present = [v for v in values.values() if v is not None]
+    if not values or len(present) != len(values):
+        return None
+    return sum(present) / len(present)
+
+
+def _load_groups(path: str, metric: metrics_mod.Metric, group_by: str) -> list | None:
+    """Load one file and partition it, or ``None`` if it cannot be read that way.
+
+    Broad by intent: this is a REPORTING path, and a sibling split that is
+    missing, malformed, or lacks the run's group column must leave that number
+    unreported rather than abort the verb that was asked for a different one.
+    """
+    try:
+        X, y, labels = _load_data(path, metric, group_by)
+    except Exception:
+        return None
+    return _as_groups(X, y, labels)
+
+
 def _candidate_ood(meta: dict, cand: dict) -> float | None:
-    """Held-out out-of-domain error of a candidate (train-fitted, applied to
-    test_ood). None when no OOD set exists. This is the extrapolation signal: the
-    true law generalizes here, an overfit form does not."""
+    """Held-out out-of-domain error of a candidate, under THE RUN'S OWN metric.
+
+    None when no OOD set exists, or when it cannot be scored (a grouped run whose
+    OOD file does not carry the group column has no constants that belong to its
+    groups). This is the extrapolation signal: the true law generalizes here, an
+    overfit form does not.
+
+    The metric is the run's, always. It used to be hardcoded to NMSE for any
+    regression run on the grounds that NMSE is the scale-free comparison, which
+    quietly ranked a run whose declared objective was a registered custom metric
+    on a quantity it never chose. The run's objective is the run's objective.
+
+    FIXED-THETA by design, and this is not the same deferral as the one
+    ``_split_metrics`` used to carry. Refitting on the OOD split before ranking
+    would reward flexibility, which is exactly what OOD selection exists to
+    punish: a nine-term polynomial refitted on the extrapolation region fits it,
+    while the whole signal here is that its TRAIN-fitted constants diverge there.
+    The refit number for the winner is reported next to this one by
+    ``_split_metrics``, so both are visible; only this one ranks.
+    """
     # Lazy: cli imports this module, so resolving the metric at module level would
     # close the cycle.
     from .cli import _metric_for
@@ -166,22 +281,15 @@ def _candidate_ood(meta: dict, cand: dict) -> float | None:
     if not sibling.exists():
         return None
     metric = _metric_for(meta["metric"])
-    # NMSE is the scale-free comparison for a regression run. For any other shape
-    # it is meaningless (it assumes a row-for-row prediction), so the run's own
-    # metric is the only one that can rank extrapolation.
-    ood_metric = (
-        metrics_mod.get_metric("nmse")
-        if metric.data_shape == metrics_mod.REGRESSION
-        else metric
+    groups = _load_groups(
+        str(sibling), metric, str(meta.get("group_by", "") or "")
     )
-    try:
-        X, y, _ = _load_data(str(sibling), metric)
-    except OSError:
+    if groups is None:
         return None
-    return fit_mod.evaluate_fixed(
-        cand["program"], meta["function_to_evolve"], X, y,
-        cand["params"], ood_metric,
+    values, _thetas, _reasons = _fixed_theta_per_group(
+        cand["program"], meta["function_to_evolve"], groups, cand, metric
     )
+    return _strict_mean(values)
 
 
 def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
@@ -199,7 +307,13 @@ def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
     if mode == "ood":
         with_ood = [c for c in valid if c.get("_ood") is not None]
         if with_ood:
-            return min(with_ood, key=lambda c: c["_ood"])
+            # Ranked through `score_from_value`, the same maximize-me convention
+            # the buffer uses, so a metric that declares `lower_is_better=False`
+            # is not ranked backwards. Lower error stays better for MSE/NMSE.
+            from .cli import _metric_for
+
+            ood_metric = _metric_for(meta["metric"])
+            return max(with_ood, key=lambda c: ood_metric.score_from_value(c["_ood"]))
         return max(valid, key=lambda s: s["score"])  # no OOD set: fall back to fit
 
     # parsimony: among candidates whose training error is within a factor of the
@@ -210,52 +324,104 @@ def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
     return min(good, key=lambda c: (c["_complexity"], -c["score"]))
 
 
-def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
-    """Score the train-fitted winner on train + sibling test_id / test_ood sets.
+def _report_keys(metric: metrics_mod.Metric) -> tuple[str, ...]:
+    """Which metrics to report a split under: MSE and NMSE for a regression run,
+    the run's own metric for any other shape (where those two are meaningless)."""
+    if metric.data_shape == metrics_mod.REGRESSION:
+        return ("mse", "nmse")
+    return (metric.key,)
 
-    Both MSE and NMSE per split for a regression run. For any other data shape
-    those two are meaningless, so the run's own metric is reported instead.
+
+def _split_metrics(meta: dict, winner: dict) -> tuple[dict[str, float], dict[str, float]]:
+    """Score the winner on train + sibling test_id / test_ood sets, BOTH ways.
+
+    Returns ``(fixed_theta, refit)``, two separately labelled dicts keyed
+    ``<metric>_<split>``:
+
+    ``fixed_theta``
+        the winner's own constants applied unchanged. Does the CONSTANTS
+        transfer? This is the historic ``metrics`` dict, unchanged for an
+        ungrouped run, key for key and number for number.
+    ``refit``
+        the constants refitted from scratch on that split, under the same form
+        and the run's own fit knobs. Does the FORM transfer? This is the
+        question symbolic regression is asking, and it used to go unasked.
+
+    Both are per group when the run declared ``--group-by``: each group refits
+    its own constants, and the fixed-theta side applies the source constants that
+    belong to that group (``_source_theta``), reporting nothing at all where none
+    does rather than substituting another group's. That policy is what used to be
+    deferred, and it is why this returned ``{}`` for any grouped run.
+
+    TRAIN is deliberately fixed-theta only, and omitted entirely for a grouped
+    run. On train the two quantities are the same measurement: that is where the
+    constants were fitted. A grouped run's train answer is its per-group value
+    TABLE, which ``best.json`` already carries as ``value_per_group``, and whose
+    mean the ingest derives and stamps as a mean. Writing a pooled ``<metric>_train``
+    next to it would put an unlabelled duplicate where the labelled one is.
 
     The held-out scoring is WHEELER'S, not upstream's. The LLM-SR datasets store
     ``<problem>/{train,test_id,test_ood}.csv``, so the test splits are siblings of
     the training file, but upstream's own ``main.py`` loads only ``train.csv`` and
     nothing in its pipeline opens the test splits. The splits are theirs; scoring
-    against them is ours. Applies the fitted constants without re-fitting.
+    against them is ours.
     """
-    # Lazy: cli imports this module, so resolving the metric at module level would
+    # Lazy: cli imports this module, so resolving these at module level would
     # close the cycle.
-    from .cli import _metric_for
+    from .cli import _fit_knobs, _metric_for
 
-    out: dict[str, float] = {}
-    if meta.get("group_by"):
-        # Held-out scoring applies FIXED constants, and a grouped run has no single
-        # constant vector to apply: each group kept its own. Scoring held-out data
-        # per group needs a policy for groups absent from the held-out file, which
-        # is deferred with the rest of the Objective work (see issue #107). Returning
-        # empty is honest; applying an arbitrary group's constants would not be.
-        return out
+    fixed: dict[str, float] = {}
+    refit: dict[str, float] = {}
     fte = meta["function_to_evolve"]
     program = winner["program"]
-    params = winner["params"]
     metric = _metric_for(meta["metric"])
-    report_keys = (
-        ("mse", "nmse") if metric.data_shape == metrics_mod.REGRESSION else (metric.key,)
-    )
+    group_by = str(meta.get("group_by", "") or "")
+    keys = _report_keys(metric)
     train_path = str(meta["data_path"])
-    splits = {"train": train_path}
-    for name, fname in (("test_id", "test_id.csv"), ("test_ood", "test_ood.csv")):
+
+    splits: dict[str, str] = {} if group_by else {"train": train_path}
+    for name, fname in _SIBLING_SPLITS:
         sibling = Path(train_path).parent / fname
         if sibling.exists():
             splits[name] = str(sibling)
+
     for split, path in splits.items():
-        try:
-            X, y, _ = _load_data(path, metric)
-        except OSError:
+        groups = _load_groups(path, metric, group_by)
+        if groups is None:
             continue
-        for mkey in report_keys:
-            val = fit_mod.evaluate_fixed(
-                program, fte, X, y, params, metrics_mod.get_metric(mkey)
+        for mkey in keys:
+            values, _thetas, _reasons = _fixed_theta_per_group(
+                program, fte, groups, winner, metrics_mod.get_metric(mkey)
             )
+            val = _strict_mean(values)
             if val is not None:
-                out[f"{mkey}_{split}"] = val
-    return out
+                fixed[f"{mkey}_{split}"] = val
+        if split == "train":
+            # The constants were fitted here. Refitting reports the same number
+            # under a second name, which is noise, not a second quantity.
+            continue
+        # ONE refit per split, under the run's own objective (what the search
+        # fitted against), then every reported key is read off those constants.
+        # Refitting once per report key would fit three different objectives and
+        # call the results comparable.
+        result = fit_mod.evaluate_body_grouped(
+            program, fte, groups, metric,
+            max_nparams=int(meta.get("max_nparams") or 10),
+            timeout_seconds=int(meta.get("timeout") or 30),
+            **_fit_knobs(meta),
+        )
+        if not result.valid:
+            continue
+        for mkey in keys:
+            values = {
+                label: fit_mod.evaluate_fixed(
+                    program, fte, gX, gy,
+                    result.params_per_group[label],
+                    metrics_mod.get_metric(mkey),
+                )
+                for label, gX, gy in groups
+            }
+            val = _strict_mean(values)
+            if val is not None:
+                refit[f"{mkey}_{split}"] = val
+    return fixed, refit
