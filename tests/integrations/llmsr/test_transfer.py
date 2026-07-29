@@ -331,9 +331,22 @@ class TestRegimeLabels:
         payload = json.loads((rd / transfer_mod.TRANSFER_FILE).read_text())
         assert payload["fixed_theta"]["regime"] == transfer_mod.REGIME_HELD_OUT
         # The refit fitted constants on this data, so it is held out for the FORM
-        # only, and the reason has to say so.
-        assert payload["refit"]["regime"] == transfer_mod.REGIME_HELD_OUT
+        # ONLY, and it carries its own LABEL rather than borrowing the plain one:
+        # `held_out` unqualified would claim the constants transferred too. S8
+        # gave `discover.py` the same fourth label so a Finding reads the same.
+        assert payload["refit"]["regime"] == transfer_mod.REGIME_HELD_OUT_FORM
+        assert payload["refit"]["regime"] != transfer_mod.REGIME_HELD_OUT
         assert "FORM only" in payload["refit"]["regime_reason"]
+
+    def test_the_two_modules_agree_on_the_refit_label(self):
+        """`transfer.py` duplicates the vocabulary as literals; they must match."""
+        from wheeler.integrations.llmsr import discover as discover_mod
+
+        for name in (
+            "REGIME_SCORED", "REGIME_HELD_OUT", "REGIME_HELD_OUT_FORM",
+            "REGIME_UNKNOWN", "CLAIM_FORM", "CLAIM_CONSTANTS",
+        ):
+            assert getattr(transfer_mod, name) == getattr(discover_mod, name), name
 
     def test_the_runs_own_training_data_is_scored(self, tmp_path):
         rd = _short_search_on_cell_a(tmp_path, run_id="regime_train")

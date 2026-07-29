@@ -13,10 +13,17 @@ REAL output shape (best.json), produced by ``cli.py::best``::
      "data_path": "...", "metric": "mse", "generator": "claude",
      "equation": "<body>", "params": [...], "program": "<full runnable .py>",
      "metrics": {"mse_train": 0.0167, "nmse_test_ood": 0.31},
+     "metrics_refit": {"mse_test_ood": 0.04},
+     "optimizer": {"requested": "auto", "used": "bfgs"},
      "selection": {"mode": "parsimony", ...}, "n_samples": N, "n_valid": M,
      # GROUPED runs only (`params` is empty for them, by construction):
      "group_by": "cell_id", "params_per_group": {"c01": [...], ...},
-     "value_per_group": {"c01": 0.02, ...}}
+     "value_per_group": {"c01": 0.02, ...},
+     # MULTI-DATASET runs only (`params` is empty for them too):
+     "datasets": {"seed_from": "A", "score_on": ["B"], "entries": [
+         {"name": "B", "path": "...", "seed": false, "regime": "scored",
+          "value": 0.02, "keys": ["B"], "value_per_key": {"B": 0.02},
+          "params_per_key": {"B": [...]}}, ...]}}
 
 Provenance is TWO-SIDED off ONE Execution:
 ``output -[WAS_GENERATED_BY]-> Execution -[USED]-> input``. The produced Script
@@ -31,18 +38,29 @@ Invariants (kept true):
   - One Execution per RUN, tagged service ``llmsr:discover``. Idempotent:
     Execution dedupes on session_id, Script on file hash (ensure_artifact),
     Finding on a deterministic id, edges via link_once.
-  - **A grouped run's answer is the TABLE.** Each group refits its own constants
-    under one shared form, so there is no single parameter vector and the flat
-    ``params`` is empty. The Script records ``params_per_group`` plus the group
-    coverage; recording the empty flat list would land the discovery in the graph
-    with no constants at all.
-  - **Every metric Finding is LABELLED by regime.** ``scored`` means the search
-    optimized against that data, so the number is a fit quality and NOT a
-    generalization claim; ``held_out`` means it did not; ``unknown`` means the
-    artifact does not record enough to tell. Forty rounds of search against a
-    split makes that split's error a training number however good it looks, and
-    the graph must never present one as the other. (Full multi-dataset scoring is
-    issue #107 slices S2/S3; this establishes the LABEL.)
+  - **A multi-unit run's answer is the TABLE.** Whenever a run has more than one
+    fittable unit, whether that is several GROUPS in one table or several
+    DATASETS or both, each unit refits its own constants under the one shared
+    form and the flat ``params`` is empty by construction. The Script records the
+    per-unit table (``params_per_group`` for a grouped single table,
+    ``params_per_key`` for anything spanning datasets); recording the empty flat
+    list would land the discovery in the graph with no constants at all.
+  - **One Dataset node per scored dataset.** A multi-dataset run fitted constants
+    on several tables, and each is an input the run genuinely USED. They are
+    inputs, so they are never ``WAS_GENERATED_BY`` the Execution: they land as
+    ``Execution -[USED]-> Dataset``, each carrying its own regime label.
+  - **Every metric Finding is LABELLED by regime, by claim, and by what MEASURED
+    it.** ``scored`` means the search optimized against that data, so the number
+    is a fit quality and NOT a generalization claim; ``held_out`` means it did
+    not; ``held_out_form`` means the constants were REFITTED on the split being
+    reported, so it is held out for the FORM only; ``unknown`` means the artifact
+    does not record enough to tell. Forty rounds of search against a split makes
+    that split's error a training number however good it looks, and the graph must
+    never present one as the other. Under ``--use-spec-evaluate`` the split
+    numbers were computed by Wheeler's own fit seam under the run's DECLARED
+    metric rather than by the spec's ``@evaluate.run`` that scored the search, and
+    the Finding says so instead of presenting a second opinion as the run's own
+    objective.
 """
 
 from __future__ import annotations
@@ -81,9 +99,42 @@ _SPLITS = ("train", "test_id", "test_ood")
 # Regime: did the search optimize against this data? The label rides on every
 # metric Finding, because a number the search was steered by is a fit quality and
 # presenting it as a generalization claim is false.
+#
+# ``REGIME_HELD_OUT_FORM`` is the fourth and it is NOT a synonym for the third. A
+# refit fits its constants on the very split it reports, so the split is held out
+# for the FORM and never for the CONSTANTS. Calling it plain ``held_out`` would
+# claim more than the measurement supports, which is the failure these labels
+# exist to prevent. ``transfer.py`` labels its own refit block identically.
 REGIME_SCORED = "scored"
 REGIME_HELD_OUT = "held_out"
+REGIME_HELD_OUT_FORM = "held_out_form"
 REGIME_UNKNOWN = "unknown"
+_REGIMES = (REGIME_SCORED, REGIME_HELD_OUT, REGIME_HELD_OUT_FORM, REGIME_UNKNOWN)
+
+# What a number is a claim ABOUT, matching ``transfer.py``'s vocabulary. Applying
+# the winner's own constants asks whether the CONSTANTS transfer; refitting them
+# under the same form asks whether the FORM does. Neither ever stands in for the
+# other, so both travel labelled.
+CLAIM_CONSTANTS = "constants"
+CLAIM_FORM = "form"
+
+# What machinery produced a number. Under ``--use-spec-evaluate`` the SEARCH was
+# scored by the spec's own ``@evaluate.run`` (``best.json``'s
+# ``optimizer.scored_by``), while the held-out splits still run through
+# ``fit.py`` + ``metrics.py`` under the run's DECLARED metric. Those numbers are a
+# second opinion computed by different machinery, not the run's own objective
+# measured again, and a Finding that did not say so would assert the stronger
+# thing. The literal matches ``spec_eval.SPEC_EVALUATE``, duplicated rather than
+# imported for the same reason ``transfer.py`` duplicates the regimes: this module
+# is the graph writer and must not pull in a scoring door to read one string.
+MEASURED_BY_FIT = "wheeler-fit"
+SCORED_BY_SPEC_EVALUATE = "spec-evaluate"
+_SECOND_OPINION_NOTE = (
+    "Measured by Wheeler's own fit seam under the run's DECLARED metric, not by "
+    "the spec's @evaluate.run that scored the search, so it is a second opinion "
+    "computed by different machinery and not this run's own objective measured "
+    "again."
+)
 
 
 @dataclass
@@ -132,14 +183,23 @@ def _as_float(value: Any) -> float | None:
     return None
 
 
-def _finding_id(run_id: str, metric: str, split: str = "train") -> str:
+def _finding_id(
+    run_id: str, metric: str, split: str = "train", claim: str = CLAIM_CONSTANTS
+) -> str:
     """Deterministic Finding id so a re-ingest dedupes instead of duplicating.
 
     The SPLIT is part of the key, so a train number and a held-out number from
     one run are distinct nodes. ``train`` is the historic default, so ids minted
     before per-split Findings existed still resolve to the same node.
+
+    The CLAIM is part of it too, and appended only when it is not the historic
+    one: a fixed-theta number and a refit number on the SAME split are two
+    different measurements of two different things, so they must be two nodes,
+    while every id minted before the refit numbers were ingested still resolves.
     """
     key = f"{_SERVICE_TAG}:{run_id}:{metric}:{split or 'unlabeled'}"
+    if claim and claim != CLAIM_CONSTANTS:
+        key += f":{claim}"
     return "F-" + hashlib.sha256(key.encode()).hexdigest()[:8]
 
 
@@ -196,16 +256,70 @@ def _split_regime(
     )
 
 
+def _refit_regime(regime: str, reason: str) -> tuple[str, str]:
+    """The regime of a REFIT number, which is never simply the data's regime.
+
+    A refit fits its constants on the very split it reports, so the number is
+    held out for the FORM and not for the CONSTANTS. Reporting it as plain
+    ``held_out`` would claim more than the measurement supports, which is exactly
+    what these labels exist to prevent, and it is why S3 refused to smuggle the
+    refit numbers into ``metrics`` under a suffix where this labeller would have
+    called them clean held-out numbers.
+
+    A SCORED split stays scored: refitting on data the search already optimized
+    against does not turn it into a holdout of any kind. Same rule, same wording,
+    as ``transfer._refit_regime``.
+    """
+    if regime == REGIME_HELD_OUT:
+        return REGIME_HELD_OUT_FORM, (
+            reason + ", but the constants WERE refitted on it, so this number is "
+            "held out for the FORM only, never for the constants"
+        )
+    return regime, reason
+
+
+@dataclass
+class _RunContext:
+    """What the whole run says about how any one of its numbers was earned.
+
+    Read once off ``best.json`` and passed down, so every split entry is labelled
+    from the same facts rather than from whatever was in scope where it was built.
+    """
+
+    select_mode: str = ""
+    n_valid: int | None = None
+    # `best.json["optimizer"]["scored_by"]`, present only when the run took the
+    # spec's own @evaluate.run door. Empty means Wheeler's fit seam scored it.
+    scored_by: str = ""
+
+    def note_for(self, measured_by: str) -> str:
+        """Why this number's machinery differs from what scored the search, if it does."""
+        if self.scored_by == SCORED_BY_SPEC_EVALUATE and measured_by != self.scored_by:
+            return _SECOND_OPINION_NOTE
+        return ""
+
+
 def _split_record(
     split: str,
     metric: str,
     value: float | None,
     values: dict[str, float],
-    select_mode: str,
-    n_valid: int | None,
+    ctx: _RunContext,
+    *,
+    claim: str = CLAIM_CONSTANTS,
+    measured_by: str = MEASURED_BY_FIT,
 ) -> dict[str, Any]:
-    """One regime-labelled split entry: what number, on what data, earned how."""
-    regime, reason = _split_regime(split, select_mode, n_valid)
+    """One labelled split entry: what number, on what data, earned how, by what.
+
+    ``claim`` says WHAT the number is about (do the CONSTANTS transfer, or does
+    the FORM), and ``measured_by`` says WHICH machinery produced it. Both ride
+    onto the Finding, because a run scored through the spec's own evaluate has
+    held-out numbers computed by a different door than the one that ranked its
+    candidates.
+    """
+    regime, reason = _split_regime(split, ctx.select_mode, ctx.n_valid)
+    if claim == CLAIM_FORM:
+        regime, reason = _refit_regime(regime, reason)
     return {
         "split": split,
         "metric": metric,
@@ -214,7 +328,30 @@ def _split_record(
         "others": {k: v for k, v in values.items() if k != metric},
         "regime": regime,
         "regime_reason": reason,
+        "claim": claim,
+        "measured_by": measured_by,
+        "measurement_note": ctx.note_for(measured_by),
     }
+
+
+def _bucket_by_split(metrics: Any) -> dict[str, dict[str, float]]:
+    """Bucket a ``<metric>_<split>`` dict by the split each number was measured on."""
+    by_split: dict[str, dict[str, float]] = {}
+    if not isinstance(metrics, dict):
+        return by_split
+    for raw_key, raw_val in metrics.items():
+        val = _as_float(raw_val)
+        if val is None:
+            continue
+        mkey, split = _split_key(str(raw_key))
+        by_split.setdefault(split, {})[mkey] = val
+    return by_split
+
+
+def _ordered_splits(by_split: dict[str, dict[str, float]]) -> list[str]:
+    """Wheeler's split order first, then anything else, sorted, so it is stable."""
+    ordered = [s for s in _SPLITS if s in by_split]
+    return ordered + sorted(s for s in by_split if s not in _SPLITS)
 
 
 async def _record_generated(
@@ -266,14 +403,14 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
         return [], meta
 
     metric = _as_str(doc.get("metric")) or "score"
-    metrics_raw = doc.get("metrics")
-    metrics = metrics_raw if isinstance(metrics_raw, dict) else {}
     params_raw = doc.get("params")
     params = params_raw if isinstance(params_raw, list) else []
 
-    # How the winner was chosen, and out of how many. Both feed the regime label:
-    # `--select ood` means the OOD split picked the winner (so it was optimized
-    # against), unless there was only one valid candidate to pick from.
+    # How the winner was chosen, out of how many, and through which scoring door.
+    # The first two feed the regime label (`--select ood` means the OOD split
+    # picked the winner, so it was optimized against, unless there was only one
+    # valid candidate to pick from). The third says whether a held-out number was
+    # computed by the same machinery that scored the search.
     selection_raw = doc.get("selection")
     select_mode = (
         _as_str(selection_raw.get("mode")).lower()
@@ -281,47 +418,78 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
         else ""
     )
     n_valid_raw = _as_float(doc.get("n_valid"))
-    n_valid = int(n_valid_raw) if n_valid_raw is not None else None
+    optimizer_raw = doc.get("optimizer")
+    ctx = _RunContext(
+        select_mode=select_mode,
+        n_valid=int(n_valid_raw) if n_valid_raw is not None else None,
+        scored_by=(
+            _as_str(optimizer_raw.get("scored_by"))
+            if isinstance(optimizer_raw, dict)
+            else ""
+        ),
+    )
 
     group_by, params_per_group, value_per_group = _parse_groups(doc)
+    dataset_report = _parse_dataset_report(doc)
+    params_per_key, value_per_key = _scored_units(dataset_report)
 
-    # Bucket the reported metrics by the split they were measured on.
-    by_split: dict[str, dict[str, float]] = {}
-    for raw_key, raw_val in metrics.items():
-        val = _as_float(raw_val)
-        if val is None:
-            continue
-        mkey, split = _split_key(str(raw_key))
-        by_split.setdefault(split, {})[mkey] = val
+    by_split = _bucket_by_split(doc.get("metrics"))
+    refit_by_split = _bucket_by_split(doc.get("metrics_refit"))
 
     # The headline number is the TRAIN one, and only the train one: a held-out
     # number stands in for it nowhere, which is the whole point of the labels.
     train_values = by_split.pop("train", {})
+    # `metrics` is computed by `fit.py` on both doors, so a number read out of it
+    # is a Wheeler-fit number whatever scored the search.
+    train_measured_by = MEASURED_BY_FIT
     value = train_values.get(metric)
     if value is None and train_values:
         value = train_values[sorted(train_values)[0]]
     value_is_group_mean = False
-    if value is None and value_per_group:
-        # A grouped run reports no scalar (held-out scoring is skipped for it),
-        # but every group reported its own value. The mean over groups is exactly
-        # the scalar `fit.py` aggregates to, so it is DERIVED, not invented, and
-        # it travels labelled as a mean so nothing reads it as a pooled fit.
+    value_is_unit_mean = False
+    if value is None and value_per_key:
+        # A MULTI-DATASET run reports no scalar in `metrics`: the flat `params`
+        # is empty, so `evaluate_fixed` has no vector to apply and `_split_metrics`
+        # returns nothing for it. Every scored UNIT reported its own value, and
+        # the mean over them is exactly the scalar `fit.py` aggregates to
+        # (`sum(per_group_value) / len(per_group_value)`), so it is DERIVED, not
+        # invented, and it travels labelled so nothing reads it as a pooled fit.
+        value = sum(value_per_key.values()) / len(value_per_key)
+        value_is_unit_mean = True
+        train_measured_by = ctx.scored_by or MEASURED_BY_FIT
+    elif value is None and value_per_group:
+        # The same derivation one level down: a grouped single-table run.
         value = sum(value_per_group.values()) / len(value_per_group)
         value_is_group_mean = True
+        train_measured_by = ctx.scored_by or MEASURED_BY_FIT
 
     # Train first (always present, even when the run reported no number, so the
     # discovery still lands), then any held-out splits the run scored.
     splits = [
-        _split_record("train", metric, value, train_values, select_mode, n_valid)
+        _split_record(
+            "train", metric, value, train_values, ctx,
+            measured_by=train_measured_by,
+        )
     ]
-    ordered = [s for s in _SPLITS if s in by_split]
-    ordered += sorted(s for s in by_split if s not in _SPLITS)
-    for split in ordered:
+    for split in _ordered_splits(by_split):
         values = by_split[split]
         headline = metric if metric in values else sorted(values)[0]
         splits.append(
+            _split_record(split, headline, values[headline], values, ctx)
+        )
+
+    # The REFIT numbers, which answer the other half of "does it generalize":
+    # the constants were fitted from scratch on the split being reported, so each
+    # is a claim about the FORM alone. Kept in their own list rather than folded
+    # in beside the fixed-theta ones, because a split now carries two numbers that
+    # are not interchangeable and must never collide into one Finding.
+    refit_splits = []
+    for split in _ordered_splits(refit_by_split):
+        values = refit_by_split[split]
+        headline = metric if metric in values else sorted(values)[0]
+        refit_splits.append(
             _split_record(
-                split, headline, values[headline], values, select_mode, n_valid
+                split, headline, values[headline], values, ctx, claim=CLAIM_FORM,
             )
         )
 
@@ -332,11 +500,17 @@ def parse_discover(doc: Any) -> tuple[list[dict[str, Any]], RunMeta]:
         "metric": metric,
         "value": value,
         "value_is_group_mean": value_is_group_mean,
+        "value_is_unit_mean": value_is_unit_mean,
         "group_by": group_by,
         "params_per_group": params_per_group,
         "value_per_group": value_per_group,
+        "datasets": dataset_report,
+        "params_per_key": params_per_key,
+        "value_per_key": value_per_key,
         "select_mode": select_mode,
+        "scored_by": ctx.scored_by,
         "splits": splits,
+        "refit_splits": refit_splits,
         "data_path": _as_str(doc.get("data_path")),
         "spec_path": _as_str(doc.get("spec_path")),
     }
@@ -369,6 +543,99 @@ def _parse_groups(
             if fval is not None:
                 value_per_group[str(label)] = fval
     return group_by, params_per_group, value_per_group
+
+
+def _float_list(value: Any) -> list[float]:
+    """A list of numbers, dropping whatever is not one. Never raises."""
+    if not isinstance(value, list):
+        return []
+    return [f for f in (_as_float(v) for v in value) if f is not None]
+
+
+def _float_map(value: Any) -> dict[str, float]:
+    """A ``key -> number`` map, dropping whatever is not one. Never raises."""
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, raw in value.items():
+        val = _as_float(raw)
+        if val is not None:
+            out[str(key)] = val
+    return out
+
+
+def _parse_dataset_report(doc: dict[str, Any]) -> dict[str, Any]:
+    """Lift a MULTI-DATASET run's per-dataset breakdown, or ``{}`` for any other.
+
+    ``best.json["datasets"]`` is absent on a single-default-dataset run, which is
+    exactly the run an older Wheeler could have created, so a caller sees the
+    empty dict and takes the path it always took.
+
+    Each entry keeps the regime ``cli.py::_dataset_report`` assigned it, because
+    only the RUN knows which tables entered its objective. A regime this module
+    does not recognize is reported ``unknown`` rather than being coerced into the
+    flattering answer: the vocabulary is closed on purpose.
+    """
+    raw = doc.get("datasets")
+    if not isinstance(raw, dict):
+        return {}
+    entries: list[dict[str, Any]] = []
+    for item in raw.get("entries") or []:
+        if not isinstance(item, dict) or not _as_str(item.get("name")):
+            continue
+        regime = _as_str(item.get("regime"))
+        reason = _as_str(item.get("regime_reason"))
+        if regime not in _REGIMES:
+            regime, reason = REGIME_UNKNOWN, (
+                "the run report did not label this dataset with a regime this "
+                f"version knows ({regime or 'none recorded'})"
+            )
+        params_per_key: dict[str, list[float]] = {}
+        raw_params = item.get("params_per_key")
+        if isinstance(raw_params, dict):
+            for key, vals in raw_params.items():
+                floats = _float_list(vals)
+                if floats:
+                    params_per_key[str(key)] = floats
+        entries.append({
+            "name": _as_str(item.get("name")),
+            "path": _as_str(item.get("path")),
+            "seed": bool(item.get("seed")),
+            "regime": regime,
+            "regime_reason": reason,
+            "value": _as_float(item.get("value")),
+            "keys": [_as_str(k) for k in (item.get("keys") or []) if _as_str(k)],
+            "value_per_key": _float_map(item.get("value_per_key")),
+            "params_per_key": params_per_key,
+        })
+    if not entries:
+        return {}
+    return {
+        "seed_from": _as_str(raw.get("seed_from")),
+        "score_on": [_as_str(n) for n in (raw.get("score_on") or []) if _as_str(n)],
+        "score_key_scheme": _as_str(raw.get("score_key_scheme")),
+        "entries": entries,
+    }
+
+
+def _scored_units(
+    report: dict[str, Any],
+) -> tuple[dict[str, list[float]], dict[str, float]]:
+    """The constants and values of every SCORED unit, merged across datasets.
+
+    Scored only, and this is the whole discipline of the function: a held-out
+    entry carries no value BECAUSE the run never computed one for it, so folding
+    it in would either invent a number or silently shrink the denominator of the
+    mean derived from these. Keys are ``dataset`` or ``dataset:group``.
+    """
+    params: dict[str, list[float]] = {}
+    values: dict[str, float] = {}
+    for entry in report.get("entries", []):
+        if entry.get("regime") != REGIME_SCORED:
+            continue
+        params.update(entry.get("params_per_key") or {})
+        values.update(entry.get("value_per_key") or {})
+    return params, values
 
 
 async def ingest_discover(
@@ -547,9 +814,16 @@ async def _bucket_result(
     report: ImportReport,
     produced_ids: list[str],
 ) -> None:
-    """Create the Script (full program + constants) + one Finding per split."""
+    """Create the Script (program + constants), the input Datasets, the Findings."""
     metric = record["metric"]
     value = record["value"]
+    # Exactly one of three constant shapes is the answer, and which one is a
+    # property of the run, not a preference. A run whose keys span DATASETS keeps
+    # its table keyed by unit (`A` or `A:c01`); a grouped single-table run keeps
+    # it keyed by group; only a genuine one-unit run has a flat vector. Writing
+    # two of them would put the same numbers in the graph twice under names that
+    # invite a reader to compare them.
+    multi = bool(record["params_per_key"])
     grouped = bool(record["group_by"] and record["params_per_group"])
 
     # 1. The full generated program -> a durable .py -> a hashed Script.
@@ -590,11 +864,16 @@ async def _bucket_result(
                     "run_dir": f".wheeler/llmsr/runs/{run_meta.run_id}",
                     "generator": run_meta.generator,
                 }
-                if grouped:
-                    # The TABLE is the answer for a grouped run: one constant
-                    # vector per group under one shared form. The flat `params`
-                    # is empty by construction, so recording it would land the
-                    # discovery in the graph with no constants at all.
+                if multi:
+                    # The TABLE is the answer, keyed by UNIT: a run that spans
+                    # datasets fitted one constant vector per (dataset, group)
+                    # pair under one shared form. The flat `params` is empty by
+                    # construction for it, exactly as for a grouped run, so
+                    # recording it would land the discovery with no constants.
+                    custom.update(_unit_table_custom(record))
+                elif grouped:
+                    # The same, one level down: a grouped single-table run keys
+                    # its table by group label.
                     custom.update(
                         {
                             "group_by": record["group_by"],
@@ -617,12 +896,143 @@ async def _bucket_result(
                 ):
                     report.linked += 1
 
-    # 2. One Finding per scored split, each LABELLED by regime.
-    for entry in record["splits"]:
+    # 2. One Dataset per declared table, on the INPUT side of the Execution.
+    await _record_datasets(
+        record, run_meta, exec_id, backend, config, execute_tool, report
+    )
+
+    # 3. One Finding per scored split, each LABELLED by regime, then the same
+    # splits again with the constants REFITTED. The two are separate nodes on
+    # purpose: one asks whether the CONSTANTS transfer and the other whether the
+    # FORM does, and a reader who saw only one number would take it for both.
+    for entry in record["splits"] + record["refit_splits"]:
         await _record_split_finding(
             entry, record, run_meta, session_id, link_to,
             backend, config, execute_tool, report, produced_ids,
         )
+
+
+def _unit_table_custom(record: dict[str, Any]) -> dict[str, Any]:
+    """The per-unit constant table plus the dataset roles, for the Script node.
+
+    Keys are ``dataset`` or ``dataset:group``, matching the score keys the search
+    itself used, so a Script property and a ``best.json`` score key name the same
+    thing. The scored / held-out split is carried too, because "which tables was
+    this form actually fitted on" is not answerable from the constants alone.
+    """
+    report = record["datasets"]
+    entries = report.get("entries", [])
+    scored = sorted(e["name"] for e in entries if e["regime"] == REGIME_SCORED)
+    held_out = sorted(e["name"] for e in entries if e["regime"] != REGIME_SCORED)
+    custom: dict[str, Any] = {
+        "n_keys": len(record["params_per_key"]),
+        "keys": json.dumps(sorted(record["params_per_key"])),
+        "params_per_key": json.dumps(record["params_per_key"]),
+        "value_per_key": json.dumps(record["value_per_key"]),
+        "value_is_unit_mean": record["value_is_unit_mean"],
+        "n_datasets_scored": len(scored),
+        "datasets_scored": json.dumps(scored),
+        "datasets_held_out": json.dumps(held_out),
+        "seed_from": report.get("seed_from", ""),
+        "score_key_scheme": report.get("score_key_scheme", ""),
+    }
+    if record["group_by"]:
+        custom["group_by"] = record["group_by"]
+    return custom
+
+
+async def _record_datasets(
+    record: dict[str, Any],
+    run_meta: RunMeta,
+    exec_id: str,
+    backend,
+    config: WheelerConfig,
+    execute_tool,
+    report: ImportReport,
+) -> None:
+    """One Dataset node per declared table, each ``USED`` by the run Execution.
+
+    These are INPUTS, so they are deliberately absent from ``produced_ids``: a
+    Dataset the run read is never ``WAS_GENERATED_BY`` it, on the same rule that
+    keeps reference-entity Papers off that edge in the Asta adapters.
+
+    Every declared table lands, not only the scored ones, and each carries the
+    regime the RUN assigned it. A held-out table is still an input (the seed one
+    shaped the prompt, so the generator did see it) and recording only the scored
+    ones would leave the graph unable to answer which tables a form was NOT
+    fitted on, which is the more interesting half of the question.
+
+    Defensive throughout, like the rest of this module: a table whose file has
+    moved since the run cannot be hashed, so it is counted and skipped rather
+    than aborting an ingest that has already written the answer.
+    """
+    entries = record["datasets"].get("entries", []) if record["datasets"] else []
+    if not entries or not exec_id:
+        return
+    for entry in entries:
+        path = entry["path"]
+        if not path or not Path(path).exists():
+            report.skipped += 1
+            logger.warning(
+                "ingest_discover: dataset %r is not on disk at %s; skipped",
+                entry["name"], path or "<no path recorded>",
+            )
+            continue
+        try:
+            result = json.loads(
+                await execute_tool(
+                    "ensure_artifact",
+                    {
+                        "path": str(Path(path).resolve()),
+                        "artifact_type": "dataset",
+                        "service": _SERVICE_TAG,
+                        "description": (
+                            f"LLM-SR {entry['regime']} input {entry['name']!r} "
+                            f"({run_meta.run_id})"
+                        ),
+                    },
+                    config,
+                )
+            )
+        except Exception:
+            report.skipped += 1
+            logger.warning(
+                "ingest_discover: registering dataset %r raised; skipped",
+                entry["name"], exc_info=True,
+            )
+            continue
+        ds_id = result.get("node_id")
+        if not ds_id:
+            report.skipped += 1
+            logger.warning(
+                "ingest_discover: registering dataset %r returned no node (%s)",
+                entry["name"], result.get("error", "no error reported"),
+            )
+            continue
+        if result.get("action") == "created":
+            report.created += 1
+        else:
+            report.deduped += 1
+        custom: dict[str, Any] = {
+            "run_id": run_meta.run_id,
+            "dataset_name": entry["name"],
+            "regime": entry["regime"],
+            "regime_reason": entry["regime_reason"],
+            "seeded_the_prompt": entry["seed"],
+            "metric": record["metric"],
+            "score_keys": json.dumps(entry["keys"]),
+        }
+        if entry["value"] is not None:
+            custom["value"] = entry["value"]
+        if entry["value_per_key"]:
+            custom["value_per_key"] = json.dumps(entry["value_per_key"])
+        if entry["params_per_key"]:
+            custom["params_per_key"] = json.dumps(entry["params_per_key"])
+        await execute_tool(
+            "update_node", {"node_id": ds_id, "custom": custom}, config
+        )
+        if await _link_once(backend, config, exec_id, "USED", ds_id):
+            report.used += 1
 
 
 async def _record_split_finding(
@@ -637,45 +1047,71 @@ async def _record_split_finding(
     report: ImportReport,
     produced_ids: list[str],
 ) -> None:
-    """One Finding for one split, carrying the REGIME that earned its number.
+    """One Finding for one split, carrying everything that earned its number.
 
-    The label is the guardrail. A number the search optimized against is a fit
-    quality, and the graph must never offer it as a generalization claim; a
-    held-out number may be read that way; and where the artifact does not say,
-    the Finding says ``unknown`` instead of picking the flattering answer.
+    The labels are the guardrail, and there are three of them. REGIME: a number
+    the search optimized against is a fit quality, and the graph must never offer
+    it as a generalization claim. CLAIM: applying the winner's own constants asks
+    whether the CONSTANTS transfer, refitting them asks whether the FORM does,
+    and neither answers the other. MEASURED_BY: under ``--use-spec-evaluate`` the
+    split numbers come from Wheeler's fit seam rather than from the door that
+    scored the search, so they are a second opinion and say so. Where the
+    artifact does not record enough, the Finding says ``unknown`` instead of
+    picking the flattering answer.
     """
     metric = entry["metric"]
     split = entry["split"]
     value = entry["value"]
     regime = entry["regime"]
     reason = entry["regime_reason"]
+    claim = entry["claim"]
+    refit = claim == CLAIM_FORM
+    multi = bool(record["params_per_key"])
     grouped = bool(record["group_by"] and record["params_per_group"])
 
-    finding_id = _finding_id(run_meta.run_id, metric, split)
+    finding_id = _finding_id(run_meta.run_id, metric, split, claim)
     dataset_name = _dataset_label(record["data_path"])
     val_str = f"{value:.4g}" if isinstance(value, float) else _as_str(value)
     where = f"on {dataset_name} ({split or 'unlabelled split'})"
     mean_note = ""
-    if split == "train" and record["value_is_group_mean"]:
+    if split == "train" and record["value_is_unit_mean"]:
+        mean_note = (
+            f" (mean over {len(record['value_per_key'])} scored (dataset, group) "
+            "units, each refitting its own constants)"
+        )
+    elif split == "train" and record["value_is_group_mean"]:
         mean_note = (
             f" (mean over {len(record['value_per_group'])} "
             f"{record['group_by']!r} groups, each refitting its own constants)"
         )
+    how = " with its constants REFITTED here" if refit else ""
     if value is None:
         headline = f"LLM-SR run reported no {metric} value {where}"
     else:
         headline = (
-            f"LLM-SR discovered equation attains {metric} = {val_str}{mean_note} {where}"
+            f"LLM-SR discovered equation attains {metric} = {val_str}"
+            f"{mean_note}{how} {where}"
         )
     if regime == REGIME_SCORED:
         caveat = (
             f"SCORED, not held out: {reason}, so this is fit quality and not a "
             "generalization claim."
         )
+    elif regime == REGIME_HELD_OUT_FORM:
+        caveat = (
+            f"Held out for the FORM only: {reason}. It says nothing about whether "
+            "the source constants transfer."
+        )
     elif regime == REGIME_HELD_OUT:
         caveat = f"Held out: {reason}."
     else:
         caveat = f"Regime unknown: {reason}."
+    if entry["measurement_note"]:
+        caveat += " " + entry["measurement_note"]
+
+    title = f"{metric}_{split}" if split else metric
+    if refit:
+        title += "_refit"
 
     if await _node_exists(backend, config, finding_id):
         report.deduped += 1
@@ -688,7 +1124,7 @@ async def _record_split_finding(
                     "description": f"{headline}. {caveat}",
                     "confidence": _FINDING_CONFIDENCE,
                     "artifact_type": "number",
-                    "title": f"{metric}_{split}" if split else metric,
+                    "title": title,
                     "service": _SERVICE_TAG,
                     "session_id": session_id,
                 },
@@ -707,11 +1143,31 @@ async def _record_split_finding(
         "split": split,
         "regime": regime,
         "regime_reason": reason,
+        "claim": claim,
+        "measured_by": entry["measured_by"],
     }
+    if entry["measurement_note"]:
+        custom["measurement_note"] = entry["measurement_note"]
     # the same split under the run's other reported metric (nmse beside mse)
     for other_key, other_val in entry["others"].items():
         custom[f"value_{other_key}"] = other_val
-    if split == "train" and grouped:
+    if split == "train" and not refit and multi:
+        custom.update(
+            {
+                "n_keys": len(record["value_per_key"]),
+                "value_per_key": json.dumps(record["value_per_key"]),
+                "value_is_unit_mean": record["value_is_unit_mean"],
+                "n_datasets_scored": len(
+                    [
+                        e for e in record["datasets"].get("entries", [])
+                        if e["regime"] == REGIME_SCORED
+                    ]
+                ),
+            }
+        )
+        if record["group_by"]:
+            custom["group_by"] = record["group_by"]
+    elif split == "train" and not refit and grouped:
         custom.update(
             {
                 "group_by": record["group_by"],

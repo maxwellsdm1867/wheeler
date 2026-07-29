@@ -1,11 +1,14 @@
-"""The written .py must actually RUN, including for a grouped run (issue #107).
+"""The written .py must actually RUN, for every shape a run can have (issue #107).
 
 Wheeler advertises the discovered program as a durable, re-runnable artifact. For
 a grouped run it was neither: the footer emitted the flat ``params``, which
 ``fit.py`` leaves EMPTY whenever there is more than one group, so the file called
-the equation with an empty array. These tests execute the generated file as a
-subprocess rather than inspecting its text, because "it looks right" is exactly
-what the defect passed.
+the equation with an empty array. A multi-dataset run then had no runner at all.
+
+``TestFourShapesRun`` is the matrix gate: {ungrouped, grouped} x {one dataset,
+several datasets}, each EXECUTED as a subprocess and checked against the numbers
+in the file it read. Text inspection is what the original defect passed, so
+nothing here asserts on the program's source alone.
 """
 
 from __future__ import annotations
@@ -141,6 +144,120 @@ class TestGroupedRunnable:
         stdout = _run_discovery(tmp_path, program)
         assert "prediction[:5]" in stdout
         assert "group " not in stdout
+
+
+class TestFourShapesRun:
+    """All four run shapes emit a .py that runs and prints the right numbers.
+
+    The two single-dataset shapes are above (they also check the emitted text,
+    because their footers are the ones parity gates protect). These two are the
+    multi-dataset shapes, whose footer had no ``__main__`` at all before S8: one
+    form refitted on several tables, with and without a group column inside them.
+    """
+
+    # A second law, so the two tables cannot pass by sharing constants.
+    TABLES = {"A": (2.5, -1.0), "B": (-4.0, 8.0)}
+    N_ROWS = 25
+
+    def _spec(self, tmp_path: Path) -> Path:
+        spec = tmp_path / "spec.txt"
+        spec.write_text(
+            "import numpy as np\n\n"
+            "MAX_NPARAMS = 4\n\n"
+            "@evaluate.run\n"
+            "def evaluate(data):\n"
+            "    return 0.0\n\n"
+            "@equation.evolve\n"
+            "def equation(x1, params):\n"
+            "    return params[0] * x1 + params[1]\n"
+        )
+        return spec
+
+    def _table(
+        self, path: Path, a: float, b: float, seed: int, cells: tuple[str, ...] = ()
+    ) -> dict[str, list[float]]:
+        """Write y = a*x + b, optionally in labelled cells. Returns y per unit."""
+        import numpy as np
+
+        rng = np.random.default_rng(seed)
+        header = "cell_id,x1,y" if cells else "x1,y"
+        lines, ys = [header], {}
+        for i, name in enumerate(cells or ("",)):
+            # each cell scales the shared form, so a per-unit refit is the only
+            # thing that can fit them all
+            scale = 1.0 + i
+            ys[name] = []
+            for x in rng.uniform(-3.0, 3.0, self.N_ROWS):
+                y = scale * a * float(x) + scale * b
+                ys[name].append(y)
+                row = f"{float(x):.17g},{y:.17g}"
+                lines.append(f"{name},{row}" if cells else row)
+        path.write_text("\n".join(lines) + "\n")
+        return ys
+
+    def _line(self, stdout: str, key: str) -> list[float]:
+        """The predictions the runner printed for one unit key."""
+        matching = [
+            ln for ln in stdout.splitlines() if f"key {key} " in ln
+        ]
+        assert len(matching) == 1, f"expected one line for {key!r}:\n{stdout}"
+        return [
+            float(m)
+            for m in _FLOAT.findall(matching[0].split("prediction[:5]")[1])
+        ]
+
+    def test_ungrouped_multi_dataset_applies_each_table_its_own_constants(
+        self, tmp_path
+    ):
+        spec = self._spec(tmp_path)
+        expect = {
+            name: self._table(tmp_path / f"{name}.csv", a, b, seed=10 + i)[""]
+            for i, (name, (a, b)) in enumerate(self.TABLES.items())
+        }
+        _cli(
+            tmp_path, "init", "--spec", str(spec),
+            "--data", f"A={tmp_path / 'A.csv'}", "--data", f"B={tmp_path / 'B.csv'}",
+            "--metric", "mse", "--run-id", "md1",
+        )
+        _cli(tmp_path, "best", "--run", "md1")
+        best = json.loads((tmp_path / ".wheeler/llmsr/runs/md1/best.json").read_text())
+
+        stdout = _run_discovery(tmp_path, best["program"])
+        for name, (a, b) in self.TABLES.items():
+            assert f"key {name} n_rows {self.N_ROWS}" in stdout
+            # noiseless data, true form: the predictions ARE the recorded y
+            assert self._line(stdout, name) == pytest.approx(expect[name][:5], rel=1e-3)
+        # and the two tables really did get different constants
+        ns: dict = {"__name__": "best"}
+        exec(compile(best["program"], "best.py", "exec"), ns)  # noqa: S102
+        assert ns["FITTED_PARAMS_PER_KEY"]["A"][0] == pytest.approx(2.5, abs=1e-6)
+        assert ns["FITTED_PARAMS_PER_KEY"]["B"][0] == pytest.approx(-4.0, abs=1e-6)
+
+    def test_grouped_multi_dataset_applies_each_unit_its_own_constants(
+        self, tmp_path
+    ):
+        spec = self._spec(tmp_path)
+        cells = ("c01", "c02")
+        expect = {
+            f"{name}:{cell}": ys
+            for i, (name, (a, b)) in enumerate(self.TABLES.items())
+            for cell, ys in self._table(
+                tmp_path / f"{name}.csv", a, b, seed=20 + i, cells=cells
+            ).items()
+        }
+        _cli(
+            tmp_path, "init", "--spec", str(spec),
+            "--data", f"A={tmp_path / 'A.csv'}", "--data", f"B={tmp_path / 'B.csv'}",
+            "--metric", "mse", "--group-by", "cell_id", "--run-id", "md2",
+        )
+        _cli(tmp_path, "best", "--run", "md2")
+        best = json.loads((tmp_path / ".wheeler/llmsr/runs/md2/best.json").read_text())
+
+        stdout = _run_discovery(tmp_path, best["program"])
+        assert stdout.count("prediction[:5]") == len(expect) == 4
+        for key, ys in expect.items():
+            assert f"key {key} n_rows {self.N_ROWS}" in stdout
+            assert self._line(stdout, key) == pytest.approx(ys[:5], rel=1e-3)
 
 
 class TestRunnableProgramUnit:

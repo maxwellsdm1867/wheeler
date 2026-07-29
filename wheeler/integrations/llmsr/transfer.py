@@ -55,10 +55,12 @@ CLAIM_CONSTANTS = "constants"
 
 # The regime vocabulary, matching `discover.py`. Duplicated as literals rather
 # than imported because `discover.py` is the graph writer and this is not: a
-# reporting module importing the ingest would invert the dependency for three
-# strings.
+# reporting module importing the ingest would invert the dependency for four
+# strings. `REGIME_HELD_OUT_FORM` is not a synonym for `REGIME_HELD_OUT`: see
+# `_refit_regime`.
 REGIME_SCORED = "scored"
 REGIME_HELD_OUT = "held_out"
+REGIME_HELD_OUT_FORM = "held_out_form"
 REGIME_UNKNOWN = "unknown"
 
 _REFIT_LABEL = (
@@ -145,10 +147,12 @@ def _refit_regime(regime: str, reason: str) -> tuple[str, str]:
     A refit fits constants on the data it reports, so the number is held out for
     the FORM and not for the constants. Saying ``held_out`` unqualified would
     claim more than the measurement supports, which is the failure mode the
-    regime labels exist to prevent.
+    regime labels exist to prevent, so it gets its own label as well as its own
+    reason. ``discover._refit_regime`` applies the same rule to the refit numbers
+    in ``best.json``, so a transfer number and a Finding read the same way.
     """
     if regime == REGIME_HELD_OUT:
-        return REGIME_HELD_OUT, (
+        return REGIME_HELD_OUT_FORM, (
             reason + ", but the constants WERE refitted on it, so this number is "
             "held out for the FORM only, never for the constants"
         )

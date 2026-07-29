@@ -384,25 +384,28 @@ class TestPerDatasetRefit:
 # ------------------------------------------------------------- the emitted .py
 
 class TestEmittedProgram:
-    """A run whose keys span several files gets constants, never a broken runner.
+    """A run whose keys span several files gets a runner that ADDRESSES them.
 
-    `selection.py`'s footers address ONE file. For a multi-dataset run the flat
-    branch would write `FITTED_PARAMS = []` and raise, and the grouped branch
-    would match keys like `A:c01` against one file's cell labels and report zero
-    rows for every group WITHOUT failing. The second is the dangerous one: a
-    silent wrong answer is exactly what the per-group protocol exists to prevent.
-    Writing the real multi-dataset runner is issue #107 slice S8.
+    `selection.py`'s other two footers address ONE file. For a multi-dataset run
+    the flat branch would write `FITTED_PARAMS = []` and raise, and the grouped
+    branch would match keys like `A:c01` against one file's cell labels and
+    report zero rows for every group WITHOUT failing. The second is the dangerous
+    one: a silent wrong answer is exactly what the per-group protocol exists to
+    prevent. So `_multidata_footer` loops the scored datasets and the groups
+    inside them, applying each unit's OWN constants to that unit's OWN rows (S8).
+
+    These assert the SHAPE the footer chose and the mismatch guard. That it
+    really runs and prints the right numbers is
+    `test_runnable_program.py::TestFourShapesRun`, which executes all four.
     """
 
-    # The literal runner guard both footers emit. Matched exactly, because the
-    # refusal comment itself has to say the word __main__ to explain itself.
     GUARD = "if __name__ == '__main__':"
 
     def _program(self, walked: dict, path: Path) -> Path:
         path.write_text(walked["best"]["program"])
         return path
 
-    def test_a_multi_dataset_run_emits_constants_and_no_runner(
+    def test_a_multi_dataset_run_emits_per_unit_constants_and_a_runner(
         self, project, monkeypatch, tmp_path
     ):
         monkeypatch.chdir(project)
@@ -413,12 +416,7 @@ class TestEmittedProgram:
         program = walked["best"]["program"]
         assert "FITTED_PARAMS = []" not in program
         assert "FITTED_PARAMS_PER_KEY" in program
-        assert "slice S8" in program
-        # There IS a `__main__` block, and it exists only to refuse: the file
-        # must not be runnable, but it also must not exit 0 in silence, which
-        # would read as success. See `_multidata_footer`.
         assert self.GUARD in program
-        assert "SystemExit" in program
 
         # the constants really are in the file, per unit, and reachable.
         # `__name__` is bound to something other than `__main__` so importing
@@ -431,34 +429,68 @@ class TestEmittedProgram:
         assert set(ns["HELD_OUT_DATASETS"]) == {"A"}
         assert ns["METRIC"]["name"] == "mse"
 
-    def test_running_it_fails_loudly_rather_than_succeeding_in_silence(
+    def test_a_held_out_dataset_is_named_but_never_fitted(
         self, project, monkeypatch, tmp_path
     ):
-        """Running it must be unmistakable, not merely harmless.
+        """The seed table has no constants, so the runner must not invent any.
 
-        Emitting no runner at all would exit 0 printing nothing, and an exit 0
-        reads as success: the scientist would have to notice an ABSENCE and go
-        hunting for a comment to explain it. So the file exits non-zero and says
-        what it is, why there is no runner, and where the constants are. Nothing
-        it does can be mistaken for a result.
+        It says so instead, and points at the verb that WOULD produce a number
+        for it (`transfer`), which is a separate act with its own provenance.
         """
         import subprocess
         import sys
 
         monkeypatch.chdir(project)
-        walked = walk_case(project, "emit-run", [
-            "--data", "A=a.csv", "--data", "B=b.csv", "--score-on", "A,B",
+        walked = walk_case(project, "emit-heldout", [
+            "--data", "A=a.csv", "--data", "B=b.csv", "--data", "C=c.csv",
+            "--seed-from", "A", "--score-on", "B,C",
         ])
         path = self._program(walked, tmp_path / "best.py")
         proc = subprocess.run(
             [sys.executable, str(path)], capture_output=True, text=True
         )
-        assert proc.returncode != 0, "exit 0 would read as success"
-        assert proc.stdout.strip() == "", "nothing that looks like a result"
-        message = proc.stderr
-        assert "MULTI-DATASET" in message
-        assert "FITTED_PARAMS_PER_KEY" in message, "must say where the answer is"
-        assert "S8" in message, "must say what would fix it"
+        assert proc.returncode == 0, proc.stderr
+        assert "dataset A HELD OUT" in proc.stdout
+        assert "wheeler llmsr transfer" in proc.stdout
+        # and no prediction was printed for it
+        assert "key A " not in proc.stdout
+
+    def test_a_unit_the_run_has_no_constants_for_is_loud_not_guessed(
+        self, project, monkeypatch, tmp_path
+    ):
+        """The file gained a group after the search: refuse, do not substitute.
+
+        Applying a neighbouring group's theta would answer a different question
+        dressed as this one, and it would do it while printing five plausible
+        numbers. So the unit is skipped, named, and the run exits non-zero.
+        """
+        import subprocess
+        import sys
+
+        monkeypatch.chdir(project)
+        _write_table(project / "p.csv", 2.0, 0.5, seed=71, cells=2)
+        _write_table(project / "q.csv", -1.5, 3.0, seed=72, cells=2)
+        walked = walk_case(project, "emit-drift", [
+            "--data", "P=p.csv", "--data", "Q=q.csv", "--group-by", "cell",
+        ])
+        path = self._program(walked, tmp_path / "best.py")
+
+        # a third cell lands in P AFTER the search scored it
+        with (project / "p.csv").open("a") as fh:
+            for xi in (0.1, 0.2, 0.3):
+                fh.write(f"c99,{xi!r},{float(2.0 * xi + 0.5 * xi**2)!r}\n")
+
+        proc = subprocess.run(
+            [sys.executable, str(path)], capture_output=True, text=True
+        )
+        assert proc.returncode != 0, "a unit with no constants must not pass"
+        assert "key P:c99 n_rows 3 NO CONSTANTS" in proc.stdout
+        assert "P:c99" in proc.stderr
+        assert "neighbour" in proc.stderr
+        # the units it DID have constants for still reported, so the failure
+        # names what is wrong rather than hiding what is right
+        assert "key P:c00" in proc.stdout
+        assert "key Q:c01" in proc.stdout
 
     def test_a_grouped_multi_dataset_run_never_reaches_the_group_footer(
         self, project, monkeypatch
@@ -471,11 +503,10 @@ class TestEmittedProgram:
             "--data", "P=p.csv", "--data", "Q=q.csv", "--group-by", "cell",
         ])
         program = walked["best"]["program"]
-        # It took the refusing footer, not the grouped one. The grouped runner
-        # would have matched `P:c00` against one file's `cell` column and
+        # It took the multi-dataset footer, not the grouped one. The grouped
+        # runner would have matched `P:c00` against one file's `cell` column and
         # reported zero rows for every group, silently.
         assert "FITTED_PARAMS_PER_GROUP" not in program
-        assert "SystemExit" in program
         ns: dict = {"__name__": "best"}
         exec(compile(program, "best.py", "exec"), ns)  # noqa: S102
         assert set(ns["FITTED_PARAMS_PER_KEY"]) == {
