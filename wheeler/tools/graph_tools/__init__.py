@@ -298,23 +298,25 @@ TOOL_DEFINITIONS = [
     {
         "name": "update_node",
         "description": (
-            "Update fields on an existing knowledge graph node. Only non-empty "
-            "fields are applied. The 'updated' timestamp is set automatically. "
-            "Use for correcting descriptions, changing status, adjusting "
-            "confidence, or updating any node field after creation."
+            "Update fields on an existing knowledge graph node. Omitted (null) "
+            "fields are left unchanged; an empty string is a real value that "
+            "clears the field (e.g. path='' resets a dangling path). The "
+            "'updated' timestamp is set automatically. Use for correcting "
+            "descriptions, changing status, adjusting confidence, or updating "
+            "any node field after creation."
         ),
         "parameters": {
             "node_id": {"type": "string", "description": "The node ID to update (e.g., F-3a2b)"},
-            "description": {"type": "string", "description": "Updated description (Finding, Dataset)", "default": ""},
-            "statement": {"type": "string", "description": "Updated statement (Hypothesis)", "default": ""},
-            "question": {"type": "string", "description": "Updated question (OpenQuestion)", "default": ""},
-            "title": {"type": "string", "description": "Updated title (Paper, Document, ResearchNote)", "default": ""},
-            "content": {"type": "string", "description": "Updated content (ResearchNote)", "default": ""},
+            "description": {"type": "string", "description": "Updated description (Finding, Dataset)", "default": None},
+            "statement": {"type": "string", "description": "Updated statement (Hypothesis)", "default": None},
+            "question": {"type": "string", "description": "Updated question (OpenQuestion)", "default": None},
+            "title": {"type": "string", "description": "Updated title (Paper, Document, ResearchNote)", "default": None},
+            "content": {"type": "string", "description": "Updated content (ResearchNote)", "default": None},
             "confidence": {"type": "number", "description": "Confidence 0.0-1.0 (Finding)", "default": None},
             "priority": {"type": "integer", "description": "Priority 1-10 (OpenQuestion)", "default": None},
-            "status": {"type": "string", "description": "Status (Hypothesis, Document, Execution)", "default": ""},
-            "tier": {"type": "string", "description": "reference or generated", "default": ""},
-            "path": {"type": "string", "description": "File path (Dataset, Script, Document)", "default": ""},
+            "status": {"type": "string", "description": "Status (Hypothesis, Document, Execution)", "default": None},
+            "tier": {"type": "string", "description": "reference or generated", "default": None},
+            "path": {"type": "string", "description": "File path (Dataset, Script, Document)", "default": None},
         },
         "required": ["node_id"],
     },
