@@ -31,15 +31,14 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import typer
 
+from . import data as data_mod
 from . import fit as fit_mod
 from . import loaders as loaders_mod
 from . import metrics as metrics_mod
 from . import optimizers as optimizers_mod
 from . import runs as runs_mod
-from .data import _as_groups, _load_data
 from .runs import (
     _RUNS_ROOT,
     _append_submission,
@@ -80,6 +79,27 @@ _METRIC_HELP = (
     "scoring metric; built in: "
     + ", ".join(sorted(metrics_mod.BUILTIN_METRICS))
     + " (run `wheeler llmsr metrics` for every registered metric, yours included)"
+)
+
+
+_DATA_HELP = (
+    "training table, repeatable. `--data path` or `--data NAME=path`, where NAME "
+    "is what the score key calls it. Every scored dataset refits the candidate's "
+    "OWN constants, so scoring a form on a table it was not extracted from tests "
+    "the FORM rather than the parameterization. A single unnamed --data is named "
+    f"{fit_mod.UNGROUPED!r}, exactly as before."
+)
+
+_SEED_FROM_HELP = (
+    "which dataset shapes the prompt (default: the first --data). This is where "
+    "the FORM comes from; --score-on is what it is judged on. Naming them apart "
+    "is how a law extracted from one cell gets tested on cells it never saw."
+)
+
+_SCORE_ON_HELP = (
+    "which datasets enter the objective, by name, comma-separated or repeated "
+    "(default: all of them). A dataset named here IS optimized against: 40 rounds "
+    "scored on it makes its error a training number, not a generalization claim."
 )
 
 
@@ -153,7 +173,7 @@ def _score_body(
     version_generated: Optional[int],
     template,
     fte: str,
-    groups: list[tuple[str, np.ndarray, object]],
+    units: list[data_mod.Unit],
     metric,
     max_nparams: int,
     timeout: int,
@@ -164,8 +184,13 @@ def _score_body(
 ) -> tuple[fit_mod.FitResult, str, object]:
     """Build the program from a body, fit + score it. Returns (result, program, fn).
 
+    ``units`` are the (dataset, group) pairs this run scores against. Each refits
+    its OWN constants under the one shared form, so a candidate is judged on how
+    the FORM travels rather than on one lucky parameterization.
+
     ``progress_path`` is the during-the-fit channel: the fit refreshes it as each
-    group lands, so ``status`` can answer where a long refit has got to.
+    unit lands, so ``status`` can answer where a long refit has got to and which
+    table it is on.
 
     ``optimizer``, ``restarts`` and ``seed`` are the run's fit knobs, bound at
     ``init`` and read back off ``meta.json`` for every later submit, so one run
@@ -185,7 +210,7 @@ def _score_body(
     result = fit_mod.evaluate_body_grouped(
         program,
         fte,
-        groups,
+        data_mod.as_groups(units),
         metric,
         max_nparams=max_nparams,
         timeout_seconds=timeout,
@@ -193,8 +218,27 @@ def _score_body(
         optimizer=optimizer,
         restarts=restarts,
         seed=seed,
+        dataset_of=data_mod.dataset_of(units),
     )
     return result, program, fn
+
+
+def _units_for(meta: dict, metric) -> list[data_mod.Unit]:
+    """Load the units a run scores against, exactly as its ``meta.json`` declares.
+
+    Everything that decides the key set (which datasets, which grouping column,
+    which scheme) is read back off the run rather than re-derived from the command
+    line, because every candidate in one run must present the buffer with
+    identical keys. A run dir written before datasets were nameable reads back as
+    its single ``data_path`` under the old scheme, so it keeps replaying.
+    """
+    return data_mod.load_units(
+        data_mod.scored_from_meta(meta),
+        metric,
+        group_by=str(meta.get("group_by", "") or ""),
+        scheme=data_mod.scheme_from_meta(meta),
+        loader=str(meta.get("loader", "") or ""),
+    )
 
 
 def _optimizer_report(meta: dict, winner: Optional[dict]) -> dict:
@@ -212,6 +256,89 @@ def _optimizer_report(meta: dict, winner: Optional[dict]) -> dict:
         "used": (winner or {}).get("optimizer", ""),
         "restarts": knobs["restarts"],
         "seed": knobs["seed"],
+    }
+
+
+def _dataset_report(meta: dict, winner: Optional[dict]) -> dict:
+    """Per-dataset breakdown of the winner, every entry LABELLED by regime.
+
+    ``scored`` means the search optimized against that dataset: it refitted the
+    candidate's constants on it and ranked every candidate by the result. Forty
+    rounds against a table makes that table's error a training number however good
+    it looks, so it is never a generalization claim. ``held_out`` means the search
+    did neither.
+
+    A dataset that only ever SEEDED the prompt is held out by that rule, and its
+    entry says so in ``regime_reason`` and carries ``seed: true``, because a
+    generator that was shown a table did use it to choose the form even though the
+    search never scored against it. The reader is told; nothing is inferred for
+    them.
+
+    Held-out entries carry no value: this run did not compute one. Reporting a
+    number here would mean refitting the winner on data the run never touched,
+    which is a separate act with its own provenance, not a footnote on this one.
+
+    The vocabulary is ``discover.py``'s, imported rather than restated so the two
+    cannot drift. Lazy, because ``discover`` pulls in the graph adapter stack and
+    nothing about writing ``best.json`` needs it loaded.
+    """
+    from .discover import REGIME_HELD_OUT, REGIME_SCORED
+
+    datasets = data_mod.datasets_from_meta(meta)
+    scored = {d.name for d in data_mod.scored_from_meta(meta)}
+    scheme = data_mod.scheme_from_meta(meta)
+    seed_name = data_mod.resolve_seed_from(
+        datasets, str(meta.get("seed_from", "") or "")
+    ).name
+
+    values = (winner or {}).get("per_group_value") or {}
+    params = (winner or {}).get("params_per_group") or {}
+
+    entries = []
+    for spec in datasets:
+        is_seed = spec.name == seed_name
+        if spec.name in scored:
+            keys = data_mod.keys_for(spec.name, list(values), scheme)
+            per_key = {k: values[k] for k in keys}
+            entries.append({
+                "name": spec.name,
+                "path": spec.path,
+                "seed": is_seed,
+                "regime": REGIME_SCORED,
+                "regime_reason": (
+                    "the search refitted this dataset's own constants and ranked "
+                    "every candidate on the result"
+                ),
+                # The mean over this dataset's units, which is what the fit
+                # aggregates to, alongside the vector it is a mean of.
+                "value": (sum(per_key.values()) / len(per_key)) if per_key else None,
+                "keys": keys,
+                "value_per_key": per_key,
+                "params_per_key": {k: params[k] for k in keys if k in params},
+            })
+            continue
+        entries.append({
+            "name": spec.name,
+            "path": spec.path,
+            "seed": is_seed,
+            "regime": REGIME_HELD_OUT,
+            "regime_reason": (
+                "the search never refitted constants on this dataset or ranked a "
+                "candidate by it; it shaped the prompt only"
+                if is_seed
+                else "the search never refitted constants on this dataset or "
+                "ranked a candidate by it"
+            ),
+            "value": None,
+            "keys": [],
+            "value_per_key": {},
+            "params_per_key": {},
+        })
+    return {
+        "seed_from": seed_name,
+        "score_on": [d.name for d in data_mod.scored_from_meta(meta)],
+        "score_key_scheme": scheme,
+        "entries": entries,
     }
 
 
@@ -316,8 +443,10 @@ def optimizers() -> None:
 @llmsr_app.command()
 def init(
     spec: Path = typer.Option(..., exists=True, readable=True, help="spec .txt (skeleton + evaluate)"),
-    data: Path = typer.Option(..., exists=True, readable=True, help="training CSV (last column = target)"),
+    data: list[str] = typer.Option(..., "--data", help=_DATA_HELP),
     metric: str = typer.Option(..., help=_METRIC_HELP),
+    seed_from: str = typer.Option("", "--seed-from", help=_SEED_FROM_HELP),
+    score_on: Optional[list[str]] = typer.Option(None, "--score-on", help=_SCORE_ON_HELP),
     generator: str = typer.Option("claude", help="candidate generator: claude | codex"),
     run_id: Optional[str] = typer.Option(None, help="explicit run id (default: random)"),
     max_nparams: Optional[int] = typer.Option(None, help="free-constant budget (default: spec MAX_NPARAMS or 10)"),
@@ -354,6 +483,15 @@ def init(
     if restarts < 0:
         raise typer.BadParameter("restarts must be >= 0")
 
+    # The dataset roles, resolved once and frozen onto the run. The key SCHEME in
+    # particular: two candidates in one run must present the vendored buffer with
+    # identical keys, so it is decided here and read back from meta.json forever
+    # after, never re-derived from a later command line.
+    datasets = data_mod.parse_datasets(data)
+    scored = data_mod.resolve_score_on(datasets, score_on or [])
+    seed_ds = data_mod.resolve_seed_from(datasets, seed_from)
+    scheme = data_mod.key_scheme(scored)
+
     spec_text = spec.read_text()
     fte, ftr = _extract_names(spec_text)
     template = code_manipulation.text_to_program(spec_text)
@@ -369,7 +507,19 @@ def init(
     meta = {
         "run_id": rid,
         "spec_path": str(spec.resolve()),
-        "data_path": str(data.resolve()),
+        # The first SCORED dataset. `data_path` has always meant "the table this
+        # run's constants are fitted on", and the scored datasets are exactly
+        # that, so held-out scoring and the runnable footer keep pointing at a
+        # table the run really trained on. Identical to the old value whenever
+        # there is one dataset.
+        "data_path": scored[0].path,
+        # The dataset roles, in full. `datasets` is every declaration in order,
+        # `score_on` is the objective, `seed_from` is where the FORM came from,
+        # and `score_key_scheme` is how a unit is named in the score vector.
+        "datasets": [d.as_dict() for d in datasets],
+        "seed_from": seed_ds.name,
+        "score_on": [d.name for d in scored],
+        "score_key_scheme": scheme,
         "metric": metric_obj.key,
         "generator": gen,
         "function_to_evolve": fte,
@@ -387,14 +537,20 @@ def init(
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
     # seed the buffer with the spec's initial equation body (submission 0, all islands)
-    X, y, labels = _load_data(
-        str(meta["data_path"]), metric_obj, str(meta.get("group_by", ""))
-    )
+    units = _units_for(meta, metric_obj)
+    # A declared-but-not-scored dataset is read once here and thrown away, purely
+    # so a typo or an unreadable file fails at `init` rather than at whatever
+    # later step first reaches for it.
+    held_out = [d for d in datasets if d not in scored]
+    if held_out:
+        data_mod.load_units(
+            held_out, metric_obj, group_by=group_by.strip(), scheme=scheme,
+        )
     seed_body = template.get_function(fte).body
     _t0 = time.time()
     result, program, _fn = _score_body(
         seed_body, None, template, fte,
-        _as_groups(X, y, labels), metric_obj, max_nparams, timeout,
+        units, metric_obj, max_nparams, timeout,
         progress_path=run_dir / runs_mod.PROGRESS_FILE,
         **_fit_knobs(meta),
     )
@@ -428,6 +584,11 @@ def init(
         "generator": gen,
         "optimizer": opt_key,
         "function_to_evolve": fte,
+        "datasets": [d.as_dict() for d in datasets],
+        "seed_from": seed_ds.name,
+        "score_on": [d.name for d in scored],
+        "score_key_scheme": scheme,
+        "score_keys": [u.key for u in units],
         "seed_valid": result.valid,
         "seed_value": result.value,
     }))
@@ -437,7 +598,13 @@ def init(
 def prompt(
     run: str = typer.Option(..., help="run id or run dir"),
 ) -> None:
-    """Emit the next prompt (best-so-far skeletons) for the generator sub-agent."""
+    """Emit the next prompt (best-so-far skeletons) for the generator sub-agent.
+
+    The prompt TEXT is the vendored buffer's, untouched. What is emitted beside it
+    is the run's dataset roles, because the generator has to be shown a table to
+    propose a form from, and which table that is (``seed_from``) is a declared
+    choice rather than whichever one happens to be scored.
+    """
     run_dir = _run_dir(run)
     meta = _read_meta(run_dir)
     template, db, _fte = _rebuild_buffer(run_dir, meta)
@@ -449,11 +616,15 @@ def prompt(
     prompt_file = prompts_dir / f"{n}.txt"
     prompt_file.write_text(p.code)
 
+    datasets = data_mod.datasets_from_meta(meta)
+    seed_ds = data_mod.resolve_seed_from(datasets, str(meta.get("seed_from", "") or ""))
     typer.echo(json.dumps({
         "island_id": p.island_id,
         "version_generated": p.version_generated,
         "prompt_file": str(prompt_file),
         "function_to_evolve": meta["function_to_evolve"],
+        "seed_from": seed_ds.as_dict(),
+        "score_on": [d.name for d in data_mod.scored_from_meta(meta)],
         "prompt": p.code,
     }))
 
@@ -488,14 +659,12 @@ def submit(
     meta = _read_meta(run_dir)
     metric_obj = _metric_for(meta["metric"])
     template, db, fte = _rebuild_buffer(run_dir, meta)
-    X, y, labels = _load_data(
-        str(meta["data_path"]), metric_obj, str(meta.get("group_by", ""))
-    )
+    units = _units_for(meta, metric_obj)
 
     body = body_file.read_text()
     _t0 = time.time()
     result, program, fn = _score_body(
-        body, version_generated, template, fte, _as_groups(X, y, labels),
+        body, version_generated, template, fte, units,
         metric_obj, meta["max_nparams"], meta["timeout"],
         progress_path=run_dir / runs_mod.PROGRESS_FILE,
         **_fit_knobs(meta),
@@ -564,6 +733,11 @@ def best(
     # win however well it scored. The count is reported so that truncation of the
     # frontier is visible rather than silent.
     rejected = _n_constraint_rejected(subs)
+    # Absent (not empty) on a run bound to one default-named dataset, so every
+    # existing reader of best.json sees exactly the file it saw before. The block
+    # appears the moment naming a dataset could matter, which is the same
+    # condition that qualifies the score keys.
+    multi = data_mod.scheme_from_meta(meta) == data_mod.SCHEME_DATASET
 
     # best.json is the FINAL result only. The full per-candidate search trail
     # (bodies, programs, params, scores) stays in submissions.jsonl in the run
@@ -578,6 +752,7 @@ def best(
             "generator": meta["generator"],
             "equation": None,
             "params": [],
+            **({"datasets": _dataset_report(meta, None)} if multi else {}),
             "program": None,
             "metrics": {},
             "optimizer": _optimizer_report(meta, None),
@@ -642,6 +817,10 @@ def best(
             if meta.get("group_by")
             else {}
         ),
+        # Multi-dataset runs only. Which tables the search optimized against and
+        # which it merely declared, each labelled by regime so a held-out number
+        # can never be read as a scored one or the other way round.
+        **({"datasets": _dataset_report(meta, winner)} if multi else {}),
         "program": program,
         "metrics": metrics_out,
         "optimizer": _optimizer_report(meta, winner),

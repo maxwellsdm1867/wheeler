@@ -275,7 +275,11 @@ def _fit_one_group(
 
 
 def _emit_progress(
-    progress_path: str | Path | None, group: str | None, done: int, total: int
+    progress_path: str | Path | None,
+    dataset: str | None,
+    group: str | None,
+    done: int,
+    total: int,
 ) -> None:
     """Write one during-the-fit ping so a long run can be asked where it is.
 
@@ -284,6 +288,11 @@ def _emit_progress(
     under us must not invalidate a candidate. Nothing here touches the queue
     protocol or what ``_fit_one_group`` returns, and the per-group calls happen
     OUTSIDE the ``np.errstate`` block, so the numerics cannot see it either.
+
+    ``dataset`` and ``group`` together name the unit in flight, so a run scoring
+    one form against several tables can be asked WHICH table it is on, not just
+    which group. Both are ``None`` on the ping written before the fork, which is
+    the honest reading of it: a fit has started and no unit has begun.
 
     A ``progress_path`` of ``None`` makes this a no-op, which is the parity
     property: a caller that passes no path behaves exactly as it did before this
@@ -298,9 +307,7 @@ def _emit_progress(
 
         _write_json_atomic(Path(progress_path), {
             "phase": "fit",
-            # One dataset per run today. S2 (scoring a form against several
-            # datasets) is what fills this in with the real dataset key.
-            "dataset": UNGROUPED,
+            "dataset": dataset,
             "group": group,
             "done": done,
             "total": total,
@@ -312,11 +319,15 @@ def _emit_progress(
 
 def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams, q,
             progress_path=None, primary=None, escalation=None,
-            restarts=DEFAULT_RESTARTS, seed=DEFAULT_SEED):
+            restarts=DEFAULT_RESTARTS, seed=DEFAULT_SEED, dataset_of=None):
     """Fit one candidate FORM against every group, each with its own constants.
 
     ``groups`` is a list of ``(label, X, y)``. The form is shared; theta is not.
     Compiling the program is done once, then each group refits independently.
+
+    ``dataset_of`` maps a label to the dataset it came from, for the progress
+    ping alone. Absent, every label reports ``UNGROUPED``, which is both what this
+    channel has always said and, for a run with one default-named dataset, true.
 
     Runs in the forked child, which is also where the per-group progress pings
     are written: the parent is blocked in ``proc.join`` and so cannot report
@@ -349,7 +360,10 @@ def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams
                 equation, metric, gX, gy, max_nparams,
                 primary, escalation, restarts, seed,
             )
-            _emit_progress(progress_path, label, done, total)
+            _emit_progress(
+                progress_path, (dataset_of or {}).get(label, UNGROUPED),
+                label, done, total,
+            )
         q.put({"groups": fitted})
     except Exception as exc:  # any failure in untrusted body -> invalid, never raise
         q.put({"error": f"{type(exc).__name__}: {exc}"})
@@ -436,6 +450,7 @@ def evaluate_body_grouped(
     optimizer: str = AUTO,
     restarts: int = DEFAULT_RESTARTS,
     seed: int = DEFAULT_SEED,
+    dataset_of: dict[str, str] | None = None,
 ) -> FitResult:
     """Fit one FORM against every group, each refitting its own constants.
 
@@ -465,6 +480,10 @@ def evaluate_body_grouped(
     and ``seed`` control the multi-start inits. The defaults are what the fit has
     always used, except that ``auto`` will escalate off a flat gradient where
     plain BFGS could only report the init it never left.
+
+    ``dataset_of`` labels each group with the dataset it came from, which a run
+    scoring several tables needs so the progress ping can say WHICH table is
+    under the needle. It is telemetry only: nothing in the fit reads it.
     """
     try:
         primary, escalation = resolve(optimizer)
@@ -479,12 +498,12 @@ def evaluate_body_grouped(
     # Ping before forking, so that a fit which wedges on its FIRST group is still
     # visibly a fit in flight rather than an idle run. Done in the parent because
     # by definition the child has not started yet.
-    _emit_progress(progress_path, None, 0, len(groups))
+    _emit_progress(progress_path, None, None, 0, len(groups))
     queue = _MP_CONTEXT.Queue()
     proc = _MP_CONTEXT.Process(
         target=_worker,
         args=(program_str, function_to_evolve, groups, metric, max_nparams, queue,
-              progress_path, primary, escalation, restarts, seed),
+              progress_path, primary, escalation, restarts, seed, dataset_of),
     )
     proc.start()
     proc.join(timeout=timeout_seconds * max(1, len(groups)))
