@@ -37,6 +37,8 @@ from __future__ import annotations
 import inspect
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -186,11 +188,52 @@ def _fit_one_group(opt, equation, metric: Metric, X, y, max_nparams) -> dict:
     }
 
 
-def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams, q):
+def _emit_progress(
+    progress_path: str | Path | None, group: str | None, done: int, total: int
+) -> None:
+    """Write one during-the-fit ping so a long run can be asked where it is.
+
+    Telemetry, never numerics. Every failure is swallowed, because the fit is the
+    product and progress is only the commentary: a full disk or a run dir deleted
+    under us must not invalidate a candidate. Nothing here touches the queue
+    protocol or what ``_fit_one_group`` returns, and the per-group calls happen
+    OUTSIDE the ``np.errstate`` block, so the numerics cannot see it either.
+
+    A ``progress_path`` of ``None`` makes this a no-op, which is the parity
+    property: a caller that passes no path behaves exactly as it did before this
+    channel existed.
+    """
+    if progress_path is None:
+        return
+    try:
+        # Local import: `runs` imports `fit`, so the dependency only runs one way
+        # at module level. Same lazy-to-break-a-cycle pattern as elsewhere.
+        from .runs import _write_json_atomic
+
+        _write_json_atomic(Path(progress_path), {
+            "phase": "fit",
+            # One dataset per run today. S2 (scoring a form against several
+            # datasets) is what fills this in with the real dataset key.
+            "dataset": UNGROUPED,
+            "group": group,
+            "done": done,
+            "total": total,
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
+
+
+def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams, q,
+            progress_path=None):
     """Fit one candidate FORM against every group, each with its own constants.
 
     ``groups`` is a list of ``(label, X, y)``. The form is shared; theta is not.
     Compiling the program is done once, then each group refits independently.
+
+    Runs in the forked child, which is also where the per-group progress pings
+    are written: the parent is blocked in ``proc.join`` and so cannot report
+    anything until the whole candidate is done.
     """
     try:
         import scipy.optimize as opt  # local: only needed in the child
@@ -205,12 +248,15 @@ def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams
             q.put({"error": f"no callable {function_to_evolve!r}"})
             return
 
-        q.put({
-            "groups": {
-                label: _fit_one_group(opt, equation, metric, gX, gy, max_nparams)
-                for label, gX, gy in groups
-            }
-        })
+        # An explicit loop rather than a dict comprehension so a group can be
+        # counted as it lands. Iteration order and the resulting dict are
+        # identical to the comprehension this replaced.
+        total = len(groups)
+        fitted: dict[str, dict] = {}
+        for done, (label, gX, gy) in enumerate(groups, start=1):
+            fitted[label] = _fit_one_group(opt, equation, metric, gX, gy, max_nparams)
+            _emit_progress(progress_path, label, done, total)
+        q.put({"groups": fitted})
     except Exception as exc:  # any failure in untrusted body -> invalid, never raise
         q.put({"error": f"{type(exc).__name__}: {exc}"})
 
@@ -284,6 +330,7 @@ def evaluate_body_grouped(
     *,
     max_nparams: int = _DEFAULT_MAX_NPARAMS,
     timeout_seconds: int = _DEFAULT_TIMEOUT,
+    progress_path: str | Path | None = None,
 ) -> FitResult:
     """Fit one FORM against every group, each refitting its own constants.
 
@@ -303,11 +350,21 @@ def evaluate_body_grouped(
 
     The timeout scales with the group count: it bounds one fit, and there are
     now ``len(groups)`` of them behind one fork.
+
+    ``progress_path``, when given, names a file this refreshes as each group
+    lands, so a submit that refits forty groups can be asked where it is instead
+    of being silent for minutes. It is pure telemetry: passing ``None`` (the
+    default) leaves every byte of the result and every number in it unchanged.
     """
+    # Ping before forking, so that a fit which wedges on its FIRST group is still
+    # visibly a fit in flight rather than an idle run. Done in the parent because
+    # by definition the child has not started yet.
+    _emit_progress(progress_path, None, 0, len(groups))
     queue = _MP_CONTEXT.Queue()
     proc = _MP_CONTEXT.Process(
         target=_worker,
-        args=(program_str, function_to_evolve, groups, metric, max_nparams, queue),
+        args=(program_str, function_to_evolve, groups, metric, max_nparams, queue,
+              progress_path),
     )
     proc.start()
     proc.join(timeout=timeout_seconds * max(1, len(groups)))

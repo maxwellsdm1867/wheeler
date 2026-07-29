@@ -36,19 +36,20 @@ import typer
 
 from . import fit as fit_mod
 from . import metrics as metrics_mod
+from . import runs as runs_mod
 from .data import _as_groups, _load_data
 from .runs import (
     _RUNS_ROOT,
     _append_submission,
     _n_constraint_rejected,
     _now,
-    _progress,
     _read_meta,
     _read_submissions,
     _run_dir,
     _scores_per_test,
     _timing,
     _write_heartbeat,
+    status_payload,
 )
 from .selection import (
     _SELECT_MODES,
@@ -130,8 +131,13 @@ def _score_body(
     metric,
     max_nparams: int,
     timeout: int,
+    progress_path: Optional[Path] = None,
 ) -> tuple[fit_mod.FitResult, str, object]:
-    """Build the program from a body, fit + score it. Returns (result, program, fn)."""
+    """Build the program from a body, fit + score it. Returns (result, program, fn).
+
+    ``progress_path`` is the during-the-fit channel: the fit refreshes it as each
+    group lands, so ``status`` can answer where a long refit has got to.
+    """
     fn, program = evaluator._sample_to_program(body, version_generated, template, fte)
     if evaluator._calls_ancestor(program, fte):
         return (
@@ -150,6 +156,7 @@ def _score_body(
         metric,
         max_nparams=max_nparams,
         timeout_seconds=timeout,
+        progress_path=progress_path,
     )
     return result, program, fn
 
@@ -242,6 +249,7 @@ def init(
     result, program, _fn = _score_body(
         seed_body, None, template, fte,
         _as_groups(X, y, labels), metric_obj, max_nparams, timeout,
+        progress_path=run_dir / runs_mod.PROGRESS_FILE,
     )
     _append_submission(run_dir, {
         "sample_order": 0,
@@ -307,15 +315,15 @@ def status(
     """Heartbeat: where a running (or finished) search is right now.
 
     Prints samples so far, how many were valid, the best metric value + equation,
-    and when progress last advanced. Safe to ping mid-run: it only reads.
+    plus ``phase`` (init | fitting | idle | done), ``seconds_since_update``, and
+    the in-flight ``progress`` ping when a fit is mid-flight. Together those three
+    answer "is it wedged?": a fit stuck on group 7 of 40 reports ``fitting`` with
+    a ``seconds_since_update`` that keeps climbing. Safe to ping mid-run: it only
+    reads.
     """
     run_dir = _run_dir(run)
     meta = _read_meta(run_dir)
-    hb = run_dir / "heartbeat.json"
-    if hb.exists():
-        typer.echo(hb.read_text().strip())
-    else:
-        typer.echo(json.dumps(_progress(run_dir, meta)))
+    typer.echo(json.dumps(status_payload(run_dir, meta)))
 
 
 @llmsr_app.command()
@@ -339,6 +347,7 @@ def submit(
     result, program, fn = _score_body(
         body, version_generated, template, fte, _as_groups(X, y, labels),
         metric_obj, meta["max_nparams"], meta["timeout"],
+        progress_path=run_dir / runs_mod.PROGRESS_FILE,
     )
     fit_seconds = time.time() - _t0
     if result.valid:
