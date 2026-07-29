@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import uuid
 from pathlib import Path
 
 import pytest
@@ -12,8 +14,39 @@ from wheeler.config import WheelerConfig, Neo4jConfig, ProjectMeta, ProjectPaths
 
 SANDBOX_DIR = Path(__file__).parent / "sandbox"
 
-# Test node IDs are prefixed so we can clean them up
-E2E_TAG = "e2e_test"
+# Test nodes are tagged with this so we can clean them up. It must be BOTH
+# unique per process AND stable across duplicate imports of this module:
+#
+#   * Unique per process, because ``cleanup_test_nodes`` is autouse and
+#     function-scoped and its delete is global ("MATCH (n) WHERE n.e2e_tag =
+#     $tag DETACH DELETE n"). With one shared literal, every test in every
+#     session deletes every OTHER concurrent session's in-flight nodes, which
+#     surfaces as "Node X not found in graph" mid-test.
+#   * Stable across imports, because tests/e2e/ has no __init__.py, so this file
+#     is imported TWICE per process: once by pytest as ``conftest`` (the copy
+#     that supplies the fixtures) and once as ``tests.e2e.conftest`` (the copy
+#     the test modules read E2E_TAG from). A bare module-level uuid4() would
+#     mint a different tag in each copy, so the fixtures would clean a tag no
+#     test ever wrote and every node would leak.
+#
+# Caching in the environment makes the value process-global rather than
+# module-global. The cache is keyed on the pid so a value inherited from a
+# parent process is replaced rather than shared with a sibling session.
+_TAG_ENV = "WHEELER_E2E_TAG"
+_TAG_PREFIX = f"e2e_test_{os.getpid()}_"
+
+
+def _process_e2e_tag() -> str:
+    """Return this process's e2e tag, minting it once on first import."""
+    cached = os.environ.get(_TAG_ENV, "")
+    if cached.startswith(_TAG_PREFIX):
+        return cached
+    tag = _TAG_PREFIX + uuid.uuid4().hex
+    os.environ[_TAG_ENV] = tag
+    return tag
+
+
+E2E_TAG = _process_e2e_tag()
 
 
 @pytest.fixture(scope="session")

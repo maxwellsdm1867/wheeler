@@ -26,13 +26,18 @@ class TestCustomBagRoundTrip:
         backend = get_backend(e2e_config)
         await backend.initialize()
 
+        # Per-process unique: Paper.id carries a uniqueness constraint, so a
+        # fixed literal makes two concurrent e2e sessions race to CREATE the
+        # same node and the loser dies with ConstraintValidationFailed.
+        paper_id = f"P-e2ecustom{E2E_TAG.rsplit('_', 1)[-1][:8]}"
+
         node_id = await backend.create_node("Paper", {
-            "id": "P-e2ecustom",
+            "id": paper_id,
             "title": "Custom bag round trip",
             "tier": "reference",
             "custom": {"relevance_score": 0.87, "venue": "NeurIPS"},
         })
-        assert node_id == "P-e2ecustom"
+        assert node_id == paper_id
 
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database

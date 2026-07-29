@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e.conftest import E2E_TAG
+
 
 class TestIssue64SessionSynthesisValidation:
     """Session-synthesis Document should validate without APPEARS_IN error."""
@@ -164,7 +166,7 @@ class TestIssue64SessionSynthesisValidation:
                 await session.run(
                     "MATCH (n {id: $id}) SET n.e2e_tag = $tag",
                     id=nid,
-                    tag="e2e_test",
+                    tag=E2E_TAG,
                 )
 
         # Cleanup files
