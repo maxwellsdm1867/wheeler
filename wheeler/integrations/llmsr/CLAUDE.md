@@ -15,7 +15,8 @@ INVERTED into four CLI verbs, and Claude Code steps it:
 
 ```
 wheeler llmsr init   --spec S --data D... --metric M [--group-by COL]
-                     [--seed-from NAME] [--score-on NAMES]           -> run dir
+                     [--seed-from NAME] [--score-on NAMES]
+                     [--use-spec-evaluate]                           -> run dir
 wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
    ... the ACT generates a candidate body with a sub-agent (no API key) ...
 wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
@@ -58,11 +59,17 @@ State persists by replaying `submissions.jsonl` through the vendored
   `.wheeler/llmsr/metrics.py` WITHOUT editing the installed package. A metric
   declares its `data_shape` (the fit path dispatches on it) and may declare hard
   `Constraint`s, which reject a candidate whatever it scored.
-- `fit.py` -- the fit/score seam: exec the program, read the `equation`
+- `fit.py` -- the DEFAULT fit/score seam: exec the program, read the `equation`
   callable, fit its free constants by minimizing `metric.loss`, report
   `metric.report`. Runs in a forked, timeout-bounded child (the body is
   model-generated code). **This is the substitution that is not upstream's**: see
-  the invariant below.
+  the invariant below. `_run_sandboxed` is that child, and it is the ONE sandbox
+  both scoring doors share.
+- `spec_eval.py` -- the OTHER door: call the spec's own `@evaluate.run`, which is
+  what upstream does. Selected per run by `--use-spec-evaluate`, never sniffed.
+  Called once per (dataset, group) unit inside `fit._run_sandboxed`, and
+  normalized into the same `FitResult` so nothing downstream can tell which door
+  produced it except by reading `optimizer.scored_by`.
 - `selection.py` -- picking the winner and reporting how it generalizes.
   `fit` (lowest training error), `ood` (best extrapolation), `parsimony`
   (simplest form among those that fit comparably, Occam). Also `_split_metrics`
@@ -83,17 +90,55 @@ State persists by replaying `submissions.jsonl` through the vendored
 
 ## Invariants
 
-- **The scoring seam is a SUBSTITUTION, and the attribution must say so.** A spec
-  declares an `@evaluate.run` that fits the candidate's constants and returns its
-  score, and upstream's loop calls it. The driver does not: it parses the name
-  into `meta["function_to_run"]` and never calls it, scoring every candidate
-  through `fit.py` + `metrics.py` instead. That is what makes the metric
-  pluggable, the constants recoverable for `best.json`, and per-group refitting
-  possible. The search algorithm, the island model, and the program-manipulation
-  logic ARE upstream's, unaltered. Any wording that claims "the scoring is
-  theirs, untouched" is false: it is corrected in `vendor/NOTICE.md` and the root
-  `README.md`. PLANNED (issue #107, slice S4): make the spec's `@evaluate.run`
-  selectable, so the substitution becomes a choice rather than an imposition.
+- **The scoring seam is a SUBSTITUTION BY DEFAULT and a CHOICE by flag, and the
+  attribution must say so.** A spec declares an `@evaluate.run` that fits the
+  candidate's constants and returns its score, and upstream's loop calls it. The
+  default driver does not: it parses the name into `meta["function_to_run"]` and
+  never calls it, scoring every candidate through `fit.py` + `metrics.py`
+  instead. That is what makes the metric pluggable, the constants recoverable for
+  `best.json`, and per-group refitting possible, so it stays the default. A run
+  created with `--use-spec-evaluate` takes the other door (`spec_eval.py`) and
+  the spec's own `evaluate` scores every candidate, owning the loss, the
+  optimizer, and whatever it imports. The search algorithm, the island model, and
+  the program-manipulation logic ARE upstream's, unaltered. Any wording that
+  claims "the scoring is theirs, untouched" is still false, and any wording that
+  claims the substitution is unconditional is now false too: both are corrected
+  in `vendor/NOTICE.md` and the root `README.md`.
+- **The scoring door is chosen by FLAG, never by sniffing, and is fixed at
+  `init`.** Nothing inspects the body of `evaluate` to guess whether it looks
+  stock. Detection would silently change how a run is scored when somebody edited
+  a comment inside it, and a scoring change nobody asked for is the exact failure
+  this engine exists to remove. The choice is recorded in `meta.json`
+  (`use_spec_evaluate`) and read back for every later verb, for the same reason
+  the key scheme is: two candidates scored through different doors are not
+  comparable, and the buffer would never say so. A run dir written before the
+  door existed answers False, which is the substitution Wheeler has always done.
+- **Through the spec door, the call is PER UNIT and the keys are still the
+  run's.** `evaluate` is called once per (dataset, group) pair with that pair's
+  rows, not once per candidate: calling it once would throw away the per-unit
+  refit that the whole per-group protocol exists for. Data arrives in UPSTREAM'S
+  shape (`data['inputs']`, `data['outputs']`) so an upstream spec runs unmodified,
+  plus `data['groups']` when the run declares `--group-by`. Score keys come from
+  `data.score_key` and never from the spec: a returned `per_group` may name only
+  the unit the call covered, and naming anything else is a loud error, because a
+  candidate that invented its own keys would silently break the vendored buffer's
+  signature clustering. The return contract is additive over upstream's: a bare
+  `int`/`float` is exactly upstream's (`isinstance(results, (int, float))` in
+  `vendor/evaluator.py`) and is the maximize-me score, while a dict
+  `{"score", "params", "per_group"}` also carries the constants upstream discards
+  (every upstream spec computes `optimized_params = result.x` and throws it away).
+  Anything else is an INVALID candidate with a truthful error, never a fabricated
+  score. Both doors normalize into the same `FitResult`, so `submit`, `best`,
+  `transfer`, selection and `discover.py` are unchanged downstream.
+- **What the spec door does NOT reach.** Held-out split scoring (`_split_metrics`,
+  `transfer.py`) still runs through `fit.py`, under the run's DECLARED metric, so
+  under `--use-spec-evaluate` those numbers are a second opinion computed by
+  different machinery than the search used, not the run's own objective measured
+  again. `best.json` says which door scored the run in `optimizer.scored_by`, so
+  the two can be told apart; teaching the marshal-out to label them is issue #107
+  slice S8. Where the spec returned no constants at all (upstream's bare float),
+  `selection._no_constants_footer` writes the score and refuses to emit a runner,
+  on the same rule as `_multidata_footer`.
 - **Held-out ID/OOD scoring is WHEELER'S, not the paper's protocol.** The LLM-SR
   datasets ship `<problem>/{train,test_id,test_ood}.csv`, but upstream's own
   `main.py` loads only `train.csv` and nothing in its pipeline opens the test

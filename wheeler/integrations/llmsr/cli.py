@@ -182,6 +182,9 @@ def _score_body(
     optimizer: str = optimizers_mod.AUTO,
     restarts: int = fit_mod.DEFAULT_RESTARTS,
     seed: int = fit_mod.DEFAULT_SEED,
+    use_spec_evaluate: bool = False,
+    function_to_run: str = "",
+    grouped: bool = False,
 ) -> tuple[fit_mod.FitResult, str, object]:
     """Build the program from a body, fit + score it. Returns (result, program, fn).
 
@@ -196,6 +199,13 @@ def _score_body(
     ``optimizer``, ``restarts`` and ``seed`` are the run's fit knobs, bound at
     ``init`` and read back off ``meta.json`` for every later submit, so one run
     fits every candidate the same way.
+
+    ``use_spec_evaluate`` picks the OTHER scoring door: the spec's own
+    ``@evaluate.run``, called once per unit (``spec_eval.py``). It is a declared
+    choice bound at ``init``, never sniffed off the spec text, and both doors
+    return the same ``FitResult`` so nothing downstream changes. The candidate is
+    built and guarded identically either way: ``_sample_to_program`` and
+    ``_calls_ancestor`` are upstream's and run before either door.
     """
     fn, program = evaluator._sample_to_program(body, version_generated, template, fte)
     if evaluator._calls_ancestor(program, fte):
@@ -208,6 +218,22 @@ def _score_body(
             program,
             fn,
         )
+    if use_spec_evaluate:
+        # Lazy, like the other seams here: the default path must not pay for a
+        # module it never calls.
+        from . import spec_eval as spec_eval_mod
+
+        result = spec_eval_mod.evaluate_spec_grouped(
+            program,
+            function_to_run,
+            data_mod.as_spec_units(units),
+            metric,
+            timeout_seconds=timeout,
+            progress_path=progress_path,
+            dataset_of=data_mod.dataset_of(units),
+            grouped=grouped,
+        )
+        return result, program, fn
     result = fit_mod.evaluate_body_grouped(
         program,
         fte,
@@ -250,8 +276,27 @@ def _optimizer_report(meta: dict, winner: Optional[dict]) -> dict:
     difference is the whole point: a reader of ``best.json`` must never have to
     guess whether a silent fallback happened. Empty ``used`` means the winner was
     fitted before the optimizer was recorded.
+
+    A run scored through the spec's own ``@evaluate.run`` reports something
+    different, because none of these knobs touched its number: the spec owns the
+    loss AND the optimizer. It reports ``scored_by`` (present only on that path,
+    so an existing reader of a default run sees the block it always saw),
+    ``restarts``/``seed`` as ``None`` because none were drawn, and the run's
+    declared optimizer under ``declared_optimizer`` so the choice it recorded is
+    still visible without being credited for a fit it did not do.
     """
     knobs = _fit_knobs(meta)
+    if meta.get("use_spec_evaluate"):
+        from .spec_eval import SPEC_EVALUATE
+
+        return {
+            "requested": SPEC_EVALUATE,
+            "used": (winner or {}).get("optimizer", "") or SPEC_EVALUATE,
+            "restarts": None,
+            "seed": None,
+            "scored_by": SPEC_EVALUATE,
+            "declared_optimizer": knobs["optimizer"],
+        }
     return {
         "requested": knobs["optimizer"],
         "used": (winner or {}).get("optimizer", ""),
@@ -356,6 +401,22 @@ def _fit_knobs(meta: dict) -> dict:
         "optimizer": meta.get("optimizer") or optimizers_mod.AUTO,
         "restarts": fit_mod.DEFAULT_RESTARTS if restarts is None else int(restarts),
         "seed": fit_mod.DEFAULT_SEED if seed is None else int(seed),
+    }
+
+
+def _spec_knobs(meta: dict) -> dict:
+    """Which scoring door this run uses, and what that door needs off the run.
+
+    Read back off ``meta.json`` and never re-derived from a command line, for the
+    same reason the key scheme is: every candidate in one run must be scored the
+    same way, or the scores in the buffer are not comparable with each other. A
+    run dir written before the door existed answers False, which is the
+    substitution Wheeler has always done.
+    """
+    return {
+        "use_spec_evaluate": bool(meta.get("use_spec_evaluate")),
+        "function_to_run": str(meta.get("function_to_run") or ""),
+        "grouped": bool(str(meta.get("group_by", "") or "").strip()),
     }
 
 
@@ -474,6 +535,21 @@ def init(
         fit_mod.DEFAULT_SEED,
         help="RNG seed for the random restarts; fixed, so a run replays exactly",
     ),
+    use_spec_evaluate: bool = typer.Option(
+        False,
+        "--use-spec-evaluate",
+        help=(
+            "score every candidate by calling the SPEC'S OWN @evaluate.run, which "
+            "is what upstream LLM-SR does, instead of Wheeler's fit/metric seam. "
+            "The spec then owns the loss, the optimizer and any framework it "
+            "imports (upstream's torch spec trains a module for 10,000 steps "
+            "inside evaluate). Off by default, because Wheeler's seam is what "
+            "makes the metric pluggable, the constants recoverable and the "
+            "per-unit refit possible. Never inferred from the spec text: a "
+            "scoring change nobody asked for is exactly what this flag exists to "
+            "prevent."
+        ),
+    ),
 ) -> None:
     """Create a run: bind spec + data + metric + generator + optimizer, seed the buffer."""
     metric_obj = _metric_for(metric)
@@ -532,6 +608,10 @@ def init(
         "optimizer": opt_key,
         "restarts": restarts,
         "seed": seed,
+        # Which scoring door. Bound here so every candidate in the run is scored
+        # the same way, and recorded even when False so a reader of the run never
+        # has to infer it from an absence.
+        "use_spec_evaluate": bool(use_spec_evaluate),
         "created": _now(),
         "created_epoch": time.time(),
     }
@@ -553,7 +633,7 @@ def init(
         seed_body, None, template, fte,
         units, metric_obj, max_nparams, timeout,
         progress_path=run_dir / runs_mod.PROGRESS_FILE,
-        **_fit_knobs(meta),
+        **_fit_knobs(meta), **_spec_knobs(meta),
     )
     _append_submission(run_dir, {
         "sample_order": 0,
@@ -590,6 +670,7 @@ def init(
         "score_on": [d.name for d in scored],
         "score_key_scheme": scheme,
         "score_keys": [u.key for u in units],
+        "use_spec_evaluate": bool(use_spec_evaluate),
         "seed_valid": result.valid,
         "seed_value": result.value,
     }))
@@ -668,7 +749,7 @@ def submit(
         body, version_generated, template, fte, units,
         metric_obj, meta["max_nparams"], meta["timeout"],
         progress_path=run_dir / runs_mod.PROGRESS_FILE,
-        **_fit_knobs(meta),
+        **_fit_knobs(meta), **_spec_knobs(meta),
     )
     fit_seconds = time.time() - _t0
     if result.valid:
@@ -793,13 +874,24 @@ def best(
     # re-runnable" artifact does not run for a grouped run. A run whose keys span
     # SEVERAL files gets `dataset_report` instead, and the footer then emits the
     # constants without a runner rather than one that cannot address them.
+    # A winner with NO constants at all, which only the spec-evaluate door can
+    # produce: upstream's bare-float contract has nowhere to return them. Every
+    # footer writes constants, so with none to write the flat one would emit a
+    # runner that raises. Checked against the run's declared door as well as the
+    # winner, so nothing on the default path can reach it.
+    no_constants = (
+        bool(meta.get("use_spec_evaluate"))
+        and not winner["params"]
+        and not (winner.get("params_per_group") or {})
+    )
     program = _runnable_program(winner["program"], winner["params"], metric_key,
                                 winner["value"], meta["data_path"], meta["function_to_evolve"],
                                 _metric_for(metric_key).data_shape,
                                 group_by=str(meta.get("group_by", "") or ""),
                                 params_per_group=winner.get("params_per_group") or {},
                                 value_per_group=winner.get("per_group_value") or {},
-                                dataset_report=None if one_file else report)
+                                dataset_report=None if one_file else report,
+                                no_constants=no_constants)
 
     # Generalization, asked BOTH ways on the sibling in-domain / out-of-domain
     # test sets. `metrics` applies the winner's constants unchanged (do the

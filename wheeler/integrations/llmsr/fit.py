@@ -36,9 +36,14 @@ per-group score VECTOR, which is what reaches the vendored buffer, where
 their per-group profile. An ungrouped run is the one-group case and is bit-for-bit
 unchanged. See docs/llmsr-objective-formulation.md.
 
-Execution runs in a forked, timeout-bounded child process (reusing the vendored
-sandbox's fork context) because the equation body is model-generated code: a
-pathological body cannot hang or crash the parent.
+Execution runs in a forked, timeout-bounded child process (``_run_sandboxed``,
+reusing the vendored sandbox's fork context) because the equation body is
+model-generated code: a pathological body cannot hang or crash the parent.
+
+This is the DEFAULT scoring door, not the only one. A run created with
+``--use-spec-evaluate`` scores through the spec's own ``@evaluate.run`` instead
+(``spec_eval.py``), which is what upstream does; it shares ``_run_sandboxed`` and
+returns the same ``FitResult``, so nothing downstream branches on which door ran.
 
 The vertical slice uses this at ``best`` time on the single winning body to
 extract ``params`` for ``best.json``. It generalizes to per-sample search scoring
@@ -317,9 +322,34 @@ def _emit_progress(
         pass
 
 
-def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams, q,
-            progress_path=None, primary=None, escalation=None,
-            restarts=DEFAULT_RESTARTS, seed=DEFAULT_SEED, dataset_of=None):
+def _run_sandboxed(target, args: tuple, timeout_seconds: int) -> dict:
+    """Run ``target(*args, queue)`` in a forked child and return its one payload.
+
+    The ONE sandbox both scoring doors share (this fit, and ``spec_eval.py``
+    calling the spec's own ``@evaluate.run``). Untrusted code runs in a child
+    process under a wall-clock bound, so a pathological body cannot hang or crash
+    the parent, and the child's single queued dict is the whole result.
+
+    Never raises: a timeout or a child that died without queuing anything comes
+    back as ``{"error": ...}``, which is exactly what both callers turn into an
+    invalid candidate. The two messages are the ones this path has always
+    produced, because they reach ``best.json`` and ``submissions.jsonl``.
+    """
+    queue = _MP_CONTEXT.Queue()
+    proc = _MP_CONTEXT.Process(target=target, args=(*args, queue))
+    proc.start()
+    proc.join(timeout=timeout_seconds)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        return {"error": f"timeout after {timeout_seconds}s"}
+    if queue.empty():
+        return {"error": "worker produced no result"}
+    return queue.get_nowait()
+
+
+def _worker(program_str, function_to_evolve, groups, metric: Metric, max_nparams,
+            progress_path, primary, escalation, restarts, seed, dataset_of, q):
     """Fit one candidate FORM against every group, each with its own constants.
 
     ``groups`` is a list of ``(label, X, y)``. The form is shared; theta is not.
@@ -499,28 +529,14 @@ def evaluate_body_grouped(
     # visibly a fit in flight rather than an idle run. Done in the parent because
     # by definition the child has not started yet.
     _emit_progress(progress_path, None, None, 0, len(groups))
-    queue = _MP_CONTEXT.Queue()
-    proc = _MP_CONTEXT.Process(
-        target=_worker,
-        args=(program_str, function_to_evolve, groups, metric, max_nparams, queue,
-              progress_path, primary, escalation, restarts, seed, dataset_of),
+    out = _run_sandboxed(
+        _worker,
+        (program_str, function_to_evolve, groups, metric, max_nparams,
+         progress_path, primary, escalation, restarts, seed, dataset_of),
+        timeout_seconds * max(1, len(groups)),
     )
-    proc.start()
-    proc.join(timeout=timeout_seconds * max(1, len(groups)))
-    if proc.is_alive():
-        proc.terminate()
-        proc.join()
-        return FitResult(
-            valid=False,
-            error=f"timeout after {timeout_seconds * max(1, len(groups))}s",
-            rejection_reason="numeric",
-        )
-
-    if queue.empty():
-        return FitResult(
-            valid=False, error="worker produced no result", rejection_reason="numeric"
-        )
-    out = queue.get_nowait()
+    # A timeout or a silent child lands here too: neither produced groups, and
+    # both are the same thing to a candidate, an invalid one with a named reason.
     if "groups" not in out:  # compile error or no such callable: applies to every group
         return FitResult(
             valid=False,
