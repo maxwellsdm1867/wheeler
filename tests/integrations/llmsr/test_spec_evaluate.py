@@ -565,17 +565,25 @@ class TestTheDoorIsAsWideAsUpstreamClaims:
         from wheeler.integrations.llmsr import fit as fit_mod
 
         X, y = _linear_xy()
-        program, fte, _ftr = _program(_width_spec(3000), _BODY)
-        wheeler_side = fit_mod.evaluate_body_grouped(
-            program, fte, [("data", X, y)], MSE, max_nparams=3
-        )
-        one_step = _score(_width_spec(1), _BODY, X, y)
 
-        assert wheeler_side.valid
-        # Wheeler's fit reaches the same law, by its own machinery.
-        assert wheeler_side.params == pytest.approx([2.0, -0.5, 1.0], abs=1e-3)
-        # The spec's own answer is the spec's: one step of Adam is one step.
-        assert one_step.score < wheeler_side.score
+        def _wheeler_side(steps: int):
+            program, fte, _ftr = _program(_width_spec(steps), _BODY)
+            return fit_mod.evaluate_body_grouped(
+                program, fte, [("data", X, y)], MSE, max_nparams=3
+            )
+
+        trained, untrained = _wheeler_side(3000), _wheeler_side(1)
+
+        assert trained.valid and untrained.valid
+        # Bit for bit the same answer from two specs whose `evaluate` differs by
+        # 2999 training steps: the default door never ran it.
+        assert trained.score == untrained.score
+        assert trained.params == untrained.params
+        # And it reaches the same law, by its own machinery.
+        assert trained.params == pytest.approx([2.0, -0.5, 1.0], abs=1e-3)
+        # Through the other door those same two specs answer differently, which
+        # is the whole distinction: one step of Adam is one step.
+        assert _score(_width_spec(1), _BODY, X, y).score < trained.score
 
     def test_a_torch_spec_runs_when_torch_is_available(self):
         """The torch gate, conditional on torch being importable.
