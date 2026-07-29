@@ -76,15 +76,27 @@ to run their pipeline under Claude Code without an API key. The search
 algorithm, the island model, and the program-manipulation logic are upstream's,
 unaltered.
 
-**The scoring seam is a substitution, and it is the one place the adapter does
-not follow upstream's method.** A spec declares an `@evaluate.run` function that
-fits a candidate's free constants and returns its score, and upstream's loop
-calls it. The driver does not: it scores every candidate through Wheeler's own
-fit/score seam (`../fit.py` + `../metrics.py`). That is what makes the metric
-pluggable, the fitted constants recoverable for `best.json`, and per-group
-refitting possible. The spec's `@evaluate.run` is parsed for its name and then
-never called. Upstream's scoring code is here unaltered; the driver simply does
-not take that path. See the table row below.
+**The scoring seam is a substitution by default, and it is the one place the
+adapter does not follow upstream's method unless it is told to.** A spec declares
+an `@evaluate.run` function that fits a candidate's free constants and returns
+its score, and upstream's loop calls it. The driver does not, by default: it
+scores every candidate through Wheeler's own fit/score seam (`../fit.py` +
+`../metrics.py`). That is what makes the metric pluggable, the fitted constants
+recoverable for `best.json`, and per-group refitting possible, so it stays the
+default, and on that path the spec's `@evaluate.run` is parsed for its name and
+then never called.
+
+**That substitution is now selectable rather than imposed.** A run created with
+`wheeler llmsr init --use-spec-evaluate` calls the spec's own `@evaluate.run`
+instead (`../spec_eval.py`), once per (dataset, group) unit, with the data in
+upstream's `data['inputs']` / `data['outputs']` shape and a bare `int`/`float`
+return read exactly as upstream reads it. On that path the spec owns the loss,
+the optimizer, and anything it imports, which is what upstream's
+`specification_oscillator2_torch.txt` relies on when it trains a `torch.nn.Module`
+for 10,000 steps inside `evaluate`. The choice is a flag and is never inferred
+from the spec text. Upstream's scoring code is here unaltered under either door;
+the difference is only whether the driver takes that path. See the table row
+below.
 
 **The two modules the adapter replaces.** Upstream `llmsr/` has eight; this
 directory carries six. `sampler.py` and `pipeline.py` are the two the plug-in
@@ -110,7 +122,7 @@ Anything upstream does that depends on those two is out of scope here by design.
 | `evaluator.py` | sandboxed fits run under an explicit `fork` multiprocessing context. Upstream targeted Linux, where fork is the default; on macOS with Python 3.12+ the default is `spawn`, which re-imports the interpreter per sample (roughly 14x slower) and cannot re-import a `__main__` launched from stdin. Falls back to the platform default where fork is unavailable |
 | `profile.py` | dropped the TensorBoard writer (and with it the `torch` dependency), keeping the stdlib JSON sample logging. The public surface (`register_function`) is unchanged so the vendored buffer and evaluator pass a profiler unmodified |
 | `buffer.py` | `scipy.special.softmax` replaced with the equivalent numpy expression, verified bit-identical. scipy is an optional Wheeler extra, and a module-top-level import of it made the whole CLI unavailable on installs without it (Wheeler issue #88) |
-| `evaluator.py` (call path, not an edit to the file) | the spec's `@evaluate.run` is NOT called. Upstream's loop hands a candidate to the spec's own `evaluate`, which fits its constants and returns the score; the driver instead scores through Wheeler's `../fit.py` + `../metrics.py` seam, so the metric is pluggable, the constants are recoverable, and each group can refit its own. `_sample_to_program` and `_calls_ancestor` (building and guarding the candidate program) are upstream's, used unchanged. PLANNED: Wheeler issue #107 slice S4 makes the spec's `@evaluate.run` selectable, so the seam becomes one the scientist chooses rather than one the driver imposes; until it lands, the substitution is unconditional |
+| `evaluator.py` (call path, not an edit to the file) | by default the spec's `@evaluate.run` is NOT called. Upstream's loop hands a candidate to the spec's own `evaluate`, which fits its constants and returns the score; the driver instead scores through Wheeler's `../fit.py` + `../metrics.py` seam, so the metric is pluggable, the constants are recoverable, and each group can refit its own. `wheeler llmsr init --use-spec-evaluate` selects upstream's path instead (`../spec_eval.py`): the spec's `evaluate` is called once per (dataset, group) unit, data arrives as `data['inputs']` / `data['outputs']`, and a bare `int`/`float` return is read exactly as `LocalSandbox._compile_and_run_function` reads it, so an upstream spec runs unmodified. A dict return may additionally carry the fitted constants, which upstream's contract has nowhere to return. `_sample_to_program` and `_calls_ancestor` (building and guarding the candidate program) are upstream's, used unchanged under both doors |
 
 Apart from the scoring seam called out above, none of these touch the method. If
 you want to understand or extend LLM-SR itself, read upstream's code, not this

@@ -451,6 +451,27 @@ def as_groups(units: Sequence[Unit]) -> list[tuple[str, np.ndarray, object]]:
     return [(u.key, u.X, u.y) for u in units]
 
 
+def as_spec_units(units: Sequence[Unit]) -> list[tuple[str, str, np.ndarray, Any]]:
+    """The ``(key, group, X, y)`` tuples ``spec_eval.evaluate_spec_grouped`` takes.
+
+    The group travels beside the key rather than being parsed out of it, because
+    the spec is handed the label the scientist's own group column carries while
+    the key is Wheeler's (``A:c01`` versus ``c01``).
+    """
+    return [(u.key, u.group, u.X, u.y) for u in units]
+
+
 def dataset_of(units: Sequence[Unit]) -> dict[str, str]:
     """key -> dataset name, so a progress ping can say which table it is on."""
     return {u.key: u.dataset for u in units}
+
+
+def group_of(units: Sequence[Unit]) -> dict[str, str]:
+    """key -> group label, which is not the same string as the key.
+
+    Under ``SCHEME_DATASET`` a key reads ``A:c01`` while the group is ``c01``, and
+    a spec handed ``data['groups']`` must see the label the scientist's own group
+    column carries, not Wheeler's internal key. Read off the units rather than
+    parsed back out of the key, so the two cannot drift.
+    """
+    return {u.key: u.group for u in units}

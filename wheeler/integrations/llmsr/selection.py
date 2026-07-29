@@ -174,6 +174,45 @@ def _multidata_footer(
     )
 
 
+def _no_constants_footer(metric_key: str, value, value_per_key: dict | None) -> str:
+    """The footer for a winner that has NO constants: the score, and no runner.
+
+    Reachable only through the spec's own ``@evaluate.run`` (``spec_eval.py``),
+    and only when it returned upstream's bare float. Upstream's contract has
+    nowhere to put the fitted constants: every upstream spec computes
+    ``optimized_params = result.x`` inside ``evaluate`` and then discards it,
+    returning the score alone. So the run genuinely has no constants to write.
+
+    The flat footer below would then emit ``FITTED_PARAMS = []`` and a ``__main__``
+    that calls the equation with an empty array, which raises at the reader's
+    feet with an IndexError that explains nothing. This says the true thing
+    instead, and exits non-zero, on the same rule as ``_multidata_footer``: no
+    answer beats a wrong one, and an exit 0 printing nothing reads as success.
+    """
+    per_key = {str(k): float(v) for k, v in (value_per_key or {}).items()}
+    return (
+        "\n\n# --- Result (discovered by LLM-SR via Wheeler) ---\n"
+        "# This run scored through the SPEC'S OWN @evaluate.run, which returned\n"
+        "# upstream's bare score and no constants: upstream's contract has\n"
+        "# nowhere to put them (their specs fit `result.x` inside evaluate and\n"
+        "# then discard it). So the form below is the discovery and the score is\n"
+        "# its number, but the constants that produced it were never returned.\n"
+        "# To recover them, have the spec's evaluate return\n"
+        "#     {'score': <float>, 'params': [...]}\n"
+        "# or drop --use-spec-evaluate and let Wheeler's fit seam fit them.\n"
+        "FITTED_PARAMS = None\n"
+        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
+        f"'per_key': {per_key!r}}}\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(\n"
+        "        'No runner is emitted: this run scored through the spec\\'s own\\n'\n"
+        "        '@evaluate.run, which returned a score and no fitted constants,\\n'\n"
+        "        'so the equation above cannot be applied to data from this file.\\n'\n"
+        "        'See the comment above METRIC for the two ways to get them.'\n"
+        "    )\n"
+    )
+
+
 def _runnable_program(
     program: str, params, metric_key: str, value, data_path: str, fte: str,
     data_shape: str = metrics_mod.REGRESSION,
@@ -182,6 +221,7 @@ def _runnable_program(
     params_per_group: dict | None = None,
     value_per_group: dict | None = None,
     dataset_report: dict | None = None,
+    no_constants: bool = False,
 ) -> str:
     """Append fitted constants + a runnable main so the .py reproduces the answer.
 
@@ -191,11 +231,18 @@ def _runnable_program(
     row-for-row with stimulus samples), so the grouped footer is written against
     the tabular convention.
 
+    ``no_constants`` is checked FIRST and is passed only when the winner has no
+    fitted constants at all, which only the spec-evaluate door can produce. Every
+    footer below writes constants; with none to write, the flat one would emit a
+    runner that raises. See ``_no_constants_footer``.
+
     ``dataset_report`` is passed only when the run's score keys span more than one
-    file, and it is checked FIRST: both footers below address a single table, so
-    a caller that passes none reaches exactly the branch it always reached, byte
-    for byte. See ``_multidata_footer``.
+    file, and it is checked next: both footers below address a single table, so
+    a caller that passes neither reaches exactly the branch it always reached,
+    byte for byte. See ``_multidata_footer``.
     """
+    if no_constants:
+        return program + _no_constants_footer(metric_key, value, value_per_group)
     if dataset_report:
         return program + _multidata_footer(
             dataset_report, metric_key, value, group_by
