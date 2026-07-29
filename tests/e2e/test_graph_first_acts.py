@@ -250,11 +250,16 @@ class TestPlanActWorkflow:
         driver = get_async_driver(e2e_config)
         db = e2e_config.neo4j.database
 
-        topic = "E2E: Ion channel gating kinetics"
+        # Per-process unique: the dedup step matches on KEYWORD, which no
+        # e2e_tag can scope, so a fixed topic lets a concurrent e2e session's
+        # plan (or a leftover from an earlier run) satisfy this dedup query.
+        run = E2E_TAG.rsplit("_", 1)[-1][:8]
+        topic = f"E2E: Ion channel gating kinetics {run}"
+        keyword = f"gating kinetics {run}"
 
         # --- Step 1: dedup check ---
         dedup = json.loads(await execute_tool(
-            "query_plans", {"keyword": "gating kinetics"}, e2e_config,
+            "query_plans", {"keyword": keyword}, e2e_config,
         ))
         assert dedup["count"] == 0, "No duplicate should exist yet"
 
@@ -289,7 +294,7 @@ class TestPlanActWorkflow:
         # Verify: graph has the plan, file has the node ID
         assert plan_id in plan_file.read_text()
         query = json.loads(await execute_tool(
-            "query_plans", {"keyword": "gating kinetics"}, e2e_config,
+            "query_plans", {"keyword": keyword}, e2e_config,
         ))
         assert query["count"] >= 1
         assert any(p["id"] == plan_id for p in query["plans"])
@@ -307,7 +312,7 @@ class TestPlanActWorkflow:
 
         # --- Dedup: second plan on same topic is detected ---
         dedup2 = json.loads(await execute_tool(
-            "query_plans", {"keyword": "gating kinetics"}, e2e_config,
+            "query_plans", {"keyword": keyword}, e2e_config,
         ))
         assert dedup2["count"] >= 1, "Dedup must detect existing plan"
 

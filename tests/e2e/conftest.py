@@ -3,17 +3,66 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import tempfile
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from wheeler.config import WheelerConfig, Neo4jConfig, ProjectMeta, ProjectPaths
 
-SANDBOX_DIR = Path(__file__).parent / "sandbox"
+# Test nodes are tagged with this so we can clean them up. It must be BOTH
+# unique per process AND stable across duplicate imports of this module:
+#
+#   * Unique per process, because ``cleanup_test_nodes`` is autouse and
+#     function-scoped and its delete is global ("MATCH (n) WHERE n.e2e_tag =
+#     $tag DETACH DELETE n"). With one shared literal, every test in every
+#     session deletes every OTHER concurrent session's in-flight nodes, which
+#     surfaces as "Node X not found in graph" mid-test.
+#   * Stable across imports, because tests/e2e/ has no __init__.py, so this file
+#     is imported TWICE per process: once by pytest as ``conftest`` (the copy
+#     that supplies the fixtures) and once as ``tests.e2e.conftest`` (the copy
+#     the test modules read E2E_TAG from). A bare module-level uuid4() would
+#     mint a different tag in each copy, so the fixtures would clean a tag no
+#     test ever wrote and every node would leak.
+#
+# Caching in the environment makes the value process-global rather than
+# module-global. The cache is keyed on the pid so a value inherited from a
+# parent process is replaced rather than shared with a sibling session.
+_TAG_ENV = "WHEELER_E2E_TAG"
+_TAG_PREFIX = f"e2e_test_{os.getpid()}_"
 
-# Test node IDs are prefixed so we can clean them up
-E2E_TAG = "e2e_test"
+
+def _process_e2e_tag() -> str:
+    """Return this process's e2e tag, minting it once on first import."""
+    cached = os.environ.get(_TAG_ENV, "")
+    if cached.startswith(_TAG_PREFIX):
+        return cached
+    tag = _TAG_PREFIX + uuid.uuid4().hex
+    os.environ[_TAG_ENV] = tag
+    return tag
+
+
+E2E_TAG = _process_e2e_tag()
+
+# The sandbox is a real on-disk project tree. It is per process, and it lives
+# outside the checkout:
+#   * Per process, because the ``sandbox`` fixture rmtree's and rewrites it and
+#     tests read their files back by path. Two sessions sharing one directory
+#     read each other's .plans/*.md, so a plan written by one session is
+#     reported "unchanged" to the other and the graph_node id in the file
+#     belongs to the wrong run.
+#   * Outside the checkout, because .gitignore and pyproject's norecursedirs
+#     both name the fixed literal tests/e2e/sandbox, so per-run directories
+#     inside tests/e2e/ would show up as untracked and be walked at collection.
+# It is named after E2E_TAG so a stray directory is traceable to the run (and
+# the pid) that made it. resolve() matters on macOS, where the temp dir is a
+# /tmp -> /private/tmp symlink: the graph stores resolved paths, so tests that
+# compare a stored path against str(sandbox / ...) need the resolved form.
+SANDBOX_DIR = (Path(tempfile.gettempdir()) / f"wheeler-{E2E_TAG}").resolve()
 
 
 @pytest.fixture(scope="session")
@@ -41,8 +90,8 @@ def e2e_config() -> WheelerConfig:
 
 
 @pytest.fixture(scope="session")
-def sandbox(e2e_config) -> Path:
-    """Create sandbox directory with SRM-like test files."""
+def sandbox(e2e_config) -> Iterator[Path]:
+    """Create this process's sandbox directory with SRM-like test files."""
     # Clean slate
     if SANDBOX_DIR.exists():
         shutil.rmtree(SANDBOX_DIR)
@@ -90,7 +139,18 @@ def sandbox(e2e_config) -> Path:
         "midget_off,0.13,0.50,10.8,0.011,0.19\n"
     )
 
-    return SANDBOX_DIR
+    yield SANDBOX_DIR
+
+    # Best-effort teardown, matching cleanup_test_nodes: a filesystem hiccup
+    # here must not turn a passing session into an ERROR.
+    try:
+        shutil.rmtree(SANDBOX_DIR)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "e2e sandbox: could not remove %s (best-effort)",
+            SANDBOX_DIR,
+            exc_info=True,
+        )
 
 
 def _probe_neo4j(e2e_config) -> bool:
