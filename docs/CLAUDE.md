@@ -10,6 +10,7 @@
 - `prov-agent-research.md` -- Research notes from W3C PROV-DM schema design (v0.5.0).
 - `asta-integration.md` -- 850-line analysis of AllenAI Asta agent-baselines and integration plan (not yet implemented).
 - `field-data-contracts.md` -- Design doc for field-level validation in mutation tools (shipped in v0.6.0).
+- `llmsr-objective-formulation.md` -- Design doc generalizing the LLM-SR metric contract into an Objective: per-group refit (one form, one theta per cell/trial/subject), score vectors through the vendored buffer's existing `scores_per_test` API, and a declarable optimizer. Slice 1 (`--group-by`) shipped; slices 2 and 3 tracked in issue #107.
 
 ## Conventions
 

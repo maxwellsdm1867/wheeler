@@ -87,12 +87,43 @@ def _read_meta(run_dir: Path) -> dict:
     return json.loads((run_dir / "meta.json").read_text())
 
 
-def _load_xy(data_path: str) -> tuple[np.ndarray, np.ndarray]:
+def _header(data_path: str) -> list[str]:
+    with open(data_path) as fh:
+        return [c.strip() for c in fh.readline().strip().split(",")]
+
+
+def _load_xy(data_path: str, group_by: str = "") -> tuple[np.ndarray, np.ndarray, object]:
+    """Load (X, y, labels). ``labels`` is None unless ``group_by`` names a column.
+
+    The group column is EXCLUDED from X: it identifies who the row belongs to, it
+    is not an input to the equation. It is read separately as text, because a
+    label like ``c01`` is not a float and would otherwise come back as NaN.
+    """
     data = np.genfromtxt(data_path, delimiter=",", skip_header=1)
-    return data[:, :-1], data[:, -1].reshape(-1)
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+    if not group_by:
+        return data[:, :-1], data[:, -1].reshape(-1), None
+
+    header = _header(data_path)
+    if group_by not in header:
+        raise typer.BadParameter(
+            f"--group-by {group_by!r} is not a column in {data_path}; columns: {header}"
+        )
+    gi = header.index(group_by)
+    if gi == len(header) - 1:
+        raise typer.BadParameter(
+            f"--group-by {group_by!r} is the target column (the last one); "
+            "group by an identifier column instead"
+        )
+    labels = np.atleast_1d(
+        np.genfromtxt(data_path, delimiter=",", skip_header=1, usecols=[gi], dtype=str)
+    )
+    keep = [i for i in range(data.shape[1] - 1) if i != gi]
+    return data[:, keep], data[:, -1].reshape(-1), labels
 
 
-def _load_data(data_path: str, metric: metrics_mod.Metric):
+def _load_data(data_path: str, metric: metrics_mod.Metric, group_by: str = ""):
     """Load a run's data in the shape its metric declares.
 
     ``regression``: the tabular convention, last column is the target, one value
@@ -101,11 +132,48 @@ def _load_data(data_path: str, metric: metrics_mod.Metric):
     stimulus samples, so that column is read as padded (blank cells dropped)
     rather than as one value per sample.
     """
-    X, y = _load_xy(data_path)
+    X, y, labels = _load_xy(data_path, group_by)
     if metric.data_shape == metrics_mod.REGRESSION:
-        return X, y
+        return X, y, labels
+    if group_by:
+        # Event times do not line up with stimulus rows, so a row mask cannot
+        # partition them. Refusing beats silently grouping the wrong axis.
+        raise typer.BadParameter(
+            f"--group-by is not supported for data_shape {metric.data_shape!r}: "
+            "recorded events do not correspond row-for-row with stimulus samples, "
+            "so a per-row group column cannot partition them. Use one run per group."
+        )
     events = np.asarray(y, dtype=float)
-    return X, [float(v) for v in events[~np.isnan(events)]]
+    return X, [float(v) for v in events[~np.isnan(events)]], None
+
+
+def _as_groups(X, y, labels) -> list[tuple[str, np.ndarray, object]]:
+    """Partition into (label, X_i, y_i). Ungrouped is the single-group case.
+
+    Sorted by label so the group ORDER is deterministic across candidates. The
+    vendored buffer keys its clusters on the score signature, so two candidates
+    must present their groups identically or the signatures are incomparable.
+    """
+    if labels is None:
+        return [(fit_mod.UNGROUPED, X, y)]
+    y_arr = np.asarray(y)
+    out = []
+    for label in sorted({str(v) for v in labels.tolist()}):
+        mask = np.asarray([str(v) == label for v in labels.tolist()])
+        out.append((label, X[mask], y_arr[mask]))
+    return out
+
+
+def _scores_per_test(sub: dict) -> dict[str, float]:
+    """The score vector a submission contributes to the vendored buffer.
+
+    Submissions written before per-group scoring carry only a scalar `score`, so
+    they replay under the single ``UNGROUPED`` key exactly as they always did.
+    """
+    per_group = sub.get("per_group")
+    if per_group:
+        return {str(k): float(v) for k, v in per_group.items()}
+    return {fit_mod.UNGROUPED: sub["score"]}
 
 
 def _read_submissions(run_dir: Path) -> list[dict]:
@@ -195,7 +263,9 @@ def _rebuild_buffer(run_dir: Path, meta: dict):
         fn, _program = evaluator._sample_to_program(
             sub["body"], sub.get("version_generated"), template, fte
         )
-        db.register_program(fn, sub.get("island_id"), {"data": sub["score"]})
+        db.register_program(
+            fn, sub.get("island_id"), _scores_per_test(sub)
+        )
     return template, db, fte
 
 
@@ -204,8 +274,7 @@ def _score_body(
     version_generated: Optional[int],
     template,
     fte: str,
-    X: np.ndarray,
-    y: np.ndarray,
+    groups: list[tuple[str, np.ndarray, object]],
     metric,
     max_nparams: int,
     timeout: int,
@@ -222,8 +291,13 @@ def _score_body(
             program,
             fn,
         )
-    result = fit_mod.evaluate_body(
-        program, fte, X, y, metric, max_nparams=max_nparams, timeout_seconds=timeout
+    result = fit_mod.evaluate_body_grouped(
+        program,
+        fte,
+        groups,
+        metric,
+        max_nparams=max_nparams,
+        timeout_seconds=timeout,
     )
     return result, program, fn
 
@@ -263,6 +337,15 @@ def init(
     run_id: Optional[str] = typer.Option(None, help="explicit run id (default: random)"),
     max_nparams: Optional[int] = typer.Option(None, help="free-constant budget (default: spec MAX_NPARAMS or 10)"),
     timeout: int = typer.Option(30, help="per-fit timeout seconds"),
+    group_by: str = typer.Option(
+        "",
+        help=(
+            "column naming who each row belongs to (cell, trial, subject). Each "
+            "group refits its OWN constants under the same form, so a law whose "
+            "constants vary across individuals is not charged for that variation. "
+            "Default: ungrouped, one shared parameter set."
+        ),
+    ),
 ) -> None:
     """Create a run: bind spec + data + metric + generator, seed the buffer."""
     metric_obj = _metric_for(metric)
@@ -292,17 +375,21 @@ def init(
         "function_to_run": ftr,
         "max_nparams": max_nparams,
         "timeout": timeout,
+        "group_by": group_by.strip(),
         "created": _now(),
         "created_epoch": time.time(),
     }
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
     # seed the buffer with the spec's initial equation body (submission 0, all islands)
-    X, y = _load_data(str(meta["data_path"]), metric_obj)
+    X, y, labels = _load_data(
+        str(meta["data_path"]), metric_obj, str(meta.get("group_by", ""))
+    )
     seed_body = template.get_function(fte).body
     _t0 = time.time()
     result, program, _fn = _score_body(
-        seed_body, None, template, fte, X, y, metric_obj, max_nparams, timeout
+        seed_body, None, template, fte,
+        _as_groups(X, y, labels), metric_obj, max_nparams, timeout,
     )
     _append_submission(run_dir, {
         "sample_order": 0,
@@ -312,6 +399,9 @@ def init(
         "score": result.score,
         "value": result.value,
         "params": result.params,
+        "per_group": result.per_group,
+        "per_group_value": result.per_group_value,
+        "params_per_group": result.params_per_group,
         "island_id": None,
         "version_generated": None,
         "seed": True,
@@ -388,17 +478,23 @@ def submit(
     meta = _read_meta(run_dir)
     metric_obj = _metric_for(meta["metric"])
     template, db, fte = _rebuild_buffer(run_dir, meta)
-    X, y = _load_data(str(meta["data_path"]), metric_obj)
+    X, y, labels = _load_data(
+        str(meta["data_path"]), metric_obj, str(meta.get("group_by", ""))
+    )
 
     body = body_file.read_text()
     _t0 = time.time()
     result, program, fn = _score_body(
-        body, version_generated, template, fte, X, y,
+        body, version_generated, template, fte, _as_groups(X, y, labels),
         metric_obj, meta["max_nparams"], meta["timeout"],
     )
     fit_seconds = time.time() - _t0
     if result.valid:
-        db.register_program(fn, island_id, {"data": result.score})
+        # result.valid, so score is not None.
+        assert result.score is not None
+        db.register_program(
+            fn, island_id, result.per_group or {fit_mod.UNGROUPED: result.score}
+        )
 
     sample_order = len(_read_submissions(run_dir))
     _append_submission(run_dir, {
@@ -409,6 +505,9 @@ def submit(
         "score": result.score,
         "value": result.value,
         "params": result.params,
+        "per_group": result.per_group,
+        "per_group_value": result.per_group_value,
+        "params_per_group": result.params_per_group,
         "island_id": island_id,
         "version_generated": version_generated,
         "seed": False,
@@ -502,6 +601,19 @@ def best(
         "generator": meta["generator"],
         "equation": winner["body"].strip("\n"),
         "params": winner["params"],
+        # Grouped runs only. `params` above is empty for them, because there IS no
+        # single parameter vector: the whole point is that each group keeps its
+        # own. Absent (not empty) on an ungrouped run, so existing readers are
+        # untouched.
+        **(
+            {
+                "group_by": meta.get("group_by", ""),
+                "params_per_group": winner.get("params_per_group") or {},
+                "value_per_group": winner.get("per_group_value") or {},
+            }
+            if meta.get("group_by")
+            else {}
+        ),
         "program": program,
         "metrics": metrics_out,
         "selection": {
@@ -615,7 +727,7 @@ def _candidate_ood(meta: dict, cand: dict) -> float | None:
         else metric
     )
     try:
-        X, y = _load_data(str(sibling), metric)
+        X, y, _ = _load_data(str(sibling), metric)
     except OSError:
         return None
     return fit_mod.evaluate_fixed(
@@ -660,6 +772,13 @@ def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
     the training file. Applies the fitted constants without re-fitting.
     """
     out: dict[str, float] = {}
+    if meta.get("group_by"):
+        # Held-out scoring applies FIXED constants, and a grouped run has no single
+        # constant vector to apply: each group kept its own. Scoring held-out data
+        # per group needs a policy for groups absent from the held-out file, which
+        # is deferred with the rest of the Objective work (see issue #107). Returning
+        # empty is honest; applying an arbitrary group's constants would not be.
+        return out
     fte = meta["function_to_evolve"]
     program = winner["program"]
     params = winner["params"]
@@ -675,7 +794,7 @@ def _split_metrics(meta: dict, winner: dict) -> dict[str, float]:
             splits[name] = str(sibling)
     for split, path in splits.items():
         try:
-            X, y = _load_data(path, metric)
+            X, y, _ = _load_data(path, metric)
         except OSError:
             continue
         for mkey in report_keys:
