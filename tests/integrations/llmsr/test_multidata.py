@@ -412,22 +412,36 @@ class TestEmittedProgram:
         ])
         program = walked["best"]["program"]
         assert "FITTED_PARAMS = []" not in program
-        assert self.GUARD not in program
         assert "FITTED_PARAMS_PER_KEY" in program
         assert "slice S8" in program
+        # There IS a `__main__` block, and it exists only to refuse: the file
+        # must not be runnable, but it also must not exit 0 in silence, which
+        # would read as success. See `_multidata_footer`.
+        assert self.GUARD in program
+        assert "SystemExit" in program
 
-        # the constants really are in the file, per unit, and reachable
-        ns: dict = {}
+        # the constants really are in the file, per unit, and reachable.
+        # `__name__` is bound to something other than `__main__` so importing
+        # the file (rather than running it) reaches the constants, which is
+        # exactly how a reader is meant to consume it.
+        ns: dict = {"__name__": "best"}
         exec(compile(program, "best.py", "exec"), ns)  # noqa: S102
         assert set(ns["FITTED_PARAMS_PER_KEY"]) == {"B", "C"}
         assert set(ns["SCORED_DATASETS"]) == {"B", "C"}
         assert set(ns["HELD_OUT_DATASETS"]) == {"A"}
         assert ns["METRIC"]["name"] == "mse"
 
-    def test_running_it_is_a_no_op_rather_than_a_wrong_answer(
+    def test_running_it_fails_loudly_rather_than_succeeding_in_silence(
         self, project, monkeypatch, tmp_path
     ):
-        """The point of the refusal: it can print nothing, never nothing-shaped."""
+        """Running it must be unmistakable, not merely harmless.
+
+        Emitting no runner at all would exit 0 printing nothing, and an exit 0
+        reads as success: the scientist would have to notice an ABSENCE and go
+        hunting for a comment to explain it. So the file exits non-zero and says
+        what it is, why there is no runner, and where the constants are. Nothing
+        it does can be mistaken for a result.
+        """
         import subprocess
         import sys
 
@@ -439,8 +453,12 @@ class TestEmittedProgram:
         proc = subprocess.run(
             [sys.executable, str(path)], capture_output=True, text=True
         )
-        assert proc.returncode == 0, proc.stderr
-        assert proc.stdout.strip() == ""
+        assert proc.returncode != 0, "exit 0 would read as success"
+        assert proc.stdout.strip() == "", "nothing that looks like a result"
+        message = proc.stderr
+        assert "MULTI-DATASET" in message
+        assert "FITTED_PARAMS_PER_KEY" in message, "must say where the answer is"
+        assert "S8" in message, "must say what would fix it"
 
     def test_a_grouped_multi_dataset_run_never_reaches_the_group_footer(
         self, project, monkeypatch
@@ -453,9 +471,12 @@ class TestEmittedProgram:
             "--data", "P=p.csv", "--data", "Q=q.csv", "--group-by", "cell",
         ])
         program = walked["best"]["program"]
+        # It took the refusing footer, not the grouped one. The grouped runner
+        # would have matched `P:c00` against one file's `cell` column and
+        # reported zero rows for every group, silently.
         assert "FITTED_PARAMS_PER_GROUP" not in program
-        assert self.GUARD not in program
-        ns: dict = {}
+        assert "SystemExit" in program
+        ns: dict = {"__name__": "best"}
         exec(compile(program, "best.py", "exec"), ns)  # noqa: S102
         assert set(ns["FITTED_PARAMS_PER_KEY"]) == {
             "P:c00", "P:c01", "Q:c00", "Q:c01"

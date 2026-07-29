@@ -125,6 +125,13 @@ def _multidata_footer(
     to prevent. So this refuses to advertise a runner it cannot write correctly,
     and emits the constants alone. They are the answer; the loop over files is
     convenience, and writing it properly is issue #107 slice S8.
+
+    The refusal is LOUD rather than absent. Emitting no ``__main__`` at all would
+    make ``python best.py`` exit 0 printing nothing, and an exit 0 reads as
+    success: the scientist would have to notice the absence of output and then go
+    looking for a comment to explain it. So the block below states the limitation
+    and exits non-zero. Nothing here can be mistaken for a result, which is the
+    same standard the rest of this file is held to.
     """
     entries = [e for e in report.get("entries", []) if isinstance(e, dict)]
     scored = [e for e in entries if e.get("regime") == "scored"]
@@ -153,7 +160,17 @@ def _multidata_footer(
         + (f"GROUP_BY = {group_by!r}\n" if group_by else "")
         + f"FITTED_PARAMS_PER_KEY = {params_per_key!r}\n"
         f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
-        f"'per_key': {value_per_key!r}}}\n"
+        f"'per_key': {value_per_key!r}}}\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(\n"
+        "        'This is a MULTI-DATASET discovery: one form, refitted with its own\\n'\n"
+        "        'constants on each of ' + repr(sorted(SCORED_DATASETS)) + '.\\n'\n"
+        "        'The constants are above in FITTED_PARAMS_PER_KEY, keyed by dataset\\n'\n"
+        "        \"(or 'dataset:group'). No runner is emitted because applying one\\n\"\n"
+        "        'vector to one file would misreport this run, so it exits non-zero\\n'\n"
+        "        'rather than print something that looks like a result.\\n'\n"
+        "        'A loop over datasets is issue #107 slice S8.'\n"
+        "    )\n"
     )
 
 
