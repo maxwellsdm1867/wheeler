@@ -8,18 +8,28 @@ not in the act prose, is what makes the interview behavior TESTABLE: a fake user
 can be scripted through ``validate_request`` deterministically.
 
 Input port schema (per dict in a contract's ``inputs``):
-  name      the input's name (becomes a request key)
-  kind      node | choice | text
-  required  bool; a required port must be answered before dispatch
-  prompt    the question the interview asks
-  node_type (kind=node) the graph label to offer, e.g. Dataset / Question
-  source    (kind=node) the graph query that lists the options
-  options   (kind=choice) the allowed values
-  default   (kind=choice/text) value used when an OPTIONAL port is unanswered
+  name         the input's name (becomes a request key)
+  kind         node | choice | text
+  required     bool; a required port must be answered before dispatch
+  prompt       the question the interview asks
+  node_type    (kind=node) the graph label to offer, e.g. Dataset / Question
+  source       (kind=node) the graph query that lists the options
+  options      (kind=choice) the allowed values
+  options_from (kind=choice) "<dotted.module:callable>" asked for the allowed
+               values at read time, so a port whose legal answers are OPEN (a
+               plug-in registry the scientist extends) offers what is actually
+               registered rather than a list frozen into the YAML. Falls back to
+               the static ``options`` on any failure, so a broken or missing
+               resolver degrades to today's behavior instead of emptying the port
+  default      (kind=choice/text) value used when an OPTIONAL port is unanswered
+
+Note the layering: this module stays generic. WHICH callable a port asks is the
+service's own business and lives in its registry entry, never here.
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -37,8 +47,50 @@ class InputPort:
     prompt: str = ""
     node_type: str = ""  # kind=node: the graph label (Dataset, Question, ...)
     source: str = ""  # kind=node: the graph query that offers options
-    options: tuple[str, ...] = ()  # kind=choice
+    options: tuple[str, ...] = ()  # kind=choice (resolved: see options_from)
     default: Any = None
+    # kind=choice: "<dotted.module:callable>" consulted for `options` at read
+    # time. Kept on the port (not consumed) so the interview can say where the
+    # list came from, and so a test can assert the wiring without importing the
+    # target.
+    options_from: str = ""
+
+
+def _resolve_options(spec: str) -> tuple[str, ...]:
+    """Ask ``"<dotted.module:callable>"`` for a port's allowed values.
+
+    Returns ``()`` on ANY failure (malformed spec, unimportable module, missing
+    attribute, the call raising, a non-list or empty answer), which the caller
+    reads as "use the static options". Degrading to the frozen list is always
+    safe; emptying a choice port would make every answer invalid.
+
+    Resolution happens here, at read time, rather than at import: the callable
+    reports what is registered in the CALLING process, and this module must not
+    drag a service's dependencies into every import of the registry.
+    """
+    module_path, sep, attr = str(spec or "").partition(":")
+    if not sep or not module_path.strip() or not attr.strip():
+        logger.warning(
+            "options_from %r is not '<dotted.module:callable>'; using static options",
+            spec,
+        )
+        return ()
+    try:
+        module = importlib.import_module(module_path.strip())
+        values = getattr(module, attr.strip())()
+    except Exception:
+        logger.warning(
+            "options_from %r did not resolve; using static options", spec, exc_info=True
+        )
+        return ()
+    if not isinstance(values, (list, tuple)) or not values:
+        logger.warning(
+            "options_from %r returned %r, not a non-empty list; using static options",
+            spec,
+            values,
+        )
+        return ()
+    return tuple(str(v) for v in values)
 
 
 @dataclass
@@ -65,6 +117,10 @@ def input_ports(contract: Any) -> list[InputPort]:
             kind = "text"
         opts = raw.get("options")
         options = tuple(str(o) for o in opts) if isinstance(opts, list) else ()
+        options_from = str(raw.get("options_from", "")).strip()
+        if options_from:
+            # `or options`: a resolver that fails falls back to the static list.
+            options = _resolve_options(options_from) or options
         ports.append(
             InputPort(
                 name=name,
@@ -75,6 +131,7 @@ def input_ports(contract: Any) -> list[InputPort]:
                 source=str(raw.get("source", "")),
                 options=options,
                 default=raw.get("default"),
+                options_from=options_from,
             )
         )
     return ports

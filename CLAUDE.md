@@ -184,7 +184,7 @@ External research tools land in the graph as provenance-tracked nodes via a sand
 - **Community Edition isolation** is simulated via a `_wheeler_project` property on every node. When `config.neo4j.project_tag` is set, all `MATCH`/`CREATE` queries are namespace-scoped in Python. Enterprise/Aura users get real database isolation via the backend config.
 - **`ANTHROPIC_API_KEY` is actively unset** by `bin/wh` before every headless run. The pre-commit hook greps for `ANTHROPIC_API_KEY`, `api.anthropic.com`, `import anthropic`, `from anthropic import`, `anthropic.Anthropic()`, and `sk-ant-*` patterns in staged content. Never add code that imports `anthropic`.
 - **fastembed downloads a 33MB model on first use.** This happens at `EmbeddingStore.__init__`, not at package import. `pip install wheeler` does not trigger the download.
-- **Graduated disclosure**: `wheeler/`, `wheeler/graph/`, `wheeler/knowledge/`, `wheeler/tools/`, `wheeler/integrations/asta/`, and `.claude/commands/wh/` each have their own `CLAUDE.md`. Read the relevant one before editing that subtree. They are the authoritative per-directory reference.
+- **Graduated disclosure**: `wheeler/`, `wheeler/graph/`, `wheeler/knowledge/`, `wheeler/tools/`, `wheeler/integrations/asta/`, `wheeler/integrations/llmsr/`, and `.claude/commands/wh/` each have their own `CLAUDE.md`. Read the relevant one before editing that subtree. They are the authoritative per-directory reference.
 
 ## Style rules that apply to Wheeler-generated writing
 

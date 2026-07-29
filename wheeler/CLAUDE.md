@@ -29,7 +29,7 @@ mcp_server.py          <- DEPRECATED legacy monolith (scheduled for removal)
 - `workspace.py` -- File discovery + context formatting for system prompts
 - `depscanner.py` -- AST-based dependency scanner (imports, data files)
 - `request_log.py` -- Append-only JSONL request logging
-- `integrations/` -- external-service adapters (Asta first). The marshal-out ingest modules are the only `execute_tool` callers here (lazy, function-local). To add a NEW external service, use the `wheeler-service-creator` skill (it scaffolds the adapter with the external-call failsafe baked in and an auditor), do NOT hand-write one. See `integrations/asta/CLAUDE.md`.
+- `integrations/` -- external-service adapters (Asta first, then LLM-SR equation discovery, which inverts an evolutionary loop into CLI verbs because there is no service to call). The marshal-out ingest modules are the only `execute_tool` callers here (lazy, function-local). To add a NEW external service, use the `wheeler-service-creator` skill (it scaffolds the adapter with the external-call failsafe baked in and an auditor), do NOT hand-write one. See `integrations/asta/CLAUDE.md` and `integrations/llmsr/CLAUDE.md`.
 
 ## Config (`wheeler.yaml`)
 

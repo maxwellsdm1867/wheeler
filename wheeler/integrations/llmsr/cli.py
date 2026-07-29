@@ -598,14 +598,23 @@ def best(
 
     winner = _select_winner(valid, meta, mode)
     metric_key = meta["metric"]
+    # A grouped run's constants are a TABLE, not a vector (`winner["params"]` is
+    # empty for it by construction), so the per-group fields are passed through
+    # and the written .py filters rows by group. Without them the "durable,
+    # re-runnable" artifact does not run for a grouped run.
     program = _runnable_program(winner["program"], winner["params"], metric_key,
                                 winner["value"], meta["data_path"], meta["function_to_evolve"],
-                                _metric_for(metric_key).data_shape)
+                                _metric_for(metric_key).data_shape,
+                                group_by=str(meta.get("group_by", "") or ""),
+                                params_per_group=winner.get("params_per_group") or {},
+                                value_per_group=winner.get("per_group_value") or {})
 
     # Generalization: apply the TRAIN-fitted equation (no re-fit) to the sibling
-    # in-domain / out-of-domain test sets, reporting both MSE and NMSE per split
-    # (the paper's protocol). Train + any test_id.csv / test_ood.csv alongside the
-    # training file.
+    # in-domain / out-of-domain test sets, reporting both MSE and NMSE per split.
+    # This split scoring is WHEELER'S addition, not upstream's: LLM-SR ships the
+    # datasets as `<problem>/{train,test_id,test_ood}.csv`, but its own `main.py`
+    # loads only `train.csv` and nothing in the pipeline opens the test splits.
+    # The splits are theirs; scoring against them is ours.
     metrics_out = _split_metrics(meta, winner)
 
     payload = {

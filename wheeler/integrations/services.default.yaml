@@ -123,7 +123,10 @@ services:
     inputs:
       - { name: dataset, kind: node, node_type: Dataset, source: datasets, required: true, prompt: "Which dataset should the equation be fit to?" }
       - { name: question, kind: node, node_type: Question, source: query, required: false, prompt: "Which open question or plan does this address?" }
-      - { name: metric, kind: choice, options: [nmse, mse], default: nmse, required: true, prompt: "Which scoring metric should the search optimize?" }
+      # The metric registry is OPEN: a scientist registers their own metric and it
+      # must be offerable. `options_from` asks the registry at read time; the
+      # static `options` stay as the fallback if that resolution ever fails.
+      - { name: metric, kind: choice, options_from: "wheeler.integrations.llmsr.metrics:available", options: [nmse, mse], default: nmse, required: true, prompt: "Which scoring metric should the search optimize?" }
       - { name: select, kind: choice, options: [parsimony, ood, fit], default: parsimony, required: false, prompt: "How should the winning equation be selected?" }
     output:
       raw_node: document
