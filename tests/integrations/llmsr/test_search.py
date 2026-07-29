@@ -26,12 +26,6 @@ def _out(result) -> dict:
     return json.loads(result.output.strip().splitlines()[-1])
 
 
-@pytest.fixture(autouse=True)
-def _chdir(tmp_path, monkeypatch):
-    # run dirs are created under cwd; isolate them per test
-    monkeypatch.chdir(tmp_path)
-
-
 def _init(metric="mse", generator="claude", run_id="t"):
     return _out(runner.invoke(llmsr_app, [
         "init", "--spec", str(SPEC), "--data", str(DATA),

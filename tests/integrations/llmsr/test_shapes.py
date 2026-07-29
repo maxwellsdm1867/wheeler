@@ -66,21 +66,13 @@ _SPIKE_DATA = "stim,events\n0.0,0.2\n1.0,0.35\n2.0,\n3.0,\n4.0,\n"
 
 
 @pytest.fixture(autouse=True)
-def _project(tmp_path, monkeypatch):
-    """A scratch project carrying the scientist's metric; registry left as found."""
-    monkeypatch.chdir(tmp_path)
-    registry = dict(metrics_mod.METRICS)
-    loaded = set(metrics_mod._loaded_sources)
-    monkeypatch.delenv(metrics_mod._USER_METRICS_ENV, raising=False)
+def _project(_isolated_registry):
+    """A scratch project carrying the scientist's metric. The temp cwd and the
+    registry snapshot come from conftest; only the contents are local."""
     Path(".wheeler/llmsr").mkdir(parents=True)
     Path(".wheeler/llmsr/metrics.py").write_text(_SPIKE_METRIC_SOURCE)
     Path("spec.txt").write_text(_SPIKE_SPEC)
     Path("train.csv").write_text(_SPIKE_DATA)
-    yield
-    metrics_mod.METRICS.clear()
-    metrics_mod.METRICS.update(registry)
-    metrics_mod._loaded_sources.clear()
-    metrics_mod._loaded_sources.update(loaded)
 
 
 def _out(result) -> dict:

@@ -69,20 +69,13 @@ _CONSTANT_MSE = 11.25
 
 
 @pytest.fixture(autouse=True)
-def _project(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    registry = dict(metrics_mod.METRICS)
-    loaded = set(metrics_mod._loaded_sources)
-    monkeypatch.delenv(metrics_mod._USER_METRICS_ENV, raising=False)
+def _project(_isolated_registry):
+    """The scratch project this file's tests run against. The temp cwd and the
+    registry snapshot come from conftest; only the contents are local."""
     Path(".wheeler/llmsr").mkdir(parents=True)
     Path(".wheeler/llmsr/metrics.py").write_text(_METRIC_SOURCE)
     Path("spec.txt").write_text(_SPEC)
     Path("train.csv").write_text(_DATA)
-    yield
-    metrics_mod.METRICS.clear()
-    metrics_mod.METRICS.update(registry)
-    metrics_mod._loaded_sources.clear()
-    metrics_mod._loaded_sources.update(loaded)
 
 
 def _out(result) -> dict:

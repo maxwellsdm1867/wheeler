@@ -45,20 +45,6 @@ register_metric(Metric(
 '''
 
 
-@pytest.fixture(autouse=True)
-def _isolated_registry(tmp_path, monkeypatch):
-    """Run in a scratch project and leave the process-wide registry as found."""
-    monkeypatch.chdir(tmp_path)
-    registry = dict(metrics_mod.METRICS)
-    loaded = set(metrics_mod._loaded_sources)
-    monkeypatch.delenv(metrics_mod._USER_METRICS_ENV, raising=False)
-    yield
-    metrics_mod.METRICS.clear()
-    metrics_mod.METRICS.update(registry)
-    metrics_mod._loaded_sources.clear()
-    metrics_mod._loaded_sources.update(loaded)
-
-
 def _write_project_metrics(text: str = _HUBER_SOURCE) -> Path:
     path = Path(".wheeler/llmsr/metrics.py")
     path.parent.mkdir(parents=True, exist_ok=True)
