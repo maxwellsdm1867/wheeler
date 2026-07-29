@@ -88,6 +88,59 @@ def _grouped_footer(
     )
 
 
+def _multidata_footer(
+    report: dict,
+    metric_key: str,
+    value,
+    group_by: str,
+) -> str:
+    """The footer for a MULTI-DATASET run: the constants, and NO runner.
+
+    Both branches below address ONE file. The flat one applies a single parameter
+    vector to ``data_path``; the grouped one filters that file's rows by a group
+    column. A multi-dataset run has neither a single vector nor a single file: its
+    units are (dataset, group) pairs spanning several tables, so the flat branch
+    would write ``FITTED_PARAMS = []`` and raise, and the grouped branch would
+    match keys like ``A:c01`` against one file's cell labels and report zero rows
+    for every group WITHOUT failing.
+
+    The second of those is the reason this exists. A silent wrong answer is worse
+    than no answer, and it is the exact outcome the per-group protocol was built
+    to prevent. So this refuses to advertise a runner it cannot write correctly,
+    and emits the constants alone. They are the answer; the loop over files is
+    convenience, and writing it properly is issue #107 slice S8.
+    """
+    entries = [e for e in report.get("entries", []) if isinstance(e, dict)]
+    scored = [e for e in entries if e.get("regime") == "scored"]
+    held_out = [e for e in entries if e.get("regime") != "scored"]
+    params_per_key: dict[str, list[float]] = {}
+    value_per_key: dict[str, float] = {}
+    for entry in scored:
+        for key, vals in (entry.get("params_per_key") or {}).items():
+            params_per_key[str(key)] = [float(v) for v in vals]
+        for key, val in (entry.get("value_per_key") or {}).items():
+            value_per_key[str(key)] = float(val)
+    scored_paths = {str(e.get("name", "")): str(e.get("path", "")) for e in scored}
+    held_out_paths = {str(e.get("name", "")): str(e.get("path", "")) for e in held_out}
+    return (
+        "\n\n# --- Fitted result (discovered by LLM-SR via Wheeler) ---\n"
+        "# MULTI-DATASET run: this one shared form was refitted, with its OWN\n"
+        "# constants, on every dataset the search scored. There is no single\n"
+        "# parameter vector and no single input file, so this file carries the\n"
+        "# constants but deliberately emits NO __main__ runner: a re-runner that\n"
+        "# loops datasets (and groups within them) is issue #107 slice S8, and\n"
+        "# one that quietly reported zero rows would be worse than none.\n"
+        "# Keys below are 'dataset' or 'dataset:group'. The labelled breakdown,\n"
+        "# including which datasets were only declared, is best.json['datasets'].\n"
+        f"SCORED_DATASETS = {scored_paths!r}\n"
+        f"HELD_OUT_DATASETS = {held_out_paths!r}\n"
+        + (f"GROUP_BY = {group_by!r}\n" if group_by else "")
+        + f"FITTED_PARAMS_PER_KEY = {params_per_key!r}\n"
+        f"METRIC = {{'name': {metric_key!r}, 'value': {value!r}, "
+        f"'per_key': {value_per_key!r}}}\n"
+    )
+
+
 def _runnable_program(
     program: str, params, metric_key: str, value, data_path: str, fte: str,
     data_shape: str = metrics_mod.REGRESSION,
@@ -95,6 +148,7 @@ def _runnable_program(
     group_by: str = "",
     params_per_group: dict | None = None,
     value_per_group: dict | None = None,
+    dataset_report: dict | None = None,
 ) -> str:
     """Append fitted constants + a runnable main so the .py reproduces the answer.
 
@@ -103,7 +157,16 @@ def _runnable_program(
     refuses ``--group-by`` for any other, since recorded events do not line up
     row-for-row with stimulus samples), so the grouped footer is written against
     the tabular convention.
+
+    ``dataset_report`` is passed only when the run's score keys span more than one
+    file, and it is checked FIRST: both footers below address a single table, so
+    a caller that passes none reaches exactly the branch it always reached, byte
+    for byte. See ``_multidata_footer``.
     """
+    if dataset_report:
+        return program + _multidata_footer(
+            dataset_report, metric_key, value, group_by
+        )
     if group_by and params_per_group:
         return program + _grouped_footer(
             group_by, params_per_group, value_per_group or {}, metric_key, value,

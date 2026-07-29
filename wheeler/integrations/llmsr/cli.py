@@ -737,7 +737,18 @@ def best(
     # existing reader of best.json sees exactly the file it saw before. The block
     # appears the moment naming a dataset could matter, which is the same
     # condition that qualifies the score keys.
-    multi = data_mod.scheme_from_meta(meta) == data_mod.SCHEME_DATASET
+    scheme = data_mod.scheme_from_meta(meta)
+    multi = scheme == data_mod.SCHEME_DATASET
+    # `selection.py`'s footers address ONE file: the flat one applies a single
+    # parameter vector to `data_path`, the grouped one filters that file's rows
+    # by a group column. Both are correct exactly while the run's score keys are
+    # names that file can supply, which is every run under `scheme=group` plus
+    # the ungrouped single-scored-table case (one unit, one vector, one file).
+    # Anything else gets the constants without a runner rather than a runner that
+    # raises or, worse, quietly matches nothing.
+    one_file = not multi or (
+        not meta.get("group_by") and len(data_mod.scored_from_meta(meta)) == 1
+    )
 
     # best.json is the FINAL result only. The full per-candidate search trail
     # (bodies, programs, params, scores) stays in submissions.jsonl in the run
@@ -773,16 +784,20 @@ def best(
 
     winner = _select_winner(valid, meta, mode)
     metric_key = meta["metric"]
+    report = _dataset_report(meta, winner) if multi else None
     # A grouped run's constants are a TABLE, not a vector (`winner["params"]` is
     # empty for it by construction), so the per-group fields are passed through
     # and the written .py filters rows by group. Without them the "durable,
-    # re-runnable" artifact does not run for a grouped run.
+    # re-runnable" artifact does not run for a grouped run. A run whose keys span
+    # SEVERAL files gets `dataset_report` instead, and the footer then emits the
+    # constants without a runner rather than one that cannot address them.
     program = _runnable_program(winner["program"], winner["params"], metric_key,
                                 winner["value"], meta["data_path"], meta["function_to_evolve"],
                                 _metric_for(metric_key).data_shape,
                                 group_by=str(meta.get("group_by", "") or ""),
                                 params_per_group=winner.get("params_per_group") or {},
-                                value_per_group=winner.get("per_group_value") or {})
+                                value_per_group=winner.get("per_group_value") or {},
+                                dataset_report=None if one_file else report)
 
     # Generalization: apply the TRAIN-fitted equation (no re-fit) to the sibling
     # in-domain / out-of-domain test sets, reporting both MSE and NMSE per split.
@@ -820,7 +835,7 @@ def best(
         # Multi-dataset runs only. Which tables the search optimized against and
         # which it merely declared, each labelled by regime so a held-out number
         # can never be read as a scored one or the other way round.
-        **({"datasets": _dataset_report(meta, winner)} if multi else {}),
+        **({"datasets": report} if multi else {}),
         "program": program,
         "metrics": metrics_out,
         "optimizer": _optimizer_report(meta, winner),

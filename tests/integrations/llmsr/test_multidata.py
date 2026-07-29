@@ -381,6 +381,114 @@ class TestPerDatasetRefit:
         assert ping["done"] == ping["total"] == 2
 
 
+# ------------------------------------------------------------- the emitted .py
+
+class TestEmittedProgram:
+    """A run whose keys span several files gets constants, never a broken runner.
+
+    `selection.py`'s footers address ONE file. For a multi-dataset run the flat
+    branch would write `FITTED_PARAMS = []` and raise, and the grouped branch
+    would match keys like `A:c01` against one file's cell labels and report zero
+    rows for every group WITHOUT failing. The second is the dangerous one: a
+    silent wrong answer is exactly what the per-group protocol exists to prevent.
+    Writing the real multi-dataset runner is issue #107 slice S8.
+    """
+
+    # The literal runner guard both footers emit. Matched exactly, because the
+    # refusal comment itself has to say the word __main__ to explain itself.
+    GUARD = "if __name__ == '__main__':"
+
+    def _program(self, walked: dict, path: Path) -> Path:
+        path.write_text(walked["best"]["program"])
+        return path
+
+    def test_a_multi_dataset_run_emits_constants_and_no_runner(
+        self, project, monkeypatch, tmp_path
+    ):
+        monkeypatch.chdir(project)
+        walked = walk_case(project, "emit", [
+            "--data", "A=a.csv", "--data", "B=b.csv", "--data", "C=c.csv",
+            "--seed-from", "A", "--score-on", "B,C",
+        ])
+        program = walked["best"]["program"]
+        assert "FITTED_PARAMS = []" not in program
+        assert self.GUARD not in program
+        assert "FITTED_PARAMS_PER_KEY" in program
+        assert "slice S8" in program
+
+        # the constants really are in the file, per unit, and reachable
+        ns: dict = {}
+        exec(compile(program, "best.py", "exec"), ns)  # noqa: S102
+        assert set(ns["FITTED_PARAMS_PER_KEY"]) == {"B", "C"}
+        assert set(ns["SCORED_DATASETS"]) == {"B", "C"}
+        assert set(ns["HELD_OUT_DATASETS"]) == {"A"}
+        assert ns["METRIC"]["name"] == "mse"
+
+    def test_running_it_is_a_no_op_rather_than_a_wrong_answer(
+        self, project, monkeypatch, tmp_path
+    ):
+        """The point of the refusal: it can print nothing, never nothing-shaped."""
+        import subprocess
+        import sys
+
+        monkeypatch.chdir(project)
+        walked = walk_case(project, "emit-run", [
+            "--data", "A=a.csv", "--data", "B=b.csv", "--score-on", "A,B",
+        ])
+        path = self._program(walked, tmp_path / "best.py")
+        proc = subprocess.run(
+            [sys.executable, str(path)], capture_output=True, text=True
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.strip() == ""
+
+    def test_a_grouped_multi_dataset_run_never_reaches_the_group_footer(
+        self, project, monkeypatch
+    ):
+        """The silent case: `A:c01` would have matched no row in either file."""
+        monkeypatch.chdir(project)
+        _write_table(project / "p.csv", 2.0, 0.5, seed=51, cells=2)
+        _write_table(project / "q.csv", -1.5, 3.0, seed=52, cells=2)
+        walked = walk_case(project, "emit-grouped", [
+            "--data", "P=p.csv", "--data", "Q=q.csv", "--group-by", "cell",
+        ])
+        program = walked["best"]["program"]
+        assert "FITTED_PARAMS_PER_GROUP" not in program
+        assert self.GUARD not in program
+        ns: dict = {}
+        exec(compile(program, "best.py", "exec"), ns)  # noqa: S102
+        assert set(ns["FITTED_PARAMS_PER_KEY"]) == {
+            "P:c00", "P:c01", "Q:c00", "Q:c01"
+        }
+        assert ns["GROUP_BY"] == "cell"
+
+    def test_one_named_dataset_ungrouped_keeps_the_ordinary_runner(
+        self, project, monkeypatch
+    ):
+        """One unit, one vector, one file: the existing footer still addresses it."""
+        monkeypatch.chdir(project)
+        walked = walk_case(project, "emit-single", ["--data", "A=a.csv"])
+        program = walked["best"]["program"]
+        assert "FITTED_PARAMS = [" in program
+        assert self.GUARD in program
+        assert "FITTED_PARAMS_PER_KEY" not in program
+
+    def test_a_grouped_single_default_dataset_keeps_the_grouped_runner(
+        self, project, monkeypatch
+    ):
+        """S7 just fixed this footer and a test executes it. Do not regress it."""
+        monkeypatch.chdir(project)
+        _write_table(project / "cells.csv", 2.0, 0.5, seed=61, cells=2)
+        walked = walk_case(
+            project, "emit-plain-grouped",
+            ["--data", "cells.csv", "--group-by", "cell"],
+        )
+        program = walked["best"]["program"]
+        assert "FITTED_PARAMS_PER_GROUP" in program
+        assert self.GUARD in program
+        assert "FITTED_PARAMS_PER_KEY" not in program
+
+
 # --------------------------------------------------------------- regime labels
 
 class TestRegimeLabels:
