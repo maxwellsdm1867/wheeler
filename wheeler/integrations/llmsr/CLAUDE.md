@@ -148,13 +148,22 @@ State persists by replaying `submissions.jsonl` through the vendored
   which is a separate act with its own provenance (`wheeler llmsr transfer`), not
   a footnote on this one. The block is ABSENT on a single-default-dataset run, so
   existing readers see the file they always saw.
-- **KNOWN GAP (slice S8): the runnable footer still assumes one file.**
-  `selection._runnable_program` writes `FITTED_PARAMS = []` for a multi-unit
-  run (there is no single vector, by the same construction that empties it for a
-  grouped run), so the emitted `program` raises; the grouped branch matches keys
-  like `A:c01` against one file's cell labels and silently reports zero rows. The
-  answer is not lost: `best.json["datasets"].entries[].params_per_key` carries
-  every unit's own constants. Fixing the footer is S8's job.
+- **A multi-file run REFUSES to advertise a runner it cannot write.** Both of
+  `selection.py`'s footers address ONE file: the flat one applies a single
+  parameter vector to `data_path`, the grouped one filters that file's rows by a
+  group column. Neither can address a run whose score keys span several tables.
+  The flat branch would write `FITTED_PARAMS = []` and raise; the grouped branch
+  would match keys like `A:c01` against one file's cell labels and report zero
+  rows for EVERY group without failing. The second is why this matters: a silent
+  wrong answer is worse than no answer, and it is exactly what the per-group
+  protocol exists to prevent. So `_runnable_program` takes `dataset_report` and
+  emits `_multidata_footer` instead: `SCORED_DATASETS`, `HELD_OUT_DATASETS`,
+  `FITTED_PARAMS_PER_KEY` (keys are `dataset` or `dataset:group`), `METRIC`, and
+  deliberately NO `__main__`. The constants are the answer; the loop over files
+  is convenience, and writing it correctly is issue #107 slice S8. The branch is
+  checked FIRST and only ever reached when `cli.py` passes a report, so a
+  single-table run (ungrouped or grouped) reaches the footer it always reached,
+  byte for byte.
 - **A grouped run's answer is the TABLE, everywhere.** `params` is EMPTY by
   construction whenever there is more than one group, so anything that reads it
   alone records nothing. `best.json` carries `params_per_group` /
