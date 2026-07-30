@@ -2,15 +2,21 @@
 
 A run owns a directory under ``.wheeler/llmsr/runs/<run_id>`` holding ``meta.json``
 (what the run is bound to), ``submissions.jsonl`` (every candidate, in order),
-``heartbeat.json`` (a snapshot so a ping mid-search does not replay the whole log),
-and ``progress.json`` (where the work happening RIGHT NOW is). There are no
-pickles: state is whatever replaying the log reconstructs.
+``prompts/<n>.txt`` plus ``prompts.jsonl`` (every prompt handed out and where it
+routed), ``heartbeat.json`` (a snapshot so a ping mid-search does not replay the
+whole log), and ``progress.json`` (where the work happening RIGHT NOW is). There
+are no pickles: state is whatever replaying the log reconstructs.
 
 The two status files are deliberately separate and answer different questions.
 ``heartbeat.json`` is written AFTER a fit completes and says what the search has
 achieved. ``progress.json`` is written DURING a fit and says where that fit has
 got to. Only the second one can answer "is it wedged?", because a submit that
 refits forty groups is otherwise silent for minutes.
+
+Every mutation of that state goes through ``run_lock``, because the driver runs
+SEVERAL candidates from one prompt at once (upstream's ``samples_per_prompt`` is
+4) and the log's line count IS the next ``sample_order``. See ``run_lock`` and
+``append_next_submission`` for what was measured before the lock existed.
 
 Split out of ``cli.py`` so the verbs stay readable; the layout itself is unchanged.
 """
@@ -21,12 +27,25 @@ import json
 import logging
 import os
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 import typer
 
 from . import fit as fit_mod
+
+# POSIX advisory locking, which is what serializes two `wheeler llmsr submit`
+# PROCESSES against one run dir. Guarded because Windows has no `flock`; there,
+# `run_lock` refuses rather than pretending to have locked anything, since the
+# invariant it protects (no two submissions share a sample_order) cannot be
+# honoured without it.
+_HAVE_FLOCK = True
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - not reachable on darwin or linux
+    _HAVE_FLOCK = False
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +53,18 @@ _RUNS_ROOT = Path(".wheeler/llmsr/runs")
 
 PROGRESS_FILE = "progress.json"
 HEARTBEAT_FILE = "heartbeat.json"
+SUBMISSIONS_FILE = "submissions.jsonl"
+PROMPTS_DIR = "prompts"
+PROMPTS_FILE = "prompts.jsonl"
+LOCK_FILE = "run.lock"
+
+# How long a writer waits for the lock before giving up. Generous by three orders
+# of magnitude: the lock is held for a count plus one append (microseconds), never
+# across a fit, which is the whole reason four candidates from one prompt can be
+# fitted in parallel. So a wait this long means a crashed holder, not contention,
+# and saying so beats blocking a scientist's terminal forever.
+LOCK_TIMEOUT_SECONDS = 60.0
+_LOCK_POLL_SECONDS = 0.02
 
 
 def _now() -> str:
@@ -135,27 +166,210 @@ def _scores_per_test(sub: dict) -> dict[str, float]:
     return {fit_mod.UNGROUPED: sub["score"]}
 
 
-def _read_submissions(run_dir: Path) -> list[dict]:
-    path = run_dir / "submissions.jsonl"
-    if not path.exists():
-        return []
+@contextmanager
+def run_lock(run_dir: Path) -> Iterator[None]:
+    """Hold one run dir's write lock for the block. Exclusive, across processes.
+
+    Why this exists, measured rather than reasoned about. ``submit`` computed its
+    ``sample_order`` as the line count of ``submissions.jsonl`` and then appended,
+    with no lock in between. Driving four real ``submit`` subprocesses at one run
+    (which is the normal path: ``prompt`` reports upstream's
+    ``samples_per_prompt`` of 4, and the act generates that many bodies from one
+    context) produced sample_orders ``[0, 1, 2, 3, 4, 4, 4, 4]``: every candidate
+    in the batch read the same count.
+
+    That does not stay inside the run dir. ``transfer_ingest`` keys a transfer's
+    Execution on ``f"{run_id}|{data_path}|{sample_order}"``, so two DIFFERENT
+    candidates sharing an order mint the same session_id and the same Finding ids
+    and silently overwrite each other's numbers, which reads as an update rather
+    than as a collision. ``transfer.py`` also resolves ``--sample-order`` with
+    ``named[0]``, quietly taking the first of two different forms.
+
+    The lock covers the count-then-append and the prompt-file allocation, and
+    nothing else. It is deliberately NOT held across a fit: a fit runs for minutes
+    and holding it there would serialize the batch this lock exists to make safe.
+
+    Advisory ``flock`` on a dedicated ``run.lock`` rather than on
+    ``submissions.jsonl`` itself, because the lock also has to cover a file that
+    does not exist yet (the next prompt) and a lock taken on a log that a verb may
+    legitimately read is one more thing to reason about.
+    """
+    run_dir = Path(run_dir)
+    if not _HAVE_FLOCK:  # pragma: no cover - not reachable on darwin or linux
+        raise typer.BadParameter(
+            "this platform has no fcntl.flock, so concurrent writes to one LLM-SR "
+            "run cannot be made safe. Run one command at a time against a run."
+        )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(run_dir / LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise typer.BadParameter(
+                        f"another process has held the write lock on run "
+                        f"{run_dir} for over {LOCK_TIMEOUT_SECONDS:.0f}s "
+                        f"({run_dir / LOCK_FILE}). The lock is only ever held for "
+                        "a single append, so this means a crashed writer rather "
+                        "than a busy one. Check for a stuck `wheeler llmsr` "
+                        "process before retrying."
+                    ) from None
+                time.sleep(_LOCK_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+class TornSubmissionLog(typer.BadParameter):
+    """``submissions.jsonl`` holds a line that is not JSON, so the run is damaged.
+
+    Raised rather than skipped, which is a reversal. Skipping looked
+    conservative and was the more destructive choice: the log is the run's ONLY
+    state, so a dropped line drops that program from every future replay AND
+    shifts every later ``sample_order``, since the order was the line count.
+    Measured on a five-line log with the middle line truncated:
+    ``_read_submissions`` returned orders ``[0, 1, 3, 4]`` and the next submit
+    would have claimed 4, which was already taken. One partial write became
+    silent data loss plus a duplicate id.
+
+    The bytes are still on disk, so this is recoverable by hand, which is the
+    other reason to stop: a verb that keeps writing makes the repair harder.
+    """
+
+
+def _parse_submissions(path: Path) -> list[dict]:
+    """Every record in the log, or a loud failure naming the damaged line."""
     out = []
-    for line in path.read_text().splitlines():
+    for lineno, line in enumerate(path.read_text().splitlines(), start=1):
         line = line.strip()
         if not line:
             continue
         try:
             out.append(json.loads(line))
-        except json.JSONDecodeError:
-            # Tolerate a torn/partial line (an interrupted append, a crash mid-write)
-            # instead of bricking every subsequent verb that replays the log.
-            logger.warning("skipping unparseable submissions line in %s", path)
+        except json.JSONDecodeError as exc:
+            raise TornSubmissionLog(
+                f"{path} line {lineno} is not valid JSON ({exc}), so this run's "
+                "log is incomplete. Every later sample_order was derived from the "
+                "line count, so continuing would both lose that candidate and "
+                "reuse an id. The bytes are still on disk, so repair or delete "
+                f"that line and retry. Records that parsed before it: {len(out)}."
+            ) from exc
     return out
 
 
-def _append_submission(run_dir: Path, record: dict) -> None:
-    with (run_dir / "submissions.jsonl").open("a") as f:
+def _read_submissions(run_dir: Path) -> list[dict]:
+    """Every candidate this run recorded, in order.
+
+    Unlocked on purpose. Appends are serialized by ``run_lock`` and each record is
+    ONE buffered ``write()`` of a complete line, so a reader observes whole lines:
+    measured with 8 concurrent writers appending through ``_append_line`` at
+    record sizes from 460 bytes to 80 KB, 0 lines out of 1280 were torn. Should a
+    platform ever split that write, ``_parse_submissions`` says so loudly instead
+    of shifting every later id.
+    """
+    path = Path(run_dir) / SUBMISSIONS_FILE
+    if not path.exists():
+        return []
+    return _parse_submissions(path)
+
+
+def _append_line(path: Path, record: dict) -> None:
+    """One JSON object as one line, in one write.
+
+    The line is assembled before the call so the append is a single buffered
+    write rather than two (the object, then the newline): a second write is a
+    second opportunity for another writer's record to land in between.
+    """
+    with path.open("a") as f:
         f.write(json.dumps(record) + "\n")
+
+
+def _append_submission(run_dir: Path, record: dict) -> None:
+    """Append one record exactly as given. Caller owns ``sample_order``.
+
+    For the seed at ``init``, which is order 0 by definition in a run dir that
+    nothing else can be writing yet. Everything after it comes through
+    ``append_next_submission``, which allocates the order under the same lock it
+    appends under.
+    """
+    with run_lock(run_dir):
+        _append_line(Path(run_dir) / SUBMISSIONS_FILE, record)
+
+
+def append_next_submission(run_dir: Path, record: dict) -> int:
+    """Claim the next ``sample_order``, append the record under it, return it.
+
+    The claim and the append are ONE critical section, which is the fix for the
+    measured ``[0, 1, 2, 3, 4, 4, 4, 4]`` collision: reading the count and
+    appending as two steps let every member of a parallel batch read the same
+    count. See ``run_lock`` for why a duplicate order is worse than it looks.
+
+    ``sample_order`` is written FIRST in the record, whatever the caller's dict
+    order, because ``parity_singledata.py`` compares ``submissions.jsonl`` with no
+    tolerance at all and key order is part of the bytes.
+    """
+    log = Path(run_dir) / SUBMISSIONS_FILE
+    with run_lock(run_dir):
+        order = len(_parse_submissions(log)) if log.exists() else 0
+        _append_line(log, {
+            "sample_order": order,
+            **{k: v for k, v in record.items() if k != "sample_order"},
+        })
+    return order
+
+
+def claim_prompt(
+    run_dir: Path, text: str, *, island_id: int, version_generated: int
+) -> Path:
+    """Write the next ``prompts/<n>.txt`` and record where that prompt routed.
+
+    Two defects in one place. The name was allocated as
+    ``len(glob("*.txt"))``, so four concurrent ``prompt`` calls all reported
+    ``prompts/0.txt`` and three of the four prompts were overwritten by the last
+    writer (measured: 1 distinct path from 4 calls, 1 file on disk). And the
+    ROUTING (which island, which version) existed on stdout only, so once a
+    terminal scrolled there was nothing on disk saying which island a submission
+    was supposed to go to.
+
+    So the allocation happens under the run lock AND with an exclusive create: the
+    lock keeps Wheeler processes apart, and ``O_EXCL`` means that even without a
+    lock (a stale file, an editor, anything else in the directory) an existing
+    prompt is never overwritten, only skipped past.
+
+    ``prompts.jsonl`` is the audit trail: one line per prompt handed out, so the
+    island sequence of a whole run is reconstructable after the fact.
+    """
+    run_dir = Path(run_dir)
+    prompts_dir = run_dir / PROMPTS_DIR
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    with run_lock(run_dir):
+        n = len(list(prompts_dir.glob("*.txt")))
+        while True:
+            path = prompts_dir / f"{n}.txt"
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            except FileExistsError:
+                n += 1
+                continue
+            break
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        _append_line(run_dir / PROMPTS_FILE, {
+            "prompt_index": n,
+            "prompt_file": str(path),
+            "island_id": island_id,
+            "version_generated": version_generated,
+            "at": _now(),
+            "at_epoch": time.time(),
+        })
+    return path
 
 
 def _n_constraint_rejected(subs: list[dict]) -> int:
@@ -353,10 +567,16 @@ def _write_heartbeat(run_dir: Path, meta: dict) -> None:
 
     The snapshot only: the live fields are recomputed on every read instead,
     because a ``phase`` written into a file goes stale the instant the run moves.
+
+    Atomic (tmp + rename, pid-tagged) for the same reason ``progress.json`` is:
+    several submits from one prompt finish at their own pace and each refreshes
+    this file, so a plain ``write_text`` would let two of them interleave into one
+    payload. ``status_payload`` survives that by falling back to a full log
+    replay, which is exactly the cost the heartbeat exists to avoid.
     """
     prog = _progress_core(run_dir, meta)
     prog["updated"] = _now()
-    (run_dir / HEARTBEAT_FILE).write_text(json.dumps(prog, indent=2))
+    _write_json_atomic(Path(run_dir) / HEARTBEAT_FILE, prog)
 
 
 def _timing(meta: dict, subs: list[dict]) -> dict:

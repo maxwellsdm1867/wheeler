@@ -105,10 +105,36 @@ cluster and the diversity mechanism does nothing. Note this is ALREADY true toda
 gives `(score,)`, unique per program. Passing the raw vector is therefore no worse, but it does not
 fix it either.
 
-The fix is a declared `cluster_by` quantizer, deliberately deferred to slice 2 because the
-scientifically right quantization is a per-group pass/fail at a threshold, which makes the
-signature read "the set of groups this form explains" and preserves exactly the diversity axis
-worth preserving. That threshold is the scientist's call, not a default worth inventing.
+What shipped is `wheeler llmsr init --cluster-tolerance FACTOR`: two per-unit errors within that
+multiplicative factor of each other quantize to the same value, so they key to one cluster. It is
+**OFF by default and a declared DEVIATION from the published method**, not a fidelity fix. The paper
+clusters on the raw continuous score and nothing upstream rounds or bins it, so raw stays the
+default and every surface that offers the flag (the CLI help, `/wh:llmsr-discover`, the service
+contract) names it a deviation. Quantization is in ERROR units rather than bucket
+indices, because the buffer derives both the signature and the cluster's softmax selection score
+from the same dict, and integer indices would leave that softmax operating on indices.
+
+Why it matters more here than upstream: the length bias inside a cluster is upstream's only pressure
+toward shorter programs, and it cannot act on singleton clusters. At the paper's ~1,000 clusters per
+island the score-weighted softmax across clusters carries selection alone; at tens of candidates
+there is no such crowd.
+
+**The caveat is that the shipped quantizer does not yet close this gap, and the surfaces say so.**
+`cli._quantize_scores` derives its bucket reference from the dict it is quantizing
+(`reference = max(finite)`), so the candidate's own largest-magnitude unit is returned exactly. On a
+single-key signature (the ungrouped, single-table shape) that makes it the identity at every
+tolerance. On a multi-key signature the other units snap onto that exact per-candidate number, which
+coarsens the vector while leaving the signature unique. Measured on two real 25-program runs at
+tolerances 1.8, 3.2 and 10.0, cluster counts matched raw exactly in both shapes: 26 clusters with 1
+holding more than one program (ungrouped), 25 with 2 (grouped, a 3-unit signature). The
+per-candidate reference was introduced to remove a singularity at |v| = 1, and it removed the
+collisions along with it, so the earlier per-run figures for this flag no longer describe the
+shipped code. Fixing it means a reference that spans the RUN rather than the candidate, which is a
+change to the search and belongs with the deferred `cluster_by` design below, not with a doc edit.
+
+What is still NOT shipped is the scientifically sharper quantization: a per-group pass/fail at a
+threshold, which would make the signature read "the set of groups this form explains". That
+threshold is the scientist's call, not a default worth inventing, so it remains open.
 
 ## Two consequences
 

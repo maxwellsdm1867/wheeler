@@ -144,6 +144,14 @@ services:
       # the default, but it is not a concrete registered optimizer.
       - { name: optimizer, kind: choice, options_from: "wheeler.integrations.llmsr.optimizers:choices", options: [auto, bfgs, nelder-mead], default: auto, required: false, prompt: "Which optimizer should fit the free constants? `auto` runs BFGS and escalates to Nelder-Mead where no start moved." }
       - { name: select, kind: choice, options: [parsimony, ood, fit], default: parsimony, required: false, prompt: "How should the winning equation be selected?" }
+      # The island model. Upstream's defaults are sized for ~10,000 candidates
+      # and a run here spends tens, so leaving these unasked hands the scientist
+      # 10 near-empty islands and a four-hour reset clock that never fires.
+      - { name: islands, kind: text, required: false, prompt: "How many islands should the experience buffer hold? Match it to the sample budget: upstream's 10 leaves 2 to 3 programs each at 25 candidates, which is no population to evolve. Default: upstream's 10." }
+      - { name: reset_every, kind: text, required: false, prompt: "Reset the weakest half of the islands every how many accepted submissions? This is the diversity mechanism, and upstream's wall-clock period never fires on a run shorter than four hours. Aim for a handful of resets: about a third of the sample budget. Default: off." }
+      # A DEVIATION, and the prompt has to say so: the paper clusters on the raw
+      # continuous score and nothing upstream rounds or bins it.
+      - { name: cluster_tolerance, kind: text, required: false, prompt: "Quantize the score signature so candidates within this FACTOR cluster together? This DEVIATES from the published method, which clusters on the raw score. The effect is real but modest: measured on a 26-submission run, raw gave 35 clusters with 0 holding more than one program, 1.8x gave 32 and 3, 3.2x gave 30 and 4. It is diluted by the island count and wider is not monotonically better. Ask for it only deliberately. Default: off, which is the paper." }
     output:
       raw_node: document
       nodes: [Script, Finding]

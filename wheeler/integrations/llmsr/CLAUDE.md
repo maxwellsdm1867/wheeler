@@ -17,10 +17,14 @@ INVERTED into four CLI verbs, and Claude Code steps it:
 wheeler llmsr scaffold-spec --data D [--recipe R]  -> a filled spec + its command
 wheeler llmsr init   --spec S --data D... --metric M [--group-by COL]
                      [--seed-from NAME] [--score-on NAMES] [--loader K]
-                     [--optimizer K] [--use-spec-evaluate]           -> run dir
-wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer)
-   ... the ACT generates a candidate body with a sub-agent (no API key) ...
+                     [--optimizer K] [--use-spec-evaluate]
+                     [--islands N] [--reset-every N] [--reset-period S]
+                     [--cluster-tolerance F]                         -> run dir
+wheeler llmsr prompt --run R      -> the next prompt (from the vendored buffer),
+                                     plus samples_per_prompt (upstream's 4)
+   ... the ACT generates that many candidate bodies from that ONE prompt ...
 wheeler llmsr submit --run R --body-file B --island-id I --version-generated V
+   ... once per body, same I and V, sequentially: one writer only ...
 wheeler llmsr best   --run R [--select fit|ood|parsimony]  -> best.json
 wheeler integrate ingest discover best.json ...            -> the graph
 ```
@@ -409,6 +413,30 @@ State persists by replaying `submissions.jsonl` through the vendored
   never chose. Ranking goes through `metric.score_from_value`, so a metric
   declaring `lower_is_better=False` is not ranked backwards. `best.json` names
   the ranked quantity in `selection.ranked_on`.
+- **`--select parsimony`'s comparability band is a factor on the MAGNITUDE of the
+  best pseudo-error, computed DIRECTION-FREE.** The band admits candidates within
+  `_PARSIMONY_TOL` of the best and then picks the shortest, so if the band is
+  wrong Occam does not weaken, it INVERTS. `selection._comparability_threshold`
+  takes `best_err = -score`, which is minimize-me whichever direction the metric
+  declares, and branches on the SIGN of that number rather than on
+  `lower_is_better`: a lower-is-better metric whose value can go negative (a
+  log-likelihood-shaped loss) inverts identically, and nothing in its declaration
+  warns you. A nonnegative error keeps the historic `best_err * _PARSIMONY_TOL`
+  bit for bit, so an MSE / NMSE run's threshold does not move. Measured on the
+  defect: an R2 metric (`lower_is_better=False`) with R2 0.99 at complexity 1
+  against 0.995 at complexity 4 gave `best_err = -0.994999999999999` and a
+  threshold of -0.994999999998999, which admitted 1 of 2 candidates and the
+  admitted one was the COMPLEX form, so `--select parsimony` silently returned the
+  fit-ranked answer.
+  The floor is the other half, and it changes what the OLD behaviour actually was:
+  `max(widened, best_err + 1e-12)` is an ABSOLUTE epsilon, so at large magnitudes
+  it cannot move at all (`-1e6 + 1e-12 == -1e6` in float64, while `1.0 + 1e-12`
+  does move). The band then excluded even the best candidate and the `or valid`
+  fallback at `selection.py:626` admitted EVERYTHING. So parsimony worked by
+  accident at large magnitudes and failed at small ones, which is why no existing
+  test caught it. Post-fix the widening always moves for a nonzero best, and a
+  best of exactly 0.0 still degrades parsimony to fit by design: with a
+  zero-magnitude reference there is no "comparably well" to compute.
 - **A grouped run's scalar is a MEAN, and travels labelled as one.** A grouped
   run reports no `train` entry in `metrics`: its train answer is the per-group
   value TABLE (`value_per_group`), and the ingest derives the mean over it, which
@@ -523,6 +551,61 @@ State persists by replaying `submissions.jsonl` through the vendored
   THROUGH `init`, and proves the excluded cell really was excluded. A
   library-level test of `loaders.load_groups` cannot see any of that, which is
   why the loader registry shipped unreachable with 0 failing tests.
+- **A knob the CLI has and the ACT does not is unreachable, on exactly the rule
+  above.** The act is the only path a scientist actually takes: nothing Python
+  reads `.claude/commands/wh/llmsr-discover.md`, so no library test can notice
+  that a flag never reached it. Measured before this gate existed, `grep -c` over
+  the act for `--islands`, `--reset-every`, `--cluster-tolerance` and
+  `samples_per_prompt` returned 0 in both command trees and in `docs/`, and a run
+  created by following the act's own assembled command wrote `islands: null`,
+  `reset_every: null` and `cluster_tolerance: null`: 10 islands, a four-hour
+  clock that fires 0 resets on a one-hour run, raw scores, and one body per
+  prompt where upstream draws four.
+  `tests/integrations/llmsr/test_act_surface.py` is that gate. It reads the flag
+  names OFF the built `init` command rather than restating them, so a knob added
+  to the CLI and not to the act fails; it requires both command trees to carry
+  them; it requires `--cluster-tolerance` to be labelled a DEVIATION wherever it
+  is offered (see the invariant below); and it requires the generation loop to
+  carry the batch rule (`samples_per_prompt` bodies from ONE prompt, submitted on
+  the same island and version). The service contract's ports are held to the same
+  rule, since `/wh:service` interviews from them.
+- **`--cluster-tolerance` is a DEVIATION from the published method and every
+  surface that offers it says so.** Upstream clusters on the raw continuous score
+  (`vendor/buffer.py::_get_signature` returns a tuple of floats over `s = -MSE`)
+  and nothing there rounds or bins. Wheeler quantizes that signature only when
+  asked, so the default is raw and reproduces the paper. It is offered because
+  with continuous scores every candidate gets a unique signature, every cluster
+  holds one program, and the within-cluster preference for the SHORTER program,
+  upstream's only parsimony pressure, never acts: true of the paper's runs too,
+  and free there (about 1,000 singleton clusters per island still let the
+  score-weighted softmax select) where it costs a 30-candidate run everything.
+  Do not describe quantizing as reproducing upstream, in the act, the docs, the
+  contract prompt, or a report to the scientist. Same rule as the held-out
+  ID/OOD invariant above.
+  **And do not describe it as WORKING, either: measured, it does not currently
+  change cluster formation.** `_quantize_scores` takes its bucket reference from
+  the dict being quantized (`reference = max(finite)`), so the candidate's own
+  largest-magnitude unit comes back exactly: a single-key signature (the
+  ungrouped single-table shape, which is the commonest run) is the identity at
+  every tolerance, and a multi-key one collapses its other units onto that exact
+  per-candidate number and stays unique. Two real 25-program runs at 1.8, 3.2 and
+  10.0 gave cluster counts identical to raw: 26 clusters / 1 holding more than one
+  program ungrouped, 25 / 2 grouped. The per-candidate reference exists to remove
+  a singularity at |v| = 1 and removed the collisions with it, so the per-run
+  figures in `_quantize_scores`'s own docstring no longer describe its behaviour.
+  A real fix needs a reference spanning the RUN, not the candidate; until then the
+  act offers the flag as a deviation that does not restore the parsimony pressure.
+- **`samples_per_prompt` is reported, not enforced, so the ACT owns it.** The CLI
+  never calls a model, so `prompt` can only hand back upstream's
+  `Config.samples_per_prompt` (4, and the paper's Appendix B b=4) and say what it
+  means: four INDEPENDENT completions of ONE prompt, submitted with the same
+  `--island-id` and `--version-generated` so they land on one island at one
+  version and the buffer can compare them. `submit` already accepts repeated
+  calls carrying the same pair; nothing else was needed on the CLI side. What was
+  needed, and was missing, is the act telling the generator to produce that many
+  bodies per prompt: one body per prompt is a quarter of the paper's exploration
+  per context. Submits stay SEQUENTIAL because `submissions.jsonl` records exceed
+  the atomic-append size, so only generation may be concurrent.
 - **Every emitted `METRIC` label is checked against the same run's `best.json`.**
   Same file, `assert_metric_label_is_earned`, across all four footer shapes: the
   name must be the run's scored metric, and wherever `best.json` records a number

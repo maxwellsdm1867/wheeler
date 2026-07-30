@@ -34,7 +34,10 @@ from . import metrics as metrics_mod
 from .data import _as_groups, _load_data
 
 _SELECT_MODES = ("fit", "ood", "parsimony")
-_PARSIMONY_TOL = 10.0  # a candidate within this factor of the best error is "as good"
+# How wide the "fits comparably well" band is: a candidate may be worse than the
+# best by up to this factor of the best's own MAGNITUDE. See
+# `_comparability_threshold`, which is where the direction is handled.
+_PARSIMONY_TOL = 10.0
 
 # The held-out splits `best` scores, as `<split>: <sibling filename>`.
 _SIBLING_SPLITS = (("test_id", "test_id.csv"), ("test_ood", "test_ood.csv"))
@@ -424,6 +427,49 @@ def _equation_complexity(body: str) -> int:
     )
 
 
+def _comparability_threshold(best_err: float) -> float:
+    """The worst pseudo-error still counted as fitting COMPARABLY well.
+
+    ``best_err`` is ``-score``, and ``score`` is the maximize-me buffer score
+    (``metric.score_from_value``), so this argument is a minimize-me pseudo-error
+    whichever direction the metric declares. One rule, stated direction-free: a
+    candidate may be worse than the best by up to ``(_PARSIMONY_TOL - 1)`` times
+    the MAGNITUDE of the best. For a nonnegative error that is exactly the
+    historic ``best_err * _PARSIMONY_TOL``, which is why the first arm computes it
+    that way rather than by the general expression: an MSE / NMSE run keeps its
+    threshold bit for bit, down to the float rounding.
+
+    The sign branch is the defect this function exists for. ``-score`` is
+    nonnegative only while the metric's reported value is, which is every
+    lower-is-better error. A metric declaring ``lower_is_better=False`` reports
+    ``score = +value``, so ``best_err`` comes out NEGATIVE and multiplying it by
+    10 moves the threshold TOWARD the best instead of away from it, shrinking the
+    band to nothing and inverting the admission test. Measured with an R2 metric,
+    R2 0.99 at complexity 1 against R2 0.995 at complexity 4: ``best_err`` was
+    -0.994999999999999 and the old threshold -0.994999999998999, which admitted 1
+    of the 2 candidates and the admitted one was the COMPLEX one, so
+    ``--select parsimony`` silently returned the fit-ranked answer. Occam was off,
+    not merely weakened. The branch is on the SIGN of the number rather than on
+    ``lower_is_better`` because a lower-is-better metric whose value can go
+    negative (a log-likelihood-shaped loss, say) inverts in the same way, and
+    because a factor band is only meaningful measured from zero: for a nonnegative
+    error zero is perfection, and nothing here knows where a general score's
+    perfection lies.
+
+    A best of exactly 0.0 leaves no relative scale, so the band collapses to the
+    epsilon floor and parsimony degrades to fit. That is the pre-existing
+    behaviour of a perfect (MSE 0) fit, and it is the honest answer: with a
+    zero-magnitude reference there is no "comparably well" to compute.
+    """
+    if best_err >= 0.0:
+        widened = best_err * _PARSIMONY_TOL
+    else:
+        widened = best_err + (_PARSIMONY_TOL - 1.0) * -best_err
+    # The floor keeps the best candidate itself admissible when the widening
+    # cannot move (a zero, or a magnitude below float resolution).
+    return max(widened, best_err + 1e-12)
+
+
 def _source_theta(source: dict, label: str) -> tuple[list[float] | None, str]:
     """The source constants that legitimately apply to group ``label``, and why.
 
@@ -570,10 +616,13 @@ def _select_winner(valid: list[dict], meta: dict, mode: str) -> dict:
             return max(with_ood, key=lambda c: ood_metric.score_from_value(c["_ood"]))
         return max(valid, key=lambda s: s["score"])  # no OOD set: fall back to fit
 
-    # parsimony: among candidates whose training error is within a factor of the
-    # best, pick the fewest operations (tie-break toward the better fit).
+    # parsimony: among candidates that fit comparably well on the training data,
+    # pick the fewest operations (tie-break toward the better fit). The band is
+    # computed on `-score`, the minimize-me pseudo-error, and works in BOTH metric
+    # directions: see `_comparability_threshold`. The tie-break is already
+    # direction-free, since `score` is maximize-me by construction.
     best_err = min(-c["score"] for c in valid)
-    threshold = max(best_err * _PARSIMONY_TOL, best_err + 1e-12)
+    threshold = _comparability_threshold(best_err)
     good = [c for c in valid if (-c["score"]) <= threshold] or valid
     return min(good, key=lambda c: (c["_complexity"], -c["score"]))
 

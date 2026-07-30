@@ -23,8 +23,10 @@ scoring it on held-out splits).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
+import math
 import re
 import time
 import uuid
@@ -52,6 +54,8 @@ from .runs import (
     _scores_per_test,
     _timing,
     _write_heartbeat,
+    append_next_submission,
+    claim_prompt,
     scored_metric,
     scored_metric_report,
     status_payload,
@@ -75,6 +79,11 @@ llmsr_app = typer.Typer(
 )
 
 _GENERATORS = ("claude", "codex")
+
+# The island model's default seed. Equal to `fit.DEFAULT_SEED`, which is what the
+# founder draw was seeded with back when `--seed` drove both, so a run created
+# with the default fit seed replays exactly as it always did. See `_island_seed`.
+DEFAULT_ISLAND_SEED = 0
 
 # Static on purpose: a help string is frozen when the command is declared, so it
 # can only ever name the built-ins truthfully. `wheeler llmsr metrics` is the
@@ -181,23 +190,449 @@ def _extract_names(spec: str) -> tuple[str, str]:
     return evolve[0], run[0]
 
 
+def _quantize_scores(scores: dict, tolerance: float) -> dict:
+    """Snap each unit's score to a log-magnitude bucket `tolerance` wide.
+
+    **This is WHEELER'S, not the paper's protocol, and it is off by default.**
+    Do not describe it as reproducing upstream. LLM-SR clusters on the raw
+    continuous score with no discretization step, in the code
+    (`_get_signature` returns `tuple(scores_per_test[k] for k in sorted(...))`,
+    and `Signature = Tuple[float, ...]`) and in the paper, which says programs are
+    "clustered based on their signature (defined by their score)" over a
+    continuous `s = -MSE`. Nothing upstream rounds, bins, or buckets a score.
+
+    Why it is offered anyway, and why upstream does not need it. The buffer keys a
+    cluster on the score tuple, so with continuous scores every candidate gets a
+    unique signature, every cluster holds one program, and
+    `Cluster.sample_program` never has a choice: the length bias, which is
+    upstream's only parsimony pressure, cannot act. That is equally true of the
+    paper's own runs. It costs them almost nothing because their budget is
+    ~10,000 candidates per problem over 10 islands (Appendix B: m=10, k=2, b=4,
+    ~2,500 iterations), so an island holds ~1,000 singleton clusters and the
+    score-weighted softmax over those clusters carries the selection on its own.
+    At a stepped-loop budget of tens of candidates there is no such crowd, and
+    the lost length pressure is a material fraction of the machinery.
+
+    So: a small-budget accommodation, and a deviation to declare in any writeup.
+
+    Two things were measured before settling on this shape, both on a real
+    26-submission run whose signature is a tuple of FIVE per-unit scores:
+
+    Rounding to significant figures does not work. A collision needs all five
+    units to round identically, a conjunction whose probability collapses with
+    the unit count: 3 significant figures gave 26 distinct signatures out of 26,
+    2 gave 22, and only 1 significant figure did anything much. Log-magnitude
+    bucketing at 0.25 decades gave 17 distinct signatures with 5 holding more
+    than one program and no cluster larger than 5, which is the balance wanted.
+    Wider is worse, not better: 0.5 decades put 11 of 26 in a single cluster, and
+    one big cluster is as useless as all singletons.
+
+    `tolerance` is a FACTOR, not a bucket index, because that is the question a
+    scientist can answer: "two errors within 1.8x of each other are the same
+    result." Internally it is a width in decades.
+
+    The snapped value stays in ERROR UNITS rather than becoming a bucket number.
+    That matters: the vendored buffer derives both the signature AND the cluster's
+    selection score from this same dict, so returning small integers would leave
+    the score-weighted softmax operating on bucket indices, whose spread divided
+    by the 0.1 temperature makes selection almost deterministic. Snapping to the
+    bucket's representative magnitude coarsens the score without rescaling it.
+
+    `submissions.jsonl` keeps the raw values, so nothing is lost on disk and the
+    tolerance can be changed by starting a new run.
+    """
+    width = math.log10(tolerance)
+    out = {}
+    for key, value in scores.items():
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            out[key] = value
+            continue
+        magnitude = abs(number)
+        if number != number or not math.isfinite(number) or magnitude == 0.0:
+            out[key] = number
+            continue
+        # A FIXED reference of 1.0, so bucket edges are the same for every
+        # candidate in the run. That is the whole mechanism: two candidates
+        # collide only if their scores land in the same absolute bucket.
+        #
+        # A per-candidate reference was tried here and destroyed the feature.
+        # Deriving the reference from the dict being quantized buckets each
+        # candidate against ITSELF, so its own largest-magnitude unit always
+        # returns exactly. Measured: on a single-key signature the function was
+        # the IDENTITY at every tolerance from 1.2 to 100.0, and on a three-unit
+        # signature the other units collapsed onto that candidate's own maximum,
+        # so (-0.718, -0.713, -0.755) became (-0.755, -0.755, -0.755) while a
+        # different candidate became (-0.749, -0.749, -0.749): values changed,
+        # signatures stayed unique, and a wider tolerance was strictly worse.
+        # Cluster counts were identical to raw at 1.8, 3.2 and 10.0.
+        #
+        # It was introduced to fix a supposed singularity at |v| = 1, where
+        # -0.99, -0.995, -0.80 and -0.999 all snap to -1.0. That is not a
+        # singularity, it is the tolerance working: at 1.8 the bucket centred on
+        # 1.0 spans |v| in [0.7454, 1.3416], a ratio of exactly 1.8000, and
+        # 0.999 / 0.80 = 1.25 is inside it. 0.50 lands in the next bucket down,
+        # correctly, since 0.999 / 0.50 = 2.0 is outside. Nor does the collapse
+        # flatten selection: candidates sharing a signature are ONE cluster, and
+        # the softmax runs over clusters, not within one. Inside a cluster
+        # `sample_program` picks by LENGTH, which is the parsimony pressure this
+        # option exists to restore.
+        steps = round(math.log10(magnitude) / width)
+        snapped = 10.0 ** (steps * width)
+        out[key] = -snapped if number < 0 else snapped
+    return out
+
+
+# The replay quantizes only ABOVE this, because the tolerance is a FACTOR between
+# two errors and a factor of 1 is a bucket of zero width. Validated at `init`
+# rather than silently ignored at replay: see `_check_cluster_tolerance`.
+MIN_CLUSTER_TOLERANCE = 1.0
+
+# Beyond this the buckets are wide enough to be worth a word, without refusing:
+# deliberate coarseness is a legitimate thing to ask for, and refusing it would
+# be Wheeler choosing the science.
+COARSE_CLUSTER_TOLERANCE = 10.0
+
+
+def _check_cluster_tolerance(tolerance: Optional[float]) -> None:
+    """Validate `--cluster-tolerance` AT init, where it is bound to the run.
+
+    `0.5` and `1.0` were both accepted, written to `meta.json`, and then ignored
+    by the replay, which quantizes only above 1.0. So a run's clustering was raw
+    while its own metadata said otherwise, with no error and no warning. Both are
+    plausible misreadings: `0.5` as a fraction, `1.0` as "off".
+
+    Checked here for the same reason `--metric`, `--loader` and `--optimizer` are:
+    a bad choice must fail one command rather than invalidate every candidate in
+    the search.
+    """
+    if tolerance is None:
+        return
+    if tolerance <= MIN_CLUSTER_TOLERANCE:
+        raise typer.BadParameter(
+            f"--cluster-tolerance is a FACTOR between two errors, so it must be "
+            f"greater than {MIN_CLUSTER_TOLERANCE} to widen a bucket at all; "
+            f"{tolerance} would be recorded on the run and then ignored by the "
+            f"replay, leaving the clustering raw while the metadata claimed "
+            f"otherwise. Omit the flag for raw scores."
+        )
+    if tolerance > COARSE_CLUSTER_TOLERANCE:
+        typer.echo(
+            f"warning: --cluster-tolerance {tolerance} buckets more than a decade "
+            f"of error into one cluster, which can collapse most of a run into a "
+            f"single signature. Measured on a 26-submission run, half a decade "
+            f"already put 11 of 26 together.",
+            err=True,
+        )
+
+
+def _buffer_config(meta: dict):
+    """The vendored buffer config, with this run's island settings applied.
+
+    Read off `meta`, never off a later command line, for the same reason the key
+    scheme is: the buffer is REPLAYED from `submissions.jsonl` on every verb, so a
+    config that changed between calls would silently reassign islands and produce
+    a different search state from the same submissions.
+
+    A run dir written before these keys existed answers the vendored defaults, so
+    it replays bit for bit as it always did.
+
+    Why they are configurable at all: the defaults are `num_islands=10` and
+    `reset_period=4*60*60`. Island reset (kill the weakest half, reseed from the
+    survivors) is the whole diversity mechanism, and on a run shorter than four
+    hours it NEVER FIRES. With 25 submissions over 10 islands, measured on the
+    pilot's round 1, each island held 1 to 8 programs, median 2 to 3, so most had
+    no population to evolve either. The result was 25 nearly-independent samples
+    presented as an evolutionary search. Neither knob was reachable from the CLI,
+    so there was no way to match the configuration to the budget.
+    """
+    base = config_lib.Config().experience_buffer
+    islands = meta.get("islands")
+    reset_period = meta.get("reset_period")
+    changes = {}
+    if islands:
+        changes["num_islands"] = int(islands)
+    if reset_period:
+        changes["reset_period"] = int(reset_period)
+    return dataclasses.replace(base, **changes) if changes else base
+
+
+def _scores_for_buffer(
+    meta: dict, scores: dict, tolerance: Optional[float] = None
+) -> dict:
+    """The score vector as the vendored buffer should see it, on EVERY path.
+
+    One place, because there were two and they disagreed. The replay quantized
+    (``cluster_tolerance > 1.0``) and ``submit``'s own live ``register_program``
+    did not, so the buffer a reader inspects and the buffer a write builds were
+    keyed differently for the same run. Harmless today only because ``submit``
+    discards its buffer immediately after registering, which is a property of the
+    caller and not of this seam: the moment anything reads state back out of
+    ``submit``'s buffer, an unquantized signature would cluster differently from
+    the same candidate on replay.
+
+    ``tolerance`` is accepted so the replay can pass the value it already read off
+    ``meta`` rather than re-reading it per submission.
+    """
+    if tolerance is None:
+        tolerance = float(meta.get("cluster_tolerance") or 0.0)
+    if tolerance and tolerance > MIN_CLUSTER_TOLERANCE:
+        return _quantize_scores(scores, tolerance)
+    return scores
+
+
+def _island_seed(meta: dict) -> int:
+    """The seed for the island model's own randomness, which is not the fit's.
+
+    ``--seed`` is documented as the seed for the optimizer's random restarts, and
+    that is all a reader expects it to touch. The replay also used it to seed the
+    founder draw in ``reset_islands``, so varying ``--seed`` to probe whether a
+    fit is robust to its starting points ALSO changed which islands got reset and
+    which program reseeded them: two different experiments driven by one flag,
+    with no surface saying so.
+
+    So a run now records ``island_seed`` separately. A run dir written before that
+    key existed falls back to ``seed``, which is what it replayed under, because
+    the buffer is rebuilt from the log on every verb and a changed founder draw
+    would silently reshape the search state of a run already on disk.
+    """
+    if "island_seed" in meta:
+        return int(meta.get("island_seed") or 0)
+    return int(meta.get("seed") or 0)
+
+
+def _reset_islands_safely(db, run_dir: Path) -> None:
+    """Reset the weakest islands, unless the buffer was never fully seeded.
+
+    ``vendor/buffer.py::reset_islands`` draws a founder island from the survivors
+    and registers ``self._best_program_per_island[founder]`` with no None check.
+    Every island holds a program in a healthy run, because ``init`` registers the
+    spec's seed candidate with ``island_id=None`` and the vendored
+    ``register_program`` then loops every island. When the seed candidate is
+    INVALID that never happens, and an island only gains a program when a
+    submission names it.
+
+    Measured in that state: 4 islands, one valid submission on island 0,
+    ``--island-seed 1``, one reset due, and the draw picked an empty survivor:
+    ``AttributeError: 'NoneType' object has no attribute 'keys'`` from inside
+    vendored code. Safe at seed 0 purely by luck of the draw.
+
+    ``vendor/`` is upstream's and is not forked, so the guard lives here. It skips
+    rather than raises: a reset over a half-empty buffer is meaningless anyway
+    (the weakest half is the empty islands), and raising would strand a run that
+    can still be repaired by submitting to the islands that have nothing. Loud,
+    on stderr, because a skipped reset is a real difference in the search.
+    """
+    unseeded = [
+        i for i, program in enumerate(db._best_program_per_island) if program is None
+    ]
+    if not unseeded:
+        db.reset_islands()
+        return
+    typer.echo(
+        f"warning: skipping an island reset in run {run_dir}: islands {unseeded} "
+        "hold no program, so the founder draw upstream makes could pick an empty "
+        "one. This run's seed candidate was invalid, so the buffer was never "
+        "seeded across all islands; a valid submission populates only the island "
+        "it names. Fix the spec's seed body (or the data) and start a new run.",
+        err=True,
+    )
+
+
+def _seed_error(subs: list[dict]) -> str:
+    """Why the run's seed candidate failed, if it did. For the guards' messages."""
+    for sub in subs:
+        if sub.get("seed"):
+            return "" if sub.get("valid") else str(sub.get("error") or "no error recorded")
+    return ""
+
+
+def _require_prompt_ready(db, run_dir: Path, subs: list[dict]) -> None:
+    """Refuse to draw a prompt from a buffer that has empty islands.
+
+    ``vendor/buffer.py::get_prompt`` picks an island uniformly at random and then
+    asks it for a prompt; an island with no clusters gives ``_softmax`` an empty
+    array. Measured on a run whose seed candidate was invalid: ``ValueError:
+    zero-size array to reduction operation maximum which has no identity``, out of
+    numpy, four frames inside vendored code.
+
+    That is not a corner. ``init`` exits 0 when its seed fails, and an act hands
+    the run straight to a generator sub-agent, so a numpy traceback is the first
+    thing that agent sees and nothing in it names the actual problem. With one
+    valid submission on island 0 of 4 the draw fails three times in four, which is
+    worse than failing every time: it looks intermittent.
+
+    All islands, not just the one about to be drawn, because the draw happens
+    inside vendored code. In a healthy run every island holds a program from
+    submission 0 onward (the seed registers on all of them), so this refuses
+    exactly the runs that were already broken.
+    """
+    empty = [
+        i for i, program in enumerate(db._best_program_per_island) if program is None
+    ]
+    if not empty:
+        return
+    seed_error = _seed_error(subs)
+    n_valid = sum(1 for s in subs if s.get("valid"))
+    raise typer.BadParameter(
+        f"run {run_dir} cannot produce a prompt: islands {empty} hold no program, "
+        f"and the prompt's island is drawn at random inside the vendored buffer. "
+        f"{n_valid} of {len(subs)} recorded candidates were valid."
+        + (
+            f" The spec's own seed candidate failed to fit ({seed_error}), so the "
+            "buffer was never seeded: normally that one candidate registers on "
+            "every island. Fix the seed body in the spec (or the data it is fitted "
+            "to) and start a new run."
+            if seed_error
+            else " Submit a valid candidate naming each empty island to populate "
+            "them, or start a new run."
+        )
+    )
+
+
+def _check_island_id(island_id: int, meta: dict) -> None:
+    """Validate an island id BEFORE anything expensive runs. Both ends of it.
+
+    Two measured holes, on a run configured for 4 islands:
+
+    ``--island-id 99`` reached ``db.register_program`` after the fit had already
+    completed and raised a bare ``IndexError: list index out of range`` from
+    vendored code. Exit 1, no append, so the candidate AND the model call that
+    produced it were both lost with no way to retry them.
+
+    ``--island-id -1`` was ACCEPTED, recorded as ``-1``, and registered on the
+    LAST island, because a negative index is a valid list index in Python and the
+    only guard tested ``>= num_islands``. Nothing anywhere said the candidate had
+    gone somewhere other than where the caller asked.
+
+    Checked against the run's OWN island count, read off ``meta.json``, since
+    ``--islands`` is bound at init and the recorded ids index it.
+    """
+    num_islands = _buffer_config(meta).num_islands
+    if not 0 <= island_id < num_islands:
+        raise typer.BadParameter(
+            f"--island-id must be between 0 and {num_islands - 1} for this run "
+            f"({num_islands} islands); got {island_id}. Take the id from "
+            "`wheeler llmsr prompt`, which reports the island it drew."
+        )
+
+
 def _rebuild_buffer(run_dir: Path, meta: dict):
-    """Replay submissions through the vendored register_program to restore state."""
+    """Replay submissions through the vendored register_program to restore state.
+
+    Island reset is driven from the submissions' OWN timestamps, not from the wall
+    clock, and that is a correctness fix rather than a refinement.
+
+    Upstream runs as one long-lived process: the buffer sets
+    ``_last_reset_time = time.time()`` once at construction, and
+    ``register_program`` resets the weakest half of the islands whenever
+    ``time.time() - _last_reset_time`` exceeds ``reset_period``. Wheeler inverted
+    that loop into CLI verbs, so the buffer is CONSTRUCTED FRESH on every call and
+    the timer restarts from zero each time. A replay finishes in milliseconds.
+    The consequence, measured rather than reasoned about: with ``reset_period``
+    forced to 1 second and 26 submissions replayed, ``reset_islands()`` was called
+    ZERO times. Island reset was unreachable at any period, so the entire
+    diversity half of the search silently did not exist, and no configuration
+    could switch it on.
+
+    Replaying with each submission's recorded ``at_epoch`` puts the resets back
+    where a continuously running upstream process would have had them, following
+    upstream's own rule: at most one reset per registration, re-anchored to the
+    current stamp rather than to the last boundary.
+    Submissions written before ``at_epoch`` existed simply never trigger one,
+    and with the default four-hour period a short run does not either, so every
+    run dir already on disk replays as it always did.
+
+    numpy is seeded for the duration, because ``reset_islands`` draws its founder
+    island at random and the buffer is replayed on every verb: unseeded,
+    ``prompt`` and ``submit`` would rebuild DIFFERENT search states from identical
+    submissions. The seed it uses is ``--island-seed``, which is NOT the fit's
+    ``--seed``: see ``_island_seed`` for why the two were separated.
+    """
+    # Function-local, like the other heavy imports here: every `wheeler` CLI
+    # invocation pays for a top-level one.
+    import numpy as np
+
     spec = Path(meta["spec_path"]).read_text()
     fte = meta["function_to_evolve"]
     template = code_manipulation.text_to_program(spec)
-    db = buffer_mod.ExperienceBuffer(
-        config_lib.Config().experience_buffer, template, fte
-    )
-    for sub in _read_submissions(run_dir):
-        if not sub.get("valid"):
-            continue
-        fn, _program = evaluator._sample_to_program(
-            sub["body"], sub.get("version_generated"), template, fte
-        )
-        db.register_program(
-            fn, sub.get("island_id"), _scores_per_test(sub)
-        )
+    config = _buffer_config(meta)
+    db = buffer_mod.ExperienceBuffer(config, template, fte)
+    period = config.reset_period
+    reset_every = int(meta.get("reset_every") or 0)
+    cluster_tolerance = float(meta.get("cluster_tolerance") or 0.0)
+    logical_reset_at: Optional[float] = None
+    registered = 0
+
+    state = np.random.get_state()
+    np.random.seed(_island_seed(meta))
+    try:
+        for sub in _read_submissions(run_dir):
+            if not sub.get("valid"):
+                continue
+            fn, _program = evaluator._sample_to_program(
+                sub["body"], sub.get("version_generated"), template, fte
+            )
+            island_id = sub.get("island_id")
+            # The island count is BAKED INTO the recorded ids, so it cannot change
+            # after the first submission: the vendored buffer indexes a list and a
+            # stale id raises IndexError several frames down, where it reads like a
+            # corrupt run rather than an edited setting. Say what actually happened.
+            #
+            # A NEGATIVE id is the same class of defect wearing a disguise: it
+            # indexes the list from the far end, so a recorded -1 registers on the
+            # LAST island without raising anything at all. `submit` refuses one now
+            # (`_check_island_id`); this catches the ones already on disk, which
+            # were routed somewhere nobody chose.
+            if island_id is not None and not 0 <= island_id < config.num_islands:
+                raise typer.BadParameter(
+                    f"submission {sub.get('sample_order')} was registered on island "
+                    f"{island_id}, but this run is configured for "
+                    f"{config.num_islands} islands (0 to {config.num_islands - 1}). "
+                    "The island count is fixed once a run has submissions, because "
+                    "the recorded ids index it. Start a new run to change it."
+                )
+            scores = _scores_for_buffer(meta, _scores_per_test(sub), cluster_tolerance)
+            db.register_program(fn, island_id, scores)
+
+            registered += 1
+
+            # SAMPLE COUNT is the right clock for a stepped loop, and it takes
+            # precedence when set. Upstream's period is wall clock because its
+            # sampler runs continuously and emits thousands of candidates an
+            # hour, so four hours is thousands of samples. Here a candidate costs
+            # one model call and arrives roughly every two minutes, so the same
+            # period in seconds is a wildly different number of samples.
+            # Measured on this run: replaying 26 submissions spanning 48 minutes
+            # of wall clock fired 48 resets at a 60-second period and 2905 at one
+            # second, and every island collapsed to a single program, because a
+            # reset wipes an island and reseeds it from one founder. Matching
+            # upstream's clock does not match upstream's behaviour.
+            if reset_every:
+                if registered % reset_every == 0:
+                    _reset_islands_safely(db, run_dir)
+                continue
+
+            at = sub.get("at_epoch")
+            if at is None or not period:
+                continue
+            if logical_reset_at is None:
+                logical_reset_at = float(at)
+                continue
+            # At most ONE reset per registration, re-anchored to THIS stamp, which
+            # is what vendor/buffer.py:177-180 does: it re-anchors to time.time()
+            # rather than to last + period, so a long idle gap costs one reset, not
+            # a backlog of them. A catch-up `while` loop was here and over-fired:
+            # measured against upstream's own code driven by a fake clock, at the
+            # default 14400s period with one 14h pause it produced 3 resets where
+            # upstream produced 1, and on a 31-submission run with two 13h pauses
+            # 6 against 2, wiping populations upstream would have kept.
+            if float(at) - logical_reset_at > period:
+                _reset_islands_safely(db, run_dir)
+                logical_reset_at = float(at)
+    finally:
+        np.random.set_state(state)
     return template, db, fte
 
 
@@ -695,6 +1130,43 @@ def init(
     run_id: Optional[str] = typer.Option(None, help="explicit run id (default: random)"),
     max_nparams: Optional[int] = typer.Option(None, help="free-constant budget (default: spec MAX_NPARAMS or 10)"),
     timeout: int = typer.Option(30, help="per-fit timeout seconds"),
+    islands: Optional[int] = typer.Option(
+        None,
+        help=(
+            "islands in the experience buffer (default: upstream's 10). Match this "
+            "to the sample budget: 25 samples over 10 islands leaves 2 to 3 "
+            "programs each, which is no population to evolve."
+        ),
+    ),
+    reset_period: Optional[int] = typer.Option(
+        None,
+        help=(
+            "seconds of LOGICAL elapsed time between weakest-island resets "
+            "(default: upstream's 14400). Upstream's clock, kept for fidelity, "
+            "but mis-scaled for a stepped loop: prefer --reset-every."
+        ),
+    ),
+    reset_every: Optional[int] = typer.Option(
+        None,
+        help=(
+            "reset the weakest half of the islands every N accepted "
+            "submissions. The right clock for a stepped loop, and it takes "
+            "precedence over --reset-period. Aim for a handful of resets across "
+            "the whole run: N around a third of the sample budget."
+        ),
+    ),
+    cluster_tolerance: Optional[float] = typer.Option(
+        None,
+        help=(
+            "two per-unit errors within this FACTOR of each other count as the "
+            "same result when keying a cluster. Continuous scores otherwise give "
+            "every candidate a unique signature, one program per cluster, and no "
+            "clustering at all, which disables upstream's only parsimony "
+            "pressure. 1.8 is a measured starting point; wider collapses "
+            "everything into one cluster. Must be greater than 1.0, since it is a "
+            "factor between two errors. Absent means raw, as before."
+        ),
+    ),
     group_by: str = typer.Option(
         "",
         help=(
@@ -716,7 +1188,21 @@ def init(
     ),
     seed: int = typer.Option(
         fit_mod.DEFAULT_SEED,
-        help="RNG seed for the random restarts; fixed, so a run replays exactly",
+        help=(
+            "RNG seed for the FIT's random restarts, and nothing else; fixed, so a "
+            "run replays exactly. It used to seed the island model's founder draw "
+            "too, so probing whether a fit was robust to its starting points also "
+            "changed which islands got reset: that is --island-seed now."
+        ),
+    ),
+    island_seed: int = typer.Option(
+        DEFAULT_ISLAND_SEED,
+        help=(
+            "RNG seed for the ISLAND MODEL's own randomness (which survivor "
+            "reseeds a reset island). Separate from --seed because they answer "
+            "different questions, and the buffer is replayed from the log on every "
+            "verb, so this has to be fixed for a run to replay at all."
+        ),
     ),
     use_spec_evaluate: bool = typer.Option(
         False,
@@ -743,6 +1229,7 @@ def init(
         raise typer.BadParameter(f"generator must be one of {_GENERATORS}")
     if restarts < 0:
         raise typer.BadParameter("restarts must be >= 0")
+    _check_cluster_tolerance(cluster_tolerance)
 
     # The dataset roles, resolved once and frozen onto the run. The key SCHEME in
     # particular: two candidates in one run must present the vendored buffer with
@@ -788,6 +1275,17 @@ def init(
         "max_nparams": max_nparams,
         "timeout": timeout,
         "group_by": group_by.strip(),
+        # The island model, bound to the run. Absent means upstream's defaults,
+        # so a run dir written before these existed replays unchanged. See
+        # `_buffer_config` for why they must be read from here and not from a
+        # later command line.
+        "islands": islands,
+        "reset_period": reset_period,
+        "reset_every": reset_every,
+        # Precision at which two candidates count as the same result for
+        # clustering. Bound to the run: it changes the buffer's shape, and the
+        # buffer is replayed on every verb.
+        "cluster_tolerance": cluster_tolerance,
         # How the tables are READ, bound to the run for the same reason the key
         # scheme is: the loader decides which units exist, and two candidates
         # scored over different unit sets are not comparable. `_units_for` reads
@@ -797,6 +1295,11 @@ def init(
         "optimizer": opt_key,
         "restarts": restarts,
         "seed": seed,
+        # The island model's own seed, recorded separately from the fit's. See
+        # `_island_seed`: one flag was driving both, so a fit-robustness sweep
+        # silently reshaped the search. Written even at its default, so a reader of
+        # the run never has to infer which of the two seeds applied.
+        "island_seed": island_seed,
         # Which scoring door. Bound here so every candidate in the run is scored
         # the same way, and recorded even when False so a reader of the run never
         # has to infer it from an absence.
@@ -848,6 +1351,29 @@ def init(
     })
     _write_heartbeat(run_dir, meta)
 
+    # A run whose seed candidate did not fit is a DEAD run dir, and it used to say
+    # so only by printing `"seed_valid": false` among fifteen other keys. The seed
+    # is the one candidate that registers on every island (the vendored
+    # `register_program` loops them all for `island_id=None`), so without it the
+    # buffer has empty islands and the very next `prompt` drew one and died inside
+    # numpy. An act hands the fresh run to a generator sub-agent immediately, so
+    # that traceback was the first thing the agent saw.
+    #
+    # Still exit 0: the run dir is legitimately created and a scientist can repair
+    # it by submitting a candidate per island. The warning goes on stderr AND into
+    # the payload, because the reader here is as often an act as a human.
+    seed_warning = ""
+    if not result.valid:
+        seed_warning = (
+            "the spec's own seed candidate did not fit "
+            f"({result.error or 'no error recorded'}), so the experience buffer "
+            "has no program on any island. `wheeler llmsr prompt` will refuse "
+            "until that is fixed, because the prompt's island is drawn at random. "
+            "Fix the seed body in the spec (or the data it is fitted to) and run "
+            "init again."
+        )
+        typer.echo(f"warning: {seed_warning}", err=True)
+
     typer.echo(json.dumps({
         "run_id": rid,
         "run_dir": str(run_dir),
@@ -864,6 +1390,7 @@ def init(
         "use_spec_evaluate": bool(use_spec_evaluate),
         "seed_valid": result.valid,
         "seed_value": result.value,
+        **({"seed_warning": seed_warning} if seed_warning else {}),
         # `seed_value` is the seed candidate's own score, so it is named by what
         # produced it and not by the `metric` two lines up. They differ exactly
         # on the spec door, where the spec owns the loss.
@@ -889,13 +1416,17 @@ def prompt(
     run_dir = _run_dir(run)
     meta = _read_meta(run_dir)
     template, db, _fte = _rebuild_buffer(run_dir, meta)
+    _require_prompt_ready(db, run_dir, _read_submissions(run_dir))
     p = db.get_prompt()
 
-    prompts_dir = run_dir / "prompts"
-    prompts_dir.mkdir(exist_ok=True)
-    n = len(list(prompts_dir.glob("*.txt")))
-    prompt_file = prompts_dir / f"{n}.txt"
-    prompt_file.write_text(p.code)
+    # Claimed under the run lock, and the routing recorded beside the text: two
+    # concurrent `prompt` calls both wrote `prompts/0.txt`, and `island_id` /
+    # `version_generated` lived on stdout only, so nothing on disk said where a
+    # prompt had routed once the terminal scrolled. See `runs.claim_prompt`.
+    prompt_file = claim_prompt(
+        run_dir, p.code,
+        island_id=p.island_id, version_generated=p.version_generated,
+    )
 
     datasets = data_mod.datasets_from_meta(meta)
     seed_ds = data_mod.resolve_seed_from(datasets, str(meta.get("seed_from", "") or ""))
@@ -906,6 +1437,19 @@ def prompt(
         "function_to_evolve": meta["function_to_evolve"],
         "seed_from": seed_ds.as_dict(),
         "score_on": [d.name for d in data_mod.scored_from_meta(meta)],
+        # How many candidates upstream draws from ONE prompt. It is
+        # `Config.samples_per_prompt`, default 4, and the paper uses 4 (Appendix
+        # B: m=10, k=2, b=4). Wheeler had never read it and generated exactly one
+        # body per prompt, so every run did a quarter of the paper's exploration
+        # per context. The four completions share an island and a version, and
+        # differ only in the sampler's own randomness, which is the point: four
+        # continuations of the same context rather than one.
+        #
+        # Reported rather than enforced, because generation lives in the act and
+        # this CLI never calls a model. `submit` already accepts repeated calls
+        # carrying the same `--island-id` and `--version-generated`, which is
+        # exactly how a batch is recorded.
+        "samples_per_prompt": config_lib.Config().samples_per_prompt,
         "prompt": p.code,
     }))
 
@@ -938,6 +1482,10 @@ def submit(
     """Fit + score one candidate body and register it into the buffer."""
     run_dir = _run_dir(run)
     meta = _read_meta(run_dir)
+    # Before the fit, which is the whole point: an out-of-range id used to raise a
+    # bare IndexError from the vendored buffer AFTER the fit had finished, losing
+    # the candidate and the model call that wrote it. See `_check_island_id`.
+    _check_island_id(island_id, meta)
     metric_obj = _metric_for(meta["metric"])
     template, db, fte = _rebuild_buffer(run_dir, meta)
     units = _units_for(meta, metric_obj)
@@ -954,13 +1502,23 @@ def submit(
     if result.valid:
         # result.valid, so score is not None.
         assert result.score is not None
+        # Quantized on the same rule the replay uses, through the one seam that
+        # owns that question. The two disagreed: this register did not quantize and
+        # the replay did, so the buffer written here and the buffer every reader
+        # rebuilds were keyed differently. See `_scores_for_buffer`.
         db.register_program(
-            fn, island_id, result.per_group or {fit_mod.UNGROUPED: result.score}
+            fn, island_id,
+            _scores_for_buffer(
+                meta, result.per_group or {fit_mod.UNGROUPED: result.score}
+            ),
         )
 
-    sample_order = len(_read_submissions(run_dir))
-    _append_submission(run_dir, {
-        "sample_order": sample_order,
+    # The order is claimed and the record appended in ONE critical section. As two
+    # steps, four concurrent submits (which is the normal path: one prompt, four
+    # bodies) all read the same count and wrote sample_orders
+    # [0, 1, 2, 3, 4, 4, 4, 4]. A duplicate order reaches the graph, where
+    # `transfer_ingest` keys an Execution on it. See `runs.append_next_submission`.
+    sample_order = append_next_submission(run_dir, {
         "body": body,
         "program": program,
         "valid": result.valid,

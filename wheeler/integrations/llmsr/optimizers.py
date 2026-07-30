@@ -234,6 +234,22 @@ def get_optimizer(key: str) -> Optimizer:
     """
     normalized = _normalize_key(key)
     if normalized not in OPTIMIZERS:
+        # Load the scientist's own modules before deciding a key is unknown.
+        # Without this, a REGISTERED optimizer validated at `init` (which calls
+        # `load_user_optimizers` explicitly, via `_optimizer_for`) failed at every
+        # later `submit`, because nothing on the fit path had loaded userland
+        # sources yet. The symptom was a self-contradictory rejection listing the
+        # very optimizer it rejected: the error message calls `choices()`, which
+        # calls `available()`, which loads them, so the registry was populated as
+        # a side effect of building the message and never before the lookup.
+        # Measured: 12 of 12 candidates rejected with
+        # "unknown optimizer 'best-of-three'; valid choices: [... 'best-of-three' ...]".
+        try:
+            load_user_optimizers()
+        except Exception:  # a bad userland module must not mask the real error
+            logger.debug("could not load user optimizers while resolving",
+                         exc_info=True)
+    if normalized not in OPTIMIZERS:
         raise KeyError(
             f"unknown optimizer {key!r}; valid choices: {list(choices())}. "
             f"Register your own with optimizers.register_optimizer() from a module "

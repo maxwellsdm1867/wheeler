@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -556,3 +557,427 @@ class TestEmittedMetricLabelMatchesBestJson:
         # and the declared metric is still reported as the declared metric
         assert best["metric"] == status["metric"] == "nmse"
         assert best["scored_metric"]["declared"] == "nmse"
+
+
+class TestTheIslandModelIsConfigurableFromInit:
+    """The experience buffer's own settings, reachable and bound to the run.
+
+    Same rule as rule 1 above, applied to something that is not a registry. The
+    buffer was constructed from `config_lib.Config().experience_buffer` with no
+    override path at all, so upstream's `num_islands=10` and
+    `reset_period=4*60*60` were the only configuration any run could ever have.
+
+    That is not cosmetic. Island reset (kill the weakest half, reseed from the
+    survivors) IS the diversity mechanism, and it fires on a four-hour timer: a
+    run shorter than that gets none of it. Measured on the pilot's round 1, 25
+    submissions over 10 islands left 1 to 8 programs per island, median 2 to 3,
+    so most islands had no population to evolve either. Twenty-five
+    near-independent samples were being reported as an evolutionary search, and
+    there was no flag with which to fix it.
+    """
+
+    def test_both_knobs_are_on_the_init_command(self):
+        names = _init_option_names()
+        assert "--islands" in names
+        assert "--reset-period" in names
+
+    def test_they_are_bound_to_the_run_not_to_a_later_command_line(self):
+        """Recorded in meta.json, because the buffer is REPLAYED every verb.
+
+        A config read from a later command line would silently reassign islands
+        and rebuild a different search state from identical submissions.
+        """
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+        walk = _walk("islands-bound", [
+            "--spec", "spec.txt", "--data", data, "--metric", "mse",
+            "--islands", "3", "--reset-period", "300",
+        ], body=TRUE_BODY)
+        assert walk["meta"]["islands"] == 3
+        assert walk["meta"]["reset_period"] == 300
+
+    def test_the_island_count_really_constrains_the_buffer(self):
+        """Behavioural, not structural: the vendored buffer picks islands at
+        random over `num_islands`, so asking for 2 must make id 2 impossible."""
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+        run_id = "islands-effective"
+        _out(runner.invoke(llmsr_app, [
+            "init", "--run-id", run_id, "--spec", "spec.txt", "--data", data,
+            "--metric", "mse", "--islands", "2",
+        ]))
+        run_dir = Path(".wheeler/llmsr/runs") / run_id
+        seen = set()
+        for _ in range(12):
+            got = _out(runner.invoke(llmsr_app, ["prompt", "--run", str(run_dir)]))
+            seen.add(got["island_id"])
+        assert seen, "prompt never reported an island"
+        assert max(seen) <= 1, f"asked for 2 islands, buffer offered {sorted(seen)}"
+
+    def test_a_run_without_the_keys_gets_upstreams_defaults(self):
+        """Backward compatibility is load-bearing here: every run dir on disk
+        predates these keys, and a changed island count would invalidate its
+        replayed buffer state without raising anything."""
+        from wheeler.integrations.llmsr import cli as cli_mod
+        from wheeler.integrations.llmsr.vendor import config as config_lib
+
+        upstream = config_lib.Config().experience_buffer
+        for meta in ({}, {"islands": None, "reset_period": None}):
+            cfg = cli_mod._buffer_config(meta)
+            assert cfg.num_islands == upstream.num_islands
+            assert cfg.reset_period == upstream.reset_period
+
+        tuned = cli_mod._buffer_config({"islands": 3, "reset_period": 300})
+        assert (tuned.num_islands, tuned.reset_period) == (3, 300)
+        # And the vendored default object is not mutated in the process.
+        assert config_lib.Config().experience_buffer.num_islands == upstream.num_islands
+
+
+class TestIslandResetActuallyFires:
+    """The diversity half of the search, which was unreachable by construction.
+
+    Upstream runs as one long-lived process: the buffer stamps
+    `_last_reset_time = time.time()` at construction and resets the weakest half
+    of the islands once `reset_period` of WALL CLOCK has passed. Wheeler inverted
+    that loop into CLI verbs, so the buffer is rebuilt on every call and the timer
+    restarts from zero each time, while a replay finishes in milliseconds.
+
+    Measured before the fix: `reset_period` forced to 1 second, 26 submissions
+    replayed, `reset_islands()` called ZERO times. Not a mis-tuned default. The
+    mechanism could not fire at any setting, so every run this CLI ever made had
+    islands that only accumulated and never competed.
+
+    Wall clock is the wrong clock here even once it works. Upstream's sampler
+    emits thousands of candidates an hour, so four hours is thousands of samples;
+    a stepped loop emits one per model call. Replaying 26 submissions that spanned
+    48 real minutes fired 48 resets at a 60-second period and 2905 at one second,
+    collapsing every island to a single program. Hence `--reset-every`, counted in
+    accepted submissions, which is what this class mostly pins.
+    """
+
+    def _run(self, run_id: str, extra: list[str], n: int) -> tuple[Path, dict]:
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+        _out(runner.invoke(llmsr_app, [
+            "init", "--run-id", run_id, "--spec", "spec.txt",
+            "--data", data, "--metric", "mse", *extra,
+        ]))
+        run_dir = Path(".wheeler/llmsr/runs") / run_id
+        body = Path(f"{run_id}_b.py")
+        body.write_text(TRUE_BODY)
+        for i in range(n):
+            _out(runner.invoke(llmsr_app, [
+                "submit", "--run", str(run_dir), "--body-file", str(body),
+                "--island-id", str(i % 2), "--version-generated", "0",
+            ]))
+        return run_dir, json.loads((run_dir / "meta.json").read_text())
+
+    def _replay_resets(self, run_dir: Path, meta: dict) -> int:
+        from wheeler.integrations.llmsr import cli as cli_mod
+        from wheeler.integrations.llmsr.vendor import buffer as buffer_mod
+
+        calls = {"n": 0}
+        original = buffer_mod.ExperienceBuffer.reset_islands
+
+        def spy(self, *a, **k):
+            calls["n"] += 1
+            return original(self, *a, **k)
+
+        buffer_mod.ExperienceBuffer.reset_islands = spy
+        try:
+            cli_mod._rebuild_buffer(run_dir, meta)
+        finally:
+            buffer_mod.ExperienceBuffer.reset_islands = original
+        return calls["n"]
+
+    def test_reset_every_fires_on_submission_count(self):
+        run_dir, meta = self._run(
+            "reset-count", ["--islands", "2", "--reset-every", "3"], n=9)
+        from wheeler.integrations.llmsr.runs import _read_submissions
+
+        accepted = sum(1 for s in _read_submissions(run_dir) if s.get("valid"))
+        assert accepted >= 3, "need enough accepted submissions to cross a boundary"
+        assert self._replay_resets(run_dir, meta) == accepted // 3
+
+    def test_upstreams_wall_clock_default_still_never_fires_on_a_short_run(self):
+        """Not a bug to fix: a run lasting seconds SHOULD see no four-hourly
+        reset. Pinned so the default stays backward compatible for every run dir
+        already on disk."""
+        run_dir, meta = self._run("reset-default", ["--islands", "2"], n=4)
+        assert meta.get("reset_every") in (None, 0)
+        assert self._replay_resets(run_dir, meta) == 0
+
+    def test_the_replay_is_deterministic_across_calls(self):
+        """reset_islands picks its founder island at random, and the buffer is
+        replayed on EVERY verb. Unseeded, `prompt` and `submit` would rebuild
+        different search states from identical submissions."""
+        from wheeler.integrations.llmsr import cli as cli_mod
+
+        run_dir, meta = self._run(
+            "reset-determinism", ["--islands", "3", "--reset-every", "2"], n=6)
+
+        def shape():
+            _, db, _ = cli_mod._rebuild_buffer(run_dir, meta)
+            return [
+                sum(len(c._programs) for c in isl._clusters.values())
+                for isl in db._islands
+            ]
+
+        assert shape() == shape()
+
+    def test_changing_the_island_count_mid_run_is_refused_clearly(self):
+        """The count is baked into the recorded island ids, which index a list, so
+        a stale id raises IndexError several frames inside vendored code, where it
+        reads as a corrupt run rather than an edited setting."""
+        from wheeler.integrations.llmsr import cli as cli_mod
+
+        run_dir, meta = self._run("reset-idguard", ["--islands", "3"], n=4)
+        with pytest.raises(Exception) as exc:
+            cli_mod._rebuild_buffer(run_dir, {**meta, "islands": 1})
+        assert "island" in str(exc.value).lower()
+
+
+class TestClusterToleranceIsAWheelerDeviation:
+    """Score quantization for clustering: OFF by default, and not the paper's.
+
+    LLM-SR clusters on the raw continuous score. `_get_signature` returns
+    `tuple(scores_per_test[k] for k in sorted(...))` with `Signature =
+    Tuple[float, ...]`, and the paper describes programs "clustered based on
+    their signature (defined by their score)" over a continuous `s = -MSE`.
+    Nothing upstream rounds or bins. So the default must stay raw, and these
+    tests exist mostly to keep it that way.
+
+    The accommodation is for budget. With continuous scores every candidate gets
+    a unique signature and every cluster holds one program, so
+    `Cluster.sample_program` never chooses and the length bias, upstream's only
+    parsimony pressure, cannot act. That is true of the paper's runs too, and
+    costs them little: at ~10,000 candidates over 10 islands (Appendix B: m=10,
+    k=2, b=4, ~2,500 iterations) an island holds ~1,000 singleton clusters and
+    the score-weighted softmax across them carries selection alone. At tens of
+    candidates there is no such crowd.
+
+    Measured on a real 26-submission run at 10 islands: raw gives 0 clusters with
+    more than one program, tolerance 1.8x gives 3, tolerance 3.2x gives 4.
+    """
+
+    def test_the_default_is_raw_scores_exactly_as_upstream(self):
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+        walk = _walk("cluster-default", [
+            "--spec", "spec.txt", "--data", data, "--metric", "mse",
+        ], body=TRUE_BODY)
+        assert walk["meta"].get("cluster_tolerance") in (None, 0, 0.0)
+
+    def test_the_flag_exists_and_is_bound_to_the_run(self):
+        assert "--cluster-tolerance" in _init_option_names()
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+        walk = _walk("cluster-bound", [
+            "--spec", "spec.txt", "--data", data, "--metric", "mse",
+            "--cluster-tolerance", "1.8",
+        ], body=TRUE_BODY)
+        assert walk["meta"]["cluster_tolerance"] == pytest.approx(1.8)
+
+    def test_scores_snap_to_error_units_not_to_bucket_indices(self):
+        """The vendored buffer derives BOTH the signature and the cluster's
+        selection score from this one dict. Returning bucket integers would leave
+        the score-weighted softmax operating on indices, whose spread over the
+        0.1 temperature makes selection nearly deterministic."""
+        from wheeler.integrations.llmsr.cli import _quantize_scores
+
+        raw = {"a": -0.00249, "b": -0.00251, "c": -0.0363, "d": -0.402}
+        out = _quantize_scores(raw, 1.8)
+        # Same order of magnitude as the inputs, not small integers.
+        for key, value in out.items():
+            assert value < 0, key
+            assert abs(value) < 10, f"{key} left error units: {value}"
+        # Values within the tolerance collide; values far apart do not.
+        assert out["a"] == out["b"]
+        assert len({out["a"], out["c"], out["d"]}) == 3
+
+    def test_zero_and_nonfinite_scores_survive_untouched(self):
+        from wheeler.integrations.llmsr.cli import _quantize_scores
+
+        out = _quantize_scores(
+            {"z": 0.0, "n": float("nan"), "i": float("-inf"), "ok": -0.5}, 1.8)
+        assert out["z"] == 0.0
+        assert out["n"] != out["n"]
+        assert out["i"] == float("-inf")
+        assert out["ok"] < 0
+
+
+class TestARegisteredOptimizerSurvivesAProcessBoundary:
+    """A registered optimizer must work at SUBMIT, not merely validate at init.
+
+    The existing registry test walks init -> submit -> best through `CliRunner`,
+    all in ONE process. `init` calls `load_user_optimizers()` explicitly (via
+    `_optimizer_for`), so the registry is already warm by the time submit
+    resolves the name, and the walk passes.
+
+    Across a process boundary it did not. `get_optimizer` checked
+    `key not in OPTIMIZERS` before loading any userland module, while its own
+    error message called `choices()` -> `available()` -> `load_user_optimizers()`.
+    So the registry was populated as a side effect of BUILDING THE REJECTION and
+    never before the lookup, producing a self-contradictory error that listed the
+    optimizer it had just rejected. Measured on a real batch: 12 of 12 candidates
+    lost to "unknown optimizer 'best-of-three'; valid choices: [... 'best-of-three'
+    ...]" while `init` had accepted it minutes earlier.
+
+    So this test spawns a real subprocess, which is the only way to start with a
+    cold registry.
+    """
+
+    def test_submit_in_a_fresh_process_resolves_a_userland_optimizer(self, tmp_path):
+        import subprocess
+        import sys
+
+        module = Path("my_optimizers.py").resolve()
+        module.write_text(
+            "from scipy.optimize import minimize\n"
+            "from wheeler.integrations.llmsr.optimizers import (\n"
+            "    Optimizer, register_optimizer)\n"
+            "def _powellish(loss, x0):\n"
+            "    res = minimize(loss, x0, method='Powell')\n"
+            "    return res.x, float(res.fun)\n"
+            "register_optimizer(Optimizer(key='userland-powell',\n"
+            "                             label='userland', minimize=_powellish))\n"
+        )
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+
+        env = dict(os.environ, WHEELER_LLMSR_OPTIMIZERS=str(module))
+        run_id = "userland-crossprocess"
+        init = subprocess.run(
+            [sys.executable, "-m", "wheeler.tools.cli", "llmsr", "init",
+             "--run-id", run_id, "--spec", "spec.txt", "--data", data,
+             "--metric", "mse", "--optimizer", "userland-powell"],
+            capture_output=True, text=True, env=env,
+        )
+        assert init.returncode == 0, init.stdout + init.stderr
+
+        body = Path("crossproc_body.py")
+        body.write_text(TRUE_BODY)
+        run_dir = Path(".wheeler/llmsr/runs") / run_id
+        submit = subprocess.run(
+            [sys.executable, "-m", "wheeler.tools.cli", "llmsr", "submit",
+             "--run", str(run_dir), "--body-file", str(body),
+             "--island-id", "0", "--version-generated", "0"],
+            capture_output=True, text=True, env=env,
+        )
+        assert submit.returncode == 0, submit.stdout + submit.stderr
+        payload = json.loads(submit.stdout.strip().splitlines()[-1])
+        assert payload["valid"] is True, payload
+        assert "unknown optimizer" not in (payload.get("error") or "")
+
+    def test_the_rejection_message_can_never_contradict_itself(self):
+        """Whatever `choices()` offers, `get_optimizer` must accept. The two used
+        to disagree because only one of them loaded userland sources."""
+        optimizers_mod.load_user_optimizers()
+        for key in optimizers_mod.choices():
+            if key == optimizers_mod.AUTO:
+                optimizers_mod.resolve(key)
+            else:
+                optimizers_mod.get_optimizer(key)
+
+
+class TestWallClockResetMatchesUpstreamExactly:
+    """Replaying with recorded timestamps must not fire MORE resets than upstream.
+
+    The first version of the timestamp replay caught up with a `while` loop,
+    firing one reset per elapsed period. Upstream fires at most ONE per
+    registration and re-anchors `_last_reset_time` to `time.time()` rather than to
+    last + period (vendor/buffer.py:177-180), so a long idle gap costs one reset,
+    not a backlog. Measured against upstream's own code driven by a patched clock:
+    at the default 14400s period with one 14h pause, the loop produced 3 resets
+    where upstream produced 1, wiping populations upstream would have kept.
+
+    A stepped loop idles for hours by construction, so the divergence was on the
+    normal path and at the default period, not in a corner.
+    """
+
+    def _run(self, gaps: list[float], period: int) -> tuple[int, int]:
+        from unittest import mock
+
+        from wheeler.integrations.llmsr import cli as cli_mod
+        from wheeler.integrations.llmsr.runs import (
+            _read_submissions, _scores_per_test)
+        from wheeler.integrations.llmsr.vendor import buffer as buffer_mod
+        from wheeler.integrations.llmsr.vendor import code_manipulation, evaluator
+
+        Path("spec.txt").write_text(_spec("    return 0.0\n"))
+        data = _write_grouped_csv()
+        run_id = f"resetclock{abs(hash(tuple(gaps))) % 10000}"
+        _out(runner.invoke(llmsr_app, [
+            "init", "--run-id", run_id, "--spec", "spec.txt",
+            "--data", data, "--metric", "mse", "--islands", "4",
+        ]))
+        run_dir = Path(".wheeler/llmsr/runs") / run_id
+        body = Path(f"{run_id}_b.py")
+        body.write_text(TRUE_BODY)
+        for i in range(6):
+            _out(runner.invoke(llmsr_app, [
+                "submit", "--run", str(run_dir), "--body-file", str(body),
+                "--island-id", str(i % 2), "--version-generated", "0",
+            ]))
+
+        log = run_dir / "submissions.jsonl"
+        subs = [json.loads(line)
+                for line in log.read_text().strip().splitlines()]
+        t = 1_000_000.0
+        for i, s in enumerate(subs):
+            if i:
+                t += gaps[(i - 1) % len(gaps)]
+            s["at_epoch"] = t
+        log.write_text("\n".join(json.dumps(s) for s in subs) + "\n")
+
+        meta = {**json.loads((run_dir / "meta.json").read_text()),
+                "reset_period": period, "reset_every": 0}
+        counts = {}
+        original = buffer_mod.ExperienceBuffer.reset_islands
+
+        def spy(self, *a, **k):
+            counts["n"] = counts.get("n", 0) + 1
+            return original(self, *a, **k)
+
+        # Wheeler's replay.
+        counts.clear()
+        buffer_mod.ExperienceBuffer.reset_islands = spy
+        try:
+            cli_mod._rebuild_buffer(run_dir, meta)
+        finally:
+            buffer_mod.ExperienceBuffer.reset_islands = original
+        wheeler = counts.get("n", 0)
+
+        # Upstream's own branch, driven by a clock set to each at_epoch.
+        template = code_manipulation.text_to_program(
+            Path(meta["spec_path"]).read_text())
+        fte = meta["function_to_evolve"]
+        valid = [s for s in _read_submissions(run_dir) if s.get("valid")]
+        clock = {"t": valid[0]["at_epoch"]}
+        counts.clear()
+        with mock.patch.object(buffer_mod, "time") as fake:
+            fake.time = lambda: clock["t"]
+            buffer_mod.ExperienceBuffer.reset_islands = spy
+            try:
+                db = buffer_mod.ExperienceBuffer(
+                    cli_mod._buffer_config(meta), template, fte)
+                for s in valid:
+                    clock["t"] = s["at_epoch"]
+                    fn, _ = evaluator._sample_to_program(
+                        s["body"], s.get("version_generated"), template, fte)
+                    db.register_program(
+                        fn, s.get("island_id"), _scores_per_test(s))
+            finally:
+                buffer_mod.ExperienceBuffer.reset_islands = original
+        return counts.get("n", 0), wheeler
+
+    @pytest.mark.parametrize("gaps,label", [
+        ([60, 60, 14 * 3600, 60, 60], "one long pause"),
+        ([60, 13 * 3600, 60, 60, 13 * 3600], "two long pauses"),
+        ([90], "a normal steady run"),
+        ([5 * 3600], "steadily longer than the period"),
+    ])
+    def test_reset_count_equals_upstreams(self, gaps, label):
+        upstream, wheeler = self._run(gaps, period=14400)
+        assert wheeler == upstream, (
+            f"{label}: upstream fired {upstream} resets, Wheeler fired {wheeler}")
