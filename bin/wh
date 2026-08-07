@@ -41,6 +41,58 @@ die() {
     exit 1
 }
 
+# Resolve the Neo4j endpoint to probe. Precedence matches wheeler/config.py:
+# NEO4J_URI env var wins over wheeler.yaml, which wins over the local default.
+neo4j_uri() {
+    if [[ -n "${NEO4J_URI:-}" ]]; then
+        printf '%s' "$NEO4J_URI"
+        return 0
+    fi
+    local cfg="$WHEELER_DIR/wheeler.yaml" from_yaml=""
+    if [[ -f "$cfg" ]]; then
+        # First `uri:` value that looks like a Neo4j scheme. Quotes optional.
+        from_yaml=$(grep -E '^[[:space:]]*uri:[[:space:]]*' "$cfg" 2>/dev/null \
+            | sed -E "s/^[[:space:]]*uri:[[:space:]]*['\"]?([^'\"[:space:]]+).*/\1/" \
+            | grep -E '^(bolt|neo4j)(\+s|\+ssc)?://' \
+            | head -1) || true
+    fi
+    if [[ -n "$from_yaml" ]]; then
+        printf '%s' "$from_yaml"
+    else
+        printf '%s' 'bolt://localhost:7687'
+    fi
+}
+
+# Split "scheme://[user:pass@]host[:port][/db]" into "host port".
+# Handles bolt://, neo4j://, neo4j+s://, neo4j+ssc://, bracketed IPv6, and an
+# optional port (default 7687). Returns 1 when the URI is not parseable so the
+# caller can skip the preflight instead of failing.
+parse_neo4j_hostport() {
+    local uri="$1" rest host port
+    rest="${uri#*://}"
+    [[ "$rest" != "$uri" ]] || return 1     # no scheme separator
+    rest="${rest%%/*}"                      # drop /database and any path
+    rest="${rest%%\?*}"                     # drop ?query
+    rest="${rest##*@}"                      # drop credentials
+    [[ -n "$rest" ]] || return 1
+    if [[ "$rest" == \[*\]* ]]; then        # bracketed IPv6 literal
+        host="${rest%%\]*}"
+        host="${host#\[}"
+        port="${rest#*\]}"
+        port="${port#:}"
+    elif [[ "$rest" == *:* ]]; then
+        host="${rest%%:*}"
+        port="${rest##*:}"
+    else
+        host="$rest"
+        port=""
+    fi
+    [[ -n "$host" ]] || return 1
+    [[ -n "$port" ]] || port=7687
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    printf '%s %s' "$host" "$port"
+}
+
 usage() {
     echo ""
     echo -e "  ${AMBER}${BOLD}Wheeler${RESET} ${DIM}— a thinking partner for scientists${RESET}"
@@ -88,6 +140,16 @@ usage() {
 run_headless() {
     local cmd_file="$1" prompt="$2" model="$3" color="$4" mode_name="$5" max_turns="$6" fmt="$7" log="${8:-false}"
     shift 7; shift 2>/dev/null || true
+
+    # These flags (-p, --system-prompt, --output-format, --max-turns) are
+    # Claude Code CLI flags, so a headless run genuinely needs that binary.
+    if ! command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
+        if command -v codex >/dev/null 2>&1; then
+            die "'$CLAUDE_BIN' not found. Headless 'wh $mode_name' drives the Claude Code CLI; codex takes different flags, so run it directly or set CLAUDE_BIN."
+        fi
+        die "'$CLAUDE_BIN' not found. Install: npm install -g @anthropic-ai/claude-code (or set CLAUDE_BIN)"
+    fi
+
     MODEL="${WHEELER_MODEL:-$model}"
     banner "$mode_name" "$MODEL" "$color"
 
@@ -118,14 +180,36 @@ run_headless() {
 }
 
 # ── Validate ────────────────────────────────────────────────────────
-command -v "$CLAUDE_BIN" >/dev/null 2>&1 || die "claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
 [[ -d "$WHEELER_DIR" ]] || die "Wheeler project not found at $WHEELER_DIR"
-[[ -f "$WHEELER_DIR/CLAUDE.md" ]] || die "No CLAUDE.md in $WHEELER_DIR — is this the right project?"
+# CLAUDE.md or AGENTS.md both mark a project root; either is enough.
+if [[ ! -f "$WHEELER_DIR/CLAUDE.md" && ! -f "$WHEELER_DIR/AGENTS.md" ]]; then
+    die "No CLAUDE.md or AGENTS.md in $WHEELER_DIR. Is this the right project?"
+fi
+
+# A missing `claude` is not fatal here: the utility subcommands (show, backup,
+# restore, sync-commands, hooks) do not launch an agent at all, and a
+# Codex-only install is a legitimate setup. run_headless() re-checks and dies
+# with a precise message only when a headless run actually needs the binary.
+if ! command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
+    if command -v codex >/dev/null 2>&1; then
+        echo -e "  ${AMBER}!${RESET} ${DIM}'$CLAUDE_BIN' not found; codex is present, but headless wh subcommands are Claude-only${RESET}"
+    else
+        echo -e "  ${AMBER}!${RESET} ${DIM}'$CLAUDE_BIN' not found: headless subcommands unavailable (npm install -g @anthropic-ai/claude-code)${RESET}"
+    fi
+fi
 
 # ── Pre-flight checks ─────────────────────────────────────────────
-# Quick Neo4j connectivity check — if it's down, MCP servers will hang
-if ! nc -z localhost 7687 2>/dev/null; then
-    echo -e "  ${AMBER}!${RESET} ${DIM}Neo4j not reachable on localhost:7687 — graph tools may be slow${RESET}"
+# Quick Neo4j connectivity check: if it's down, MCP servers will hang.
+# Probes the configured endpoint, which may be a remote Aura instance.
+if NEO4J_TARGET=$(parse_neo4j_hostport "$(neo4j_uri)"); then
+    read -r NEO4J_HOST NEO4J_PORT <<< "$NEO4J_TARGET"
+    if command -v nc >/dev/null 2>&1; then
+        if ! nc -z -w 3 "$NEO4J_HOST" "$NEO4J_PORT" 2>/dev/null; then
+            echo -e "  ${AMBER}!${RESET} ${DIM}Neo4j not reachable on ${NEO4J_HOST}:${NEO4J_PORT} (graph tools may be slow)${RESET}"
+        fi
+    fi
+else
+    echo -e "  ${AMBER}!${RESET} ${DIM}Could not parse a host:port out of the configured Neo4j URI, skipping the connectivity preflight${RESET}"
 fi
 
 # ── Navigate ────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from wheeler.config import project_knowledge_dir
+
 if TYPE_CHECKING:
     from wheeler.config import WheelerConfig
 
@@ -46,8 +48,13 @@ def _extract_context(args: dict) -> _QueryContext:
         return _QueryContext(knowledge_path=None, project_tag="")
     kp = getattr(config, "knowledge_path", None)
     ptag = getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
+    # Anchored on the project root, not the CWD. Every query_* tool enriches its
+    # results from knowledge/*.json through here, so a cwd-relative path made a
+    # server started in a subdirectory return graph rows with no content attached,
+    # which reads as "the graph lost my descriptions" rather than as a path bug.
+    # The `kp` guard is kept so duck-typed configs in tests still yield None.
     return _QueryContext(
-        knowledge_path=Path(kp) if kp else None,
+        knowledge_path=project_knowledge_dir(config) if kp else None,
         project_tag=ptag or "",
     )
 

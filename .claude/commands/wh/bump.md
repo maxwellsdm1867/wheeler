@@ -62,7 +62,7 @@ Extract the "N passed" number. Update in:
 ```bash
 python -c "from wheeler.tools.graph_tools import TOOL_REGISTRY; print(len(TOOL_REGISTRY))"
 ```
-If that fails, count tools from `mcp_server.py` registrations. Update in:
+If that fails, count `@mcp.tool` registrations across the four split servers (`mcp_core.py`, `mcp_query.py`, `mcp_mutations.py`, `mcp_ops.py`); `tests/test_mcp_surface.py` asserts the same numbers. Update in:
 - `CLAUDE.md` ("N MCP tools across M servers")
 - `README.md` (multiple references to "44 tools")
 - `ARCHITECTURE.md` (tool count references)

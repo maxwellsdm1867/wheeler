@@ -10,7 +10,7 @@ import logging
 from collections import defaultdict, deque
 from typing import cast
 
-from wheeler.config import WheelerConfig
+from wheeler.config import project_knowledge_dir, WheelerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +67,9 @@ async def find_communities(
     from wheeler.tools.graph_tools import _get_backend
     from wheeler.knowledge.store import read_node
     from wheeler.models import title_for_node, PREFIX_TO_LABEL
-    from pathlib import Path
 
     backend = await _get_backend(config)
-    knowledge_dir = Path(config.knowledge_path)
+    knowledge_dir = project_knowledge_dir(config)
 
     # Extract edges (directed -> to avoid duplicates)
     try:

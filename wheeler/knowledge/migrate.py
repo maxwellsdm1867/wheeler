@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from wheeler.config import project_wheeler_dir
 from wheeler.graph.backend import GraphBackend
 from wheeler.models import (
     NODE_LABELS, NodeBase, model_for_label, title_for_node
@@ -17,7 +18,17 @@ from wheeler.write_receipt import RepairQueue, WriteReceipt
 
 logger = logging.getLogger(__name__)
 
-_repair_queue = RepairQueue(Path(".wheeler"))
+
+def _repair_queue(knowledge_path: Path) -> RepairQueue:
+    """Repair queue for a migration, resolved per call rather than at import.
+
+    `migrate()` takes a knowledge directory, not a config. An absolute one
+    carries its own project: put the queue in the `.wheeler/` beside it, the
+    same convention `backup.py` uses for its default destination. A relative
+    one is anchored on the discovered project root instead of the cwd.
+    """
+    root = knowledge_path.parent if knowledge_path.is_absolute() else None
+    return RepairQueue(root / ".wheeler" if root else project_wheeler_dir())
 
 
 @dataclass
@@ -108,7 +119,7 @@ async def migrate(
                     # not silently dropped when logging is unconfigured
                     # (issue #37, criterion 3).
                     try:
-                        _repair_queue.enqueue(WriteReceipt(
+                        _repair_queue(knowledge_path).enqueue(WriteReceipt(
                             node_id=node_id,
                             label=label,
                             timestamp=datetime.now(timezone.utc).isoformat(),

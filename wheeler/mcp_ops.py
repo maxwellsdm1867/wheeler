@@ -11,6 +11,7 @@ import json
 
 from fastmcp import FastMCP
 
+from wheeler.config import project_knowledge_dir
 from wheeler.graph import provenance
 from wheeler.tools import graph_tools
 from wheeler.validation import citations
@@ -212,7 +213,6 @@ async def compute_retrieval_quality(
     """
     from wheeler.validation.ledger import compute_retrieval_metrics
     from wheeler.knowledge.store import list_nodes
-    from pathlib import Path
 
     retrieved = (
         [r.strip() for r in retrieved_node_ids.split(",") if r.strip()]
@@ -220,8 +220,9 @@ async def compute_retrieval_quality(
         else []
     )
 
-    # Build node text corpus from knowledge files
-    knowledge_dir = Path(_config.knowledge_path)
+    # Build node text corpus from knowledge files, anchored on the project root
+    # rather than the CWD: this server may be spawned from anywhere.
+    knowledge_dir = project_knowledge_dir(_config)
     node_texts: dict[str, str] = {}
     try:
         from wheeler.models import title_for_node

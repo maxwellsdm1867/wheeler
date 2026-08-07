@@ -13,15 +13,15 @@ isolation and the tag is left empty.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import logging
-from typing import Any
+import re
+from typing import Any, TypeVar
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.backend import GraphBackend
 from wheeler.graph.circuit_breaker import (
     CircuitBreaker,
-    CircuitOpenError,
-    is_deterministic_neo4j_error,
 )
 from wheeler.graph.schema import (
     LABEL_TO_PREFIX,
@@ -30,10 +30,34 @@ from wheeler.graph.schema import (
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 # Prefix used to flatten the ``custom`` bag into discrete scalar properties.
 # Neo4j cannot store a nested map as a single property, so a node's
 # ``custom={"k": v}`` is written as ``custom_k = v`` and reassembled on read.
 _CUSTOM_PREFIX = "custom_"
+
+# Cypher clause keywords that can write. ``run_cypher`` takes arbitrary
+# caller-supplied Cypher (merge.py and restore.py both send writes through it),
+# so it is only replayed when none of these appear as a whole word.
+#
+# Every misclassification falls the safe way. A read whose text happens to
+# contain one of these words, in a string literal or a property name, is merely
+# not retried. A write cannot hide from the list: every Cypher writing clause is
+# here, and the indirect routes (``FOREACH``, ``CALL``, ``LOAD CSV``) can only
+# write by being on the list themselves or by containing a clause that is.
+#
+# Whole-word matching is load-bearing: a substring test would see "SET" inside
+# ``Dataset`` and refuse to retry almost every read in the codebase.
+_CYPHER_WRITE_RE = re.compile(
+    r"\b(CREATE|MERGE|DELETE|SET|REMOVE|DROP|CALL|FOREACH|LOAD)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_read_only_cypher(query: str) -> bool:
+    """Whether ``query`` provably only reads, and so is safe to replay."""
+    return _CYPHER_WRITE_RE.search(query) is None
 
 
 def _flatten_custom(props: dict) -> dict:
@@ -101,6 +125,45 @@ class Neo4jBackend(GraphBackend):
         """Non-empty when Community Edition namespace isolation is active."""
         return self._config.neo4j.project_tag
 
+    # -- execution helpers --
+    #
+    # Both route through the same wrapper so the breaker bookkeeping cannot
+    # drift between the replayed and the not-replayed paths. The wrapper checks
+    # the breaker before each attempt, lets CircuitOpenError propagate, records
+    # a transient failure against the counter, and records a deterministic
+    # Cypher error as the underlying cause without advancing the counter.
+    #
+    # `operation` is always a factory, called once per attempt, so each attempt
+    # opens its own session. Attempts run strictly sequentially: a Neo4j session
+    # forbids concurrent queries, so nothing here may become an asyncio.gather.
+
+    async def _retry(
+        self, operation: Callable[[], Awaitable[T]], *, label: str
+    ) -> T:
+        """Run ``operation``, replaying it on a transient failure.
+
+        Only for operations that are safe to replay: reads, and writes whose
+        Cypher is idempotent (MATCH ... SET, DETACH DELETE).
+        """
+        from wheeler.graph.driver import run_with_retry
+
+        return await run_with_retry(operation, breaker=self._cb, label=label)
+
+    async def _once(
+        self, operation: Callable[[], Awaitable[T]], *, label: str
+    ) -> T:
+        """Run ``operation`` exactly once, never replaying it.
+
+        For call sites where a replay could duplicate data. Expressed as the
+        one-attempt case of the same wrapper rather than a hand-rolled
+        try/except, so the two paths cannot report failures differently.
+        """
+        from wheeler.graph.driver import run_with_retry
+
+        return await run_with_retry(
+            operation, breaker=self._cb, attempts=1, label=label
+        )
+
     # -- lifecycle --
 
     async def initialize(self) -> None:
@@ -139,20 +202,20 @@ class Neo4jBackend(GraphBackend):
         prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
         stmt = f"CREATE (n:{label} {{{prop_assignments}}})"
 
-        try:
+        async def _run() -> None:
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 await session.run(stmt, parameters={"props": props})
-            self._cb.record_success()
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+
+        # NOT RETRIED: a bare CREATE must not be replayed.
+        #
+        # The `id` uniqueness constraint means a replay cannot actually produce
+        # a duplicate node, so the hazard is subtler than duplication: if the
+        # commit landed and only the acknowledgement was lost, the replay hits
+        # ConstraintValidationFailed and this method reports failure for a write
+        # that in fact succeeded. The caller would then write a repair receipt
+        # for a node that exists. Failing once, honestly, is better.
+        await self._once(_run, label="create_node")
 
         logger.debug("Created %s node %s", label, node_id)
         return node_id
@@ -169,21 +232,14 @@ class Neo4jBackend(GraphBackend):
         else:
             stmt = f"MATCH (n:{label} {{id: $id}}) RETURN n"
 
-        try:
+        async def _run():
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 result = await session.run(stmt, parameters=params)
-                record = await result.single()
-            self._cb.record_success()
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+                return await result.single()
+
+        # Retried: a read changes nothing, so replaying it is free.
+        record = await self._retry(_run, label="get_node")
 
         if record is None:
             return None
@@ -217,21 +273,15 @@ class Neo4jBackend(GraphBackend):
         else:
             stmt = f"MATCH (n:{label} {{id: $id}}) SET {set_clauses} RETURN n.id"
 
-        try:
+        async def _run():
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 result = await session.run(stmt, parameters=params)
-                record = await result.single()
-            self._cb.record_success()
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+                return await result.single()
+
+        # Retried: `MATCH ... SET` assigns fixed values from $props, so applying
+        # it twice leaves exactly the state applying it once does.
+        record = await self._retry(_run, label="update_node")
 
         return record is not None
 
@@ -247,7 +297,15 @@ class Neo4jBackend(GraphBackend):
         else:
             match_clause = f"MATCH (n:{label} {{id: $id}})"
 
-        try:
+        # Survives across attempts: if attempt 1 saw the node and then lost the
+        # connection, attempt 2 may find it already gone because attempt 1's
+        # delete actually committed. Without this, the replay would report
+        # "not found" for a delete that succeeded, and the caller would leave
+        # the node's JSON and synthesis files behind as orphans.
+        existed = False
+
+        async def _run() -> bool:
+            nonlocal existed
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 # Check existence
@@ -257,26 +315,22 @@ class Neo4jBackend(GraphBackend):
                 )
                 record = await result.single()
                 if record is None:
-                    self._cb.record_success()
-                    return False
+                    return existed
+                existed = True
 
                 await session.run(
                     f"{match_clause} DETACH DELETE n",
                     parameters=params,
                 )
-            self._cb.record_success()
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+            return True
 
-        logger.debug("Deleted %s node %s", label, node_id)
-        return True
+        # Retried: DETACH DELETE is idempotent, deleting an absent node is a
+        # no-op, and `existed` keeps the return value honest across a replay.
+        deleted = await self._retry(_run, label="delete_node")
+
+        if deleted:
+            logger.debug("Deleted %s node %s", label, node_id)
+        return deleted
 
     # -- relationships --
 
@@ -315,21 +369,21 @@ class Neo4jBackend(GraphBackend):
                 f"CREATE (a)-[r:{rel_type}]->(b){set_clause} RETURN type(r) AS rel"
             )
 
-        try:
+        async def _run():
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 result = await session.run(stmt, parameters=params)
-                record = await result.single()
-            self._cb.record_success()
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+                return await result.single()
+
+        # NOT RETRIED: this is the one call site where a replay really does
+        # duplicate data. Relationships carry no uniqueness constraint, so a
+        # `CREATE (a)-[r:TYPE]->(b)` replayed after a committed-but-unacked
+        # write silently produces a second parallel edge of the same type, and
+        # a doubled provenance edge is invisible until someone counts.
+        # Switching this to MERGE would make it replay-safe, but that changes
+        # link semantics (it would dedupe existing edges), so it belongs in its
+        # own change rather than smuggled in with retry wiring.
+        record = await self._once(_run, label="create_relationship")
 
         if record:
             logger.debug("Linked %s -[%s]-> %s", src_id, rel_type, tgt_id)
@@ -371,21 +425,14 @@ class Neo4jBackend(GraphBackend):
             f" RETURN n{order_clause} LIMIT $limit"
         )
 
-        try:
+        async def _run():
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 result = await session.run(stmt, parameters=params)
-                records = [r async for r in result]
-            self._cb.record_success()
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+                return [r async for r in result]
+
+        # Retried: a read changes nothing, so replaying it is free.
+        records = await self._retry(_run, label="query_nodes")
 
         return [_reassemble_custom(dict(r["n"])) for r in records]
 
@@ -394,19 +441,14 @@ class Neo4jBackend(GraphBackend):
         self._cb.check()
         from wheeler.graph.schema import get_status
 
-        try:
-            result = await get_status(self._config)
-            self._cb.record_success()
-            return result
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+        async def _run() -> dict[str, Any]:
+            return await get_status(self._config)
+
+        # NOT RETRIED: `get_status` catches its own exceptions and reports
+        # `_status: offline` instead of raising, so there is no failure here for
+        # a retry to see. It is deliberately un-retried at its own definition
+        # too: it is a probe that must stay fast when Neo4j is simply down.
+        return await self._once(_run, label="count_all")
 
     # -- raw cypher --
 
@@ -414,19 +456,17 @@ class Neo4jBackend(GraphBackend):
         self, query: str, params: dict | None = None
     ) -> list[dict]:
         self._cb.check()
-        try:
+
+        async def _run() -> list[dict]:
             driver = self._driver()
             async with driver.session(database=self._database) as session:
                 result = await session.run(query, parameters=params or {})
-                records = [dict(r) async for r in result]
-            self._cb.record_success()
-            return records
-        except CircuitOpenError:
-            raise
-        except Exception as exc:
-            if is_deterministic_neo4j_error(exc):
-                self._cb.record_underlying(exc)
-                raise
-            self._cb.record_failure()
-            self._cb.record_underlying(exc)
-            raise
+                return [dict(r) async for r in result]
+
+        # Retried ONLY for a provably read-only query. This is the raw escape
+        # hatch: most callers (the query_* tools, search, the dashboard) read,
+        # but merge.py and restore.py send writes through here too, so the
+        # decision has to be made per query rather than per method.
+        if _is_read_only_cypher(query):
+            return await self._retry(_run, label="run_cypher (read-only)")
+        return await self._once(_run, label="run_cypher (write)")

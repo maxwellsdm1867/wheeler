@@ -79,7 +79,7 @@ Pre-commit hooks enforce these automatically.
 ## What to Contribute
 
 - Bug fixes and test improvements
-- New MCP tools that follow the existing patterns in `wheeler/mcp_server.py`
+- New MCP tools that follow the existing patterns in the split servers (`wheeler/mcp_core.py`, `mcp_query.py`, `mcp_mutations.py`, `mcp_ops.py`)
 - Documentation improvements
 - Graph schema enhancements
 - Better citation validation patterns

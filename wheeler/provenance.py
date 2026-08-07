@@ -33,14 +33,25 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from pathlib import Path
-
-from wheeler.config import WheelerConfig
+from wheeler.config import (
+    project_knowledge_dir,
+    project_synthesis_dir,
+    project_wheeler_dir,
+    WheelerConfig,
+)
 from wheeler.write_receipt import RepairQueue, WriteReceipt
 
 logger = logging.getLogger(__name__)
 
-_repair_queue = RepairQueue(Path(".wheeler"))
+
+def _repair_queue(config: object | None = None) -> RepairQueue:
+    """Repair queue under the project's `.wheeler/`, resolved per call.
+
+    Per call rather than at import: a module-level queue binds to whatever cwd
+    the process was started in, which is not the project root when a server is
+    spawned from a subdirectory.
+    """
+    return RepairQueue(project_wheeler_dir(config))
 
 
 # ---------------------------------------------------------------------------
@@ -282,9 +293,8 @@ async def propagate_invalidation(
                     read_node, write_node, write_synthesis,
                 )
                 from wheeler.models import ChangeEntry
-                from pathlib import Path
 
-                knowledge_path = Path(config.knowledge_path)
+                knowledge_path = project_knowledge_dir(config)
                 node_model = read_node(knowledge_path, dep_id)
                 node_model.change_log.append(ChangeEntry(
                     timestamp=now,
@@ -305,7 +315,7 @@ async def propagate_invalidation(
                 # stale/stability state.  Best-effort: a render failure
                 # must not abort propagation.
                 try:
-                    synthesis_path = Path(config.synthesis_path)
+                    synthesis_path = project_synthesis_dir(config)
                     markdown = render_synthesis(node_model)
                     write_synthesis(synthesis_path, dep_id, markdown)
                 except Exception as exc:
@@ -319,7 +329,7 @@ async def propagate_invalidation(
                     # not silently dropped when logging is unconfigured
                     # (issue #37, criterion 3).
                     try:
-                        _repair_queue.enqueue(WriteReceipt(
+                        _repair_queue(config).enqueue(WriteReceipt(
                             node_id=dep_id,
                             label=rec["label"] or "Unknown",
                             timestamp=now,

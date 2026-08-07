@@ -10,7 +10,6 @@ import functools
 import secrets
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from wheeler.config import configure_logging, load_config, WheelerConfig
 from wheeler.request_log import RequestLog, RequestLogger
@@ -22,8 +21,9 @@ _config: WheelerConfig = load_config()
 # Unique session ID generated once per MCP server process
 _SESSION_ID: str = f"session-{secrets.token_hex(4)}"
 
-# Request logger: append-only JSONL in .wheeler/
-_request_logger = RequestLogger(Path(".wheeler"))
+# Request logger: append-only JSONL in .wheeler/. Resolved against the project
+# root, not the cwd the server process happened to be spawned in.
+_request_logger = RequestLogger(_config.resolved_wheeler_dir)
 
 # Lazy-loaded singleton for semantic search
 _embedding_store: object | None = None
@@ -35,7 +35,9 @@ def _get_embedding_store():
     if _embedding_store is None:
         from wheeler.search.embeddings import EmbeddingStore
 
-        store_path = _config.search.store_path
+        # Project-root relative, so a server spawned in a subdirectory reads
+        # and writes the same embeddings as one spawned at the root.
+        store_path = str(_config.resolved_search_store_path)
         _embedding_store = EmbeddingStore(store_path)
         _embedding_store.load()
     return _embedding_store

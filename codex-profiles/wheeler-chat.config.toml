@@ -1,0 +1,29 @@
+# GENERATED FILE. Do not edit. Regenerate: python -m wheeler.build_plugin
+#
+# Wheeler CHAT mode: read-only: the graph can be read and searched, never written.
+#
+# Install:  cp codex-profiles/wheeler-chat.config.toml $CODEX_HOME/
+# Select:   codex --profile wheeler-chat
+#
+# Mode is enforced by CAPABILITY, not by instructions: the servers below are
+# either registered or absent, so a disallowed tool is not in the tool list at
+# all rather than merely discouraged. Codex filters at registration time.
+#
+# Reachable: wheeler_core, wheeler_query
+# Disabled:  wheeler_mutations, wheeler_ops
+
+[mcp_servers.wheeler_core]
+command = "uvx"
+args = ["--from", "wheeler>=0.14.0", "wheeler-core-mcp"]
+enabled = true
+
+[mcp_servers.wheeler_query]
+command = "uvx"
+args = ["--from", "wheeler>=0.14.0", "wheeler-query-mcp"]
+enabled = true
+
+[mcp_servers.wheeler_mutations]
+enabled = false
+
+[mcp_servers.wheeler_ops]
+enabled = false

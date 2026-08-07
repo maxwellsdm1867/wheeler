@@ -31,7 +31,7 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-from wheeler.config import load_config
+from wheeler.config import load_config, project_wheeler_dir
 from wheeler.integrations.registry import (
     ServiceContract,
     catalog_services,
@@ -55,7 +55,10 @@ def _resolve_dir() -> Path:
     if folder is None:
         # load_config always yields a config, so services_dir is non-None;
         # guard anyway so mypy and a hand-built config never crash the CLI.
-        folder = Path(config.project_root).resolve() / ".wheeler" / "services"
+        # Derived from the same helper services_dir uses, so the two branches
+        # cannot resolve to different folders: this fallback writing somewhere
+        # the reader does not look is exactly the bug being fixed here.
+        folder = project_wheeler_dir(config) / "services"
     return folder
 
 

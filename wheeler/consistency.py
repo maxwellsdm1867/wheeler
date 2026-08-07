@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from wheeler.config import WheelerConfig
+from wheeler.config import (
+    project_knowledge_dir,
+    project_synthesis_dir,
+    WheelerConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +52,14 @@ async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
         graph_ids = set()
 
     # JSON inventory
-    knowledge_dir = Path(config.knowledge_path)
+    knowledge_dir = project_knowledge_dir(config)
     if knowledge_dir.is_dir():
         json_ids = {f.stem for f in knowledge_dir.glob("*.json")}
     else:
         json_ids = set()
 
     # Synthesis inventory (exclude index files)
-    synthesis_dir = Path(config.synthesis_path)
+    synthesis_dir = project_synthesis_dir(config)
     if synthesis_dir.is_dir():
         synth_ids = {
             f.stem for f in synthesis_dir.glob("*.md")
@@ -139,8 +142,8 @@ async def repair_consistency(
             from wheeler.knowledge.store import read_node, write_synthesis
             from wheeler.knowledge.render import render_synthesis
 
-            knowledge_dir = Path(config.knowledge_path)
-            synthesis_dir = Path(config.synthesis_path)
+            knowledge_dir = project_knowledge_dir(config)
+            synthesis_dir = project_synthesis_dir(config)
             model = read_node(knowledge_dir, node_id)
             markdown = render_synthesis(model)
             write_synthesis(synthesis_dir, node_id, markdown)
@@ -154,7 +157,7 @@ async def repair_consistency(
             actions.append({"node_id": node_id, "action": "delete_orphaned_synthesis", "dry_run": True})
             continue
         try:
-            path = Path(config.synthesis_path) / f"{node_id}.md"
+            path = project_synthesis_dir(config) / f"{node_id}.md"
             if path.exists():
                 path.unlink()
             actions.append({"node_id": node_id, "action": "delete_orphaned_synthesis", "status": "ok"})

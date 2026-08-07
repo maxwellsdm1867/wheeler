@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.13.0`. 2567 tests (2502 outside `tests/e2e/`, 65 in it), 51 MCP tools across the four split servers (the deprecated monolith still carries its original 50).
+Version is `0.14.0`. 3129 tests (3064 outside `tests/e2e/`, 65 in it), 53 MCP tools across the four split servers. The legacy monolith has been removed.
+
+Wheeler now runs on **two agent hosts**, Claude Code and OpenAI Codex, and ships as a **plugin** named `wh` rather than by copying files into `~/.claude/`. The act bodies are served over MCP (`get_act`) so they exist in exactly one place; each host gets generated `SKILL.md` stubs. See "Multi-host distribution" below.
 
 ## Commands
 
@@ -39,6 +41,18 @@ python -m pytest tests/e2e/test_plan_lifecycle.py -v         # plan lifecycle + 
 # actually stores. If an act says "call query_plans(status=approved)" but
 # the query returns nothing because the status enum changed, the e2e test
 # fails. Unit tests with FakeBackend can't catch that.
+#
+# TRAP when adding a live-Neo4j test late in the suite: graph_tools._get_backend()
+# caches ONE module-level backend for the whole process, and each backend owns its
+# own circuit breaker. Earlier tests push MagicMock values through that shared
+# instance, which trips the breaker OPEN for 60s, so a live test placed after them
+# fails with `circuit_open` while passing in isolation. Clear `_backend_instance`
+# and call `invalidate_async_driver()` in your fixture's setup AND teardown.
+# See tests/test_triple_write_project_root.py for the pattern.
+#
+# Also: the suite is sensitive to concurrent writers on one Neo4j. A red full-suite
+# run in the asta/llmsr integration tests is worth re-running before treating it as
+# a regression; those tests write and read back, so a second writer looks like a bug.
 
 # Lint + type check (run by pre-commit hook)
 .venv/bin/ruff check wheeler/
@@ -54,7 +68,6 @@ wh quick "prompt"   # haiku, 3 turns, one-shot
 wh dream            # graph consolidation (promotes tiers, detects communities, flags stale)
 
 # MCP servers (launched by Claude Code via .mcp.json — not typically invoked by hand)
-python -m wheeler.mcp_server       # legacy monolith (50 tools in one process)
 python -m wheeler.mcp_core         # split: health/context/search/cypher/schema (12)
 python -m wheeler.mcp_query        # split: read-only query_* (11)
 python -m wheeler.mcp_mutations    # split: add_*, link, unlink, delete, merge, update (18)
@@ -105,15 +118,14 @@ communities.py, write_receipt  <- config ± models ± graph (layer 2-3)
   |
 tools/graph_tools/*            <- graph + knowledge (lazy imports to knowledge/)
   |
-mcp_server.py,                 <- everything
-mcp_core/query/mutations/ops,
+mcp_core/query/mutations/ops,  <- everything
 tools/cli.py
 ```
 
 Rules:
 - **Never add imports to `models.py` or `config.py`.** They are the foundation.
 - **Lazy imports in `tools/graph_tools/__init__.py` are intentional** to break cycles with `knowledge/` and `provenance`. Keep them lazy.
-- **`mcp_server.py` lazily imports** `consistency`, `communities`, `contracts`, `merge`, `search.retrieval`, `depscanner` to keep server startup fast. Do not promote these to top-level.
+- **The split servers lazily import** `consistency`, `communities`, `contracts`, `merge`, `search.retrieval`, `depscanner` to keep server startup fast. Do not promote these to top-level.
 - **`knowledge/migrate.py` is the one documented cross-layer exception**: it imports from `graph/` at top level because it bridges the two by design.
 - **`validation/ledger.py` has a lazy upward import** to `tools.graph_tools.execute_tool` to persist ledger entries via the same triple-write path. This is the one real layering violation; keep it lazy.
 
@@ -132,7 +144,11 @@ All share `mcp_shared.py` for trace ID generation, the `@_logged` decorator, con
 
 **When you add a new MCP tool, register it in the split server that matches its role.** Do not add it to any other server. The role map is: read-only listings → `mcp_query`; writes that change graph nodes → `mcp_mutations`; validators / scanners / consistency operations → `mcp_ops`; everything else (search, raw cypher, schema, health) → `mcp_core`.
 
-`wheeler/mcp_server.py` is the DEPRECATED legacy monolith. It logs a deprecation warning at startup and is scheduled for removal. Do NOT add new tools to it; do NOT mirror new split-server tools into it. The parity test that previously enforced this has been retired (`tests/test_mcp_surface_parity.py` is skipped).
+The legacy `wheeler/mcp_server.py` monolith **has been deleted** (v0.14.0+). Its 50 tools were all
+already covered by the four split servers, which carry 51. `tests/test_mcp_surface.py` now guards the
+surface directly: per-server tool counts, no duplicate names across servers, every tool described,
+and a `test_monolith_is_gone` check so it cannot be reintroduced. Each server also has its own test
+file (`tests/test_mcp_{core,query,mutations,ops,shared}.py`).
 
 ### Provenance, stability, and staleness
 
@@ -151,11 +167,12 @@ Every node carries a `stability` score (0.0–1.0) set by type and tier (Paper=0
 
 Any channel can be unavailable (no embeddings, no fulltext index, empty graph) and the survivors still produce results. `search_context` (v0.6.0) wraps this and expands each seed via 1-hop (all rels) + 2-hop (PROV only) so callers get provenance chains alongside matches.
 
-### Infrastructure hardening (v0.6.0)
+### Infrastructure hardening
 
-Six patterns you may see referenced across the code:
+Seven patterns you may see referenced across the code. The first six shipped in v0.6.0; transient retry was added later, alongside remote-Neo4j (Aura) support.
 
 - **Circuit breaker** (`graph/circuit_breaker.py`): 3-state breaker on Neo4j. After 3 consecutive failures it OPENs and fails fast in <1ms. After 60s it HALF_OPENs for a probe. Wraps every backend call. Never bypass.
+- **Transient retry** (`graph/driver.py::run_with_retry`): retries transient Neo4j failures, which a remote database produces and a local one does not. Takes an async **factory** so each attempt opens its own session, which is how it honours the no-concurrent-queries rule rather than working around it. Composes with the breaker rather than sitting beside it: the breaker is checked before every attempt and `CircuitOpenError` propagates instead of being retried. Classification is delegated to `is_deterministic_neo4j_error()` and the driver's own `is_retryable()`, never duplicated. `Neo4jBackend` wraps it as `_retry` (safe to replay) and `_once` (must not be); see `wheeler/graph/CLAUDE.md` for the per-method decision table and the rule for a new method.
 - **Consistency checker** (`consistency.py`): detects drift between graph ↔ JSON ↔ synthesis, repairs from surviving layer.
 - **Trace IDs** (`mcp_shared.py`, `request_log.py`): every MCP call gets a unique `trace_id` threaded through the log. Correlate multi-step operations by grouping on it.
 - **Write receipts** (`write_receipt.py`): `WriteReceipt` tracks which layers succeeded per triple-write. Incomplete writes go to `.wheeler/repair_queue.jsonl`.
@@ -164,13 +181,58 @@ Six patterns you may see referenced across the code:
 
 ### Acts = slash commands = system prompts
 
-Each `.claude/commands/wh/*.md` file is a Claude Code slash command. YAML frontmatter sets `allowed-tools` (which enforces per-mode tool access); the markdown body IS the system prompt. Nothing Python reads these files at runtime. Mode enforcement (CHAT read-only, WRITE strict citations, EXECUTE full access) is entirely in the frontmatter.
+Each `.claude/commands/wh/*.md` file is a Claude Code slash command. YAML frontmatter sets `allowed-tools` (which enforces per-mode tool access); the markdown body IS the system prompt. Mode enforcement (CHAT read-only, WRITE strict citations, EXECUTE full access) is entirely in the frontmatter.
+
+**`wheeler/acts.py` now reads these files at runtime** (from the `_data/commands/` mirror) and serves them over MCP via `list_acts` / `get_act` in `mcp_core`, so the bodies exist in exactly one place across both hosts. `mode` and `orchestration` are **derived** from `allowed-tools` rather than declared, so the two can never disagree: ops grant -> execute, mutations grant -> write, else chat; `Agent`/`Task*`/`Team*` -> subagents, `Skill` -> skill-dispatch. `get_act(name, host=...)` returns the body byte-identical plus a host-specific `orchestration_note` (Claude Code gets `Agent`/`TeamCreate`; Codex gets `spawn_agent`/`send_input` and is told the note supersedes any Claude tool the body names). `_data/commands/` holds 40 `.md` files but `CLAUDE.md` is the authoring guide, so there are **39 acts**.
 
 `/wh:start` is a user-invoked router: it analyzes task intent and invokes the best `/wh:*` command via the Skill tool. Individual commands have narrow trigger descriptions requiring Wheeler/knowledge-graph vocabulary, so they auto-fire for unambiguous research actions but not for general coding.
 
 The **same command files exist twice**: in `.claude/commands/wh/` (what Claude Code actually loads from this repo) and in `wheeler/_data/commands/` (what the PyPI package ships to users via `wheeler install`). **Keep these two trees in sync.** Edit the `.claude/commands/wh/` tree, then run `python -c "from wheeler.installer import sync_data; sync_data()"` to regenerate the `_data` mirror byte-for-byte. Tests check both paths (`tests/test_installer.py::test_package_data_in_sync`, `tests/test_context_routing.py`, `tests/test_routing.py::TestTreeSync`).
 
 The `wheeler-brief` skill (`.claude/skills/wheeler-brief/`, versioned with the repo via a `.gitignore` negation; other dev skills stay ignored) renders self-contained HTML research briefs (question, bulleted execution plan, data sources, figure mockups paired with actual results). It is invoked from `/wh:plan` after approval and `/wh:execute` after the completion summary; the act step is conditional ("if the skill is available, else skip silently") so shipped users without the skill are unaffected. The renderer is stdlib-only and unit-tested in `tests/test_render_brief.py` (which skips when the skill dir is absent).
+
+### Multi-host distribution: the `wh` plugin
+
+Wheeler installs as a **plugin** on both Claude Code and Codex. `wheeler install` (writing into
+`~/.claude/`) still works but is the legacy path.
+
+```
+/plugin marketplace add maxwellsdm1867/wheeler   &&  /plugin install wh@wheeler      # Claude Code
+codex plugin marketplace add maxwellsdm1867/wheeler && codex plugin add wh@wheeler   # Codex
+```
+
+**`wheeler/build_plugin.py` generates the whole tree** from `wheeler/_data/commands/` and
+`_data/agents/`. Regenerate with `python -m wheeler.build_plugin`; never hand-edit the output.
+`tests/test_build_plugin.py::test_committed_tree_matches_generator` is the drift guard. Emitted:
+`.claude-plugin/`, `.codex-plugin/`, `skills/<act>/SKILL.md` (39), `agents/`, `hooks/`,
+`codex-profiles/`, and `.mcp-plugin.json`.
+
+Five host facts that are load-bearing, all established by canary against the real CLIs rather than
+by asking an agent (which confabulates its own tool list):
+
+1. **The plugin MUST stay named `wh`.** Claude Code namespaces plugin skills as
+   `/<plugin>:<skill>`, so `wh` + `skills/plan/` yields `/wh:plan`, unchanged for existing users.
+   Skill dirs therefore strip the `wh:` prefix from the act's `name:`.
+2. **Plugin MCP servers are namespaced too**: `wheeler_core` inside plugin `wh` exposes
+   `mcp__plugin_wh_wheeler_core__<tool>`, not the bare form. Since `allowed-tools` is an allowlist
+   matched on the full id, the generator emits **both spellings** for every grant. Copying an act's
+   `allowed-tools` verbatim would deny every Wheeler tool and leave the skill inert while looking
+   correct in review.
+3. **`allowed-tools` survives in plugin skills**, which is how CHAT/WRITE/EXECUTE enforcement keeps
+   working on Claude Code. Codex accepts the key but does not enforce it, so Codex gets
+   `codex-profiles/*.config.toml` instead, where mode is enforced by which servers are registered.
+   Those profiles must write `enabled = false` explicitly for out-of-mode servers: Codex merges
+   profiles recursively, so omitting a server does not disable it.
+4. **Frontmatter must open the file.** A leading HTML comment makes the whole block invisible,
+   silently dropping `description` and `allowed-tools`. The generated-file banner goes after it.
+5. **The legacy `~/.claude/commands/wh/*.md` tree fully shadows same-named plugin skills.** Both
+   installed at once means users silently keep the stale file copies. `wheeler install` now refuses
+   when the plugin is present, `wheeler migrate-to-plugin` does the swap, and `wheeler doctor`
+   reports the collision.
+
+MCP servers launch via `uvx --from wheeler==<version> wheeler-core-mcp`, so **there is no install
+step**: neither host can run a postinstall hook. Measured cost is 13 s once to populate the uv cache,
+then ~370 ms per launch, which matches running the console script directly.
 
 ### Service integrations (`wheeler/integrations/`) and adding a new service
 

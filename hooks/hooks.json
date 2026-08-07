@@ -1,0 +1,16 @@
+{
+  "description": "Warn when a legacy `wheeler install` is shadowing the plugin's /wh:* skills.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/wheeler-legacy-shadow-check.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

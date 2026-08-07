@@ -15,6 +15,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# config.py is a documented zero-dependency leaf, so a runtime import here cannot
+# create a cycle. The helper resolves against the discovered project root instead
+# of the CWD: a server spawned in a subdirectory used to look for knowledge/ in
+# the wrong place and surface it as "search returns no results".
+from wheeler.config import project_knowledge_dir
+
 if TYPE_CHECKING:
     from wheeler.config import WheelerConfig
 
@@ -138,7 +144,7 @@ async def _temporal_channel(
     label: str,
 ) -> list[str]:
     """Retrieve the most recently created node IDs."""
-    knowledge_path = Path(config.knowledge_path)
+    knowledge_path = project_knowledge_dir(config)
     if not knowledge_path.is_dir():
         return []
 
@@ -439,7 +445,7 @@ async def expand_search_results(
     unique_related.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
 
     # Enrich related nodes with glanceable summary from knowledge JSON
-    knowledge_path = Path(config.knowledge_path)
+    knowledge_path = project_knowledge_dir(config)
     clean_related: list[dict] = []
     for node in unique_related:
         summary = _summarize_node(node["node_id"], knowledge_path)
@@ -543,7 +549,7 @@ async def multi_search(
     fused = reciprocal_rank_fusion(ranked_lists, limit=limit)
 
     # Enrich each result with full node data
-    knowledge_path = Path(config.knowledge_path)
+    knowledge_path = project_knowledge_dir(config)
     enriched: list[dict] = []
     for node_id, score in fused:
         node_data = _enrich_node(node_id, knowledge_path)

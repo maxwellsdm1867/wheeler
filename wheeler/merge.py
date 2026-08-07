@@ -8,10 +8,14 @@ Two-phase merge:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from datetime import datetime, timezone
 
-from wheeler.config import WheelerConfig
+from wheeler.config import (
+    project_knowledge_dir,
+    project_search_store_dir,
+    project_synthesis_dir,
+    WheelerConfig,
+)
 from wheeler.models import PREFIX_TO_LABEL, title_for_node
 
 logger = logging.getLogger(__name__)
@@ -31,7 +35,7 @@ async def propose_merge(
     from wheeler.knowledge.store import read_node
 
     backend = await _get_backend(config)
-    knowledge_dir = Path(config.knowledge_path)
+    knowledge_dir = project_knowledge_dir(config)
 
     # Load both nodes
     try:
@@ -100,8 +104,8 @@ async def execute_merge(
     from wheeler.models import ChangeEntry
 
     backend = await _get_backend(config)
-    knowledge_dir = Path(config.knowledge_path)
-    synthesis_dir = Path(config.synthesis_path)
+    knowledge_dir = project_knowledge_dir(config)
+    synthesis_dir = project_synthesis_dir(config)
 
     # --- Phase 1: Prepare ---
     try:
@@ -184,7 +188,7 @@ async def execute_merge(
     # Step 5: Update embedding for keep node
     try:
         from wheeler.search.embeddings import EmbeddingStore
-        store = EmbeddingStore(config.search.store_path)
+        store = EmbeddingStore(str(project_search_store_dir(config)))
         store.load()
         store.remove(merge_from_id)
         store.add(keep_id, label, title_for_node(keep_model))

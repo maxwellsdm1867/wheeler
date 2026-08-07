@@ -33,7 +33,7 @@ You MUST return results quickly. Target: under 90 seconds. To achieve this:
 - **Limit searches.** 2-4 WebSearch calls max for a typical question. Do NOT
   exhaustively search every angle.
 - **Limit page fetches.** Only WebFetch pages that are directly relevant.
-  Skim search result snippets first — often they contain the answer.
+  Skim search result snippets first: often they contain the answer.
 - **Stop when you have the answer.** Do not keep searching for completeness.
   Good enough NOW beats perfect in 5 minutes.
 - **One question = one focused answer.** If given multiple questions, answer

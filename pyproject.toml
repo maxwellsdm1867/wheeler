@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wheeler"
-version = "0.13.0"
+version = "0.14.0"
 description = "Reliable, trustworthy, trackable AI workflows for science. A Claude Code-native research assistant with a provenance-tracked knowledge graph."
 readme = "README.md"
 license = {text = "MIT"}
@@ -46,7 +46,9 @@ dependencies = [
     "neo4j>=5.0",
     "pyyaml>=6.0",
     "pydantic>=2.0",
-    "fastmcp>=2.0",
+    # Upper bound is deliberate: the servers are written against and tested on
+    # the 3.x FastMCP API, and 2.x -> 3.x was a breaking change.
+    "fastmcp>=3.3,<4",
     "fastembed>=0.4",
     "numpy>=1.24",
 ]
@@ -70,6 +72,14 @@ search = [
 # test/dev extras below pull it in so the llmsr suite actually runs.
 llmsr = [
     "scipy>=1.10",
+]
+# `wheeler login`: stores the Neo4j password in the OS keychain instead of a
+# shell profile. Optional because the base install has to stay lean (the wh
+# plugin resolves the MCP servers with uvx, and a cold resolve is already slow).
+# `wheeler/credentials.py` imports it lazily and degrades to "no stored
+# credentials" when it is absent, so env vars and wheeler.yaml keep working.
+login = [
+    "keyring>=24.0",
 ]
 # Test deps. Includes the llmsr extra (scipy) so the equation-discovery tests
 # run rather than skip: they verify real fit/recovery numerics.
@@ -96,7 +106,6 @@ all = [
 [project.scripts]
 wheeler = "wheeler.cli:app"
 wheeler-tools = "wheeler.tools.cli:app"
-wheeler-mcp = "wheeler.mcp_server:main"
 wheeler-core-mcp = "wheeler.mcp_core:main"
 wheeler-query-mcp = "wheeler.mcp_query:main"
 wheeler-mutations-mcp = "wheeler.mcp_mutations:main"

@@ -1,4 +1,13 @@
-"""Wheeler installer: install/uninstall/update slash commands and agents."""
+"""Wheeler installer: install/uninstall/update slash commands and agents.
+
+This is the LEGACY distribution path: it copies `wh/*.md` act files into
+`~/.claude/commands/wh/`. The supported path is the `wh` Claude Code plugin,
+which serves the same acts as `/wh:<name>` skills. The two collide: a
+file-based `~/.claude/commands/wh/plan.md` silently wins over the plugin's
+`plan` skill, so a user with both keeps running stale copies with no error.
+`detect_plugin()` + `install(force=...)` make that collision loud, and
+`wheeler migrate-to-plugin` resolves it.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +21,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
@@ -30,6 +40,18 @@ VERSION_CACHE_PATH = Path.home() / ".cache" / "wheeler" / "version-check.json"
 GITHUB_REPO = "maxwellsdm1867/wheeler"
 VERSION_CHECK_MAX_AGE_HOURS = 24
 
+# Plugin distribution. Claude Code namespaces plugin skills as
+# `/<plugin>:<skill>`, so plugin "wh" from marketplace "wheeler" serves
+# `/wh:plan` etc. That is the same command namespace the legacy tree owns.
+PLUGIN_NAME = "wh"
+PLUGIN_MARKETPLACE = "wheeler"
+PLUGIN_SPEC = f"{PLUGIN_NAME}@{PLUGIN_MARKETPLACE}"
+MARKETPLACE_ADD_CMD = f"/plugin marketplace add {GITHUB_REPO}"
+PLUGIN_INSTALL_CMD = f"/plugin install {PLUGIN_SPEC}"
+# Claude Code's plugin bookkeeping, relative to INSTALL_BASE.
+INSTALLED_PLUGINS_REL = Path("plugins") / "installed_plugins.json"
+KNOWN_MARKETPLACES_REL = Path("plugins") / "known_marketplaces.json"
+
 
 def _hash_file(path: Path) -> str:
     """Return SHA-256 hex digest of file contents."""
@@ -41,7 +63,273 @@ def _get_data_path() -> Path:
     return Path(str(resources.files("wheeler") / "_data"))
 
 
-def install(link: bool = False) -> dict[str, str]:
+# ---------------------------------------------------------------------------
+# Plugin / legacy collision detection
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PluginStatus:
+    """What we can tell about a Claude Code plugin owning the /wh: namespace.
+
+    `enabled` and `disabled` come from the `enabledPlugins` key in the
+    settings scopes; `installed` from `plugins/installed_plugins.json`,
+    which records both user- and project-scope installs. Scope precedence
+    is not modelled: any scope enabling the plugin counts as enabled.
+    """
+
+    name: str = PLUGIN_NAME
+    enabled: bool = False
+    disabled: bool = False
+    installed: bool = False
+    keys: tuple[str, ...] = ()
+    scopes: tuple[str, ...] = ()
+    marketplaces: tuple[str, ...] = ()
+
+    @property
+    def present(self) -> bool:
+        """True when Claude Code knows about the plugin at all."""
+        return self.enabled or self.disabled or self.installed
+
+    @property
+    def active(self) -> bool:
+        """True when the plugin can actually serve /wh: commands."""
+        return self.enabled or (self.installed and not self.disabled)
+
+    def describe(self) -> str:
+        """One-line human summary."""
+        if not self.present:
+            return f"plugin '{self.name}' not installed"
+        state = "enabled" if self.enabled else ("disabled" if self.disabled else "installed")
+        where = ", ".join(self.scopes) or "unknown scope"
+        key = self.keys[0] if self.keys else self.name
+        return f"plugin '{key}' {state} ({where})"
+
+
+@dataclass(frozen=True)
+class LegacyStatus:
+    """State of the legacy file-based install under `~/.claude/`."""
+
+    present: bool = False
+    version: Optional[str] = None
+    installed_at: Optional[str] = None
+    files: tuple[str, ...] = ()
+    commands: tuple[str, ...] = ()
+    missing: tuple[str, ...] = ()
+    untracked_commands: tuple[str, ...] = ()
+
+    @property
+    def has_manifest(self) -> bool:
+        return self.version is not None or bool(self.files)
+
+    def describe(self) -> str:
+        """One-line human summary."""
+        if not self.present:
+            return "no legacy install"
+        n_acts = len(self.commands) + len(self.untracked_commands)
+        ver = self.version or "unknown version"
+        return f"{n_acts} act file(s) in {INSTALL_BASE / COMMANDS_REL} ({ver})"
+
+
+class PluginShadowError(RuntimeError):
+    """A legacy `~/.claude/commands/wh/` install would shadow the wh plugin."""
+
+    def __init__(self, message: str, plugin: PluginStatus) -> None:
+        super().__init__(message)
+        self.plugin = plugin
+
+
+def _read_json_file(path: Path) -> dict:
+    """Read a JSON object from *path*, returning {} on any problem."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _settings_scopes(project_dir: Path | None = None) -> list[tuple[str, Path]]:
+    """Return (label, path) for each settings scope to inspect.
+
+    User scopes live under INSTALL_BASE. Project scopes are only included
+    when *project_dir* is given, so the default is confined to the install
+    base and stays hermetic under test.
+    """
+    scopes = [
+        ("user", INSTALL_BASE / "settings.json"),
+        ("user-local", INSTALL_BASE / "settings.local.json"),
+    ]
+    if project_dir is not None:
+        claude = Path(project_dir) / ".claude"
+        scopes += [
+            ("project", claude / "settings.json"),
+            ("project-local", claude / "settings.local.json"),
+        ]
+    return scopes
+
+
+def _plugin_key_name(key: str) -> str:
+    """Return the plugin name from a `plugin@marketplace` settings key."""
+    return key.split("@", 1)[0].strip()
+
+
+def detect_plugin(
+    plugin_name: str = PLUGIN_NAME, project_dir: Path | None = None
+) -> PluginStatus:
+    """Detect whether a Claude Code plugin named *plugin_name* is present.
+
+    Reads `enabledPlugins` and `extraKnownMarketplaces` across the settings
+    scopes, plus Claude Code's own `plugins/installed_plugins.json`. Any
+    plugin with this name owns the `/<plugin_name>:` command namespace no
+    matter which marketplace it came from, so matching is on the name part
+    of the `plugin@marketplace` key.
+    """
+    keys: list[str] = []
+    scopes: list[str] = []
+    marketplaces: list[str] = []
+    enabled = False
+    disabled = False
+
+    for scope, path in _settings_scopes(project_dir):
+        settings = _read_json_file(path)
+        entries = settings.get("enabledPlugins")
+        if isinstance(entries, dict):
+            for key, value in entries.items():
+                if _plugin_key_name(key) != plugin_name:
+                    continue
+                keys.append(key)
+                scopes.append(f"enabledPlugins:{scope}")
+                if value:
+                    enabled = True
+                else:
+                    disabled = True
+        known = settings.get("extraKnownMarketplaces")
+        if isinstance(known, dict):
+            marketplaces.extend(str(name) for name in known)
+
+    records = _read_json_file(INSTALL_BASE / INSTALLED_PLUGINS_REL).get("plugins")
+    installed = False
+    if isinstance(records, dict):
+        for key, entries_list in records.items():
+            if _plugin_key_name(key) != plugin_name:
+                continue
+            installed = True
+            keys.append(key)
+            entry_scopes = [
+                str(e.get("scope"))
+                for e in (entries_list if isinstance(entries_list, list) else [])
+                if isinstance(e, dict) and e.get("scope")
+            ]
+            scopes.extend(f"installed:{s}" for s in entry_scopes or ["unknown"])
+
+    marketplaces.extend(_read_json_file(INSTALL_BASE / KNOWN_MARKETPLACES_REL))
+
+    return PluginStatus(
+        name=plugin_name,
+        enabled=enabled,
+        # An explicit `false` only counts as disabled when nothing enables it.
+        disabled=disabled and not enabled,
+        installed=installed,
+        keys=tuple(dict.fromkeys(keys)),
+        scopes=tuple(dict.fromkeys(scopes)),
+        marketplaces=tuple(dict.fromkeys(marketplaces)),
+    )
+
+
+def legacy_status() -> LegacyStatus:
+    """Describe the legacy install, preferring the manifest over globs.
+
+    The manifest is authoritative for what `wheeler install` wrote. Act
+    files present in `~/.claude/commands/wh/` but absent from the manifest
+    are reported separately: they shadow the plugin just as effectively.
+    """
+    manifest = read_manifest() or {}
+    files = tuple(manifest.get("files", {}))
+    tracked_commands: list[str] = []
+    missing: list[str] = []
+    for rel in files:
+        full = INSTALL_BASE / rel
+        if not (full.exists() or full.is_symlink()):
+            missing.append(rel)
+        if rel.startswith(f"{COMMANDS_REL}/") and rel.endswith(".md"):
+            tracked_commands.append(Path(rel).stem)
+
+    cmd_dir = INSTALL_BASE / COMMANDS_REL
+    on_disk = (
+        {p.stem for p in cmd_dir.glob("*.md")} if cmd_dir.is_dir() else set()
+    )
+    untracked = sorted(on_disk - set(tracked_commands))
+
+    return LegacyStatus(
+        present=bool(files) or bool(on_disk),
+        version=manifest.get("version"),
+        installed_at=manifest.get("installed_at"),
+        files=files,
+        commands=tuple(sorted(tracked_commands)),
+        missing=tuple(missing),
+        untracked_commands=tuple(untracked),
+    )
+
+
+def _shipped_act_count() -> int:
+    """Count act files this Wheeler would install (0 if unreadable)."""
+    try:
+        return len(list((_get_data_path() / "commands").glob("*.md")))
+    except Exception:
+        return 0
+
+
+def _example_acts(legacy: LegacyStatus, limit: int = 3) -> tuple[str, ...]:
+    """Pick recognizable colliding act names for the error message."""
+    present = list(legacy.commands) + list(legacy.untracked_commands)
+    preferred = [n for n in ("plan", "execute", "discuss", "ask") if n in present]
+    rest = [n for n in sorted(present) if n not in preferred]
+    return tuple((preferred + rest or ["plan", "execute", "discuss"])[:limit])
+
+
+def shadowing_message(plugin: PluginStatus, legacy: LegacyStatus) -> str:
+    """Explain the legacy-shadows-plugin collision and name the exact fix."""
+    n_acts = len(legacy.commands) + len(legacy.untracked_commands) or _shipped_act_count()
+    examples = ", ".join(f"/{PLUGIN_NAME}:{name}" for name in _example_acts(legacy))
+    return (
+        f"The Claude Code {plugin.describe()}.\n"
+        f"A legacy install into {INSTALL_BASE / COMMANDS_REL} SHADOWS it: Claude Code\n"
+        f"resolves /{PLUGIN_NAME}:<name> to the file-based command, so all {n_acts} act names\n"
+        f"({examples}, ...) keep running stale local copies and the plugin's\n"
+        "versions never load. There is no error when this happens.\n"
+        "\n"
+        "Fix, pick one:\n"
+        "  wheeler migrate-to-plugin    remove the legacy tree, keep the plugin (recommended)\n"
+        "  wheeler install --force      keep the legacy tree and accept the shadowing"
+    )
+
+
+def plugin_advice(plugin: PluginStatus, legacy: LegacyStatus) -> Optional[str]:
+    """Return advice about the plugin/legacy split, or None when consistent.
+
+    Symmetric to `shadowing_message`: covers the case where the legacy tree
+    is gone (or was never installed) and the plugin is the thing to rely on.
+    """
+    if plugin.active and legacy.present:
+        return shadowing_message(plugin, legacy)
+    if plugin.active and not legacy.present:
+        return None
+    if legacy.present:
+        return (
+            "Legacy file-based install in use "
+            f"({legacy.describe()}). The supported path is the {PLUGIN_NAME} plugin:\n"
+            "  wheeler migrate-to-plugin"
+        )
+    return (
+        f"No Wheeler acts installed. Install the {PLUGIN_NAME} plugin in Claude Code:\n"
+        f"  {MARKETPLACE_ADD_CMD}\n"
+        f"  {PLUGIN_INSTALL_CMD}"
+    )
+
+
+def install(link: bool = False, force: bool = False) -> dict[str, str]:
     """Copy (or symlink) files from wheeler/_data/ to ~/.claude/.
 
     Installs commands, agents, and hooks. Registers the SessionStart
@@ -49,12 +337,25 @@ def install(link: bool = False) -> dict[str, str]:
     every session, and the statusLine command so the update badge
     is rendered when an update is available.
 
+    LEGACY path. Refuses when a Claude Code plugin named `wh` is active,
+    because the files written here silently shadow the plugin's acts.
+
     Args:
         link: If True, create symlinks instead of copies.
+        force: Install even when the wh plugin is active (accepting the
+            shadowing). `update()` uses this so an upgrade never leaves a
+            half-refreshed legacy tree behind.
 
     Returns:
         Dict mapping relative path -> SHA-256 hash.
+
+    Raises:
+        PluginShadowError: The wh plugin is active and force is False.
     """
+    plugin = detect_plugin()
+    if plugin.active and not force:
+        raise PluginShadowError(shadowing_message(plugin, legacy_status()), plugin)
+
     data = _get_data_path()
     installed: dict[str, str] = {}
 
@@ -318,6 +619,63 @@ def _deregister_mcp_servers() -> None:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
 
+@dataclass(frozen=True)
+class MigrationResult:
+    """Outcome of `migrate_to_plugin()`."""
+
+    legacy: LegacyStatus
+    plugin: PluginStatus
+    removed: tuple[str, ...] = ()
+    removed_untracked: tuple[str, ...] = ()
+    migrated: bool = False
+
+    @property
+    def next_steps(self) -> tuple[str, ...]:
+        """Commands the user runs in Claude Code to get the plugin."""
+        if self.plugin.active:
+            return ()
+        return (MARKETPLACE_ADD_CMD, PLUGIN_INSTALL_CMD)
+
+
+def migrate_to_plugin(remove_untracked: bool = True) -> MigrationResult:
+    """Remove the legacy install so the wh plugin stops being shadowed.
+
+    Idempotent and safe to run with nothing installed: when there is no
+    legacy tree it removes nothing and reports what to do next. Does not
+    require the plugin to be installed first.
+
+    Args:
+        remove_untracked: Also delete act files in `~/.claude/commands/wh/`
+            that the manifest does not list (a pre-manifest install). They
+            shadow the plugin exactly as effectively as tracked ones.
+    """
+    legacy = legacy_status()
+    plugin = detect_plugin()
+    if not legacy.present:
+        return MigrationResult(legacy=legacy, plugin=plugin)
+
+    # The manifest is the record of what `wheeler install` wrote; uninstall()
+    # owns hook/statusLine/MCP deregistration as well as the files.
+    removed = tuple(uninstall())
+
+    removed_untracked: list[str] = []
+    cmd_dir = INSTALL_BASE / COMMANDS_REL
+    if remove_untracked and cmd_dir.is_dir():
+        for leftover in sorted(cmd_dir.glob("*.md")):
+            leftover.unlink()
+            removed_untracked.append(str(COMMANDS_REL / leftover.name))
+    if cmd_dir.is_dir() and not any(cmd_dir.iterdir()):
+        cmd_dir.rmdir()
+
+    return MigrationResult(
+        legacy=legacy,
+        plugin=plugin,
+        removed=removed,
+        removed_untracked=tuple(removed_untracked),
+        migrated=True,
+    )
+
+
 def _is_uv_tool_install() -> bool:
     """Best-effort check for a working uv when pip is unavailable.
 
@@ -424,15 +782,20 @@ def update(source: str | None = None) -> str:
     # interpreter still holds the pre-upgrade code, so an in-process
     # install would stamp the manifest with the old version and skip any
     # registration logic that is new in the version just installed.
+    #
+    # --force: an update refreshes a tree that already exists. Refusing here
+    # over plugin shadowing would leave the upgrade half-applied, which is
+    # worse than a consistent (if shadowing) legacy tree. The caller warns
+    # instead; `wheeler migrate-to-plugin` is the resolution.
     new_wheeler = Path(sys.executable).parent / "wheeler"
     try:
         if new_wheeler.exists():
-            subprocess.run([str(new_wheeler), "install"], check=True)
+            subprocess.run([str(new_wheeler), "install", "--force"], check=True)
         else:
-            install()
+            install(force=True)
     except subprocess.CalledProcessError:
         # A re-exec hiccup must never leave the upgrade without files.
-        install()
+        install(force=True)
 
     # Invalidate cache so next check picks up the new version
     if VERSION_CACHE_PATH.exists():

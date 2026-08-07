@@ -1,11 +1,12 @@
 """Wheeler top-level CLI entry point (`wheeler` console script).
 
-Extends the legacy `wheeler.tools.cli:app` Typer instance with three commands
+Extends the legacy `wheeler.tools.cli:app` Typer instance with the commands
 designed for the `uvx wheeler` / `uv tool install wheeler` install path:
 
-- `wheeler init <project>`  scaffold a new Wheeler project
-- `wheeler serve [server]`  start an MCP server (debug / standalone)
-- `wheeler doctor`          sanity check
+- `wheeler init <project>`       scaffold a new Wheeler project
+- `wheeler serve [server]`       start an MCP server (debug / standalone)
+- `wheeler doctor`               sanity check
+- `wheeler migrate-to-plugin`    drop the legacy ~/.claude/ install for the plugin
 
 Plus a `--version` flag on the root.
 
@@ -176,13 +177,21 @@ def cmd_init(
                 )
 
     if not skip_install:
-        try:
-            from wheeler.installer import install as _install
+        from wheeler.installer import PluginShadowError
+        from wheeler.installer import install as _install
 
+        try:
             files = _install()
             console.print(
                 f"[green]Installed {len(files)} file(s) to ~/.claude/ "
                 "(slash commands + agents + hooks).[/green]"
+            )
+        except PluginShadowError:
+            # The plugin already serves every /wh: act. Writing the legacy
+            # tree here would shadow it, so skip it and say why.
+            console.print(
+                "[dim]Slash command install skipped: the wh plugin is already "
+                "installed and serves every /wh: act.[/dim]"
             )
         except Exception as exc:
             console.print(f"[yellow]Slash command install skipped:[/yellow] {exc}")
@@ -205,7 +214,6 @@ _SERVER_MODULES = {
     "query": "wheeler.mcp_query",
     "mutations": "wheeler.mcp_mutations",
     "ops": "wheeler.mcp_ops",
-    "monolith": "wheeler.mcp_server",
 }
 
 
@@ -234,6 +242,89 @@ def cmd_serve(
 
 
 # ---------------------------------------------------------------------------
+# wheeler migrate-to-plugin
+# ---------------------------------------------------------------------------
+
+
+@app.command("migrate-to-plugin")
+def cmd_migrate_to_plugin(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be removed and exit."
+    ),
+) -> None:
+    """Drop the legacy ~/.claude/ install so the wh plugin is not shadowed.
+
+    Claude Code resolves /wh:<name> to a file in ~/.claude/commands/wh/ before
+    it looks at the wh plugin's skills, with no error when both exist. This
+    removes the legacy files, hooks, statusLine, and MCP registrations that
+    `wheeler install` wrote, then prints the two commands that install the
+    plugin. Safe and idempotent when there is nothing to migrate.
+    """
+    from wheeler import installer
+    from wheeler.installer import (
+        MARKETPLACE_ADD_CMD,
+        PLUGIN_INSTALL_CMD,
+        detect_plugin,
+        legacy_status,
+        migrate_to_plugin,
+    )
+
+    legacy = legacy_status()
+    plugin = detect_plugin(project_dir=Path.cwd())
+
+    console.print(f"Plugin: {plugin.describe()}")
+    console.print(f"Legacy: {legacy.describe()}")
+    console.print()
+
+    if not legacy.present:
+        console.print("[green]Nothing to migrate: no legacy install found.[/green]")
+        if plugin.active:
+            console.print("[green]The wh plugin is installed and unshadowed.[/green]")
+        else:
+            console.print("Install the plugin in Claude Code:")
+            console.print(f"  [bold]{MARKETPLACE_ADD_CMD}[/bold]")
+            console.print(f"  [bold]{PLUGIN_INSTALL_CMD}[/bold]")
+        raise typer.Exit(0)
+
+    console.print("[bold]This will remove:[/bold]")
+    for rel in legacy.files:
+        suffix = " [dim](already gone)[/dim]" if rel in legacy.missing else ""
+        console.print(f"  {installer.INSTALL_BASE / rel}{suffix}")
+    for name in legacy.untracked_commands:
+        console.print(
+            f"  {installer.INSTALL_BASE / installer.COMMANDS_REL / (name + '.md')} "
+            "[dim](not in manifest)[/dim]"
+        )
+    console.print("  the Wheeler SessionStart hook and statusLine in settings.json")
+    console.print("  the wheeler_* and neo4j mcpServers entries in settings.json")
+    console.print()
+
+    if dry_run:
+        console.print("[dim]Dry run: nothing removed.[/dim]")
+        raise typer.Exit(0)
+
+    if not yes and not typer.confirm("Remove the legacy install?", default=True):
+        console.print("[dim]Cancelled.[/dim]")
+        raise typer.Exit(0)
+
+    result = migrate_to_plugin()
+    n = len(result.removed) + len(result.removed_untracked)
+    console.print(f"[green]Removed {n} file(s) and deregistered hooks/MCP servers.[/green]")
+    console.print()
+
+    if result.plugin.active:
+        console.print(
+            "[green]The wh plugin is installed and no longer shadowed. "
+            "Restart Claude Code.[/green]"
+        )
+    else:
+        console.print("Now run these two commands inside Claude Code:")
+        console.print(f"  [bold]{MARKETPLACE_ADD_CMD}[/bold]")
+        console.print(f"  [bold]{PLUGIN_INSTALL_CMD}[/bold]")
+
+
+# ---------------------------------------------------------------------------
 # wheeler doctor
 # ---------------------------------------------------------------------------
 
@@ -250,6 +341,76 @@ def _check_import(name: str) -> tuple[bool, str]:
         return True, ver
     except ImportError as exc:
         return False, str(exc)
+
+
+def _uri_scheme(uri: str) -> str:
+    """Return the lowercased scheme of a Neo4j URI ("" when malformed)."""
+    return uri.split("://", 1)[0].lower() if "://" in uri else ""
+
+
+def _uri_is_tls(uri: str) -> bool:
+    """True for the encrypted bolt/neo4j schemes (`+s`, `+ssc`), as Aura uses."""
+    scheme = _uri_scheme(uri)
+    return scheme.endswith("+s") or scheme.endswith("+ssc")
+
+
+def _probe_neo4j(cfg) -> tuple[bool, bool, str]:  # noqa: ANN001 (config type is internal)
+    """Probe the configured Neo4j URI, then the configured database.
+
+    Returns ``(reachable, database_ok, detail)``. Goes through
+    `get_sync_driver` so this exercises the same connection settings the rest
+    of Wheeler uses, including the bounded connect timeout that keeps doctor
+    from hanging on an unreachable Aura host. Encryption comes from the URI
+    scheme and is never passed as a driver argument: the `+s` / `+ssc` schemes
+    reject an explicit `encrypted=`, and that is how Aura is addressed.
+    """
+    try:
+        from wheeler.graph.driver import get_sync_driver
+
+        with get_sync_driver(cfg) as drv:
+            drv.verify_connectivity()
+            try:
+                with drv.session(database=cfg.neo4j.database) as session:
+                    session.run("RETURN 1").consume()
+            except Exception as exc:
+                return True, False, f"database '{cfg.neo4j.database}': {_short(exc)}"
+        return True, True, ""
+    except Exception as exc:
+        return False, False, _short(exc)
+
+
+def _short(exc: object, limit: int = 80) -> str:
+    msg = str(exc).replace("\n", " ")
+    return msg[:limit] + ("..." if len(msg) > limit else "")
+
+
+def _isolation_model(cfg, database_ok: bool) -> tuple[str, str]:  # noqa: ANN001
+    """Describe which project-isolation model is actually in force.
+
+    `ensure_database()` silently downgrades a dedicated database to
+    property-tag namespacing when `CREATE DATABASE` is denied, which is the
+    normal case on Aura free tier and on Community Edition. This mirrors that
+    resolution so doctor reports the effective model, not the wished-for one.
+    """
+    db = cfg.neo4j.database
+    tag = cfg.neo4j.project_tag
+    if tag:
+        return "tag", f"property tag _wheeler_project='{tag}' on database '{db}'"
+    if db != "neo4j":
+        if database_ok:
+            return "database", f"dedicated database '{db}'"
+        return (
+            "downgraded",
+            f"database '{db}' not usable, ensure_database() will fall back to "
+            f"'neo4j' + tag '{cfg.project.name or db}'",
+        )
+    if cfg.project.name:
+        return (
+            "tag",
+            f"property tag _wheeler_project='{cfg.project.name}' "
+            "(applied by ensure_database on database 'neo4j')",
+        )
+    return "none", "shared database 'neo4j', no project namespacing"
 
 
 @app.command("doctor")
@@ -294,32 +455,98 @@ def cmd_doctor() -> None:
         claude or "npm install -g @anthropic-ai/claude-code",
     )
 
-    cmd_dir = Path.home() / ".claude" / "commands" / "wh"
-    n_cmds = len(list(cmd_dir.glob("*.md"))) if cmd_dir.is_dir() else 0
+    # Act delivery: the wh plugin, the legacy tree, or both (the shadowing bug).
+    from wheeler import installer
+
+    plugin = installer.detect_plugin(project_dir=Path.cwd())
+    legacy = installer.legacy_status()
+    n_cmds = len(legacy.commands) + len(legacy.untracked_commands)
+
     table.add_row(
-        "Slash commands",
-        _OK if n_cmds else _WARN,
-        f"{n_cmds} installed at {cmd_dir}" if n_cmds else "run: wheeler install",
+        "wh plugin",
+        _OK if plugin.active else _WARN,
+        plugin.describe()
+        if plugin.present
+        else f"not installed ({installer.PLUGIN_INSTALL_CMD})",
     )
+    table.add_row(
+        "Legacy ~/.claude acts",
+        _WARN if (legacy.present and plugin.active) else _OK,
+        legacy.describe(),
+    )
+    if plugin.active and legacy.present:
+        table.add_row(
+            "  shadowing",
+            _FAIL,
+            f"legacy files win over the plugin for all {n_cmds} /wh: acts, "
+            "run: wheeler migrate-to-plugin",
+        )
+    elif not plugin.active and not legacy.present:
+        table.add_row("  acts available", _WARN, "none installed by either path")
 
+    cfg = None
     try:
-        from neo4j import GraphDatabase
-
         from wheeler.config import load_config
 
         cfg = load_config()
-        with GraphDatabase.driver(
-            cfg.neo4j.uri,
-            auth=(cfg.neo4j.username, cfg.neo4j.password),
-        ) as drv:
-            drv.verify_connectivity()
-        neo_status = _OK
-        neo_detail = cfg.neo4j.uri
     except Exception as exc:
-        neo_status = _WARN
-        msg = str(exc)
-        neo_detail = msg[:80] + ("..." if len(msg) > 80 else "")
+        table.add_row("Wheeler config", _WARN, _short(exc))
 
-    table.add_row("Neo4j reachable", neo_status, neo_detail)
+    if cfg is not None:
+        reachable, database_ok, detail = _probe_neo4j(cfg)
+        tls = _uri_is_tls(cfg.neo4j.uri)
+        table.add_row(
+            "Neo4j URI",
+            _OK if reachable else _WARN,
+            f"{cfg.neo4j.uri} ({'TLS' if tls else 'no TLS'})",
+        )
+        if not reachable:
+            table.add_row("  connect", _FAIL, detail or "unreachable")
+        else:
+            table.add_row(
+                f"  database '{cfg.neo4j.database}'",
+                _OK if database_ok else _WARN,
+                "queryable" if database_ok else detail,
+            )
+        mode, iso_detail = _isolation_model(cfg, database_ok)
+        table.add_row(
+            "Project isolation",
+            _WARN if mode in ("none", "downgraded") else _OK,
+            f"{mode}: {iso_detail}",
+        )
+
+        # Four sources can supply a Neo4j setting (env > keychain > wheeler.yaml >
+        # default), so "where did this value come from" is the first debugging
+        # question. Report it rather than making the user reason it out.
+        try:
+            from wheeler.config import neo4j_sources, shadowed_by_env
+
+            sources = neo4j_sources()
+            # Per FIELD, not a set of distinct sources: when only NEO4J_URI is
+            # exported, "env, keychain" hides which field the env var took over.
+            # Values are deliberately absent. The URI and database are already on
+            # their own rows above, the password must never be printed, and each
+            # field's env var name is implied by its own name.
+            if {row.source for row in sources} == {"default"}:
+                summary = "all built-in defaults"
+            else:
+                summary = ", ".join(f"{row.field}={row.source}" for row in sources)
+            table.add_row("Credential source", _OK, summary)
+
+            # The one case worth a warning: a stored credential exists but an
+            # exported variable is overriding it. That is the whole of
+            # "I ran wheeler login and it still connects to localhost".
+            shadowed = shadowed_by_env()
+            if shadowed:
+                verb = "overrides" if len(shadowed) == 1 else "override"
+                them = "it" if len(shadowed) == 1 else "them"
+                table.add_row(
+                    "  shadowed by env",
+                    _WARN,
+                    f"{', '.join(shadowed)} {verb} the stored credential; "
+                    f"unset {them} or run `wheeler login --status`",
+                )
+        except Exception as exc:  # keychain unavailable, keyring absent, etc.
+            table.add_row("Credential source", _WARN, _short(exc))
 
     console.print(table)

@@ -1,0 +1,31 @@
+{
+  "name": "wh",
+  "version": "0.14.0",
+  "description": "Provenance-tracked research assistant: a Neo4j knowledge graph over your files.",
+  "author": {
+    "name": "Arthur Hong",
+    "url": "https://github.com/maxwellsdm1867/wheeler"
+  },
+  "homepage": "https://github.com/maxwellsdm1867/wheeler",
+  "license": "MIT",
+  "mcpServers": "./.mcp-plugin.json",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Wheeler",
+    "shortDescription": "Research with a provenance-tracked knowledge graph",
+    "longDescription": "Wheeler records research as a graph: findings, hypotheses, datasets, scripts and executions, wired together with W3C PROV relationships. Claims cite graph nodes, a script whose hash stops matching disk marks everything downstream of it stale, and each act is a mode with its own tool access.",
+    "developerName": "Arthur Hong",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/maxwellsdm1867/wheeler",
+    "defaultPrompt": [
+      "Start a Wheeler research session",
+      "What does the knowledge graph say about this dataset?"
+    ]
+  }
+}

@@ -465,7 +465,7 @@ End-of-session command:
 - `tools/graph_tools/queries.py` — replace `query_analyses()` with
   `query_executions()`, update `graph_gaps()` Cypher
 - `tools/graph_tools/__init__.py` — update tool registry + definitions
-- `mcp_server.py` — update tool registrations and descriptions
+- the split servers (`mcp_core.py` / `mcp_query.py` / `mcp_mutations.py` / `mcp_ops.py`): update tool registrations and descriptions
 - `graph/provenance.py` — rewrite `create_analysis_node()` →
   `create_execution_node()`, update `detect_stale_analyses()` to
   work with Script entities

@@ -49,6 +49,11 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+# Runtime import of the zero-dependency config leaf, which `wheeler/CLAUDE.md`
+# lists as an allowed dependency for `integrations/*`. Only the path helper is
+# needed at runtime; the config TYPE stays behind TYPE_CHECKING.
+from wheeler.config import project_wheeler_dir
+
 if TYPE_CHECKING:
     from wheeler.config import WheelerConfig
 
@@ -109,11 +114,18 @@ def services_dir(config: WheelerConfig | None) -> Path | None:
 
     This folder is the source of truth for ENABLED services. Returns None when no
     config is supplied (caller then uses the bundled catalog only).
+
+    Anchored on the project root, not the cwd. `Path(config.project_root)`
+    collapsed the default "." to whatever directory the process started in, and
+    the writer (`wheeler services enable`) and the reader (an MCP server) are
+    different processes with different cwds: enabling from a subdirectory wrote a
+    folder the router then failed to find, and the router's documented fallback
+    (no folder means "every catalog default is enabled") turned that into a
+    silent wrong answer rather than an error.
     """
     if config is None:
         return None
-    root = Path(config.project_root).resolve()
-    return root / ".wheeler" / "services"
+    return project_wheeler_dir(config) / "services"
 
 
 def _user_manifest_path(config: WheelerConfig | None) -> Path | None:
@@ -121,11 +133,13 @@ def _user_manifest_path(config: WheelerConfig | None) -> Path | None:
 
     Honoured only when the ``.wheeler/services/`` folder is absent. Returns None
     when no config is supplied (caller then uses the bundled catalog only).
+
+    Shares `services_dir`'s anchor deliberately: the folder-wins precedence rule
+    only holds if both are resolved against the same root.
     """
     if config is None:
         return None
-    root = Path(config.project_root).resolve()
-    return root / ".wheeler" / "services.yaml"
+    return project_wheeler_dir(config) / "services.yaml"
 
 
 def _read_manifest(path: Path) -> list[dict[str, Any]]:

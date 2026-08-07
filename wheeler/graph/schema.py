@@ -127,33 +127,49 @@ async def ensure_database(config: WheelerConfig) -> str:
             )
         logger.info("Ensured database '%s' exists (Enterprise/Aura)", db_name)
     except Exception as exc:
-        # Community Edition — fall back to default database with namespacing
+        # Fall back to the default database with property-tag namespacing.
+        # This is a downgrade of the isolation model, not a detail: log it at
+        # WARNING with the real cause so a mistyped password does not look
+        # like an edition limit.
         project_tag = config.project.name or db_name
         config.neo4j.project_tag = project_tag
         config.neo4j.database = "neo4j"
-        logger.info(
-            "Could not create database '%s' (Community Edition?): %s. "
-            "Falling back to 'neo4j' database with namespace isolation: "
-            "_wheeler_project='%s'.",
-            db_name, exc, project_tag,
+        logger.warning(
+            "CREATE DATABASE '%s' failed (%s: %s). Isolation model DOWNGRADED: "
+            "Wheeler will use the shared 'neo4j' database with property-tag "
+            "isolation (_wheeler_project='%s'), not a dedicated database. "
+            "Expected on Neo4j Community Edition and on Aura Free, neither of "
+            "which grants system-database access. On Enterprise or a paid Aura "
+            "tier this usually means bad credentials or a missing privilege.",
+            db_name, type(exc).__name__, exc, project_tag,
         )
     return config.neo4j.database
 
 
 async def init_schema(config: WheelerConfig) -> list[str]:
-    """Apply all constraints and indexes to Neo4j. Returns list of applied statements."""
-    from wheeler.graph.driver import get_async_driver
+    """Apply all constraints and indexes to Neo4j. Returns list of applied statements.
+
+    Retried on transient failure. Every statement is ``IF NOT EXISTS``, so
+    replaying the whole batch is idempotent, and schema init must succeed:
+    against a remote database a single dropped connection should not leave a
+    project without its constraints.
+    """
+    from wheeler.graph.driver import get_async_driver, run_with_retry
     driver = get_async_driver(config)
-    applied: list[str] = []
 
     stmts = CONSTRAINTS + INDEXES
     if config.neo4j.project_tag:
         stmts = stmts + PROJECT_INDEXES
 
-    async with driver.session(database=config.neo4j.database) as session:
-        for stmt in stmts:
-            await session.run(stmt)
-            applied.append(stmt)
+    async def _apply() -> list[str]:
+        applied: list[str] = []
+        async with driver.session(database=config.neo4j.database) as session:
+            for stmt in stmts:
+                await session.run(stmt)
+                applied.append(stmt)
+        return applied
+
+    applied = await run_with_retry(_apply, label="init_schema")
     logger.info("Schema initialized: %d constraints/indexes applied", len(applied))
     return applied
 
@@ -166,6 +182,10 @@ async def get_status(config: WheelerConfig) -> dict[str, Any]:
     optionally ``_error`` with the exception message.  Normal entries are
     ``int`` counts keyed by node label; the underscore-prefixed entries are
     ``str`` status/error sentinels.
+
+    Deliberately not wrapped in ``run_with_retry``: this is a probe that
+    already degrades to "offline" by design, and retrying would multiply the
+    connect timeout every time the answer is simply that Neo4j is down.
     """
     counts: dict[str, Any] = {label: 0 for label in NODE_LABELS}
     try:

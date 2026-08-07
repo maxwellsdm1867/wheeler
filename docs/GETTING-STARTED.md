@@ -76,6 +76,121 @@ These are the defaults Wheeler expects. You will enter them in `wheeler.yaml` in
 | Password | `research-graph` |
 | Database | `neo4j` |
 
+### Alternative: Neo4j Aura (hosted, no local database)
+
+If you would rather not run a database on your laptop, Wheeler connects to a remote Neo4j Aura instance over the encrypted Bolt scheme. Create an instance at https://console.neo4j.io.
+
+| Setting | Value |
+|---------|-------|
+| URI | `neo4j+s://<instance-id>.databases.neo4j.io` |
+| Username | `neo4j` |
+| Password | from the credentials file Aura gives you at creation |
+| Database | `neo4j` |
+
+**Save the credentials file Aura offers when the instance is created.** The password is displayed exactly once, on that screen and in that file, and Aura cannot recover it afterwards. Lose it and your only options are resetting the password from the console or creating a new instance. The file is a plain `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` list, usually downloaded as something like `Instance01-credentials.txt`.
+
+#### `wheeler login`: hand Wheeler that file
+
+```bash
+pip install 'wheeler[login]'          # or: uv tool install wheeler --with keyring
+wheeler login --aura-file ~/Downloads/Instance01-credentials.txt
+```
+
+That is the whole setup. Nothing typed, no API key, and it works on the free tier, which is why it is the recommended route.
+
+What it does, in order: parses the file, connects to the instance and runs a trivial query, and only then stores the credentials in your operating system's keychain (macOS Keychain, libsecret on Linux, Windows Credential Manager). Consequences worth knowing:
+
+- **The password never touches a file.** Not `wheeler.yaml`, not a shell profile, not your shell history. It is not echoed while you type it and `wheeler login --status` prints it masked.
+- **A credential that does not work is never stored.** If validation fails, nothing is saved and the command exits non-zero. This is deliberate: a stored-but-broken credential sends you debugging Neo4j when the problem was the credential.
+- **`wheeler logout`** removes it again (`--profile <name>` for one profile, `--all` for every one).
+
+The `wheeler[login]` extra pulls in `keyring`. Wheeler works without it: the keychain layer simply reports itself unavailable and environment variables and `wheeler.yaml` behave exactly as they always have.
+
+#### The two other routes
+
+`wheeler login` with no flags prompts for URI, username, password (read without echo), and database. It works against anything, hosted or local, and is the fallback when you have no credentials file.
+
+`wheeler login --aura` asks the Aura management API where your instances live, so you do not copy a URI by hand. It needs a Client ID and Secret created in the Aura Console under Account Details, then lists your instances and reads the `connection_url` of the one you pick (auto-selected when there is only one).
+
+Two properties of Aura, not of Wheeler, decide whether that path is available to you:
+
+- **There is no browser sign-in.** Aura's management API supports OAuth 2.0 `client_credentials` and nothing else: no device-code flow, no interactive end-user login. Pasting an API key once is the best that exists, and Wheeler does not pretend otherwise.
+- **Aura will not issue API credentials until billing information is on file.** An account holding only Free instances, outside a marketplace project, cannot create a Client ID at all. If the token request is rejected, that is usually why, and Wheeler says so. `--aura-file` is the way through, because it needs no API key. This is exactly why the file is the primary route and the API is the power route.
+
+One more limit: `GET /v1/instances` does not return passwords (Aura hands a password out only in the creation response), so `--aura` still prompts for it. It saves you the URI, not the secret.
+
+#### Where each setting comes from
+
+Four layers can supply a Neo4j setting. Highest precedence first:
+
+```
+environment variables  >  OS keychain  >  wheeler.yaml  >  built-in default
+```
+
+Environment variables stay on top deliberately. CI jobs, containers, and one-off invocations like `NEO4J_URI=bolt://other:7687 wheeler graph status` keep working exactly as before, and a credential stored on a laptop never silently overrides a deployment that sets its own.
+
+That ordering has one trap, and it is the likeliest thing to confuse you: **an exported `NEO4J_URI` outranks the credential you just stored**, so a stale export in a shell profile makes a successful `wheeler login` look as though it did nothing. Ask instead of guessing:
+
+```bash
+wheeler login --status
+```
+
+It prints one row per field naming the layer that won (`env`, `keychain`, `yaml`, or `default`), where that layer is (the variable name, the profile, the path to `wheeler.yaml`), and the value, with the password masked. When an environment variable is shadowing a stored credential it says so outright and names the variable to unset. It also reports whether a keychain is available at all and which profiles are stored.
+
+#### More than one instance: named profiles
+
+```bash
+wheeler login --aura-file ~/Downloads/prod-credentials.txt --profile prod
+export WHEELER_PROFILE=prod          # select it for this shell
+```
+
+With no `--profile`, everything reads and writes the profile named `default`. `wheeler login --status` shows which profile is active and which ones are stored.
+
+#### Environment variables: CI, containers, and the `neo4j` MCP server
+
+The four variables are still the right tool for a non-interactive environment, and there is one case where you need them even on a laptop:
+
+```bash
+export NEO4J_URI="neo4j+s://abc12345.databases.neo4j.io"
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="<from the credentials file>"
+export NEO4J_DATABASE="neo4j"
+```
+
+Wheeler's own four MCP servers read the full precedence chain, so `wheeler login` is enough for them. The fifth entry in `.mcp.json` is not Wheeler's: the `neo4j` server runs the third-party `mcp-neo4j-cypher` (the raw-Cypher tool), and its templated `env` block (`"NEO4J_URI": "${NEO4J_URI:-bolt://localhost:7687}"`, and so on) reads environment variables only. It cannot see your keychain. So if you want that server pointed at a hosted instance too, export the four variables as well. Because env outranks the keychain, Wheeler and that server then agree by construction.
+
+#### macOS: a possible one-time access prompt
+
+macOS binds a stored keychain item to the program that created it. `wheeler login` runs as one binary and the MCP servers may be launched by `uvx` as another, so macOS can ask once per program whether it may read the item. Click "Always Allow" and it does not come back.
+
+Wheeler is built so a blocked or slow prompt degrades instead of hanging: the keychain read runs with a five-second watchdog (tunable via `WHEELER_KEYCHAIN_TIMEOUT`) and falls through to `wheeler.yaml` and the built-in defaults if it does not answer, because a wedged MCP server would look like a dead one. To take the keychain out of the picture entirely, set `WHEELER_NO_KEYCHAIN=1` and use environment variables.
+
+#### Isolation on Aura Free
+
+**On Aura Free you get property-tag isolation, not a dedicated database.** Wheeler tries `CREATE DATABASE <your project>` first. Aura Free does not grant access to the `system` database, so that command fails, and Wheeler falls back to the shared `neo4j` database: every node gets a `_wheeler_project=<project name>` property and every query filters on it. The fallback is announced at WARNING with the underlying error:
+
+```
+CREATE DATABASE 'my-project' failed (ClientError: Unsupported administration command ...).
+Isolation model DOWNGRADED: Wheeler will use the shared 'neo4j' database with
+property-tag isolation (_wheeler_project='my-project'), not a dedicated database.
+```
+
+That warning is expected on Aura Free and on Neo4j Community Edition. If you see it on Enterprise or a paid Aura tier, read the exception in the message: it is usually a wrong password or a missing privilege, not an edition limit.
+
+Two more things to know about a remote instance:
+
+- **Aura Free instances pause when left idle.** Resume the instance from the console before a session, or every graph call will fail on connect.
+- **Connection tuning is env-driven.** The defaults below work locally and remotely; raise the timeouts on a slow link.
+
+| Variable | Default | What it controls |
+|----------|---------|------------------|
+| `WHEELER_NEO4J_POOL_SIZE` | `50` | Max pooled connections |
+| `WHEELER_NEO4J_CONNECT_TIMEOUT` | `15` | Seconds to establish a connection (TLS handshake included) |
+| `WHEELER_NEO4J_ACQUISITION_TIMEOUT` | `30` | Seconds to wait for a free connection from the pool |
+| `WHEELER_NEO4J_MAX_LIFETIME` | `1800` | Seconds before a pooled connection is recycled |
+| `WHEELER_NEO4J_RETRY_ATTEMPTS` | `3` | Attempts for a transient failure |
+| `WHEELER_NEO4J_RETRY_BASE_DELAY` | `0.25` | Backoff base in seconds (doubles per attempt) |
+
 ### A note on Neo4j Desktop concepts
 
 - A **Project** is just a folder for grouping databases. It does not run anything.
@@ -85,7 +200,7 @@ These are the defaults Wheeler expects. You will enter them in `wheeler.yaml` in
 
 ## Step 2: Install Wheeler and scaffold your project
 
-One command does both — install the Wheeler tool and scaffold a new project directory wired up to Claude Code:
+One command does both, installing the Wheeler tool and scaffolding a new project directory wired up to Claude Code:
 
 ```bash
 uv tool install wheeler           # persistent install, ~10 seconds
@@ -118,7 +233,26 @@ neo4j:
   database: neo4j
 ```
 
-You'll also want to update the same value in the `.mcp.json`'s `neo4j` section (under `env.NEO4J_PASSWORD`) so the Neo4j MCP server can connect.
+Or export the four environment variables instead, which override `wheeler.yaml` field by field and keep the password out of the project directory:
+
+```bash
+export NEO4J_URI="bolt://localhost:7687"
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="<your password>"
+export NEO4J_DATABASE="neo4j"
+```
+
+The `neo4j` MCP server entry in `.mcp.json` reads the same four names (its `env` block is templated as `${NEO4J_URI:-bolt://localhost:7687}` and so on), so exporting them covers both Wheeler and that server. If you edited `wheeler.yaml` rather than exporting, set `env.NEO4J_PASSWORD` in `.mcp.json` to match, or the Neo4j MCP server will still try the default.
+
+Or, if you would rather the password lived in neither the file nor your shell profile, `wheeler login` stores it in your OS keychain and validates it by connecting first:
+
+```bash
+pip install 'wheeler[login]'
+wheeler login --uri bolt://localhost:7687 --username neo4j   # prompts for the password, no echo
+wheeler login --status                                        # which layer is supplying what
+```
+
+The full precedence chain is env > keychain > `wheeler.yaml` > default. See "Where each setting comes from" under the Aura section in Step 1 for the details, including the one trap: an exported `NEO4J_URI` outranks a stored credential.
 
 ## Step 4: Initialize the graph schema
 
@@ -252,6 +386,24 @@ RETURN s.id, s.path, f.id, f.description
 
 Every node gets a `synthesis/{id}.md` file with YAML frontmatter and `[[backlinks]]`. Open the `synthesis/` directory in Obsidian for a browsable, linked view of your entire knowledge graph.
 
+## Two volumes: node content and edges
+
+Wheeler's state lives in two places that do not overlap. This is easy to get half-right, and half-right means half a graph.
+
+**Volume 1: node content lives only in `knowledge/*.json`.** The Neo4j node holds `id`, `type`, `tier`, a title truncated to roughly 100 characters, a file pointer, timestamps, and a few filterable fields. The description, the full text, the numbers, the parameters: those live in the JSON file and nowhere else. Regenerating a node's JSON from the graph is not something Wheeler can do in general, which is why `graph_consistency_check` refuses to try (`wheeler/consistency.py:128` marks the graph-only case "warn only (regenerating JSON from graph is complex)"). Lose `knowledge/` and you keep an index pointing at content that no longer exists.
+
+**Volume 2: edges live only in Neo4j.** A node's JSON has no relationships field. Every `USED`, `WAS_GENERATED_BY`, `SUPPORTS`, `CITES`, `CONTRADICTS` edge exists as a Neo4j relationship and nowhere else. Lose the database and you keep every finding with no provenance chain connecting any of them.
+
+**`synthesis/*.md` is derived and rebuildable.** It is rendered from the JSON (plus the graph, for backlinks). It is there for Obsidian and for humans, never as a source of truth: `graph_consistency_check --repair` regenerates a missing synthesis file from the JSON without asking.
+
+So: persist both volumes or lose half the graph.
+
+- `wheeler backup` writes one archive containing both: the project tree (including `knowledge/`) plus a live Neo4j dump and a manifest. This is the safe default.
+- Committing `knowledge/` to git captures all the content and none of the edges.
+- A Neo4j dump alone captures all the edges and none of the content.
+
+The same asymmetry explains what a "restore" has to do: replay the JSON to rebuild node content, then replay the graph to rebuild the relationships between those nodes.
+
 ### CLI
 
 ```bash
@@ -311,6 +463,51 @@ docker stop <container-name>    # if Docker
 ```
 
 If you changed the port in Desktop (DBMS Settings > `server.bolt.listen_address`), update `wheeler.yaml` to match.
+
+### Remote (Aura) instance not reachable
+
+For a hosted instance the port check above is the wrong probe. Check three things in order:
+
+1. **The instance is running.** Aura Free pauses idle instances. Resume it from https://console.neo4j.io.
+2. **The scheme is `neo4j+s://`.** Aura requires encryption. `bolt://` against an Aura host fails at the handshake, not at DNS, so the error can look like an auth problem.
+3. **The URI actually in use.** Four layers can supply it, so ask rather than infer:
+
+```bash
+wheeler login --status
+```
+
+One row per field, naming the winning layer (`env`, `keychain`, `yaml`, `default`) and where it came from. `bin/wh` also prints which host and port it probed when the probe fails.
+
+If you get a WARNING about `CREATE DATABASE` failing and the isolation model being downgraded, that is expected on Aura Free: see the Aura section under Step 1.
+
+### `wheeler login` worked but Wheeler still connects to localhost
+
+An environment variable is outranking the stored credential. Precedence is env > keychain > `wheeler.yaml` > default, so a `NEO4J_URI` exported in `.zshrc` months ago wins over the credential you stored a minute ago.
+
+```bash
+wheeler login --status
+```
+
+It names the offending variables explicitly when a stored credential is being shadowed. Unset them (`unset NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE`) and remove the exports from your shell profile.
+
+Two other possibilities the same output rules out:
+
+- **Nothing was stored.** The "Stored profiles" line is empty. `wheeler login` exits non-zero and stores nothing when validation fails, so check that it actually reported `Saved to the OS keychain`.
+- **The wrong profile is active.** If you logged in with `--profile prod`, set `WHEELER_PROFILE=prod`. The status table shows which profile it read.
+
+If the `neo4j` MCP server (raw Cypher) is the one pointed at the wrong place, that is expected: it is the third-party `mcp-neo4j-cypher`, and its `env` block in `.mcp.json` reads environment variables only. It cannot see the keychain. Export the four variables to point it at the same instance.
+
+### "No usable OS keychain"
+
+`wheeler login` needs the optional `keyring` package and a keychain backend:
+
+```bash
+pip install 'wheeler[login]'
+```
+
+On a headless Linux box there may be no backend at all (no libsecret, no D-Bus session), which the message says explicitly. Use the four environment variables there: that is what they are for. Nothing else in Wheeler is affected, since the keychain layer reports itself unavailable and the other three layers behave as usual.
+
+If a keychain access prompt appears and you would rather not deal with it, `WHEELER_NO_KEYCHAIN=1` skips the keychain entirely.
 
 ### Neo4j authentication failed
 

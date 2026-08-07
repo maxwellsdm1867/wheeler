@@ -595,3 +595,96 @@ class TestServicesCli:
         assert "Loaded services" in out
         assert "Available to enable" in out
         assert "theorizer" in out
+
+
+# ---------------------------------------------------------------------------
+# The writer and the reader are different processes with different cwds
+# ---------------------------------------------------------------------------
+
+
+class TestCuratingFromASubdirectory:
+    """`services enable/disable` must write where the router reads.
+
+    `Path(config.project_root)` collapsed the default "." to the process cwd.
+    The writer is the CLI, the reader is an MCP server Claude Code spawns at the
+    project root: curating from a subdirectory wrote a folder the router never
+    looked at, and the documented no-folder fallback ("every catalog default is
+    enabled") turned that into silence instead of an error. So the scientist
+    disabled a service, saw no complaint, and the service stayed enabled.
+    """
+
+    @pytest.fixture()
+    def _nested_project(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """A project root marked by wheeler.yaml, with the cwd set below it."""
+        monkeypatch.delenv("WHEELER_PROJECT_ROOT", raising=False)
+        root = tmp_path / "project"
+        nested = root / "analysis" / "scripts"
+        nested.mkdir(parents=True)
+        (root / "wheeler.yaml").write_text("knowledge_path: knowledge\n")
+        monkeypatch.chdir(nested)
+        return CliRunner(), root, nested
+
+    def test_disable_from_a_subdirectory_is_visible_at_the_project_root(
+        self, _nested_project
+    ) -> None:
+        runner, root, nested = _nested_project
+
+        result = runner.invoke(services_app, ["disable", "paper-finder"])
+        assert result.exit_code == 0, result.output
+
+        # Written to the project's folder, not one under the cwd.
+        assert _services_dir(root).is_dir()
+        assert not (nested / ".wheeler").exists(), (
+            "curating from a subdirectory created .wheeler/ under the cwd"
+        )
+
+        # And the router, resolving from the project root, sees the curation.
+        ids = {c.id for c in load_services(_config_for(root))}
+        assert "paper-finder" not in ids, (
+            "the router fell back to the bundled catalog, so the disable was "
+            "silently lost: it was written somewhere the reader does not look"
+        )
+        assert ids, "seeding should have left the other catalog defaults enabled"
+
+    def test_enable_from_a_subdirectory_lands_in_the_project_folder(
+        self, _nested_project
+    ) -> None:
+        runner, root, nested = _nested_project
+
+        result = runner.invoke(services_app, ["enable", "paper-finder"])
+        assert result.exit_code == 0, result.output
+
+        assert (_services_dir(root) / "paper-finder.yaml").is_file()
+        assert not (nested / ".wheeler").exists()
+        assert "paper-finder" in {c.id for c in load_services(_config_for(root))}
+
+    def test_legacy_single_file_override_shares_the_same_anchor(
+        self, _nested_project
+    ) -> None:
+        """The folder-wins rule only holds if both are resolved against one root."""
+        _runner, root, _nested = _nested_project
+        (root / ".wheeler").mkdir(exist_ok=True)
+        (root / ".wheeler" / "services.yaml").write_text(
+            textwrap.dedent(
+                """\
+                services:
+                  - id: legacy-only-tool
+                    provider: legacy
+                    name: Legacy Only Tool
+                    description: from the legacy single-file override
+                    kind: local
+                    act: /wh:legacy
+                    cost: "free"
+                    available: "true"
+                    when: "anytime"
+                """
+            )
+        )
+
+        # No services/ folder yet, so the legacy file is honoured. Reading with a
+        # config whose project_root is "." while the cwd is the subdirectory is
+        # the case that used to miss it.
+        from wheeler.config import load_config
+
+        ids = {c.id for c in load_services(load_config())}
+        assert "legacy-only-tool" in ids
