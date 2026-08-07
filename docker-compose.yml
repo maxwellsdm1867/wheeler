@@ -1,3 +1,26 @@
+# Local Wheeler stack: Neo4j plus a Wheeler runtime container.
+#
+# Previously this file stood up the database ONLY, and Wheeler was expected to run
+# on the host. That is still a fine way to work (`docker compose up neo4j`), but it
+# left the containerized deployment story untested, so the app is a service now too.
+#
+# The two-volume rule is the load-bearing detail here. Wheeler's state is split:
+# node CONTENT lives only in knowledge/*.json inside the project tree, while graph
+# EDGES live only in Neo4j. Persisting one without the other loses half the graph.
+# Hence `neo4j_data` AND `wheeler_state` below. Both must be backed up together, or
+# use `wheeler backup` which packs the tree plus a logical graph dump in one archive.
+#
+# Usage:
+#   docker compose up -d neo4j                  # database only, Wheeler on the host
+#   docker compose run --rm wheeler doctor      # check the containerized wiring
+#   docker compose run --rm wheeler graph status
+#   docker compose run --rm tests               # unit suite in a container
+
+x-neo4j-auth: &neo4j-auth
+  # Override for anything you care about. This is a local development default and
+  # is deliberately not a secret: never reuse it for a reachable instance.
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-research-graph}
+
 services:
   neo4j:
     image: neo4j:5
@@ -6,7 +29,7 @@ services:
       - "7474:7474"  # Browser UI
       - "7687:7687"  # Bolt protocol
     environment:
-      NEO4J_AUTH: neo4j/research-graph
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-research-graph}
       NEO4J_PLUGINS: '[]'
     volumes:
       - neo4j_data:/data
@@ -16,5 +39,51 @@ services:
       timeout: 5s
       retries: 5
 
+  wheeler:
+    build:
+      context: .
+      target: runtime
+    image: wheeler:runtime
+    container_name: wheeler-app
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      <<: *neo4j-auth
+      # bolt://neo4j:7687, not localhost: inside a container localhost is the
+      # container itself, which is the classic first-run mistake here.
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+      NEO4J_USERNAME: ${NEO4J_USERNAME:-neo4j}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
+      WHEELER_PROJECT_ROOT: /project
+    volumes:
+      # Volume 1 of 2: the project tree. knowledge/ is the source of truth for
+      # node content, .plans/ for plan prose. Lose this and the graph is titles
+      # with no bodies.
+      - wheeler_state:/project
+    working_dir: /project
+    # No long-running process by default: the MCP servers speak stdio and are
+    # launched by an agent host, not by compose. `run --rm wheeler <cmd>` is the
+    # intended entry.
+    profiles: ["app"]
+
+  tests:
+    build:
+      context: .
+      target: test
+    image: wheeler:test
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      <<: *neo4j-auth
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_DATABASE: neo4j
+    profiles: ["test"]
+
 volumes:
+  # Volume 2 of 2: the Neo4j store. Holds every relationship in the graph; the
+  # node JSON files carry no edges at all.
   neo4j_data:
+  wheeler_state:

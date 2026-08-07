@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from wheeler.config import WheelerConfig
+from wheeler.config import (
+    project_knowledge_dir,
+    project_search_store_dir,
+    project_synthesis_dir,
+    project_wheeler_dir,
+    WheelerConfig,
+)
 from wheeler.graph.circuit_breaker import CircuitOpenError
 from wheeler.graph.schema import ALLOWED_RELATIONSHIPS
 from wheeler.write_receipt import RepairQueue, WriteReceipt
@@ -28,7 +33,16 @@ _ToolHandler = Callable[[Any, dict], Awaitable[str]]
 
 logger = logging.getLogger(__name__)
 
-_repair_queue = RepairQueue(Path(".wheeler"))
+
+def _repair_queue(config: object | None = None) -> RepairQueue:
+    """Repair queue under the project's `.wheeler/`, resolved per call.
+
+    Per call rather than at import: a module-level queue binds to whatever cwd
+    the process was started in, which is not the project root when a server is
+    spawned from a subdirectory.
+    """
+    return RepairQueue(project_wheeler_dir(config))
+
 
 # Tools that create graph nodes and should be dual-written to knowledge/ files
 _MUTATION_TOOLS = frozenset({
@@ -543,9 +557,10 @@ def _write_knowledge_file(
             actor=args.get("session_id", "system"),
         )]
 
-        write_node(Path(config.knowledge_path), model)
+        knowledge_dir = project_knowledge_dir(config)
+        write_node(knowledge_dir, model)
         json_ok = True
-        logger.info("Dual-write: %s -> %s/%s.json", tool_name, config.knowledge_path, node_id)
+        logger.info("Dual-write: %s -> %s/%s.json", tool_name, knowledge_dir, node_id)
 
         # Triple-write: synthesis markdown
         synthesis_ok = _write_synthesis_file(node_id, model, config)
@@ -573,7 +588,7 @@ def _update_knowledge_tier(
 
         from wheeler.knowledge.store import read_node, write_node
 
-        knowledge_dir = Path(config.knowledge_path)
+        knowledge_dir = project_knowledge_dir(config)
 
         try:
             node = read_node(knowledge_dir, node_id)
@@ -627,7 +642,7 @@ def _update_knowledge_node(
 
         from wheeler.knowledge.store import read_node, write_node
 
-        knowledge_dir = Path(config.knowledge_path)
+        knowledge_dir = project_knowledge_dir(config)
 
         try:
             node = read_node(knowledge_dir, node_id)
@@ -696,7 +711,7 @@ def _delete_knowledge_and_synthesis(
     try:
         from wheeler.knowledge.store import delete_node as delete_knowledge_file
 
-        knowledge_dir = Path(config.knowledge_path)
+        knowledge_dir = project_knowledge_dir(config)
         deleted = delete_knowledge_file(knowledge_dir, node_id)
         if deleted:
             logger.info("Deleted knowledge file for %s", node_id)
@@ -708,7 +723,7 @@ def _delete_knowledge_and_synthesis(
         )
 
     try:
-        synthesis_path = Path(config.synthesis_path) / f"{node_id}.md"
+        synthesis_path = project_synthesis_dir(config) / f"{node_id}.md"
         if synthesis_path.exists():
             synthesis_path.unlink()
             logger.info("Deleted synthesis file for %s", node_id)
@@ -722,7 +737,7 @@ def _delete_knowledge_and_synthesis(
     try:
         from wheeler.search.embeddings import EmbeddingStore
 
-        store_path = config.search.store_path
+        store_path = str(project_search_store_dir(config))
         store = EmbeddingStore(store_path)
         store.load()
         store.remove(node_id)
@@ -758,7 +773,7 @@ def _write_synthesis_file(
             )
             return False
         markdown = render_synthesis(model, relationships=relationships)
-        write_synthesis(Path(config.synthesis_path), node_id, markdown)
+        write_synthesis(project_synthesis_dir(config), node_id, markdown)
         return True
     except Exception:
         logger.error(
@@ -781,7 +796,7 @@ async def _update_synthesis_for_link(
         from wheeler.knowledge.store import read_node
         from wheeler.models import PREFIX_TO_LABEL, title_for_node
 
-        knowledge_dir = Path(config.knowledge_path)
+        knowledge_dir = project_knowledge_dir(config)
         src_id: str = args["source_id"]
         tgt_id: str = args["target_id"]
 
@@ -1006,7 +1021,7 @@ async def execute_tool(
                     json=json_ok,
                     synthesis=synthesis_ok,
                 )
-                _repair_queue.enqueue(receipt)
+                _repair_queue(config).enqueue(receipt)
             except Exception:
                 pass  # receipt tracking should never break the tool
 
@@ -1059,7 +1074,7 @@ async def execute_tool(
                         "add_execution", exec_args, exec_result, config,
                     )
                     try:
-                        _repair_queue.enqueue(WriteReceipt(
+                        _repair_queue(config).enqueue(WriteReceipt(
                             node_id=exec_id,
                             label="Execution",
                             timestamp=_now(),
@@ -1098,7 +1113,7 @@ async def execute_tool(
                         json=json_ok,
                         synthesis=synthesis_ok,
                     )
-                    _repair_queue.enqueue(receipt)
+                    _repair_queue(config).enqueue(receipt)
             except Exception:
                 pass  # receipt tracking should never break the tool
 
@@ -1122,7 +1137,7 @@ async def execute_tool(
                             new_text = upd_changes[f]["new"]
                             break
                     if new_text and upd_node_id:
-                        store_path = config.search.store_path
+                        store_path = str(project_search_store_dir(config))
                         store = EmbeddingStore(store_path)
                         store.load()
                         store.add(upd_node_id, upd_label, new_text)

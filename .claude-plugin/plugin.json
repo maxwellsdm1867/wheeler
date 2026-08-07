@@ -1,0 +1,20 @@
+{
+  "name": "wh",
+  "displayName": "Wheeler",
+  "version": "0.14.0",
+  "description": "Provenance-tracked research assistant: a Neo4j knowledge graph over your files, with 39 research acts and 51 MCP tools.",
+  "author": {
+    "name": "Arthur Hong"
+  },
+  "homepage": "https://github.com/maxwellsdm1867/wheeler",
+  "repository": "https://github.com/maxwellsdm1867/wheeler.git",
+  "license": "MIT",
+  "keywords": [
+    "science",
+    "research",
+    "knowledge-graph",
+    "provenance",
+    "neo4j"
+  ],
+  "mcpServers": "./.mcp-plugin.json"
+}

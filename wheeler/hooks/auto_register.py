@@ -73,7 +73,13 @@ def _should_register(path: Path) -> bool:
 def _log(record: dict) -> None:
     """Append one JSON line to the auto-register audit log. Never raises."""
     try:
-        log_dir = Path(".wheeler")
+        # Anchored on the discovered project root rather than the CWD, so the
+        # audit log lands in the project's .wheeler/ even when the host's cwd is
+        # a subdirectory. find_project_root() falls back to cwd, so this cannot
+        # be worse than the previous behaviour, and this function must never raise.
+        from wheeler.config import project_wheeler_dir
+
+        log_dir = project_wheeler_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         with open(log_dir / "auto_register.jsonl", "a") as f:
             json.dump(record, f, default=str)

@@ -1,16 +1,17 @@
-"""Wheeler Core MCP Server: graph health, status, context, gaps, node reads, cypher, schema, search.
+"""Wheeler Core MCP Server: graph health, status, context, gaps, node reads, cypher, schema, search, acts.
 
-10 tools for reading and querying the knowledge graph.
+14 tools for reading and querying the knowledge graph, plus the act corpus.
 Run: python -m wheeler.mcp_core
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from fastmcp import FastMCP
 
+from wheeler import acts as acts_corpus
+from wheeler.config import project_knowledge_dir
 from wheeler.graph import context, schema
 from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
@@ -24,7 +25,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_core",
-    instructions="Graph infrastructure and semantic search: health checks, status, context, gaps, node reads, raw Cypher, schema init, search_findings and search_context (meaning-based, fuses semantic + keyword + fulltext + recency). For typed keyword listings of a specific node type, use wheeler_query. For creating or modifying nodes, use wheeler_mutations.",
+    instructions="Graph infrastructure and semantic search: health checks, status, context, gaps, node reads, raw Cypher, schema init, search_findings and search_context (meaning-based, fuses semantic + keyword + fulltext + recency). Also serves Wheeler's acts (research workflows) via list_acts and get_act, so any host can run them from a single source. For typed keyword listings of a specific node type, use wheeler_query. For creating or modifying nodes, use wheeler_mutations.",
 )
 
 
@@ -116,7 +117,7 @@ async def graph_health() -> dict:
         result.update(_diagnose_health_error(str(exc)))
 
     # Check knowledge/ directory
-    knowledge_path = Path(_config.knowledge_path)
+    knowledge_path = project_knowledge_dir(_config)
     if knowledge_path.exists():
         json_files = list(knowledge_path.glob("*.json"))
         result["knowledge_files"] = len(json_files)
@@ -245,7 +246,7 @@ async def show_node(node_id: str) -> dict:
             )
         }
 
-    knowledge_path = Path(_config.knowledge_path)
+    knowledge_path = project_knowledge_dir(_config)
     try:
         model = store.read_node(knowledge_path, node_id)
         return model.model_dump()
@@ -429,6 +430,71 @@ async def index_node(node_id: str, label: str, text: str) -> dict:
         return {"error": "Semantic search not available. Install with: pip install wheeler[search]"}
     except Exception as exc:
         return {"error": f"Indexing failed: {exc}"}
+
+
+# --- Act corpus ---
+#
+# Reads, not mutations, so they do NOT route through execute_tool(): that rule
+# exists to keep the triple-write wiring in one place and applies to writes.
+# Serving act bodies here is what lets a second host (Codex) run the same acts
+# without a second copy of their content.
+
+
+@mcp.tool()
+@_logged
+async def list_acts() -> dict:
+    """List Wheeler's /wh:* acts: the research workflows this project ships.
+
+    Each entry carries the act's name, short id, one-line description,
+    argument hint, enforcement mode (chat / write / execute), and
+    orchestration shape (none / skill-dispatch / subagents). Call get_act
+    to fetch the full instructions for one of them.
+    """
+    return {
+        "acts": [act.summary() for act in acts_corpus.load_acts()],
+        "count": len(acts_corpus.load_acts()),
+    }
+
+
+@mcp.tool()
+@_logged
+async def get_act(name: str, host: str = "") -> dict:
+    """Fetch the full instructions for one Wheeler /wh:* act.
+
+    The body is the act's system prompt, returned verbatim and identical for
+    every host. `orchestration_note` is the only host-specific part: it says
+    how to achieve this act's orchestration shape on the calling host, and is
+    empty for acts that orchestrate nothing. Read it as an appendix to the body.
+
+    Args:
+        name: Act name, with or without the prefix ("chat" or "wh:chat")
+        host: Calling host, "claude" (default) or "codex"
+    """
+    act = acts_corpus.find_act(name)
+    if act is None:
+        return {
+            "error": f"Unknown act: {name!r}",
+            "known_acts": list(acts_corpus.act_ids()),
+        }
+    try:
+        resolved_host = acts_corpus.normalize_host(host)
+    except ValueError as exc:
+        return {
+            "error": str(exc),
+            "supported_hosts": list(acts_corpus.HOSTS),
+        }
+    return {
+        "name": act.name,
+        "act_id": act.act_id,
+        "description": act.description,
+        "argument_hint": act.argument_hint,
+        "mode": act.mode,
+        "orchestration": act.orchestration,
+        "allowed_tools": list(act.allowed_tools),
+        "host": resolved_host,
+        "body": act.body,
+        "orchestration_note": acts_corpus.orchestration_note(act, resolved_host),
+    }
 
 
 # --- Request log ---

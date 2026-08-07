@@ -16,7 +16,7 @@
 
 | Component | Detail |
 |-----------|--------|
-| MCP servers | 5 (core, query, mutations, ops, legacy monolith). 50 tools total |
+| MCP servers | 4 (core, query, mutations, ops). 51 tools total |
 | Slash commands | 35 acts in `.claude/commands/wh/*.md` (incl. the `/wh:asta-*` adapters + `/wh:asta` router) |
 | Graph protocol | W3C PROV-DM (6 standard + 8 Wheeler semantic relationship types) |
 | Storage | Triple-write: Neo4j + knowledge/*.json + synthesis/*.md |
@@ -51,7 +51,7 @@
 |-------|-------|-------|
 | Unit + integration | ~1929 | All pass, <35s |
 | E2E (live Neo4j) | ~20 | Skipped without Neo4j |
-| Surface parity | retired | Split servers are canonical; the monolith parity test is skipped |
+| Surface guard | `tests/test_mcp_surface.py` | Per-server counts, no duplicate names, every tool described, monolith stays deleted |
 | Pre-commit hook | API safety, test suite, lint |
 | Pre-push hook | Full test suite |
 

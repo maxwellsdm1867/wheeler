@@ -29,6 +29,12 @@ scope="graph-only" (v1 behaviour): no project/ tree; archive contains only
   knowledge/  synthesis/  .wheeler/  wheeler.yaml  graph_nodes.jsonl
   graph_relationships.jsonl  manifest.json
 
+The graph dump is scoped to this project: when
+``config.neo4j.project_tag`` is set (Community Edition namespace isolation)
+only nodes carrying that tag, and only relationships with BOTH endpoints
+carrying it, are dumped. With no tag the Neo4j database itself is the
+boundary and everything in it is dumped.
+
 If Neo4j is unreachable the file layers are still archived; the JSONL graph
 dumps are written empty and the manifest records ``graph_available: false``.
 """
@@ -50,7 +56,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from wheeler.config import WheelerConfig
+from wheeler.config import WheelerConfig, project_wheeler_dir
 from wheeler.graph.backend import get_backend
 from wheeler.portability import (
     compute_manifest_signature,
@@ -222,16 +228,46 @@ def _generate_handoff_md(
     return filled.encode("utf-8")
 
 
-_NODE_DUMP_CYPHER = (
-    "MATCH (n) "
-    "RETURN labels(n) AS labels, properties(n) AS props"
-)
+_NODE_DUMP_RETURN = "RETURN labels(n) AS labels, properties(n) AS props"
 
-_REL_DUMP_CYPHER = (
-    "MATCH (a)-[r]->(b) "
+_REL_DUMP_RETURN = (
     "RETURN a.id AS source_id, type(r) AS rel_type, "
     "properties(r) AS rel_props, b.id AS target_id"
 )
+
+
+def _node_dump_cypher(project_tag: str) -> str:
+    """Node dump Cypher, scoped to *project_tag* when it is non-empty.
+
+    Wheeler simulates per-project isolation on Neo4j Community Edition with a
+    ``_wheeler_project`` property on every node (see
+    ``graph/neo4j_backend.py``, which filters every read the same way). An
+    unscoped ``MATCH (n)`` on a shared instance would pack every other
+    project's nodes into the archive and inflate the manifest counts.
+
+    An empty tag means the database itself is the isolation boundary
+    (Enterprise/Aura with a dedicated database), so we dump everything.
+    """
+    if project_tag:
+        return f"MATCH (n) WHERE n._wheeler_project = $ptag {_NODE_DUMP_RETURN}"
+    return f"MATCH (n) {_NODE_DUMP_RETURN}"
+
+
+def _rel_dump_cypher(project_tag: str) -> str:
+    """Relationship dump Cypher, scoped to *project_tag* when it is non-empty.
+
+    BOTH endpoints must be inside the project. Filtering only the source would
+    emit an edge whose target id is absent from ``graph_nodes.jsonl``, and
+    restore would then fail on the dangling target.
+    """
+    if project_tag:
+        return (
+            "MATCH (a)-[r]->(b) "
+            "WHERE a._wheeler_project = $ptag AND b._wheeler_project = $ptag "
+            f"{_REL_DUMP_RETURN}"
+        )
+    return f"MATCH (a)-[r]->(b) {_REL_DUMP_RETURN}"
+
 
 # Directories always excluded from the project/ walk. Non-overridable.
 # build/ and dist/ are standard Python build outputs and are listed in
@@ -296,10 +332,13 @@ def _resolve_destination(config: WheelerConfig, destination: Path | None) -> Pat
         return destination
     knowledge_dir = Path(config.knowledge_path)
     if knowledge_dir.is_absolute():
-        base = knowledge_dir.parent
-    else:
-        base = Path.cwd()
-    return base / ".wheeler" / "backups"
+        # An absolute knowledge path names the project tree explicitly, so keep
+        # honouring it rather than second-guessing the user.
+        return knowledge_dir.parent / ".wheeler" / "backups"
+    # Relative path: anchor on the discovered project root, not the CWD. Running
+    # `wheeler backup` from a subdirectory used to drop the archive into
+    # <subdir>/.wheeler/backups/, away from the .wheeler/ the project actually uses.
+    return project_wheeler_dir(config) / "backups"
 
 
 def _add_bytes_to_tar(
@@ -417,16 +456,23 @@ def _add_dir_to_tar(
 async def _dump_graph(
     config: WheelerConfig,
 ) -> tuple[bytes, bytes, dict[str, int], dict[str, int], bool]:
-    """Pull every node and relationship out of Neo4j.
+    """Pull this project's nodes and relationships out of Neo4j.
 
     Returns: (nodes_jsonl_bytes, rels_jsonl_bytes, node_counts_by_label,
     rel_counts_by_type, graph_available).
+
+    When ``config.neo4j.project_tag`` is set (Community Edition namespace
+    isolation) the dump is scoped to that tag, so a shared instance never
+    leaks another project's nodes into the archive. With no tag the database
+    is the boundary and everything is dumped.
 
     On any backend failure (Neo4j down, circuit open, etc.) returns empty
     JSONL blobs, empty counts, graph_available=False. The backup must not
     fail just because the graph is offline.
     """
     backend = get_backend(config)
+    project_tag = config.neo4j.project_tag or ""
+    dump_params: dict | None = {"ptag": project_tag} if project_tag else None
     node_counts: dict[str, int] = {}
     rel_counts: dict[str, int] = {}
     nodes_buf = io.BytesIO()
@@ -440,7 +486,9 @@ async def _dump_graph(
 
     try:
         try:
-            node_records = await backend.run_cypher(_NODE_DUMP_CYPHER)
+            node_records = await backend.run_cypher(
+                _node_dump_cypher(project_tag), dump_params
+            )
         except Exception as exc:
             logger.warning("Graph node dump failed: %s", exc)
             return b"", b"", {}, {}, False
@@ -457,7 +505,9 @@ async def _dump_graph(
             nodes_buf.write(b"\n")
 
         try:
-            rel_records = await backend.run_cypher(_REL_DUMP_CYPHER)
+            rel_records = await backend.run_cypher(
+                _rel_dump_cypher(project_tag), dump_params
+            )
         except Exception as exc:
             logger.warning("Graph relationship dump failed: %s", exc)
             # Keep node dump but report rels as empty.
@@ -738,8 +788,15 @@ async def create_backup(
             "wired. Producing local archive only."
         )
 
-    # Resolve project_root from config.
-    project_root = Path(config.project_root).resolve()
+    # Resolve project_root from config. This is the archive's SINGLE anchor:
+    # every path below is derived from it (the tree walk, the knowledge and
+    # synthesis dirs, and `relativize`'s ${PROJECT}/ rewriting), so there is
+    # exactly one notion of "inside the project" and portability cannot drift.
+    # `Path(config.project_root).resolve()` collapsed the default "." to the CWD,
+    # so `wheeler backup` from a subdirectory anchored the archive on that
+    # subdirectory: it packed the wrong tree AND relativized against the wrong
+    # root, which listed in-project files as external_references.
+    project_root = config.resolved_project_root
     if not project_root.exists():
         raise ValueError(
             f"project_root does not exist: {project_root!s}. "

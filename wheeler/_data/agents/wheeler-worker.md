@@ -68,6 +68,6 @@ Before marking any task complete, validate your own citations:
 
 ## Rules
 - Stay strictly within the scope of your assigned task
-- Log all findings to the graph — don't just print results
+- Log all findings to the graph, don't just print results
 - If you discover something unexpected, record it AND flag it
-- Never make scientific judgment calls — those are checkpoints
+- Never make scientific judgment calls: those are checkpoints

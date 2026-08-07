@@ -362,7 +362,7 @@ wheeler/
 ├── models.py                  # Pydantic v2 models, prefix mappings (source of truth)
 ├── config.py                  # YAML config loader
 ├── provenance.py              # Stability scoring, invalidation propagation
-├── mcp_server.py              # FastMCP server — 33 tools
+├── mcp_core.py                # FastMCP split server (see ARCHITECTURE.md for all four)
 ├── workspace.py               # File discovery + context formatting
 ├── knowledge/
 │   ├── store.py               # File I/O: read, write, list, delete (atomic)

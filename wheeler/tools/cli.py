@@ -11,10 +11,11 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.table import Table
 from typer.core import TyperGroup
 
-from wheeler.config import load_config
+from wheeler.config import load_config, project_knowledge_dir, project_synthesis_dir
 from wheeler.graph.driver import get_sync_driver
 from wheeler.graph.schema import (
     ALLOWED_RELATIONSHIPS,
@@ -478,8 +479,6 @@ def graph_migrate_prov(
     skip_files: bool = typer.Option(False, "--skip-files", help="Only migrate Neo4j graph"),
 ) -> None:
     """Migrate provenance schema: Analysis -> Script + Execution, rename relationships."""
-    from pathlib import Path as P
-
     from wheeler.graph.migration_prov import (
         migrate_analysis_nodes,
         migrate_knowledge_files,
@@ -487,7 +486,10 @@ def graph_migrate_prov(
     )
 
     config = load_config()
-    knowledge_path = P(config.knowledge_path)
+    # Anchored on the project root, not the CWD: a migration run from a
+    # subdirectory must rewrite the project's knowledge/ files, not create an
+    # empty one next to wherever the shell happened to be.
+    knowledge_path = project_knowledge_dir(config)
 
     if dry_run:
         console.print("[yellow]DRY RUN — showing what would be migrated[/yellow]\n")
@@ -601,6 +603,312 @@ def validate(
 
 
 # ---------------------------------------------------------------------------
+# login / logout
+# ---------------------------------------------------------------------------
+# Replaces four NEO4J_* exports in a shell profile. The password goes to the OS
+# keychain, and `--status` answers the question that four config layers create:
+# which one is actually supplying the URI.
+
+# Source labels, coloured by how surprising each one is at debug time. An env var
+# silently outranking a stored credential is the trap, so it is the loud one.
+_SOURCE_STYLES = {
+    "env": "yellow",
+    "keychain": "green",
+    "yaml": "cyan",
+    "default": "dim",
+}
+
+# Aura refuses connections for up to a minute after an instance is created, and
+# the driver error for that is indistinguishable from a wrong URI.
+_AURA_WARMUP_HINT = (
+    "A freshly created Aura instance can take up to 60 seconds to accept "
+    "connections. If it was just created, wait and run this again."
+)
+
+
+def _looks_like_aura(uri: str) -> bool:
+    """Whether a URI points at Aura rather than a local or self-hosted instance."""
+    return "databases.neo4j.io" in uri or uri.startswith(("neo4j+s://", "bolt+s://"))
+
+
+def _print_connection_status() -> None:
+    """Show which layer supplies each Neo4j field, plus keychain state."""
+    from wheeler import credentials
+    from wheeler.config import neo4j_sources, shadowed_by_env
+
+    profile = credentials.active_profile()
+
+    table = Table(title=f"Neo4j connection (profile '{profile}')")
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Source", no_wrap=True)
+    table.add_column("From", style="dim")
+    table.add_column("Value")
+    for row in neo4j_sources():
+        style = _SOURCE_STYLES.get(row.source, "")
+        # escape(): a URI can carry square brackets (bolt://[::1]:7687) and rich
+        # would read those as markup.
+        table.add_row(
+            row.field,
+            f"[{style}]{row.source}[/{style}]" if style else row.source,
+            escape(row.origin),
+            escape(row.display),
+        )
+    console.print(table)
+    console.print("[dim]Precedence: env > keychain > wheeler.yaml > default[/dim]")
+
+    available, detail = credentials.keyring_status()
+    if available:
+        console.print(f"Keychain: [green]available[/green] [dim]({escape(detail)})[/dim]")
+        stored = credentials.list_profiles()
+        if stored:
+            console.print(f"Stored profiles: {', '.join(stored)}")
+        else:
+            console.print("[dim]No stored profiles. Run: wheeler login --aura-file <path>[/dim]")
+    else:
+        console.print(f"Keychain: [yellow]unavailable[/yellow] {escape(detail)}")
+
+    shadowed = shadowed_by_env()
+    if shadowed:
+        # One shadowing variable is the common case, so agreement matters here:
+        # the plural-only phrasing reads as a typo exactly when most users see it.
+        verb = "overrides" if len(shadowed) == 1 else "override"
+        them = "it" if len(shadowed) == 1 else "them"
+        console.print(
+            f"[yellow]Warning:[/yellow] {', '.join(shadowed)} in the environment "
+            f"{verb} the stored credential. Unset {them} to use the keychain."
+        )
+
+
+def _login_from_aura_api():  # noqa: ANN202 (returns aura.AuraCredentials)
+    """Power path: OAuth client_credentials, then pick from GET /v1/instances."""
+    from wheeler import aura
+
+    console.print(
+        "[bold]Aura management API[/bold]\n"
+        f"Create a Client ID and Secret at {aura.AURA_CONSOLE_URL} under "
+        "Account Details.\n"
+        "[dim]There is no browser sign-in flow: client credentials are the only "
+        "grant Aura offers.[/dim]"
+    )
+    client_id = typer.prompt("Aura API Client ID").strip()
+    client_secret = typer.prompt("Aura API Client Secret", hide_input=True)
+
+    token = aura.request_token(client_id, client_secret)
+    instances = aura.list_instances(token)
+    if not instances:
+        raise aura.AuraApiError(
+            "those credentials see no Aura instances. Create one in the console first."
+        )
+
+    if len(instances) == 1:
+        chosen = instances[0]
+        console.print(f"Using the only instance visible: {escape(chosen.describe())}")
+    else:
+        console.print(f"\n{len(instances)} instances:")
+        for index, inst in enumerate(instances, start=1):
+            console.print(f"  {index}. {escape(inst.describe())}")
+        pick = typer.prompt("Which instance", default="1")
+        try:
+            chosen = instances[int(pick) - 1]
+        except (ValueError, IndexError):
+            raise typer.BadParameter(f"{pick!r} is not one of 1..{len(instances)}") from None
+
+    if not chosen.connection_url:
+        raise aura.AuraApiError(
+            f"instance {chosen.name or chosen.id} reports no connection_url yet "
+            "(it may still be starting)"
+        )
+
+    # GET /v1/instances cannot return a password: Aura hands one out only in the
+    # POST /v1/instances reply at creation, and never again. So we ask.
+    console.print(
+        f"\n[dim]The API does not expose instance passwords. Paste the one saved "
+        f"when '{chosen.name or chosen.id}' was created.[/dim]"
+    )
+    password = typer.prompt("Password", hide_input=True)
+    username = typer.prompt("Username", default="neo4j").strip()
+    database = typer.prompt("Database", default="neo4j").strip()
+    return aura.AuraCredentials(
+        uri=aura.normalize_uri(chosen.connection_url),
+        username=username,
+        password=password,
+        database=database,
+        instance_id=chosen.id,
+        instance_name=chosen.name,
+    )
+
+
+def _login_from_prompts(uri: str | None, username: str | None, database: str | None):  # noqa: ANN202
+    """Fallback path: type the four fields, password without echo."""
+    from wheeler import aura
+    from wheeler.config import load_config
+
+    current = load_config().neo4j
+    asked_uri = uri or typer.prompt("Neo4j URI", default=current.uri)
+    asked_user = username or typer.prompt("Username", default=current.username)
+    password = typer.prompt("Password", hide_input=True)
+    asked_db = database or typer.prompt("Database", default=current.database)
+    return aura.AuraCredentials(
+        uri=aura.normalize_uri(asked_uri),
+        username=asked_user.strip(),
+        password=password,
+        database=asked_db.strip(),
+    )
+
+
+@app.command("login")
+def cmd_login(
+    aura_file: Optional[Path] = typer.Option(
+        None,
+        "--aura-file",
+        help="Aura credentials file to read (the download offered at instance creation).",
+    ),
+    aura_api: bool = typer.Option(
+        False,
+        "--aura",
+        help="Look the instance up through the Aura management API (needs an API key).",
+    ),
+    profile: str = typer.Option(
+        "",
+        "--profile",
+        "-p",
+        help="Named credential slot, so one machine can hold several instances.",
+    ),
+    status: bool = typer.Option(
+        False,
+        "--status",
+        help="Report where each Neo4j setting comes from, then exit.",
+    ),
+    uri: Optional[str] = typer.Option(None, "--uri", help="Skip the URI prompt."),
+    username: Optional[str] = typer.Option(None, "--username", help="Skip the username prompt."),
+    database: Optional[str] = typer.Option(None, "--database", help="Skip the database prompt."),
+) -> None:
+    """Store Neo4j credentials in the OS keychain instead of a shell profile.
+
+    Three routes, easiest first:
+
+      wheeler login --aura-file creds.txt   drag in Aura's credentials file
+      wheeler login --aura                  look the instance up via the Aura API
+      wheeler login                         type the four fields
+
+    The credential is validated by connecting before it is stored, and the
+    password is never written to a file or echoed. `--status` shows which of env,
+    keychain, wheeler.yaml, or the built-in default is supplying each field.
+    """
+    from wheeler import aura, credentials
+    from wheeler.config import reset_keychain_cache
+
+    if status:
+        _print_connection_status()
+        return
+
+    if aura_file is not None and aura_api:
+        console.print("[red]Pick one of --aura-file or --aura, not both.[/red]")
+        raise typer.Exit(2)
+
+    target_profile = profile.strip() or credentials.active_profile()
+
+    available, detail = credentials.keyring_status()
+    if not available:
+        console.print(f"[red]No usable OS keychain:[/red] {escape(detail)}")
+        console.print(
+            f"[dim]Install the extra with: {escape(credentials.INSTALL_HINT)}\n"
+            "Until then, set NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD / "
+            "NEO4J_DATABASE in the environment.[/dim]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        if aura_file is not None:
+            creds = aura.parse_credentials_file(aura_file)
+            console.print(f"Read credentials for [bold]{escape(creds.label())}[/bold]")
+        elif aura_api:
+            creds = _login_from_aura_api()
+        else:
+            creds = _login_from_prompts(uri, username, database)
+    except aura.AuraError as exc:
+        console.print(f"[red]Login failed:[/red] {escape(str(exc))}")
+        raise typer.Exit(1)
+
+    console.print(f"Validating {escape(creds.uri)} as {creds.username!r} ...")
+    try:
+        detail = aura.validate_connection(
+            creds.uri, creds.username, creds.password, creds.database
+        )
+    except aura.AuraError as exc:
+        # Nothing is stored on a failed validation: a saved credential that does
+        # not work sends the user debugging Neo4j instead of the credential.
+        console.print(f"[red]Not saved.[/red] {escape(str(exc))}")
+        if _looks_like_aura(creds.uri):
+            # Only for Aura: on a local instance this hint sends the reader
+            # looking for a warm-up delay that does not exist.
+            console.print(f"[dim]{_AURA_WARMUP_HINT}[/dim]")
+        raise typer.Exit(1)
+    console.print(f"[green]Connected:[/green] {escape(detail)}")
+
+    try:
+        saved = credentials.save(
+            target_profile,
+            creds.uri,
+            creds.username,
+            creds.password,
+            creds.database,
+        )
+    except credentials.CredentialStoreError as exc:
+        console.print(f"[red]Could not store the credential:[/red] {escape(str(exc))}")
+        raise typer.Exit(1)
+    reset_keychain_cache()
+
+    console.print(f"[green]Saved to the OS keychain as profile '{saved}'.[/green]")
+    if saved != credentials.DEFAULT_PROFILE:
+        console.print(
+            f"[dim]Select it with: export {credentials.PROFILE_ENV}={saved}[/dim]"
+        )
+    _print_connection_status()
+
+
+@app.command("logout")
+def cmd_logout(
+    profile: str = typer.Option("", "--profile", "-p", help="Profile to forget."),
+    all_profiles: bool = typer.Option(
+        False, "--all", help="Forget every stored profile."
+    ),
+) -> None:
+    """Remove stored Neo4j credentials from the OS keychain."""
+    from wheeler import credentials
+    from wheeler.config import reset_keychain_cache
+
+    available, detail = credentials.keyring_status()
+    if not available:
+        console.print(f"[yellow]Nothing to remove:[/yellow] {detail}")
+        return
+
+    targets = (
+        credentials.list_profiles()
+        if all_profiles
+        else [profile.strip() or credentials.active_profile()]
+    )
+    if not targets:
+        console.print("[yellow]No stored profiles.[/yellow]")
+        return
+
+    removed = []
+    for name in targets:
+        try:
+            if credentials.delete(name):
+                removed.append(name)
+        except credentials.CredentialStoreError as exc:
+            console.print(f"[red]Could not remove profile '{name}':[/red] {escape(str(exc))}")
+            raise typer.Exit(1)
+    reset_keychain_cache()
+
+    if removed:
+        console.print(f"[green]Removed profile(s):[/green] {', '.join(removed)}")
+    else:
+        console.print(f"[yellow]Nothing stored for:[/yellow] {', '.join(targets)}")
+
+
+# ---------------------------------------------------------------------------
 # install / uninstall / update / version
 # ---------------------------------------------------------------------------
 
@@ -608,16 +916,41 @@ def validate(
 @app.command("install")
 def cmd_install(
     link: bool = typer.Option(False, "--link", "-l", help="Symlink instead of copy"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Install even when the wh plugin is present (accepts the shadowing).",
+    ),
 ) -> None:
-    """Install Wheeler slash commands, agents, and MCP servers to ~/.claude/."""
-    from wheeler.installer import install
+    """LEGACY: copy slash commands, agents, and MCP servers into ~/.claude/.
+
+    Superseded by the `wh` Claude Code plugin, which serves the same acts
+    and updates itself:
+
+        /plugin marketplace add maxwellsdm1867/wheeler
+        /plugin install wh@wheeler
+
+    Files written here SHADOW the plugin's acts, so this refuses to run when
+    the plugin is present. Use `wheeler migrate-to-plugin` to switch over.
+    """
+    from wheeler.installer import PluginShadowError, install
 
     try:
-        files = install(link=link)
+        files = install(link=link, force=force)
         mode = "Linked" if link else "Installed"
         console.print(f"[green]{mode} {len(files)} file(s).[/green]")
         console.print("[green]MCP servers registered in ~/.claude/settings.json.[/green]")
         console.print("[dim]Wheeler works from any directory. Restart Claude Code to connect.[/dim]")
+        if force:
+            console.print(
+                "[yellow]Warning:[/yellow] the wh plugin is present and these files "
+                "shadow it. Run [bold]wheeler migrate-to-plugin[/bold] to fix."
+            )
+    except PluginShadowError as exc:
+        console.print("[red]Refusing to install: the wh plugin is already present.[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1)
     except Exception as exc:
         console.print(f"[red]Install failed:[/red] {exc}")
         raise typer.Exit(1)
@@ -625,8 +958,13 @@ def cmd_install(
 
 @app.command("uninstall")
 def cmd_uninstall() -> None:
-    """Remove Wheeler slash commands and agents from ~/.claude/."""
-    from wheeler.installer import uninstall
+    """Remove the legacy Wheeler slash commands and agents from ~/.claude/."""
+    from wheeler.installer import (
+        detect_plugin,
+        legacy_status,
+        plugin_advice,
+        uninstall,
+    )
 
     try:
         removed = uninstall()
@@ -636,6 +974,11 @@ def cmd_uninstall() -> None:
                 console.print(f"  {rel}")
         else:
             console.print("[yellow]Nothing to remove (no manifest found).[/yellow]")
+        # Say where the acts come from now: the plugin, or nowhere.
+        advice = plugin_advice(detect_plugin(), legacy_status())
+        if advice:
+            console.print()
+            console.print(advice)
     except Exception as exc:
         console.print(f"[red]Uninstall failed:[/red] {exc}")
         raise typer.Exit(1)
@@ -697,6 +1040,16 @@ def cmd_update(
         console.print(
             f"[green]Updated: {old_version} → {new_version}[/green]"
         )
+        # update() refreshes the legacy tree with force=True so an upgrade is
+        # never left half-applied. Say so when that tree shadows the plugin.
+        from wheeler.installer import detect_plugin, legacy_status
+
+        if detect_plugin().active and legacy_status().present:
+            console.print(
+                "[yellow]Warning:[/yellow] the wh plugin is installed and the legacy "
+                "~/.claude/commands/wh/ tree shadows it.\n"
+                "Run [bold]wheeler migrate-to-plugin[/bold] to remove the legacy tree."
+            )
     except subprocess.CalledProcessError as exc:
         console.print(f"[red]Upgrade failed:[/red] {exc}")
         raise typer.Exit(1)
@@ -931,8 +1284,6 @@ def cmd_migrate(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without writing files"),
 ) -> None:
     """Migrate existing graph nodes to knowledge/ JSON files."""
-    from pathlib import Path
-
     from wheeler.graph.backend import get_backend
     from wheeler.knowledge.migrate import migrate
 
@@ -944,9 +1295,9 @@ def cmd_migrate(
         try:
             report = await migrate(
                 backend,
-                Path(config.knowledge_path),
+                project_knowledge_dir(config),
                 dry_run=dry_run,
-                synthesis_path=Path(config.synthesis_path),
+                synthesis_path=project_synthesis_dir(config),
             )
         finally:
             await backend.close()
@@ -1387,12 +1738,10 @@ def cmd_show(
     raw: bool = typer.Option(False, "--raw", help="Show raw JSON instead of markdown"),
 ) -> None:
     """Display a knowledge node as formatted markdown."""
-    from pathlib import Path
-
     from wheeler.knowledge import render, store
 
     config = load_config()
-    knowledge_path = Path(config.knowledge_path)
+    knowledge_path = project_knowledge_dir(config)
 
     try:
         model = store.read_node(knowledge_path, node_id)

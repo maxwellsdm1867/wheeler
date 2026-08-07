@@ -1,0 +1,38 @@
+{
+  "wheeler_core": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "--from",
+      "wheeler>=0.14.0",
+      "wheeler-core-mcp"
+    ]
+  },
+  "wheeler_query": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "--from",
+      "wheeler>=0.14.0",
+      "wheeler-query-mcp"
+    ]
+  },
+  "wheeler_mutations": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "--from",
+      "wheeler>=0.14.0",
+      "wheeler-mutations-mcp"
+    ]
+  },
+  "wheeler_ops": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "--from",
+      "wheeler>=0.14.0",
+      "wheeler-ops-mcp"
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+# GENERATED FILE. Do not edit. Regenerate: python -m wheeler.build_plugin
+#
+# Wheeler EXECUTE mode: the full surface, including validators and scanners.
+#
+# Install:  cp codex-profiles/wheeler-execute.config.toml $CODEX_HOME/
+# Select:   codex --profile wheeler-execute
+#
+# Mode is enforced by CAPABILITY, not by instructions: the servers below are
+# either registered or absent, so a disallowed tool is not in the tool list at
+# all rather than merely discouraged. Codex filters at registration time.
+#
+# Reachable: wheeler_core, wheeler_query, wheeler_mutations, wheeler_ops
+# Disabled:  (none)
+
+[mcp_servers.wheeler_core]
+command = "uvx"
+args = ["--from", "wheeler>=0.14.0", "wheeler-core-mcp"]
+enabled = true
+
+[mcp_servers.wheeler_query]
+command = "uvx"
+args = ["--from", "wheeler>=0.14.0", "wheeler-query-mcp"]
+enabled = true
+
+[mcp_servers.wheeler_mutations]
+command = "uvx"
+args = ["--from", "wheeler>=0.14.0", "wheeler-mutations-mcp"]
+enabled = true
+
+[mcp_servers.wheeler_ops]
+command = "uvx"
+args = ["--from", "wheeler>=0.14.0", "wheeler-ops-mcp"]
+enabled = true

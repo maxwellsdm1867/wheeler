@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.13.0-blue" alt="v0.13.0">
+  <img src="https://img.shields.io/badge/v0.14.0-blue" alt="v0.14.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -27,7 +27,7 @@ cd my-research-project && claude
 /wh:start
 ```
 
-That's it. The first command scaffolds the project (`.plans/`, `.wheeler/`, `wheeler.yaml`, `.mcp.json`) and installs slash commands and agents to `~/.claude/`. The second drops you into Claude Code with Wheeler's MCP servers wired up. The third routes you to the right `/wh:*` command for what you want to do.
+That's it. The first command scaffolds the project (`.plans/`, `.wheeler/`, `wheeler.yaml`, `.mcp.json`) and installs slash commands and agents to `~/.claude/` unless the `wh` plugin is already providing them. The second drops you into Claude Code with Wheeler's MCP servers wired up. The third routes you to the right `/wh:*` command for what you want to do.
 
 For long-lived use install Wheeler globally (faster startup, stable paths in `.mcp.json`):
 
@@ -36,9 +36,48 @@ uv tool install wheeler
 wheeler init my-research-project
 ```
 
-Run `wheeler doctor` any time to verify your setup (Python version, deps, Claude Code, Neo4j connectivity).
+Run `wheeler doctor` any time to verify your setup: Python version, deps, Claude Code, Neo4j connectivity and whether the connection is TLS, which project-isolation model is in force, and whether a legacy install is shadowing the plugin.
 
 **Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Max subscription), and [Neo4j Desktop](https://neo4j.com/download/) (free). New to all this? Walk through the **[Getting Started Guide](docs/GETTING-STARTED.md)**.
+
+### Installing the acts
+
+Wheeler's `/wh:*` acts ship as a plugin. In Claude Code:
+
+```
+/plugin marketplace add maxwellsdm1867/wheeler
+/plugin install wh@wheeler
+```
+
+Codex is supported as a host too, with the same two steps:
+
+```bash
+codex plugin marketplace add maxwellsdm1867/wheeler
+codex plugin add wh@wheeler
+```
+
+The plugin updates itself and works in every project. It ships from v0.14.0. To try it from a clone instead, point your host at the checkout: `claude --plugin-dir <path-to-clone>`, or pass that path to `codex plugin marketplace add` (it takes a local path as well as `owner/repo`).
+
+`wheeler install` is the LEGACY path: it copies the act files into `~/.claude/commands/wh/`. Those files SHADOW the plugin. Claude Code resolves `/wh:plan` to a file in `~/.claude/commands/wh/` before it looks at the plugin's skills, with no error and no warning, so a machine with both keeps running stale local copies of every act and never sees a plugin update.
+
+If you installed Wheeler before the plugin existed, switch over with:
+
+```bash
+wheeler migrate-to-plugin
+```
+
+It lists exactly what it will remove (act files, agents, hooks, the statusLine entry, the `wheeler_*` MCP registrations), asks once, then prints the commands above. It is idempotent and safe to run when there is nothing to migrate. `wheeler install` now refuses to run while the plugin is present rather than silently shadowing it, and `wheeler doctor` reports the collision if you ever end up in it.
+
+### Neo4j credentials
+
+`wheeler login` stores them in the OS keychain instead of a shell profile. Easiest route is Aura's own credentials file:
+
+```bash
+wheeler login --aura-file neo4j-credentials.txt   # or bare `wheeler login` to type the fields
+wheeler login --status                            # which of env, keychain, wheeler.yaml, or default supplies each setting
+```
+
+The credential is validated by connecting before it is stored, and the password is never written to a file or echoed. Environment variables still win over the keychain, so existing setups keep working. See the [Getting Started Guide](docs/GETTING-STARTED.md) for the full walkthrough.
 
 ### From source
 
@@ -184,7 +223,7 @@ The graph is an index over files, not a document store. Each node stores an ID, 
 
 **14 relationship types:** 6 W3C PROV standard (USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY, WAS_ATTRIBUTED_TO, WAS_ASSOCIATED_WITH) + 8 Wheeler semantic (SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO, AROSE_FROM, DEPENDS_ON, CONTAINS).
 
-**51 MCP tools** across 5 servers (mutations, queries, search, ops, legacy monolith).
+**51 MCP tools** across 4 servers (core, queries, mutations, ops).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete technical spec: module dependency map, PROV schema, MCP tool listing, hardening patterns, design decisions.
 
@@ -199,6 +238,17 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.14.0</b> (2026-08-07): two hosts, one plugin, no install step</summary>
+
+- **Wheeler runs in OpenAI Codex as well as Claude Code.** The 39 acts exist in exactly one place: their bodies are served over MCP by `get_act`, and each host gets a generated `SKILL.md` stub that fetches them. No act content is authored twice, and mode plus orchestration are derived from each act's existing `allowed-tools` rather than declared, so the two can never disagree.
+- **Install is two commands, and nothing Python-shaped.** `/plugin marketplace add maxwellsdm1867/wheeler` then `/plugin install wh@wheeler` (`codex plugin marketplace add` / `codex plugin add` on Codex). The MCP servers launch through `uvx`, so there is no `pip install` and no venv: 13 s once to warm the cache, then about 370 ms per launch, which matches running the console script directly. The plugin is named `wh`, so `/wh:plan` is spelled exactly as before.
+- **Remote Neo4j, and credentials that are not your problem.** `neo4j+s://` (Aura) works, with connection pooling, timeouts and transient retry the driver previously had none of. `wheeler login --aura-file` reads the credentials file Aura hands you and stores it in the OS keychain, so nothing lands in a dotfile; `wheeler login --status` says which of env, keychain, `wheeler.yaml` or the built-in default is supplying each field.
+- **Paths anchor on the project, not the shell.** Roughly thirty call sites resolved `knowledge/`, `synthesis/` and `.wheeler/` against the current directory, so a server or CLI started in a subdirectory read and wrote the wrong tree. Most visibly: `wheeler services enable` returned exit code 0 while the router never saw the change, and search returned nothing rather than erroring.
+- **The deprecated MCP monolith is gone** (1,639 lines), with no loss of tool surface: all 50 of its tools were already covered by the four split servers, which carry 53. `wheeler install` still works but is the legacy path, and now refuses when the plugin is present rather than silently shadowing it.
+
+</details>
+
+<details>
 <summary><b>v0.13.0</b> (2026-07-29): score the FORM, not the parameterization</summary>
 
 - **One law, many recordings**: `--data` is now repeatable and nameable, and `--seed-from` / `--score-on` keep two roles apart, so a form extracted from one cell can be scored on cells it never saw, each refitting its own constants. That is a test of the FORM rather than of one lucky parameterization.
@@ -221,16 +271,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 
 </details>
 
-<details>
-<summary><b>v0.11.0</b> (2026-07-18): the Asta Research Assistant, seeded and harvested</summary>
-
-- **Asta Research Assistant, into the graph**: seed a long-range autonomous research mission from a Question or Plan, drive it with the asta-assistant loop in a separate terminal, then harvest the completed work back into Wheeler with full provenance.
-- **A work-log is not a finding**: harvested work-logs are saved as indexed Documents (their computed artifacts as Datasets and Scripts), and you decide which outcomes get promoted to Findings, so Wheeler never fabricates an unendorsed result.
-- **Validated end to end**: the adapter ships with a live-Neo4j test that walks a real mission through seed, harvest, and re-harvest, checking both provenance sides, idempotency, and the curation manifest.
-- **Semantic Scholar author lookup**: the Asta Semantic Scholar adapter gained an `author` sub-query, so an author's papers can be pulled into the graph.
-
-</details>
-
 ---
 
 ## Architecture
@@ -244,10 +284,9 @@ Claude Code (interactive)
     │
     ├── MCP Servers (51 tools)
     │       ├── wheeler_core (12): health, status, context, search, cypher
-    │       ├── wheeler_query (10): read-only query_* tools
+    │       ├── wheeler_query (11): read-only query_* tools
     │       ├── wheeler_mutations (18): add_*, link, delete, update, merge
-    │       ├── wheeler_ops (10): staleness, citations, consistency
-    │       └── wheeler (legacy monolith): its original 50 tools, one server
+    │       └── wheeler_ops (10): staleness, citations, consistency
     │
 bin/wh (headless)
     └── claude -p with structured logging → .logs/*.json
@@ -262,9 +301,8 @@ wheeler/
 ├── config.py                # YAML loader, Pydantic config models
 ├── provenance.py            # Stability scoring, invalidation propagation
 ├── consistency.py           # Cross-layer drift detection and repair
-├── mcp_server.py            # Legacy monolith: all 50 tools
 ├── mcp_core.py              # Split server: health, context, search (12)
-├── mcp_query.py             # Split server: query_* read-only (10)
+├── mcp_query.py             # Split server: query_* read-only (11)
 ├── mcp_mutations.py         # Split server: add_*, link, delete, update (18)
 ├── mcp_ops.py               # Split server: staleness, citations (10)
 ├── mcp_shared.py            # Shared: trace IDs, decorators, config

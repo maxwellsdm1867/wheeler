@@ -1,0 +1,30 @@
+# GENERATED FILE. Do not edit. Regenerate: python -m wheeler.build_plugin
+interface:
+  display_name: Wheeler
+  short_description: Provenance-tracked research assistant
+  long_description: >-
+    A Neo4j knowledge graph indexed over your research files, with 39 acts
+    covering the research loop (discuss, plan, execute, write) and 51 MCP
+    tools. Every claim traces to a node; every artifact carries provenance.
+policy:
+  # Acts carry narrow descriptions, so implicit selection is wanted: it is how
+  # /wh:ask fires on a provenance question without the user naming a command.
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "wheeler_core"
+      description: "Graph health, status, context, semantic search, raw Cypher, acts"
+      transport: "stdio"
+    - type: "mcp"
+      value: "wheeler_query"
+      description: "Read-only typed graph listings"
+      transport: "stdio"
+    - type: "mcp"
+      value: "wheeler_mutations"
+      description: "Graph writes: add_*, link_nodes, update_node, set_tier"
+      transport: "stdio"
+    - type: "mcp"
+      value: "wheeler_ops"
+      description: "Validators, scanners, consistency and provenance operations"
+      transport: "stdio"

@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wheeler.config import project_knowledge_dir
+
 if TYPE_CHECKING:
     from wheeler.config import WheelerConfig
 
@@ -419,7 +421,12 @@ async def gather_dashboard_data(
         query_plans,
     )
 
-    knowledge_path = Path(config.knowledge_path) if getattr(config, "knowledge_path", None) else None
+    # Keep the getattr guard: this is called with duck-typed config objects in
+    # tests. The helper resolves against the discovered project root rather than
+    # the CWD, so a dashboard rendered from a subdirectory still finds knowledge/.
+    knowledge_path = (
+        project_knowledge_dir(config) if getattr(config, "knowledge_path", None) else None
+    )
     project_root = str(Path(getattr(config, "project_root", ".") or ".").resolve())
     project_tag = getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
 

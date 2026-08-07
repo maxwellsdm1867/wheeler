@@ -1071,8 +1071,10 @@ def test_update_reexecs_new_wheeler_for_install(tmp_path, monkeypatch):
 
     installer.update(source="uv")
 
+    # Flags may be appended (see --force in test_plugin_shadowing.py); what
+    # this pins is that the freshly upgraded entrypoint is the thing re-exec'd.
     wheeler_bin = str(Path(installer.sys.executable).parent / "wheeler")
-    assert [wheeler_bin, "install"] in call_log, (
+    assert [cmd[:2] for cmd in call_log].count([wheeler_bin, "install"]) == 1, (
         f"Expected re-exec of {wheeler_bin} install. Call log: {call_log}"
     )
 

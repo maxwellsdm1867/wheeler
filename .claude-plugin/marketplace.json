@@ -1,0 +1,31 @@
+{
+  "name": "wheeler",
+  "owner": {
+    "name": "Arthur Hong",
+    "url": "https://github.com/maxwellsdm1867/wheeler"
+  },
+  "metadata": {
+    "description": "Wheeler: provenance-tracked research assistant.",
+    "version": "0.14.0",
+    "pluginRoot": "."
+  },
+  "plugins": [
+    {
+      "name": "wh",
+      "source": "./",
+      "description": "Provenance-tracked research assistant over a Neo4j knowledge graph.",
+      "version": "0.14.0",
+      "author": {
+        "name": "Arthur Hong"
+      },
+      "homepage": "https://github.com/maxwellsdm1867/wheeler",
+      "license": "MIT",
+      "category": "Education & Research",
+      "tags": [
+        "research",
+        "knowledge-graph",
+        "provenance"
+      ]
+    }
+  ]
+}
