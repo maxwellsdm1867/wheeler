@@ -111,22 +111,26 @@ def neo4j_available(neo4j_probe_config) -> bool:
 
 @pytest.fixture(autouse=True)
 def _fresh_backend_and_driver():
-    """Never inherit (or leak) the process-wide backend: this suite uses a real one.
+    """Never inherit (or leak) cached backends: this suite uses a real one.
 
-    `graph_tools._get_backend` caches ONE module-level backend for the whole
-    process and each backend owns its circuit breaker. Earlier tests in the full
-    suite feed MagicMock values through it, which trips that breaker OPEN for
-    60s; inheriting it makes every write here fail fast. Clearing it on the way
-    in gives this test the state a fresh process has, and clearing it on the way
-    out stops the next test inheriting a backend bound to this temp project.
+    Backends are now keyed on config identity, so a poisoned instance can only
+    affect tests sharing that exact key -- but a stale breaker for the SAME key
+    still leaks, so this fixture is still required. Do not delete it as
+    obsolete.
+
+    Each backend owns its circuit breaker. Earlier tests in the full suite feed
+    MagicMock values through one, which trips that breaker OPEN for 60s;
+    inheriting it makes every write here fail fast. Clearing on the way in gives
+    this test the state a fresh process has, and clearing on the way out stops
+    the next test inheriting a backend bound to this temp project.
     """
     import wheeler.tools.graph_tools as gt
     from wheeler.graph.driver import invalidate_async_driver
 
-    gt._backend_instance = None
+    gt.reset_backend_cache()
     invalidate_async_driver()
     yield
-    gt._backend_instance = None
+    gt.reset_backend_cache()
     invalidate_async_driver()
 
 

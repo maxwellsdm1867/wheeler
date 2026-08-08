@@ -866,18 +866,81 @@ async def _update_synthesis_for_link(
 # --- Dispatch ---
 
 
-_backend_instance = None
+# Backends, keyed on the identity of the config that produced them. This used
+# to be a single module-level instance whose `config` argument was honoured on
+# the first call and ignored forever after, which made the parameter a lie and
+# had two consequences:
+#
+#  * The triple-write could SPLIT ACROSS PROJECTS. The graph leg comes from this
+#    backend; the JSON and synthesis legs come from the `config` threaded
+#    separately into _write_knowledge_file. Two configs sharing Neo4j settings
+#    but differing in project root (the ordinary Community-Edition case whenever
+#    project_tag is unset) wrote the node into one project's graph and the other
+#    project's directory.
+#  * One circuit breaker served everyone, since the breaker is built in
+#    Neo4jBackend.__init__. Three failures from one project's traffic opened it
+#    for all of them. The repo's own CLAUDE.md documents this as a test trap;
+#    it was equally real in production.
+#
+# Keying on resolved_project_root fixes both, and gives each project its own
+# breaker for free.
+_backend_cache: dict[tuple, Any] = {}
+
+# Schema init is tracked SEPARATELY, on the connection triple only, because
+# Neo4j constraints and indexes are database-scoped rather than project-scoped.
+# initialize() issues ~33 DDL statements; keying it like the backend would make
+# the e2e suite pay all of them per test, since its sandbox mints a fresh
+# project root each time.
+_initialized_dbs: set[tuple[str, str, str]] = set()
+
+
+def _backend_key(config: WheelerConfig) -> tuple:
+    """Identity of the backend a given config should get.
+
+    The password digest mirrors the async driver's key (graph/driver.py): both
+    caches must agree about identity, or rotating a password reuses a backend
+    whose driver has already been invalidated.
+    """
+    import hashlib
+
+    n = config.neo4j
+    pw = getattr(n, "password", "") or ""
+    return (
+        n.uri,
+        n.username,
+        n.database,
+        hashlib.sha256(pw.encode()).hexdigest()[:16],
+        getattr(n, "project_tag", "") or "",
+        str(getattr(config, "resolved_project_root", "")),
+    )
+
+
+def reset_backend_cache() -> None:
+    """Drop every cached backend and forget which databases were initialized.
+
+    Tests need this between cases: each backend owns a circuit breaker, and a
+    breaker poisoned by mock values stays OPEN for 60s, which surfaces later as
+    an unrelated `circuit_open` failure. Pair it with invalidate_async_driver().
+    """
+    _backend_cache.clear()
+    _initialized_dbs.clear()
 
 
 async def _get_backend(config: WheelerConfig):
-    """Return a cached, initialized backend instance."""
-    global _backend_instance
-    if _backend_instance is None:
+    """Return a cached, initialized backend for *config*."""
+    key = _backend_key(config)
+    backend = _backend_cache.get(key)
+    if backend is None:
         from wheeler.graph.backend import get_backend
 
-        _backend_instance = get_backend(config)
-        await _backend_instance.initialize()
-    return _backend_instance
+        backend = get_backend(config)
+        _backend_cache[key] = backend
+
+    conn = key[:3]
+    if conn not in _initialized_dbs:
+        await backend.initialize()
+        _initialized_dbs.add(conn)
+    return backend
 
 
 def _diagnose_neo4j_error(exc: Exception) -> dict:
