@@ -7,12 +7,15 @@ session ID, embedding store access, and similarity checking.
 from __future__ import annotations
 
 import functools
+import logging
 import secrets
 import time
 from datetime import datetime, timezone
 
 from wheeler.config import configure_logging, load_config, WheelerConfig
 from wheeler.request_log import RequestLog, RequestLogger
+
+logger = logging.getLogger(__name__)
 
 # Configure logging and load config once at import time
 configure_logging()
@@ -43,6 +46,27 @@ def _get_embedding_store():
     return _embedding_store
 
 
+def _safe_log(entry: RequestLog) -> None:
+    """Write one request-log entry, never propagating a logging failure.
+
+    The request log is observability, not a tool result, so a read-only or
+    absent ``.wheeler/`` must not fail the tool that was actually asked for.
+    Before this guard, ``RequestLogger.log`` (which does mkdir + open(..., "a")
+    with no exception handling) could raise from inside ``_logged``, and the
+    handler's re-log would raise again and escape -- replacing the tool's real
+    return value, or its real exception, with the logging error, on every one
+    of the logged tools across all four servers.
+
+    Debug level, not warning: on a filesystem-less host this fires every call.
+    """
+    try:
+        _request_logger.log(entry)
+    except Exception:
+        logger.debug(
+            "request log write failed for %s (continuing)", entry.tool_name, exc_info=True
+        )
+
+
 def _logged(func):
     """Wrap an MCP tool handler with request logging."""
 
@@ -59,7 +83,7 @@ def _logged(func):
             if isinstance(result, dict):
                 node_id = result.get("node_id", "") or ""
                 label = result.get("label", "") or ""
-            _request_logger.log(RequestLog(
+            _safe_log(RequestLog(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 tool_name=tool_name,
                 latency_ms=round(elapsed, 1),
@@ -73,7 +97,7 @@ def _logged(func):
             return result
         except Exception as exc:
             elapsed = (time.perf_counter() - start) * 1000
-            _request_logger.log(RequestLog(
+            _safe_log(RequestLog(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 tool_name=tool_name,
                 latency_ms=round(elapsed, 1),
