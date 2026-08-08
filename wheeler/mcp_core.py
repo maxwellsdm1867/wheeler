@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 from wheeler import acts as acts_corpus
 from wheeler.config import project_knowledge_dir
 from wheeler.graph import context, schema
+from wheeler.graph.cypher_guard import WRITE_KEYWORDS, is_read_only_cypher
 from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
     _config,
@@ -287,13 +288,28 @@ async def run_cypher(query: str) -> dict:
         "MATCH (n) RETURN labels(n)[0] AS type, count(n) AS count ORDER BY count DESC"
 
     Args:
-        query: Cypher query string (read-only: no CREATE/DELETE/SET)
+        query: Cypher query string. Read-only: CREATE, MERGE, DELETE, SET,
+            REMOVE, DROP, CALL, FOREACH and LOAD are all refused, matched as
+            whole words. CALL is refused even for read-only procedures such as
+            fulltext queries, since a procedure name does not reveal whether it
+            writes; use search_findings for fulltext. This query is NOT
+            project-scoped, unlike every query_* tool.
     """
-    # Block write operations
-    upper = query.strip().upper()
-    for keyword in ("CREATE ", "DELETE ", "DETACH ", "SET ", "REMOVE ", "MERGE ", "DROP "):
-        if keyword in upper:
-            return {"error": "Write operations not allowed via run_cypher. Use Wheeler's mutation tools (add_finding, link_nodes, etc.) instead."}
+    # Block write operations. One shared rule (graph/cypher_guard.py), also used
+    # by the backend to decide replay safety. The previous local copy scanned
+    # for keywords with literal trailing spaces, so `CREATE(n:Finding {id:'x'})`
+    # and `CALL apoc.*` passed while `MATCH (d:Dataset {name: $n})` was refused
+    # ("DATASET " contains "SET "). Do not reintroduce a text scan here.
+    if not is_read_only_cypher(query):
+        return {
+            "error": (
+                "Write operations not allowed via run_cypher. Use Wheeler's mutation "
+                "tools (add_finding, link_nodes, etc.) instead. Refused keywords: "
+                + ", ".join(WRITE_KEYWORDS)
+                + ". CALL is refused even for read-only procedures, because a "
+                "procedure's name does not reveal whether it writes."
+            )
+        }
 
     try:
         backend = await graph_tools._get_backend(_config)

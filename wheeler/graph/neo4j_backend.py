@@ -20,6 +20,7 @@ from typing import Any, TypeVar
 
 from wheeler.config import WheelerConfig
 from wheeler.graph.backend import GraphBackend
+from wheeler.graph.cypher_guard import CYPHER_WRITE_RE, is_read_only_cypher
 from wheeler.graph.circuit_breaker import (
     CircuitBreaker,
 )
@@ -37,27 +38,13 @@ T = TypeVar("T")
 # ``custom={"k": v}`` is written as ``custom_k = v`` and reassembled on read.
 _CUSTOM_PREFIX = "custom_"
 
-# Cypher clause keywords that can write. ``run_cypher`` takes arbitrary
-# caller-supplied Cypher (merge.py and restore.py both send writes through it),
-# so it is only replayed when none of these appear as a whole word.
-#
-# Every misclassification falls the safe way. A read whose text happens to
-# contain one of these words, in a string literal or a property name, is merely
-# not retried. A write cannot hide from the list: every Cypher writing clause is
-# here, and the indirect routes (``FOREACH``, ``CALL``, ``LOAD CSV``) can only
-# write by being on the list themselves or by containing a clause that is.
-#
-# Whole-word matching is load-bearing: a substring test would see "SET" inside
-# ``Dataset`` and refuse to retry almost every read in the codebase.
-_CYPHER_WRITE_RE = re.compile(
-    r"\b(CREATE|MERGE|DELETE|SET|REMOVE|DROP|CALL|FOREACH|LOAD)\b",
-    re.IGNORECASE,
-)
-
-
-def _is_read_only_cypher(query: str) -> bool:
-    """Whether ``query`` provably only reads, and so is safe to replay."""
-    return _CYPHER_WRITE_RE.search(query) is None
+# The write-detection rule lives in graph/cypher_guard.py because the MCP
+# surface needs the identical rule to enforce its read-only boundary, and a
+# second copy there had drifted into permitting CREATE(n:...) while refusing
+# reads that merely mention a Dataset. Re-exported under the old private names
+# so existing call sites and tests keep working.
+_CYPHER_WRITE_RE = CYPHER_WRITE_RE
+_is_read_only_cypher = is_read_only_cypher
 
 
 def _flatten_custom(props: dict) -> dict:
