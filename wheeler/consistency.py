@@ -14,11 +14,34 @@ from wheeler.config import (
     project_synthesis_dir,
     WheelerConfig,
 )
+from wheeler.models import PREFIX_TO_LABEL
 
 logger = logging.getLogger(__name__)
 
-# Synthesis index files that are NOT node files
-_SYNTHESIS_INDEX_FILES = frozenset({"INDEX", "OPEN_QUESTIONS", "EVIDENCE_MAP"})
+
+def is_node_view(stem: str) -> bool:
+    """Whether a synthesis filename stem names a NODE, not an index or report.
+
+    `synthesis/` holds two unrelated kinds of file. Node views (`F-3a2b1c4d.md`)
+    are rendered from `knowledge/{id}.json` and are meaningfully "orphaned" when
+    that JSON is gone. Index and report views (`INDEX.md`, `MORNING-2026-08-08.md`)
+    are written by acts, have no backing JSON by design, and are the scientist's
+    output.
+
+    This used to be a hardcoded set of three names: INDEX, OPEN_QUESTIONS and
+    EVIDENCE_MAP. `/wh:dream` writes a fourth, `MORNING-{date}.md`, on every run.
+    It therefore landed in `synthesis_orphaned` and `repair_consistency` DELETED
+    the morning brief. An allowlist of literal names cannot survive a new index
+    file being added; a structural rule can.
+
+    The rule: a stem is a node view only if it begins with a known node-id
+    prefix followed by "-". Both misclassifications fall the safe way. A node
+    view misread as an index is merely not cleaned up, so drift persists but
+    nothing is destroyed. The reverse, which is the destructive direction, can
+    only happen if an index file is deliberately named like a node id.
+    """
+    prefix, sep, _rest = stem.partition("-")
+    return bool(sep) and prefix in PREFIX_TO_LABEL
 
 # Divergent-node count above which routine health checks warn loudly
 DRIFT_WARNING_THRESHOLD = 10
@@ -58,12 +81,13 @@ async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
     else:
         json_ids = set()
 
-    # Synthesis inventory (exclude index files)
+    # Synthesis inventory: node views only. Index and report views (INDEX.md,
+    # MORNING-{date}.md, ...) have no backing JSON by design, so counting them
+    # here would report them as orphaned and get them deleted by repair.
     synthesis_dir = project_synthesis_dir(config)
     if synthesis_dir.is_dir():
         synth_ids = {
-            f.stem for f in synthesis_dir.glob("*.md")
-            if f.stem not in _SYNTHESIS_INDEX_FILES
+            f.stem for f in synthesis_dir.glob("*.md") if is_node_view(f.stem)
         }
     else:
         synth_ids = set()
@@ -153,6 +177,22 @@ async def repair_consistency(
 
     # synthesis_orphaned: delete stale markdown
     for node_id in report.synthesis_orphaned:
+        # Refuse at the deletion site as well as at the inventory. This is the
+        # only irreversible action in the repair path, and the caller supplies
+        # the list: a report built by an older or buggy check_consistency, or
+        # hand-assembled, must not be able to unlink a scientist's morning
+        # brief. Checking only where the list is built would leave that open.
+        if not is_node_view(node_id):
+            logger.warning(
+                "Refusing to delete %s.md: not a node view. Index and report "
+                "views have no backing JSON by design.", node_id,
+            )
+            actions.append({
+                "node_id": node_id,
+                "action": "delete_orphaned_synthesis",
+                "status": "refused_not_a_node_view",
+            })
+            continue
         if dry_run:
             actions.append({"node_id": node_id, "action": "delete_orphaned_synthesis", "dry_run": True})
             continue

@@ -567,3 +567,112 @@ class TestConsistencyCheckSummary:
         assert result["summary"]["json_only_by_prefix"] == {"A": 1}
         assert result["summary"]["graph_only_by_prefix"] == {"X": 1}
         assert result["summary"]["exceeds_threshold"] is False
+
+
+class TestIndexViewsSurviveRepair:
+    """`repair_consistency` deleted the scientist's morning brief.
+
+    `synthesis/` holds two unrelated kinds of file: node views rendered from
+    knowledge/{id}.json, and index/report views written by acts which have no
+    backing JSON by design. The separation was a hardcoded set of three names
+    (INDEX, OPEN_QUESTIONS, EVIDENCE_MAP). `/wh:dream` writes a fourth,
+    MORNING-{date}.md, on every run, so it landed in synthesis_orphaned and
+    repair unlinked it.
+    """
+
+    def test_dream_index_files_are_not_node_views(self):
+        from wheeler.consistency import is_node_view
+
+        for stem in (
+            "INDEX", "OPEN_QUESTIONS", "EVIDENCE_MAP",   # the original three
+            "MORNING-2026-08-08",                        # the one that got deleted
+            "MORNING-2026-01-01",
+            "WEEKLY-2026-08",                            # a plausible future one
+        ):
+            assert not is_node_view(stem), f"{stem} would be treated as a node view"
+
+    def test_real_node_ids_are_node_views(self):
+        from wheeler.consistency import is_node_view
+        from wheeler.models import PREFIX_TO_LABEL
+
+        for prefix in PREFIX_TO_LABEL:
+            assert is_node_view(f"{prefix}-3a2b1c4d"), f"{prefix}- not recognized"
+
+    def test_pl_prefix_is_not_shadowed_by_p(self):
+        """PL (Plan) and P (Paper) both exist; the longer must not be misread."""
+        from wheeler.consistency import is_node_view
+
+        assert is_node_view("PL-3a2b1c4d")
+        assert is_node_view("P-3a2b1c4d")
+
+    async def test_morning_brief_survives_a_real_repair(self, tmp_path, monkeypatch):
+        """End to end: the exact sequence that destroyed the file."""
+        import wheeler.consistency as consistency
+        from wheeler.consistency import check_consistency, repair_consistency
+
+        synthesis = tmp_path / "synthesis"
+        knowledge = tmp_path / "knowledge"
+        synthesis.mkdir()
+        knowledge.mkdir()
+
+        brief = synthesis / "MORNING-2026-08-08.md"
+        brief.write_text("# Morning brief\n\nreal scientist output", encoding="utf-8")
+        (synthesis / "INDEX.md").write_text("# Index", encoding="utf-8")
+        # A genuinely orphaned node view, which SHOULD still be cleaned up.
+        (synthesis / "F-deadbeef.md").write_text("# stale", encoding="utf-8")
+
+        monkeypatch.setattr(consistency, "project_synthesis_dir", lambda c: synthesis)
+        monkeypatch.setattr(consistency, "project_knowledge_dir", lambda c: knowledge)
+
+        class StubBackend:
+            async def run_cypher(self, query, params=None):
+                return []
+
+        async def fake_get_backend(config):
+            return StubBackend()
+
+        import wheeler.tools.graph_tools as gt
+
+        monkeypatch.setattr(gt, "_get_backend", fake_get_backend)
+
+        report = await check_consistency(object())
+        assert "MORNING-2026-08-08" not in report.synthesis_orphaned
+        assert "INDEX" not in report.synthesis_orphaned
+        assert "F-deadbeef" in report.synthesis_orphaned, (
+            "a genuinely orphaned node view should still be reported"
+        )
+
+        await repair_consistency(object(), report, dry_run=False)
+
+        assert brief.exists(), "repair deleted the morning brief"
+        assert (synthesis / "INDEX.md").exists()
+        assert not (synthesis / "F-deadbeef.md").exists(), (
+            "repair no longer cleans genuinely orphaned node views"
+        )
+
+    async def test_deletion_site_refuses_a_non_node_view_from_a_bad_report(
+        self, tmp_path, monkeypatch
+    ):
+        """Defence in depth: the caller supplies the list.
+
+        A report built by an older or buggy check_consistency, or assembled by
+        hand, must not be able to unlink an index view. Guarding only where the
+        list is built would leave the irreversible action itself unguarded.
+        """
+        import wheeler.consistency as consistency
+        from wheeler.consistency import ConsistencyReport, repair_consistency
+
+        synthesis = tmp_path / "synthesis"
+        synthesis.mkdir()
+        brief = synthesis / "MORNING-2026-08-08.md"
+        brief.write_text("# Morning brief", encoding="utf-8")
+
+        monkeypatch.setattr(consistency, "project_synthesis_dir", lambda c: synthesis)
+
+        poisoned = ConsistencyReport(synthesis_orphaned=["MORNING-2026-08-08"])
+        result = await repair_consistency(object(), poisoned, dry_run=False)
+
+        assert brief.exists(), "deletion site did not refuse a non-node view"
+        assert any(
+            a.get("status") == "refused_not_a_node_view" for a in result["actions"]
+        ), result
