@@ -8,11 +8,32 @@ to avoid partial-write corruption.
 from __future__ import annotations
 
 import logging
+import os
+import uuid
 from pathlib import Path
 
 from wheeler.models import KNOWLEDGE_NODE_ADAPTER, LABEL_TO_PREFIX, KnowledgeNode, NodeBase
 
 logger = logging.getLogger(__name__)
+
+
+def _writer_tmp(target: Path) -> Path:
+    """A staging path unique to this writer.
+
+    The tmp name used to be a fixed function of the node id
+    (``target.with_suffix(".json.tmp")``), so every concurrent writer of one
+    node staged into the SAME file and then each renamed it. The rename is
+    atomic, but the bytes being renamed could be a blend of two payloads, which
+    defeats the whole point of tmp+rename. Two Wheeler sessions writing one node
+    is an ordinary occurrence, not an edge case.
+
+    The suffix stays LAST so the file remains invisible to every inventory:
+    ``store.list_nodes`` and ``mcp_core``'s health count glob ``*.json``, and
+    ``consistency.py`` globs ``*.json`` and ``*.md`` and derives node identity
+    from ``Path.stem``. A name like ``F-3a2b.tmp.json`` would match all three
+    and manufacture phantom drift.
+    """
+    return target.with_name(f"{target.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
 
 
 def write_node(knowledge_path: Path, model: NodeBase) -> Path:
@@ -24,11 +45,14 @@ def write_node(knowledge_path: Path, model: NodeBase) -> Path:
     knowledge_path.mkdir(parents=True, exist_ok=True)
 
     target = knowledge_path / model.file_name
-    tmp = target.with_suffix(".json.tmp")
+    tmp = _writer_tmp(target)
 
     data = model.model_dump_json(indent=2)
-    tmp.write_text(data, encoding="utf-8")
-    tmp.rename(target)
+    try:
+        tmp.write_text(data, encoding="utf-8")
+        tmp.replace(target)
+    finally:
+        tmp.unlink(missing_ok=True)
 
     logger.info("Wrote node %s -> %s", model.id, target)
     return target
@@ -115,10 +139,13 @@ def write_synthesis(synthesis_path: Path, node_id: str, markdown: str) -> Path:
     synthesis_path.mkdir(parents=True, exist_ok=True)
 
     target = synthesis_path / f"{node_id}.md"
-    tmp = target.with_suffix(".md.tmp")
+    tmp = _writer_tmp(target)
 
-    tmp.write_text(markdown, encoding="utf-8")
-    tmp.rename(target)
+    try:
+        tmp.write_text(markdown, encoding="utf-8")
+        tmp.replace(target)
+    finally:
+        tmp.unlink(missing_ok=True)
 
     logger.info("Wrote synthesis %s -> %s", node_id, target)
     return target

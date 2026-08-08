@@ -892,3 +892,112 @@ class TestGraphDataToModel:
         }
         model = _graph_data_to_model("Finding", data)
         assert model.created == "2024-01-01T00:00:00Z"
+
+
+class TestAtomicWriteTmpNames:
+    """A fixed tmp name defeats the atomicity tmp+rename exists to provide.
+
+    Every concurrent writer of one node staged into the SAME
+    `{id}.json.tmp`, then each renamed it, so the renamed bytes could be a
+    blend of two payloads. Two Wheeler sessions writing one node is ordinary.
+    """
+
+    def _model(self):
+        from wheeler.models import FindingModel
+
+        return FindingModel(id="F-3a2b1c4d", description="x", confidence=0.5)
+
+    def test_tmp_paths_are_unique_per_write(self, tmp_path):
+        import pathlib
+
+        from wheeler.knowledge.store import write_node
+
+        seen: list[str] = []
+        original = pathlib.Path.write_text
+
+        def record(self, *a, **kw):
+            if self.name.endswith(".tmp"):
+                seen.append(self.name)
+            return original(self, *a, **kw)
+
+        pathlib.Path.write_text = record
+        try:
+            write_node(tmp_path, self._model())
+            write_node(tmp_path, self._model())
+        finally:
+            pathlib.Path.write_text = original
+
+        assert len(seen) == 2
+        assert seen[0] != seen[1], f"tmp name is not unique per writer: {seen}"
+
+    def test_synthesis_tmp_paths_are_unique_per_write(self, tmp_path):
+        import pathlib
+
+        from wheeler.knowledge.store import write_synthesis
+
+        seen: list[str] = []
+        original = pathlib.Path.write_text
+
+        def record(self, *a, **kw):
+            if self.name.endswith(".tmp"):
+                seen.append(self.name)
+            return original(self, *a, **kw)
+
+        pathlib.Path.write_text = record
+        try:
+            write_synthesis(tmp_path, "F-3a2b1c4d", "# one")
+            write_synthesis(tmp_path, "F-3a2b1c4d", "# two")
+        finally:
+            pathlib.Path.write_text = original
+
+        assert len(seen) == 2
+        assert seen[0] != seen[1], f"tmp name is not unique per writer: {seen}"
+
+    def test_tmp_files_are_invisible_to_every_inventory_glob(self, tmp_path):
+        """The reason the .tmp suffix must stay LAST.
+
+        `F-3a2b.tmp.json` would match store.list_nodes, mcp_core's health
+        count, and consistency.py's drift globs, manufacturing phantom
+        json_only / synthesis_orphaned divergence. This is what stops someone
+        "simplifying" the name.
+        """
+        from wheeler.knowledge.store import list_nodes, write_node, write_synthesis
+
+        write_node(tmp_path, self._model())
+        write_synthesis(tmp_path, "F-3a2b1c4d", "# body")
+
+        # Plant leftovers of the shape a crashed writer leaves behind.
+        (tmp_path / "F-3a2b1c4d.json.99999.deadbeef.tmp").write_text("{}")
+        (tmp_path / "F-3a2b1c4d.md.99999.deadbeef.tmp").write_text("x")
+
+        assert [n.id for n in list_nodes(tmp_path)] == ["F-3a2b1c4d"]
+        assert sorted(p.stem for p in tmp_path.glob("*.json")) == ["F-3a2b1c4d"]
+        assert sorted(p.stem for p in tmp_path.glob("*.md")) == ["F-3a2b1c4d"]
+
+    def test_no_tmp_file_survives_a_successful_write(self, tmp_path):
+        from wheeler.knowledge.store import write_node, write_synthesis
+
+        write_node(tmp_path, self._model())
+        write_synthesis(tmp_path, "F-3a2b1c4d", "# body")
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_failed_write_leaves_no_litter(self, tmp_path):
+        import pathlib
+
+        import pytest
+
+        from wheeler.knowledge.store import write_node
+
+        original = pathlib.Path.replace
+
+        def boom(self, target):
+            raise OSError("simulated crash at commit")
+
+        pathlib.Path.replace = boom
+        try:
+            with pytest.raises(OSError):
+                write_node(tmp_path, self._model())
+        finally:
+            pathlib.Path.replace = original
+
+        assert list(tmp_path.glob("*.tmp")) == [], "crashed writer left a tmp file"
