@@ -323,3 +323,168 @@ class TestEmbeddingStoreReal:
         results = store2.search("NMDA receptor plasticity")
         assert len(results) == 2
         assert results[0].score > results[1].score
+
+
+class TestSaveIsOneAtomicCommit:
+    """The matrix and its id list must commit together.
+
+    They used to be two files written in place. A crash between them left the
+    OLD id list beside the NEW matrix, and `load` maps matrix[i] to ids[i]
+    positionally, so every node silently received another node's vector. A
+    length check cannot catch it: the stale id list can be the same length.
+    """
+
+    def _store(self, path):
+        import numpy as np
+
+        from wheeler.search.embeddings import EmbeddingStore
+
+        store = EmbeddingStore(str(path))
+        for i, nid in enumerate(["F-aaaa1111", "F-bbbb2222", "F-cccc3333"]):
+            store._embeddings[nid] = np.array([float(i), 1.0, 2.0])
+            store._metadata[nid] = {"label": "Finding", "text": nid}
+        return store
+
+    def test_save_writes_a_single_archive(self, tmp_path):
+        self._store(tmp_path).save()
+        assert (tmp_path / "store.npz").exists()
+        assert not (tmp_path / "embeddings.npy").exists()
+        assert not (tmp_path / "metadata.json").exists()
+
+    def test_round_trip_preserves_the_id_to_vector_mapping(self, tmp_path):
+        import numpy as np
+
+        from wheeler.search.embeddings import EmbeddingStore
+
+        self._store(tmp_path).save()
+        reloaded = EmbeddingStore(str(tmp_path))
+        reloaded.load()
+        assert set(reloaded._embeddings) == {"F-aaaa1111", "F-bbbb2222", "F-cccc3333"}
+        assert np.allclose(reloaded._embeddings["F-bbbb2222"], [1.0, 1.0, 2.0])
+        assert reloaded._metadata["F-cccc3333"]["text"] == "F-cccc3333"
+
+    def test_failed_commit_leaves_the_previous_generation_intact(self, tmp_path):
+        """Never a mixture: either the old archive or the new one."""
+        import numpy as np
+
+        from wheeler.search.embeddings import EmbeddingStore
+
+        self._store(tmp_path).save()
+        before = (tmp_path / "store.npz").read_bytes()
+
+        store2 = EmbeddingStore(str(tmp_path))
+        store2._embeddings["F-dddd4444"] = np.array([9.0, 9.0, 9.0])
+        store2._metadata["F-dddd4444"] = {"label": "Finding", "text": "new"}
+
+        import pathlib
+
+        def boom(self, target):
+            raise OSError("simulated crash at commit")
+
+        original = pathlib.Path.replace
+        pathlib.Path.replace = boom
+        try:
+            with __import__("pytest").raises(OSError):
+                store2.save()
+        finally:
+            pathlib.Path.replace = original
+
+        assert (tmp_path / "store.npz").read_bytes() == before
+        assert not list(tmp_path.glob("*.tmp")), "temp file left behind"
+
+    def test_tmp_name_is_unique_per_writer(self, tmp_path):
+        """A fixed .tmp lets two concurrent writers interleave into one file."""
+        import pathlib
+
+        seen: list[str] = []
+        original = pathlib.Path.replace
+
+        def record(self, target):
+            seen.append(self.name)
+            return original(self, target)
+
+        pathlib.Path.replace = record
+        try:
+            self._store(tmp_path).save()
+            self._store(tmp_path).save()
+        finally:
+            pathlib.Path.replace = original
+
+        assert len(seen) == 2
+        assert seen[0] != seen[1], f"tmp name is not unique per writer: {seen}"
+
+    def test_torn_legacy_pair_is_refused_not_misassigned(self, tmp_path):
+        """The exact corruption the single archive exists to prevent."""
+        import json
+
+        import numpy as np
+
+        from wheeler.search.embeddings import EmbeddingStore
+
+        # 3 vectors, but a stale 3-id list naming DIFFERENT nodes would load
+        # silently; use a mismatched length to prove the refusal path.
+        np.save(tmp_path / "embeddings.npy", np.zeros((3, 4)))
+        (tmp_path / "metadata.json").write_text(
+            json.dumps({"F-old00001": {"label": "Finding"}, "__ids__": ["F-old00001"]})
+        )
+
+        store = EmbeddingStore(str(tmp_path))
+        store.load()
+        assert store._embeddings == {}, "torn store was loaded instead of refused"
+
+    def test_legacy_pair_still_loads_and_migrates(self, tmp_path):
+        import json
+
+        import numpy as np
+
+        from wheeler.search.embeddings import EmbeddingStore
+
+        np.save(tmp_path / "embeddings.npy", np.array([[1.0, 2.0], [3.0, 4.0]]))
+        (tmp_path / "metadata.json").write_text(
+            json.dumps({
+                "F-one00001": {"label": "Finding"},
+                "F-two00002": {"label": "Finding"},
+                "__ids__": ["F-one00001", "F-two00002"],
+            })
+        )
+
+        store = EmbeddingStore(str(tmp_path))
+        store.load()
+        assert np.allclose(store._embeddings["F-two00002"], [3.0, 4.0])
+
+        store.save()
+        assert (tmp_path / "store.npz").exists()
+        assert not (tmp_path / "embeddings.npy").exists()
+
+
+class TestStorePathIsProjectAnchored:
+    def test_nothing_outside_config_reads_the_raw_store_path(self):
+        """search_findings and index_node read different files when cwd != root.
+
+        Flags the raw FIELD REFERENCE rather than the EmbeddingStore call, so
+        it catches both the inline form (`EmbeddingStore(config.search.store_path)`)
+        and the assign-then-use form backup.py had, where the raw read sits
+        several lines above the construction. An earlier window-based version of
+        this guard missed the latter.
+
+        `config.py` is the one legitimate reader: `project_search_store_dir`
+        falls back to the raw string for duck-typed configs in tests.
+        """
+        import pathlib
+        import re
+
+        pattern = re.compile(
+            r"config\.search\.store_path|getattr\(\s*config\.search\s*,\s*[\"']store_path"
+        )
+        offenders = []
+        for path in pathlib.Path("wheeler").rglob("*.py"):
+            if path.name == "config.py":
+                continue
+            for lineno, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if pattern.search(line):
+                    offenders.append(f"{path}:{lineno}")
+        assert offenders == [], (
+            f"read the store path via project_search_store_dir(config): {offenders}"
+        )

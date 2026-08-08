@@ -89,7 +89,12 @@ async def _semantic_channel(
         logger.debug("Semantic channel unavailable: wheeler[search] not installed")
         return []
 
-    store = EmbeddingStore(config.search.store_path)
+    # Project-root anchored, not cwd-relative: with the raw string, a server
+    # started outside the project root read a DIFFERENT embeddings file than
+    # mcp_shared's singleton wrote, so search and index_node silently disagreed.
+    from wheeler.config import project_search_store_dir
+
+    store = EmbeddingStore(str(project_search_store_dir(config)))
     store.load()
     results = store.search(query, limit=limit, label_filter=label or None)
     return [r.node_id for r in results]

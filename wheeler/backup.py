@@ -688,9 +688,12 @@ def _build_embedder_info(config: WheelerConfig) -> dict:
     try:
         from wheeler.search.embeddings import EmbeddingStore  # lazy import
 
-        store_path = str(
-            getattr(config.search, "store_path", ".wheeler/embeddings")
-        )
+        # Same project-root anchoring as every other construction site; the raw
+        # string yielded a wrong or absent `dim` in the manifest when cwd was
+        # not the project root.
+        from wheeler.config import project_search_store_dir
+
+        store_path = str(project_search_store_dir(config))
         if Path(store_path).exists():
             store = EmbeddingStore(store_path)
             store.load()

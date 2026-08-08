@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+# Single-file store: the matrix and its id list must commit together.
+_ARCHIVE_NAME = "store.npz"
 
 try:
     import numpy as np
@@ -163,31 +168,46 @@ class EmbeddingStore:
         ]
 
     def save(self) -> None:
-        """Persist embeddings to disk.
+        """Persist embeddings to disk as ONE atomically-renamed archive.
 
-        Creates the store directory if it doesn't exist. Saves embeddings
-        as a numpy .npy file and metadata as JSON.
+        The matrix and its id list must commit together. They used to be two
+        files (``embeddings.npy`` + ``metadata.json``) written in place, which
+        is two commit points: a crash between them left the OLD id list beside
+        the NEW matrix, and ``load`` maps ``matrix[i]`` to ``ids[i]``
+        positionally, so every node silently received another node's vector.
+        A length check cannot catch that -- the stale id list can be the same
+        length. Hence a single ``store.npz`` plus tmp+rename.
+
+        The tmp name is unique per writer: a fixed ``.tmp`` would let two
+        concurrent writers interleave into one file and both rename it,
+        defeating the very atomicity the rename is there to provide.
         """
         self._store_path.mkdir(parents=True, exist_ok=True)
-        emb_path = self._store_path / "embeddings.npy"
-        meta_path = self._store_path / "metadata.json"
+        archive = self._store_path / _ARCHIVE_NAME
+        legacy_emb = self._store_path / "embeddings.npy"
+        legacy_meta = self._store_path / "metadata.json"
+
         if self._embeddings:
             ids = list(self._embeddings.keys())
             matrix = np.stack([self._embeddings[i] for i in ids])
-            np.save(emb_path, matrix)
+            meta = {node_id: self._metadata[node_id] for node_id in ids}
 
-            meta: dict[str, object] = {
-                node_id: self._metadata[node_id] for node_id in ids
-            }
-            meta["__ids__"] = ids  # type: ignore[assignment]
-            with open(meta_path, "w") as f:
-                json.dump(meta, f)
+            tmp = self._store_path / f"{_ARCHIVE_NAME}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+            try:
+                with open(tmp, "wb") as fh:
+                    np.savez(fh, matrix=matrix, ids=np.array(ids, dtype=object),
+                             meta=np.array(json.dumps(meta), dtype=object))
+                tmp.replace(archive)
+            finally:
+                tmp.unlink(missing_ok=True)
         else:
-            # Remove stale files when the store is empty
-            if emb_path.exists():
-                emb_path.unlink()
-            if meta_path.exists():
-                meta_path.unlink()
+            archive.unlink(missing_ok=True)
+
+        # Either way the legacy pair is now superseded; drop it so a later load
+        # cannot resurrect a stale generation.
+        legacy_emb.unlink(missing_ok=True)
+        legacy_meta.unlink(missing_ok=True)
+
         logger.info(
             "Saved %d embeddings to %s", len(self._embeddings), self._store_path
         )
@@ -195,19 +215,38 @@ class EmbeddingStore:
     def load(self) -> None:
         """Load embeddings from disk.
 
-        Silently returns if no saved data exists.
+        Reads the single-file archive when present, else falls back to the
+        legacy two-file pair so existing stores keep working; the next `save`
+        migrates them. Silently returns if no saved data exists.
         """
-        emb_path = self._store_path / "embeddings.npy"
-        meta_path = self._store_path / "metadata.json"
-        if not emb_path.exists() or not meta_path.exists():
-            logger.info("No saved embeddings found at %s", self._store_path)
-            return
+        archive = self._store_path / _ARCHIVE_NAME
+        if archive.exists():
+            with np.load(archive, allow_pickle=True) as data:
+                matrix = data["matrix"]
+                ids = [str(i) for i in data["ids"]]
+                meta = json.loads(str(data["meta"].item()))
+        else:
+            emb_path = self._store_path / "embeddings.npy"
+            meta_path = self._store_path / "metadata.json"
+            if not emb_path.exists() or not meta_path.exists():
+                logger.info("No saved embeddings found at %s", self._store_path)
+                return
 
-        matrix = np.load(emb_path)
-        with open(meta_path) as f:
-            meta = json.load(f)
+            matrix = np.load(emb_path)
+            with open(meta_path) as f:
+                meta = json.load(f)
+            ids = meta.pop("__ids__")
 
-        ids: list[str] = meta.pop("__ids__")
+            # A torn legacy pair assigns every node the wrong vector. Refuse it
+            # rather than load a silently-corrupt store.
+            if len(ids) != len(matrix):
+                logger.error(
+                    "Refusing torn embedding store at %s: %d ids vs %d vectors. "
+                    "Delete the directory and re-run backfill.",
+                    self._store_path, len(ids), len(matrix),
+                )
+                return
+
         for i, node_id in enumerate(ids):
             self._embeddings[node_id] = matrix[i]
             self._metadata[node_id] = meta[node_id]
