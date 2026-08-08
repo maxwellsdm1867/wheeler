@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -16,11 +15,8 @@ from rich.table import Table
 from typer.core import TyperGroup
 
 from wheeler.config import load_config, project_knowledge_dir, project_synthesis_dir
-from wheeler.graph.driver import get_sync_driver
 from wheeler.graph.schema import (
     ALLOWED_RELATIONSHIPS,
-    PREFIX_TO_LABEL,
-    generate_node_id,
     get_status,
     init_schema,
 )
@@ -137,11 +133,6 @@ except ImportError as _llmsr_exc:  # pragma: no cover - needs the extra absent
     app.add_typer(_llmsr_stub, name="llmsr")
 
 
-
-# Re-export for backward compatibility and convenience
-_generate_id = generate_node_id
-
-
 # ---------------------------------------------------------------------------
 # graph init
 # ---------------------------------------------------------------------------
@@ -194,6 +185,41 @@ def graph_status() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _run_mutation(tool_name: str, args: dict) -> dict:
+    """Run one graph mutation through the same path the MCP tools use.
+
+    These three verbs used to open a sync driver and issue bare Cypher, which
+    skipped the entire triple-write: no knowledge/{id}.json, no
+    synthesis/{id}.md, no embedding, no WriteReceipt, no trace_id, and for
+    `link` no synthesis re-render of either endpoint. A node created that way
+    lands as `graph_only`, which is precisely the drift class
+    `repair_consistency` CANNOT fix -- it warns and stops, because regenerating
+    content from a ~100-char graph node is not supported. The CLI was
+    manufacturing the one inconsistency the repair path cannot resolve.
+
+    `execute_tool` returns a JSON STRING and reports failure as an `error` key
+    rather than raising, so the error check here is not optional: without it,
+    failures print as successes.
+    """
+    import asyncio
+    import json as _json
+
+    from wheeler.tools.graph_tools import execute_tool
+
+    config = load_config()
+    try:
+        raw = asyncio.run(execute_tool(tool_name, dict(args), config))
+    except Exception as exc:
+        console.print(f"[red]Failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    result = _json.loads(raw)
+    if "error" in result:
+        console.print(f"[red]Failed:[/red] {result['error']}")
+        raise typer.Exit(1)
+    return result
+
+
 @graph_app.command("add-finding")
 def graph_add_finding(
     desc: str = typer.Option(..., "--desc", "-d", help="Finding description"),
@@ -202,34 +228,12 @@ def graph_add_finding(
     ),
 ) -> None:
     """Add a Finding node to the knowledge graph."""
-
-
-    config = load_config()
-    node_id = _generate_id("F")
-    now = datetime.now(timezone.utc).isoformat()
-
-    driver = get_sync_driver(config)
-    try:
-        with driver.session(database=config.neo4j.database) as session:
-            props: dict = {
-                "id": node_id,
-                "description": desc,
-                "confidence": confidence,
-                "date": now,
-            }
-            if config.neo4j.project_tag:
-                props["_wheeler_project"] = config.neo4j.project_tag
-            prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
-            session.run(
-                f"CREATE (f:Finding {{{prop_assignments}}})",
-                props=props,
-            )
-        console.print(f"[green]Created Finding:[/green] [{node_id}] {desc}")
-    except Exception as exc:
-        console.print(f"[red]Failed:[/red] {exc}")
-        raise typer.Exit(1)
-    finally:
-        driver.close()
+    result = _run_mutation(
+        "add_finding", {"description": desc, "confidence": confidence}
+    )
+    console.print(
+        f"[green]Created Finding:[/green] [{result['node_id']}] {desc}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -245,34 +249,12 @@ def graph_add_question(
     ),
 ) -> None:
     """Add an OpenQuestion node to the knowledge graph."""
-
-
-    config = load_config()
-    node_id = _generate_id("Q")
-    now = datetime.now(timezone.utc).isoformat()
-
-    driver = get_sync_driver(config)
-    try:
-        with driver.session(database=config.neo4j.database) as session:
-            props: dict = {
-                "id": node_id,
-                "question": question,
-                "priority": priority,
-                "date_added": now,
-            }
-            if config.neo4j.project_tag:
-                props["_wheeler_project"] = config.neo4j.project_tag
-            prop_assignments = ", ".join(f"{k}: $props.{k}" for k in props)
-            session.run(
-                f"CREATE (q:OpenQuestion {{{prop_assignments}}})",
-                props=props,
-            )
-        console.print(f"[green]Created OpenQuestion:[/green] [{node_id}] {question}")
-    except Exception as exc:
-        console.print(f"[red]Failed:[/red] {exc}")
-        raise typer.Exit(1)
-    finally:
-        driver.close()
+    result = _run_mutation(
+        "add_question", {"question": question, "priority": priority}
+    )
+    console.print(
+        f"[green]Created OpenQuestion:[/green] [{result['node_id']}] {question}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -301,49 +283,11 @@ def graph_link(
 
 
 
-    config = load_config()
-
-    # Determine labels from IDs
-    src_prefix = source.split("-", 1)[0]
-    tgt_prefix = target.split("-", 1)[0]
-    src_label = PREFIX_TO_LABEL.get(src_prefix)
-    tgt_label = PREFIX_TO_LABEL.get(tgt_prefix)
-
-    if not src_label or not tgt_label:
-        console.print("[red]Could not determine node labels from IDs.[/red]")
-        raise typer.Exit(1)
-
-    driver = get_sync_driver(config)
-    try:
-        with driver.session(database=config.neo4j.database) as session:
-            # Use parameterized query — rel_type is whitelisted above
-            params: dict = {"src": source, "tgt": target}
-            if config.neo4j.project_tag:
-                stmt = (
-                    f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
-                    f"WHERE a._wheeler_project = $ptag AND b._wheeler_project = $ptag "
-                    f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
-                )
-                params["ptag"] = config.neo4j.project_tag
-            else:
-                stmt = (
-                    f"MATCH (a:{src_label} {{id: $src}}), (b:{tgt_label} {{id: $tgt}}) "
-                    f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel"
-                )
-            result = session.run(stmt, **params)
-            record = result.single()
-            if record:
-                console.print(
-                    f"[green]Linked:[/green] [{source}] -[{rel_type}]-> [{target}]"
-                )
-            else:
-                console.print("[red]One or both nodes not found.[/red]")
-                raise typer.Exit(1)
-    except Exception as exc:
-        console.print(f"[red]Failed:[/red] {exc}")
-        raise typer.Exit(1)
-    finally:
-        driver.close()
+    _run_mutation(
+        "link_nodes",
+        {"source_id": source, "target_id": target, "relationship": rel_type},
+    )
+    console.print(f"[green]Linked:[/green] [{source}] -[{rel_type}]-> [{target}]")
 
 
 # ---------------------------------------------------------------------------

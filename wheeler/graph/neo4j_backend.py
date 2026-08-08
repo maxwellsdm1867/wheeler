@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 import logging
-import re
 from typing import Any, TypeVar
 
 from wheeler.config import WheelerConfig
