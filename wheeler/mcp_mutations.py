@@ -193,17 +193,27 @@ async def add_dataset(
 
 @mcp.tool()
 @_logged
-async def add_paper(title: str, authors: str = "", doi: str = "", year: int = 0) -> dict:
+async def add_paper(
+    title: str,
+    authors: str = "",
+    doi: str = "",
+    year: int = 0,
+    corpus_id: str = "",
+) -> dict:
     """Add a Paper to the Wheeler knowledge graph for literature provenance. Returns the new node ID.
 
     Field constraints (enforced):
       title: non-empty string (required).
       year: integer publication year. 0 means unknown (triggers warning).
+      corpus_id: Semantic Scholar / Asta corpus id. Indexed, and the dedupe key
+        the Asta adapters match on. Supply it when known: a Paper added without
+        one is invisible to corpus_id dedupe and is recoverable only through the
+        normalized-title fallback.
     """
     result = await graph_tools.execute_tool(
         "add_paper",
         {"title": title, "authors": authors, "doi": doi, "year": year,
-         "session_id": _SESSION_ID},
+         "corpus_id": corpus_id, "session_id": _SESSION_ID},
         _config,
     )
     return json.loads(result)

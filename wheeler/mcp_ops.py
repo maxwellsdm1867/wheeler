@@ -8,6 +8,7 @@ Run: python -m wheeler.mcp_ops
 from __future__ import annotations
 
 import json
+import logging
 
 from fastmcp import FastMCP
 
@@ -21,6 +22,8 @@ from wheeler.mcp_shared import (
     _logged,
     _verify_backend,
 )
+
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
     "wheeler_ops",
@@ -100,11 +103,19 @@ async def _link_dependencies(
     try:
         backend = await graph_tools._get_backend(_config)
 
+        # Reuse the query layer's scoping helpers rather than hand-rolling a
+        # sixth copy of the clause: the audit traced the unscoped-query misses
+        # to that helper existing five times with five signatures.
+        from wheeler.tools.graph_tools.queries import _inject_ptag, _project_where
+
+        ptag = getattr(_config.neo4j, "project_tag", "") or ""
+
         # Find Analysis node by script_path
         analyses = await backend.run_cypher(
-            "MATCH (a:Analysis) WHERE a.script_path CONTAINS $path "
-            "RETURN a.id AS id ORDER BY a.date DESC LIMIT 1",
-            parameters={"path": script_path},
+            "MATCH (a:Analysis) WHERE a.script_path CONTAINS $path"
+            + _project_where("a", ptag, has_existing_where=True)
+            + " RETURN a.id AS id ORDER BY a.date DESC LIMIT 1",
+            _inject_ptag({"path": script_path}, ptag),
         )
         if not analyses:
             return [{"note": f"No Analysis node found for {script_path}"}]
@@ -114,9 +125,10 @@ async def _link_dependencies(
         # Find Dataset nodes matching any of the detected data file paths
         for df in data_files:
             datasets = await backend.run_cypher(
-                "MATCH (d:Dataset) WHERE d.path CONTAINS $path "
-                "RETURN d.id AS id",
-                parameters={"path": df["path"]},
+                "MATCH (d:Dataset) WHERE d.path CONTAINS $path"
+                + _project_where("d", ptag, has_existing_where=True)
+                + " RETURN d.id AS id",
+                _inject_ptag({"path": df["path"]}, ptag),
             )
             for ds in datasets:
                 link_result = await graph_tools.execute_tool(
@@ -130,6 +142,10 @@ async def _link_dependencies(
                 )
                 edges.append(json.loads(link_result))
     except Exception as exc:
+        # This blanket except swallowed a TypeError for the whole life of the
+        # feature (run_cypher takes `params`, not `parameters`), so link_to_graph
+        # never created an edge and nothing ever said so. Log before returning.
+        logger.warning("scan_dependencies graph linking failed", exc_info=True)
         edges.append({"error": f"Graph linking failed: {exc}"})
     return edges
 

@@ -105,3 +105,93 @@ class TestScanDependencies:
         from wheeler.mcp_ops import scan_dependencies
         result = await scan_dependencies(str(script))
         assert "error" in result
+
+
+class TestScanDependenciesLinking:
+    """`scan_dependencies(link_to_graph=True)` never created an edge.
+
+    `run_cypher` takes `params`, not `parameters`, so every call raised
+    TypeError, and the blanket `except Exception` turned it into a returned
+    error dict. The feature was dead for its entire life and nothing said so.
+    """
+
+    def test_no_call_site_uses_the_wrong_kwarg(self):
+        """Mechanical: one kwarg typo cost this feature its whole lifetime."""
+        import pathlib
+        import re
+
+        offenders = []
+        for path in pathlib.Path("wheeler").rglob("*.py"):
+            src = path.read_text(encoding="utf-8")
+            # Attribute CALLS only (`backend.run_cypher(...)`). The definition
+            # in neo4j_backend.py legitimately wraps the neo4j driver's own
+            # `session.run(query, parameters=...)`, which really does take that
+            # keyword; matching `def run_cypher(` too would flag it forever.
+            for match in re.finditer(r"\.run_cypher\s*\(", src):
+                window = src[match.start(): match.start() + 400]
+                if re.search(r"\bparameters\s*=", window):
+                    line = src[: match.start()].count("\n") + 1
+                    offenders.append(f"{path}:{line}")
+        assert offenders == [], (
+            f"run_cypher takes `params`, not `parameters`: {offenders}"
+        )
+
+    async def test_link_dependencies_creates_an_edge(self, monkeypatch):
+        """Behavioral: a backend that rejects unexpected kwargs, as the real one does."""
+        import wheeler.mcp_ops as ops
+
+        linked: list[dict] = []
+
+        class StubBackend:
+            async def run_cypher(self, query, params=None):
+                if "Analysis" in query:
+                    return [{"id": "A-1111"}]
+                return [{"id": "D-2222"}]
+
+        async def fake_get_backend(config):
+            return StubBackend()
+
+        async def fake_execute_tool(tool_name, args, config):
+            linked.append(args)
+            return '{"status": "linked"}'
+
+        monkeypatch.setattr(ops.graph_tools, "_get_backend", fake_get_backend)
+        monkeypatch.setattr(ops.graph_tools, "execute_tool", fake_execute_tool)
+
+        edges = await ops._link_dependencies("s.py", [{"path": "d.csv"}])
+
+        assert not any("error" in e for e in edges), edges
+        assert linked == [{
+            "source_id": "A-1111",
+            "target_id": "D-2222",
+            "relationship": "DEPENDS_ON",
+        }]
+
+    async def test_lookups_are_project_scoped(self, monkeypatch):
+        """Fixing the kwarg turned a dead path into a LIVE unscoped CONTAINS scan.
+
+        On a shared Neo4j that would match another project's Analysis/Dataset
+        nodes and then link across the namespace boundary, so the scoping had
+        to land in the same change as the kwarg fix.
+        """
+        import wheeler.mcp_ops as ops
+
+        seen: list[tuple[str, dict]] = []
+
+        class StubBackend:
+            async def run_cypher(self, query, params=None):
+                seen.append((query, params or {}))
+                return []
+
+        async def fake_get_backend(config):
+            return StubBackend()
+
+        monkeypatch.setattr(ops.graph_tools, "_get_backend", fake_get_backend)
+        monkeypatch.setattr(ops._config.neo4j, "project_tag", "proj-a")
+
+        await ops._link_dependencies("s.py", [{"path": "d.csv"}])
+
+        assert seen, "no query issued"
+        query, params = seen[0]
+        assert "_wheeler_project" in query, f"unscoped query: {query}"
+        assert params.get("ptag") == "proj-a"

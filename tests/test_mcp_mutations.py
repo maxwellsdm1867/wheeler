@@ -123,3 +123,37 @@ class TestDeleteNodeMCP:
         call_args = mock_exec.call_args
         assert call_args[0][0] == "delete_node"
         assert call_args[0][1]["node_id"] == "F-abc12345"
+
+
+class TestIndexedFieldsAreReachable:
+    """An indexed dedupe key the live MCP surface cannot set is a defect.
+
+    `add_paper` declared `corpus_id` in the (dead) TOOL_DEFINITIONS table, the
+    handler honoured it, models.py declared it, graph/schema.py indexed it --
+    and the server signature omitted it, so no MCP caller could ever set the
+    Semantic Scholar dedupe key. Nothing compared the two, so nothing failed.
+    """
+
+    async def test_add_paper_exposes_corpus_id(self):
+        from wheeler.mcp_mutations import mcp
+
+        tools = {t.name: t for t in await mcp.list_tools()}
+        props = tools["add_paper"].parameters["properties"]
+        assert "corpus_id" in props, (
+            "add_paper cannot set corpus_id, the indexed Semantic Scholar "
+            "dedupe key the Asta adapters match on"
+        )
+
+    async def test_add_paper_passes_corpus_id_to_the_handler(self, monkeypatch):
+        """Exposing the parameter is useless if it is dropped on the way down."""
+        import wheeler.mcp_mutations as mm
+
+        captured: dict = {}
+
+        async def fake_execute_tool(tool_name, args, config):
+            captured.update(args)
+            return '{"node_id": "P-abc123", "label": "Paper"}'
+
+        monkeypatch.setattr(mm.graph_tools, "execute_tool", fake_execute_tool)
+        await mm.add_paper(title="A paper", corpus_id="CorpusId:12345")
+        assert captured.get("corpus_id") == "CorpusId:12345"
