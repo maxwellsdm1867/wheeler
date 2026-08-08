@@ -676,3 +676,149 @@ class TestIndexViewsSurviveRepair:
         assert any(
             a.get("status") == "refused_not_a_node_view" for a in result["actions"]
         ), result
+
+
+class TestUnreadableKnowledgeFiles:
+    """A file that exists but cannot be parsed is not the same as drift.
+
+    `store.list_nodes` parses each file and DROPS an unparseable one with only
+    a log line, while `check_consistency` globbed and counted it. The two
+    inventories of one directory disagreed silently: this checkout reported
+    27,213 files by glob and 27,212 by list_nodes, because of a legacy
+    `A-4d9c7c5d.json` carrying type "Analysis", a label retired in favour of
+    Script. The drift detector was wrong by one and nothing said so.
+    """
+
+    def _stub_backend(self, monkeypatch, graph_ids=()):
+        import wheeler.tools.graph_tools as gt
+
+        class StubBackend:
+            async def run_cypher(self, query, params=None):
+                return [{"id": i} for i in graph_ids]
+
+        async def fake_get_backend(config):
+            return StubBackend()
+
+        monkeypatch.setattr(gt, "_get_backend", fake_get_backend)
+
+    def _dirs(self, monkeypatch, tmp_path):
+        import wheeler.consistency as consistency
+
+        knowledge = tmp_path / "knowledge"
+        synthesis = tmp_path / "synthesis"
+        knowledge.mkdir()
+        synthesis.mkdir()
+        monkeypatch.setattr(consistency, "project_knowledge_dir", lambda c: knowledge)
+        monkeypatch.setattr(consistency, "project_synthesis_dir", lambda c: synthesis)
+        return knowledge, synthesis
+
+    async def test_legacy_analysis_node_is_reported_unreadable_not_json_only(
+        self, tmp_path, monkeypatch
+    ):
+        """The exact file that made this checkout's inventories disagree."""
+        from wheeler.consistency import check_consistency
+
+        knowledge, _ = self._dirs(monkeypatch, tmp_path)
+        self._stub_backend(monkeypatch)
+        (knowledge / "A-4d9c7c5d.json").write_text(
+            '{"id": "A-4d9c7c5d", "type": "Analysis", "script_path": "x.py"}',
+            encoding="utf-8",
+        )
+
+        report = await check_consistency(object())
+
+        assert report.unreadable == ["A-4d9c7c5d"]
+        assert report.json_only == [], (
+            "an unparseable file is a migration problem, not ordinary drift"
+        )
+
+    async def test_readable_orphan_is_still_plain_json_only(
+        self, tmp_path, monkeypatch
+    ):
+        from wheeler.consistency import check_consistency
+
+        knowledge, _ = self._dirs(monkeypatch, tmp_path)
+        self._stub_backend(monkeypatch)
+        (knowledge / "F-3a2b1c4d.json").write_text(
+            '{"id": "F-3a2b1c4d", "type": "Finding", "description": "d",'
+            ' "confidence": 0.5}',
+            encoding="utf-8",
+        )
+
+        report = await check_consistency(object())
+
+        assert report.json_only == ["F-3a2b1c4d"]
+        assert report.unreadable == []
+
+    async def test_unreadable_counts_toward_drift(self, tmp_path, monkeypatch):
+        """Otherwise the summary reports 0 divergent while a file is broken."""
+        from wheeler.consistency import check_consistency, summarize_drift
+
+        knowledge, _ = self._dirs(monkeypatch, tmp_path)
+        self._stub_backend(monkeypatch)
+        (knowledge / "A-4d9c7c5d.json").write_text(
+            '{"id": "A-4d9c7c5d", "type": "Analysis"}', encoding="utf-8"
+        )
+
+        summary = summarize_drift(await check_consistency(object()))
+
+        assert summary["unreadable"] == 1
+        assert summary["total_divergent"] >= 1
+        assert "migrate-prov" in summary["unreadable_fix"]
+
+    async def test_repair_never_rewrites_an_unreadable_file(
+        self, tmp_path, monkeypatch
+    ):
+        """Rewriting a file the checker cannot parse needs a human first."""
+        from wheeler.consistency import check_consistency, repair_consistency
+
+        knowledge, _ = self._dirs(monkeypatch, tmp_path)
+        self._stub_backend(monkeypatch)
+        legacy = knowledge / "A-4d9c7c5d.json"
+        original = '{"id": "A-4d9c7c5d", "type": "Analysis", "script_path": "x.py"}'
+        legacy.write_text(original, encoding="utf-8")
+
+        report = await check_consistency(object())
+        result = await repair_consistency(object(), report, dry_run=False)
+
+        assert legacy.read_text(encoding="utf-8") == original, "repair rewrote it"
+        warned = [a for a in result["actions"] if a["action"] == "warn_unreadable"]
+        assert len(warned) == 1
+        assert "migrate-prov" in warned[0]["fix"]
+
+    async def test_whole_store_is_not_parsed_to_find_them(
+        self, tmp_path, monkeypatch
+    ):
+        """Cost must scale with drift, not store size.
+
+        Parsing all of knowledge/ takes ~3.7s at 27k nodes against ~33ms for
+        the glob, so only the json_only candidates may be test-parsed.
+        """
+        from wheeler.consistency import check_consistency
+
+        knowledge, _ = self._dirs(monkeypatch, tmp_path)
+        ids = [f"F-{i:08d}" for i in range(50)]
+        for nid in ids:
+            (knowledge / f"{nid}.json").write_text(
+                f'{{"id": "{nid}", "type": "Finding", "description": "d",'
+                ' "confidence": 0.5}',
+                encoding="utf-8",
+            )
+        # Every file has a graph node, so nothing is a json_only candidate.
+        self._stub_backend(monkeypatch, graph_ids=ids)
+
+        reads: list[str] = []
+        import wheeler.knowledge.store as store
+
+        real_read = store.read_node
+
+        def counting_read(path, node_id):
+            reads.append(node_id)
+            return real_read(path, node_id)
+
+        monkeypatch.setattr(store, "read_node", counting_read)
+
+        report = await check_consistency(object())
+
+        assert report.json_only == []
+        assert reads == [], f"parsed {len(reads)} files with no drift to inspect"

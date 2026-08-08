@@ -55,6 +55,10 @@ class ConsistencyReport:
     json_only: list[str] = field(default_factory=list)         # in JSON, not in graph
     synthesis_missing: list[str] = field(default_factory=list)  # in JSON, no synthesis
     synthesis_orphaned: list[str] = field(default_factory=list)  # synthesis exists, no JSON
+    # Present on disk but not parseable as a knowledge node. A DIFFERENT problem
+    # from json_only, and separated because the remedy differs: json_only is
+    # expected drift, unreadable needs a migration or a repair.
+    unreadable: list[str] = field(default_factory=list)
     total_graph: int = 0
     total_json: int = 0
     total_synthesis: int = 0
@@ -92,11 +96,46 @@ async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
     else:
         synth_ids = set()
 
+    # Split "in JSON, not in graph" into genuine drift versus files that do not
+    # parse at all.
+    #
+    # These two inventories disagreed silently: `store.list_nodes` parses each
+    # file and DROPS an unparseable one with only a log line, while the glob
+    # above counts it. A legacy `A-4d9c7c5d.json` (type "Analysis", a label
+    # retired in favour of Script) made this checkout report 27,213 files by
+    # glob and 27,212 by list_nodes. The drift detector was wrong by one and
+    # nothing said so.
+    #
+    # Only the json_only candidates are test-parsed, never the whole store.
+    # Cost is proportional to drift rather than to store size, which matters:
+    # parsing all of knowledge/ takes ~3.7s at 27k nodes against ~33ms for the
+    # glob. The tradeoff is that an unparseable file which DOES have a graph
+    # node is not detected here; that needs the content-hash sidecar planned in
+    # Tier 1 of docs/boundary-audit.md.
+    json_only_candidates = sorted(json_ids - graph_ids)
+    json_only: list[str] = []
+    unreadable: list[str] = []
+    if json_only_candidates:
+        from wheeler.knowledge.store import read_node
+
+        for node_id in json_only_candidates:
+            try:
+                read_node(knowledge_dir, node_id)
+                json_only.append(node_id)
+            except Exception as exc:
+                logger.warning(
+                    "Unreadable knowledge file %s: %s. Run "
+                    "`wheeler graph migrate-prov` if it is a legacy node.",
+                    node_id, exc,
+                )
+                unreadable.append(node_id)
+
     return ConsistencyReport(
         graph_only=sorted(graph_ids - json_ids),
-        json_only=sorted(json_ids - graph_ids),
+        json_only=json_only,
         synthesis_missing=sorted(json_ids - synth_ids),
         synthesis_orphaned=sorted(synth_ids - json_ids),
+        unreadable=unreadable,
         total_graph=len(graph_ids),
         total_json=len(json_ids),
         total_synthesis=len(synth_ids),
@@ -120,11 +159,16 @@ def summarize_drift(
             counts[prefix] = counts.get(prefix, 0) + 1
         return counts
 
+    # `unreadable` counts toward divergence. Excluding it would let the summary
+    # report "0 divergent" while a knowledge file cannot be parsed at all,
+    # which is the same silent blindness that let the two inventories disagree
+    # by one for months.
     total_divergent = (
         len(report.graph_only)
         + len(report.json_only)
         + len(report.synthesis_missing)
         + len(report.synthesis_orphaned)
+        + len(report.unreadable)
     )
     summary: dict = {
         "total_divergent": total_divergent,
@@ -132,9 +176,15 @@ def summarize_drift(
         "json_only": len(report.json_only),
         "synthesis_missing": len(report.synthesis_missing),
         "synthesis_orphaned": len(report.synthesis_orphaned),
+        "unreadable": len(report.unreadable),
         "threshold": threshold,
         "exceeds_threshold": total_divergent > threshold,
     }
+    if report.unreadable:
+        summary["unreadable_ids"] = sorted(report.unreadable)
+        summary["unreadable_fix"] = (
+            "run `wheeler graph migrate-prov` if these are legacy nodes"
+        )
     if report.json_only:
         summary["json_only_by_prefix"] = _by_prefix(report.json_only)
     if report.graph_only:
@@ -154,6 +204,7 @@ async def repair_consistency(
     - synthesis_orphaned: delete orphaned synthesis files
     - graph_only: warn only (regenerating JSON from graph is complex)
     - json_only: warn only (may be pre-migration or graph delete failed)
+    - unreadable: warn only, with the remedy (a migration, not a repair)
     """
     actions: list[dict] = []
 
@@ -209,5 +260,14 @@ async def repair_consistency(
         actions.append({"node_id": node_id, "action": "warn_graph_only"})
     for node_id in report.json_only:
         actions.append({"node_id": node_id, "action": "warn_json_only"})
+    # unreadable: warn with the remedy, which is a migration rather than a
+    # repair. Never auto-migrate here: rewriting a file the checker cannot
+    # parse is the wrong thing to do without the scientist looking at it.
+    for node_id in report.unreadable:
+        actions.append({
+            "node_id": node_id,
+            "action": "warn_unreadable",
+            "fix": "run `wheeler graph migrate-prov` if this is a legacy node",
+        })
 
     return {"dry_run": dry_run, "actions": actions, "total": len(actions)}
