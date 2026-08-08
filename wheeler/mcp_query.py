@@ -1,6 +1,6 @@
 """Wheeler Query MCP Server: read-only graph queries by node type.
 
-8 tools for querying findings, hypotheses, questions, datasets, papers,
+11 tools for querying findings, hypotheses, questions, datasets, papers,
 documents, notes, and analyses.
 Run: python -m wheeler.mcp_query
 """
@@ -20,7 +20,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_query",
-    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_plans, query_notes, query_scripts, query_executions, graph_gaps. Returns lists of one node type. query_review_queue is the exception: it lists nodes of ANY type left awaiting human review by a batch ingest. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
+    instructions="Typed read-only listings with keyword filters: query_findings, query_hypotheses, query_open_questions, query_datasets, query_papers, query_documents, query_plans, query_notes, query_scripts, query_executions. Returns lists of one node type. query_review_queue is the exception: it lists nodes of ANY type left awaiting human review by a batch ingest. For meaning-based search across all types, use wheeler_core.search_findings or search_context.",
 )
 
 

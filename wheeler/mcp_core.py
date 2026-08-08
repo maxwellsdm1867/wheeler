@@ -517,6 +517,7 @@ async def get_act(name: str, host: str = "") -> dict:
 
 
 @mcp.tool()
+@_logged
 async def request_log_summary() -> dict:
     """Return summary stats of recent Wheeler MCP tool calls (latency, error rate, call counts)."""
     return _request_logger.summary()

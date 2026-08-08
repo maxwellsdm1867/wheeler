@@ -799,7 +799,7 @@ The MCP surface is four role-scoped servers, all wrapping the same underlying im
 | `wheeler_mutations` | `wheeler/mcp_mutations.py` | 18 | Writes: add_*, link, unlink, delete, merge, set_tier, update_node |
 | `wheeler_ops` | `wheeler/mcp_ops.py` | 10 | Ops: staleness, citations, consistency, communities, contracts |
 
-Shared request logging, trace ID generation, and backend access live in `wheeler/mcp_shared.py` so all five servers emit a uniform log stream to `.wheeler/request_log.jsonl`.
+Shared request logging, trace ID generation, and backend access live in `wheeler/mcp_shared.py` so all four servers emit a uniform log stream to `.wheeler/request_log.jsonl`.
 
 ### wheeler_core (14)
 `graph_health`, `graph_status`, `graph_context`, `graph_gaps`, `show_node`,

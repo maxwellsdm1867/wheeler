@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from wheeler.config import DataSourcesConfig, WorkspaceConfig, WheelerConfig, load_config
-from wheeler.tools.graph_tools import TOOL_DEFINITIONS
+from tests.live_schema import live_tools
 
 
 class TestDataSourcesConfig:
@@ -93,30 +93,26 @@ class TestWorkspaceConfigIntegration:
 
 
 class TestDatasetTools:
-    def test_add_dataset_exists(self):
-        names = {t["name"] for t in TOOL_DEFINITIONS}
-        assert "add_dataset" in names
+    """Against the live FastMCP schemas, not the deleted TOOL_DEFINITIONS table."""
 
-    def test_query_datasets_exists(self):
-        names = {t["name"] for t in TOOL_DEFINITIONS}
-        assert "query_datasets" in names
+    async def test_add_dataset_exists(self):
+        assert "add_dataset" in await live_tools()
 
-    def test_add_dataset_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "add_dataset")
-        assert "path" in tool["parameters"]
-        assert "type" in tool["parameters"]
-        assert "description" in tool["parameters"]
-        assert tool["required"] == ["path", "type", "description"]
+    async def test_query_datasets_exists(self):
+        assert "query_datasets" in await live_tools()
 
-    def test_query_datasets_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "query_datasets")
-        assert "keyword" in tool["parameters"]
-        assert "limit" in tool["parameters"]
-        assert tool["required"] == []
+    async def test_add_dataset_parameters(self):
+        params = (await live_tools())["add_dataset"].parameters
+        assert {"path", "type", "description"} <= set(params["properties"])
+        assert set(params.get("required", [])) == {"path", "type", "description"}
 
-    def test_all_tools_have_required_fields(self):
-        for tool in TOOL_DEFINITIONS:
-            assert "name" in tool
-            assert "description" in tool
-            assert "parameters" in tool
-            assert "required" in tool
+    async def test_query_datasets_parameters(self):
+        params = (await live_tools())["query_datasets"].parameters
+        assert {"keyword", "limit"} <= set(params["properties"])
+        assert params.get("required", []) == []
+
+    async def test_every_tool_has_name_description_and_parameters(self):
+        for name, tool in (await live_tools()).items():
+            assert tool.name == name
+            assert tool.description
+            assert "properties" in tool.parameters

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.14.0`. 3129 tests (3064 outside `tests/e2e/`, 65 in it), 53 MCP tools across the four split servers. The legacy monolith has been removed.
+Version is `0.14.0`. 3129+ tests (see the suite for the current count), 53 MCP tools across the four split servers. The legacy monolith has been removed.
 
 Wheeler now runs on **two agent hosts**, Claude Code and OpenAI Codex, and ships as a **plugin** named `wh` rather than by copying files into `~/.claude/`. The act bodies are served over MCP (`get_act`) so they exist in exactly one place; each host gets generated `SKILL.md` stubs. See "Multi-host distribution" below.
 
@@ -136,7 +136,7 @@ See `ARCHITECTURE.md` for the full per-module dependency map.
 The underlying implementation in `wheeler/tools/graph_tools/` is exposed through four split FastMCP servers, one per role:
 
 - `mcp_core.py` — health, status, context, search, schema, raw cypher
-- `mcp_query.py` — read-only typed listings (`query_*`, `graph_gaps`)
+- `mcp_query.py` — read-only typed listings (`query_*`)
 - `mcp_mutations.py` — writes (`add_*`, `link_nodes`, `update_node`, `set_tier`, etc.)
 - `mcp_ops.py` — validators, scanners, consistency (`validate_citations`, etc.)
 
@@ -145,7 +145,7 @@ All share `mcp_shared.py` for trace ID generation, the `@_logged` decorator, con
 **When you add a new MCP tool, register it in the split server that matches its role.** Do not add it to any other server. The role map is: read-only listings → `mcp_query`; writes that change graph nodes → `mcp_mutations`; validators / scanners / consistency operations → `mcp_ops`; everything else (search, raw cypher, schema, health) → `mcp_core`.
 
 The legacy `wheeler/mcp_server.py` monolith **has been deleted** (v0.14.0+). Its 50 tools were all
-already covered by the four split servers, which carry 51. `tests/test_mcp_surface.py` now guards the
+already covered by the four split servers, which carry 53. `tests/test_mcp_surface.py` now guards the
 surface directly: per-server tool counts, no duplicate names across servers, every tool described,
 and a `test_monolith_is_gone` check so it cannot be reintroduced. Each server also has its own test
 file (`tests/test_mcp_{core,query,mutations,ops,shared}.py`).

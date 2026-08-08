@@ -1,6 +1,6 @@
 """Wheeler Mutations MCP Server: all graph write operations.
 
-12 tools for creating, modifying, and deleting graph nodes and relationships.
+18 tools for creating, modifying, and deleting graph nodes and relationships.
 Run: python -m wheeler.mcp_mutations
 """
 

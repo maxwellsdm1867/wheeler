@@ -1,6 +1,6 @@
 """Wheeler Ops MCP Server: provenance, dependency scanning, workspace, citations.
 
-6 tools for operational tasks: staleness detection, dependency scanning,
+10 tools for operational tasks: staleness detection, dependency scanning,
 file hashing, workspace scanning, and citation extraction/validation.
 Run: python -m wheeler.mcp_ops
 """

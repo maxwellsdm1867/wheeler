@@ -507,31 +507,24 @@ class TestUpdateNodeSynthesis:
         assert "revised hypothesis statement" in md_content
 
 
-class TestUpdateNodeToolDefinition:
-    """Verify that update_node appears in TOOL_DEFINITIONS."""
+class TestUpdateNodeLiveSchema:
+    """Against the live FastMCP schema, not the deleted TOOL_DEFINITIONS table."""
 
-    def test_update_node_in_definitions(self):
-        from wheeler.tools.graph_tools import TOOL_DEFINITIONS
+    async def test_update_node_is_registered(self):
+        from tests.live_schema import live_tools
 
-        names = {t["name"] for t in TOOL_DEFINITIONS}
-        assert "update_node" in names
+        assert "update_node" in await live_tools()
 
-    def test_update_node_definition_shape(self):
-        from wheeler.tools.graph_tools import TOOL_DEFINITIONS
+    async def test_update_node_schema_shape(self):
+        from tests.live_schema import live_tools
 
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "update_node")
-        assert tool["required"] == ["node_id"]
-        assert "node_id" in tool["parameters"]
-        assert "description" in tool["parameters"]
-        assert "confidence" in tool["parameters"]
-        assert "statement" in tool["parameters"]
-        assert "title" in tool["parameters"]
-        assert "content" in tool["parameters"]
-        assert "question" in tool["parameters"]
-        assert "priority" in tool["parameters"]
-        assert "status" in tool["parameters"]
-        assert "tier" in tool["parameters"]
-        assert "path" in tool["parameters"]
+        params = (await live_tools())["update_node"].parameters
+        assert set(params.get("required", [])) == {"node_id"}
+        assert {
+            "node_id", "description", "confidence", "statement", "title",
+            "content", "question", "priority", "status",
+            "tier", "path",
+        } <= set(params["properties"])
 
 
 class TestUpdateNodeRegistry:

@@ -110,6 +110,10 @@ def _logged(func):
             ))
             raise
 
+    # Marker so a test can assert every registered tool is wrapped. A tool that
+    # silently skips logging is invisible to request_log_summary and to trace
+    # correlation, and `request_log_summary` itself was exactly that for a while.
+    wrapper._wheeler_logged = True  # type: ignore[attr-defined]
     return wrapper
 
 

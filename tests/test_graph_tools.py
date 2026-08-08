@@ -4,102 +4,72 @@ import json
 
 import pytest
 
-from wheeler.tools.graph_tools import TOOL_DEFINITIONS
 from wheeler.graph.schema import generate_node_id as _generate_id
+from tests.live_schema import live_tools
 
 
-class TestToolDefinitions:
-    def test_all_tools_have_required_fields(self):
-        for tool in TOOL_DEFINITIONS:
-            assert "name" in tool, f"Tool missing name: {tool}"
-            assert "description" in tool, f"Tool {tool['name']} missing description"
-            assert "parameters" in tool, f"Tool {tool['name']} missing parameters"
-            assert "required" in tool, f"Tool {tool['name']} missing required"
+class TestLiveToolSchemas:
+    """Assert against the DEPLOYED schemas, not a parallel table.
 
-    def test_expected_tools_exist(self):
-        names = {t["name"] for t in TOOL_DEFINITIONS}
+    These assertions used to run against TOOL_DEFINITIONS, a 395-line schema
+    list in graph_tools/__init__.py that nothing registered from. Unread, it
+    drifted: 29/29 descriptions and 11/29 parameter sets disagreed with the
+    live surface, and `add_script`'s parameter NAMES disagreed. A green suite
+    the whole time, because the tests and the dead table agreed with each
+    other. Now they check the schemas FastMCP actually serves.
+    """
+
+    async def test_every_tool_has_a_nonempty_description(self):
+        for name, tool in (await live_tools()).items():
+            assert tool.description and len(tool.description) > 10, (
+                f"{name} has a too-short description"
+            )
+
+    async def test_expected_tools_exist(self):
+        names = set(await live_tools())
         expected = {
-            "add_finding",
-            "add_hypothesis",
-            "add_question",
-            "add_note",
-            "add_script",
-            "add_execution",
-            "add_plan",
-            "ensure_artifact",
-            "link_nodes",
-            "unlink_nodes",
-            "delete_node",
-            "update_node",
-            "query_findings",
-            "query_open_questions",
-            "query_hypotheses",
-            "query_notes",
-            "query_scripts",
-            "query_executions",
-            "query_review_queue",
-            "graph_gaps",
-            "add_dataset",
-            "query_datasets",
-            "add_paper",
-            "query_papers",
-            "add_document",
-            "query_documents",
-            "set_tier",
-            "search_findings",
-            "index_node",
-            "query_plans",
+            "add_finding", "add_hypothesis", "add_question", "add_note",
+            "add_script", "add_execution", "add_plan", "ensure_artifact",
+            "link_nodes", "index_node", "query_plans",
         }
-        assert expected == names
+        missing = expected - names
+        assert not missing, f"expected tools absent from the live surface: {missing}"
 
-    def test_add_finding_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "add_finding")
-        assert "description" in tool["parameters"]
-        assert "confidence" in tool["parameters"]
-        assert tool["required"] == ["description", "confidence"]
+    async def test_add_finding_parameters(self):
+        params = (await live_tools())["add_finding"].parameters
+        assert "description" in params["properties"]
+        assert "confidence" in params["properties"]
+        assert set(params.get("required", [])) == {"description", "confidence"}
 
-    def test_link_nodes_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "link_nodes")
-        assert "source_id" in tool["parameters"]
-        assert "target_id" in tool["parameters"]
-        assert "relationship" in tool["parameters"]
+    async def test_link_nodes_parameters(self):
+        props = (await live_tools())["link_nodes"].parameters["properties"]
+        assert {"source_id", "target_id", "relationship"} <= set(props)
 
-    def test_query_tools_have_limit(self):
-        query_tools = [
-            t for t in TOOL_DEFINITIONS
-            if t["name"].startswith("query_")
-        ]
-        for tool in query_tools:
-            assert "limit" in tool["parameters"], (
-                f"{tool['name']} missing limit parameter"
-            )
+    async def test_query_tools_have_limit(self):
+        for name, tool in (await live_tools()).items():
+            if name.startswith("query_"):
+                assert "limit" in tool.parameters["properties"], (
+                    f"{name} has no limit parameter"
+                )
 
-    def test_graph_gaps_no_required(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "graph_gaps")
-        assert tool["required"] == []
+    async def test_graph_gaps_requires_nothing(self):
+        params = (await live_tools())["graph_gaps"].parameters
+        assert params.get("required", []) == []
 
-    def test_add_paper_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "add_paper")
-        assert "title" in tool["parameters"]
-        assert tool["required"] == ["title"]
+    async def test_add_paper_parameters(self):
+        params = (await live_tools())["add_paper"].parameters
+        assert "title" in params["properties"]
+        assert set(params.get("required", [])) == {"title"}
 
-    def test_add_document_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "add_document")
-        assert "title" in tool["parameters"]
-        assert "path" in tool["parameters"]
-        assert tool["required"] == ["title", "path"]
+    async def test_add_document_parameters(self):
+        params = (await live_tools())["add_document"].parameters
+        assert {"title", "path"} <= set(params["properties"])
+        assert set(params.get("required", [])) == {"title", "path"}
 
-    def test_set_tier_parameters(self):
-        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "set_tier")
-        assert "node_id" in tool["parameters"]
-        assert "tier" in tool["parameters"]
-        assert tool["required"] == ["node_id", "tier"]
-
-    def test_descriptions_are_nonempty(self):
-        for tool in TOOL_DEFINITIONS:
-            assert len(tool["description"]) > 10, (
-                f"Tool {tool['name']} has too-short description"
-            )
+    async def test_set_tier_parameters(self):
+        params = (await live_tools())["set_tier"].parameters
+        assert {"node_id", "tier"} <= set(params["properties"])
+        assert set(params.get("required", [])) == {"node_id", "tier"}
 
 
 class TestGenerateId:
@@ -605,9 +575,15 @@ class TestToolImports:
         from wheeler.tools.graph_tools import execute_tool
         assert callable(execute_tool)
 
-    def test_tool_definitions_accessible(self):
-        from wheeler.tools.graph_tools import TOOL_DEFINITIONS
-        assert len(TOOL_DEFINITIONS) == 30
+    def test_the_dead_schema_table_is_gone(self):
+        """A second schema source with no consumer drifted to 29/29 wrong.
+
+        The count pin that used to live here (len == 30) is exactly why: it
+        asserted the table's SIZE while every description inside it was stale.
+        """
+        from wheeler.tools import graph_tools
+
+        assert not hasattr(graph_tools, "TOOL_DEFINITIONS")
 
 
 class TestAddDatasetMetadata:
