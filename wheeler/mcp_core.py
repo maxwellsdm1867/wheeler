@@ -7,10 +7,12 @@ Run: python -m wheeler.mcp_core
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastmcp import FastMCP
 
 from wheeler import acts as acts_corpus
+from wheeler import config as wheeler_config
 from wheeler.config import project_knowledge_dir
 from wheeler.graph import context, schema
 from wheeler.graph.cypher_guard import WRITE_KEYWORDS, is_read_only_cypher
@@ -30,7 +32,114 @@ mcp = FastMCP(
 )
 
 
-def _diagnose_health_error(error_msg: str) -> dict:
+_PASSWORD_PRECEDENCE = (
+    "Wheeler resolves the Neo4j password in precedence order: NEO4J_PASSWORD, then the "
+    "OS keychain (wheeler login), then neo4j.password in wheeler.yaml, then the built-in "
+    "default 'research-graph'."
+)
+
+
+def _neo4j_field_sources(config_path: Path | None) -> dict[str, dict[str, str]]:
+    """Which layer supplied each Neo4j connection field.
+
+    Reports the layer and its origin, never the values: a health report gets
+    pasted into bug reports.
+    """
+    try:
+        rows = wheeler_config.neo4j_sources(config_path)
+    except Exception:
+        return {}
+    return {row.field: {"source": row.source, "origin": row.origin} for row in rows}
+
+
+def _config_evidence(with_sources: bool = False) -> dict:
+    """Report which config file is in effect, resolved the way load_config resolves it.
+
+    Without this, an auth failure can only guess at which layer supplied the
+    credential the database rejected.
+    """
+    config_path = wheeler_config.find_config_file()
+    evidence: dict = {
+        "config_file": str(config_path) if config_path else None,
+        "config_source": (
+            f"wheeler.yaml at {config_path}"
+            if config_path
+            else (
+                "no wheeler.yaml found: settings come from NEO4J_* env vars, "
+                "the OS keychain, or built-in defaults"
+            )
+        ),
+    }
+    if with_sources:
+        evidence["neo4j_sources"] = _neo4j_field_sources(config_path)
+    return evidence
+
+
+def _diagnose_auth_failure(evidence: dict) -> dict:
+    """Diagnose a rejected credential, naming the layer that actually supplied it."""
+    config_file = evidence.get("config_file")
+    sources = evidence.get("neo4j_sources") or _neo4j_field_sources(
+        Path(config_file) if config_file else None
+    )
+    password = sources.get("password", {})
+    layer = password.get("source", "")
+    origin = password.get("origin", "")
+
+    if layer == "env":
+        supplied = f"the {origin} environment variable"
+        action = (
+            f"Check the password exported in {origin}, or unset it so the keychain "
+            "and wheeler.yaml take effect."
+        )
+    elif layer == "keychain":
+        supplied = f"the OS keychain ({origin})"
+        action = (
+            f"Re-store the credential for {origin} with `wheeler login`, or set "
+            "neo4j.profile to the slot this project should connect through."
+        )
+    elif layer == "yaml":
+        supplied = f"neo4j.password in {origin}"
+        action = (
+            f"Check the neo4j.password field in {origin} against the password the "
+            "Neo4j database was created with."
+        )
+    elif layer == "default":
+        supplied = "Wheeler's built-in default"
+        if config_file:
+            action = (
+                f"{config_file} does not set neo4j.password, so the built-in default "
+                "was used. Set it there, run `wheeler login`, or export NEO4J_PASSWORD."
+            )
+        else:
+            action = (
+                "Supply the real password: run `wheeler login`, export NEO4J_PASSWORD, "
+                "or start from the project root whose wheeler.yaml sets neo4j.password."
+            )
+    else:
+        supplied = "a layer that could not be determined (source reporting failed)"
+        action = (
+            "Check NEO4J_PASSWORD, then the credential stored by `wheeler login`, "
+            "then neo4j.password in wheeler.yaml."
+        )
+
+    if config_file:
+        where = f"Resolved config file: {config_file}."
+    else:
+        where = "No config file was found, so wheeler.yaml supplied nothing on this run."
+
+    cause = f"The Neo4j server answered and rejected the credential. The password came from {supplied}."
+    if layer != "yaml":
+        cause = f"{cause} {where}"
+
+    return {
+        "diagnosis": "Neo4j authentication failed",
+        "cause": cause,
+        "remediation": f"{action} {_PASSWORD_PRECEDENCE}",
+        "fix": [action, _PASSWORD_PRECEDENCE],
+    }
+
+
+def _diagnose_health_error(error_msg: str, evidence: dict | None = None) -> dict:
     """Return structured diagnosis for common Neo4j connection errors.
 
     Always includes 'remediation' as a string (backward-compatible).
@@ -38,21 +147,9 @@ def _diagnose_health_error(error_msg: str) -> dict:
     """
     msg = error_msg.lower()
     if "unauthorized" in msg or "authentication" in msg:
-        return {
-            "diagnosis": "Neo4j authentication failed",
-            "cause": "The password in wheeler.yaml does not match the Neo4j database password.",
-            "remediation": (
-                "Open wheeler.yaml and check the neo4j.password field matches "
-                "what you set in Neo4j Desktop. Wheeler's default password is "
-                "'research-graph'. If you forgot the password, delete the DBMS "
-                "in Neo4j Desktop and create a new one."
-            ),
-            "fix": [
-                "Open wheeler.yaml and check the neo4j.password field matches what you set in Neo4j Desktop.",
-                "Wheeler's default password is 'research-graph'.",
-                "If you forgot the password: delete the DBMS in Neo4j Desktop and create a new one.",
-            ],
-        }
+        return _diagnose_auth_failure(
+            evidence if evidence is not None else _config_evidence(with_sources=True)
+        )
     if "refused" in msg or "unavailable" in msg or "connection" in msg or "failed to establish" in msg:
         return {
             "diagnosis": "Cannot connect to Neo4j",
@@ -96,13 +193,16 @@ async def graph_health() -> dict:
         "node_count": 0,
         "error": None,
     }
+    result.update(_config_evidence())
     try:
         counts = await schema.get_status(_config)
         if counts.get("_status") == "offline":
             result["status"] = "offline"
             result["error"] = counts.get("_error", "Unknown error")
             result["blocking"] = True
-            result.update(_diagnose_health_error(str(counts.get("_error", ""))))
+            evidence = _config_evidence(with_sources=True)
+            result.update(evidence)
+            result.update(_diagnose_health_error(str(counts.get("_error", "")), evidence))
         else:
             node_counts: dict[str, int] = {
                 k: v for k, v in counts.items() if not k.startswith("_")
@@ -115,7 +215,9 @@ async def graph_health() -> dict:
         result["status"] = "offline"
         result["error"] = str(exc)
         result["blocking"] = True
-        result.update(_diagnose_health_error(str(exc)))
+        evidence = _config_evidence(with_sources=True)
+        result.update(evidence)
+        result.update(_diagnose_health_error(str(exc), evidence))
 
     # Check knowledge/ directory
     knowledge_path = project_knowledge_dir(_config)
