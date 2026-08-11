@@ -209,8 +209,7 @@ class TestIssue58:
         so the graph node, knowledge/{id}.json, and synthesis/{id}.md all carry
         the same non-empty timestamp.
         """
-        from pathlib import Path
-
+        from wheeler.config import project_knowledge_dir
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.graph.driver import get_async_driver
 
@@ -241,7 +240,7 @@ class TestIssue58:
         )
 
         # Layer 2: knowledge/{id}.json
-        json_path = Path(e2e_config.knowledge_path) / f"{exec_id}.json"
+        json_path = project_knowledge_dir(e2e_config) / f"{exec_id}.json"
         assert json_path.exists(), f"knowledge JSON missing for {exec_id}"
         json_started_at = json.loads(json_path.read_text()).get("started_at")
         assert json_started_at not in ("", None), (
