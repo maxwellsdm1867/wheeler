@@ -75,8 +75,9 @@ async def test_dataset_node_has_date_not_date_added():
         "so nodes without both 'date' and 'updated' are invisible to the sweep."
     )
 
-    assert props.get("updated") is None or props.get("updated") is not None, (
-        "If 'updated' is set, that is also acceptable for the close filter"
+    assert props.get("updated") is not None, (
+        f"Dataset {node_id} is missing 'updated'. The issue asks for 'updated' on "
+        "create as well as on hash change, matching add_document and add_plan."
     )
 
     assert props.get("date_added") is None, (
@@ -165,3 +166,160 @@ async def test_dataset_aligns_with_other_artifact_types():
             "Dataset should not use both 'date_added' and 'date'. "
             "Transition to 'date' (and optionally 'updated') to match other types."
         )
+
+
+# ---------------------------------------------------------------------------
+# Live-backend coverage of the ACTUAL entry point.
+#
+# Everything above drives add_dataset directly against a FakeBackend. The issue
+# is reported against ensure_artifact, which is find-or-create and routes a
+# changed hash through update_node, so the tests above cannot see either the
+# real dispatch path or the "updated on hash change" half of the expectation.
+# Without the two tests below, that half of the acceptance criteria has no
+# durable guard at all and would regress silently.
+#
+# These take the regression suite's local-Neo4j fixtures: e2e_config points at a
+# probed local instance, skip_without_neo4j skips cleanly when there is none,
+# reset_driver_singleton clears the cached backend and its circuit breaker, and
+# cleanup_test_nodes deletes exactly the nodes carrying this run's e2e_tag.
+# ---------------------------------------------------------------------------
+
+CLOSE_PHASE_1_2_QUERY = """
+MATCH (n)
+WHERE coalesce(n.updated, n.date) IS NOT NULL
+  AND datetime(coalesce(n.updated, n.date)) >= datetime($since)
+  AND NOT n:Execution AND NOT n:Paper
+RETURN n.id AS id
+"""
+
+
+async def _tag_for_cleanup(driver, db, node_id):
+    """Mark one node with this run's tag so the autouse teardown finds just it."""
+    from tests.e2e.conftest import E2E_TAG
+
+    async with driver.session(database=db) as session:
+        await session.run(
+            "MATCH (n {id: $id}) SET n.e2e_tag = $tag", id=node_id, tag=E2E_TAG
+        )
+
+
+@pytest.mark.asyncio
+async def test_ensure_artifact_dataset_is_visible_to_close_sweep(e2e_config, tmp_path):
+    """A Dataset registered via ensure_artifact is returned by the close sweep.
+
+    This is the issue's own acceptance test: not "the node has a date property"
+    but "the Phase 1.2 window query actually returns it".
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from wheeler.graph.driver import get_async_driver
+    from wheeler.tools.graph_tools import execute_tool
+
+    driver = get_async_driver(e2e_config)
+    db = e2e_config.neo4j.database
+
+    dataset = tmp_path / "issue_109_sweep.csv"
+    dataset.write_text("a,b\n1,2\n")
+
+    created = json.loads(
+        await execute_tool(
+            "ensure_artifact",
+            {"path": str(dataset), "artifact_type": "dataset"},
+            e2e_config,
+        )
+    )
+    node_id = created.get("node_id")
+    assert node_id, f"ensure_artifact did not create a node: {created}"
+    await _tag_for_cleanup(driver, db, node_id)
+
+    async with driver.session(database=db) as session:
+        record = await (
+            await session.run(
+                "MATCH (d:Dataset {id: $id}) RETURN d.date AS date, d.updated AS updated",
+                id=node_id,
+            )
+        ).single()
+    assert record is not None, f"Dataset {node_id} not found in the graph"
+    assert record["date"] not in ("", None), (
+        f"Dataset {node_id} has no 'date', so coalesce(updated, date) is null "
+        "and /wh:close cannot see it."
+    )
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    async with driver.session(database=db) as session:
+        rows = [r["id"] async for r in await session.run(CLOSE_PHASE_1_2_QUERY, since=since)]
+
+    assert node_id in rows, (
+        f"Dataset {node_id} is NOT returned by the /wh:close Phase 1.2 window "
+        "query, which is the exact failure reported in issue 109: the sweep "
+        "reports zero remaining orphans while unlinked datasets exist."
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_artifact_refreshes_updated_on_hash_change(e2e_config, tmp_path):
+    """Re-registering a changed file moves 'updated' forward and keeps 'date'.
+
+    The issue asks for 'updated' on create AND on hash change. A dataset whose
+    content changed must re-enter the sweep window, otherwise a re-registered
+    file stays invisible even though it changed.
+    """
+    from wheeler.graph.driver import get_async_driver
+    from wheeler.tools.graph_tools import execute_tool
+
+    driver = get_async_driver(e2e_config)
+    db = e2e_config.neo4j.database
+
+    dataset = tmp_path / "issue_109_hash_change.csv"
+    dataset.write_text("a,b\n1,2\n")
+
+    first = json.loads(
+        await execute_tool(
+            "ensure_artifact",
+            {"path": str(dataset), "artifact_type": "dataset"},
+            e2e_config,
+        )
+    )
+    node_id = first["node_id"]
+    await _tag_for_cleanup(driver, db, node_id)
+
+    async def _stamps():
+        async with driver.session(database=db) as session:
+            record = await (
+                await session.run(
+                    "MATCH (d:Dataset {id: $id}) "
+                    "RETURN d.date AS date, d.updated AS updated, d.hash AS hash",
+                    id=node_id,
+                )
+            ).single()
+        return dict(record) if record else {}
+
+    before = await _stamps()
+    assert before.get("updated") not in ("", None), "no 'updated' stamped on create"
+
+    dataset.write_text("a,b\n1,2\n3,4\n5,6\n")
+    second = json.loads(
+        await execute_tool(
+            "ensure_artifact",
+            {"path": str(dataset), "artifact_type": "dataset"},
+            e2e_config,
+        )
+    )
+    assert second["node_id"] == node_id, (
+        "ensure_artifact created a SECOND node for the same path instead of "
+        f"updating {node_id}: {second}"
+    )
+
+    after = await _stamps()
+    assert after["hash"] != before["hash"], (
+        "the file hash did not change, so this test proved nothing"
+    )
+    assert after["updated"] > before["updated"], (
+        f"'updated' did not move forward on hash change: "
+        f"{before['updated']} -> {after['updated']}. A changed dataset stays "
+        "outside the /wh:close sweep window."
+    )
+    assert after["date"] == before["date"], (
+        "'date' is the creation stamp and must not move on update: "
+        f"{before['date']} -> {after['date']}"
+    )
