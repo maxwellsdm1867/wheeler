@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from wheeler.config import load_config
+from wheeler.config import load_config, project_knowledge_dir, project_synthesis_dir
 from wheeler.graph.backend import get_backend
 from wheeler.graph.schema import generate_node_id
 from wheeler.tools.graph_tools import execute_tool, mutations
@@ -274,8 +274,8 @@ class TestClearPropagatesThroughTripleWrite:
         node_id = created.get("node_id")
         assert node_id, f"add_document did not create a node: {created}"
 
-        knowledge_file = Path(config.knowledge_path) / f"{node_id}.json"
-        synthesis_file = Path(config.synthesis_path) / f"{node_id}.md"
+        knowledge_file = project_knowledge_dir(config) / f"{node_id}.json"
+        synthesis_file = project_synthesis_dir(config) / f"{node_id}.md"
 
         try:
             # All three layers carry the path before the clear.
