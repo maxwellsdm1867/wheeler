@@ -67,13 +67,27 @@ SANDBOX_DIR = (Path(tempfile.gettempdir()) / f"wheeler-{E2E_TAG}").resolve()
 
 @pytest.fixture(scope="session")
 def e2e_config() -> WheelerConfig:
-    """WheelerConfig pointing to local Neo4j for e2e tests."""
+    """WheelerConfig pointing at THIS PROJECT'S graph for e2e tests.
+
+    Resolved from the project's own config rather than hardcoded to localhost, so
+    the e2e suite exercises the deployment the project actually uses. For this
+    repo that is the cloud instance behind the `aura-wheeler` keychain slot: a
+    sandbox holding no research data, where an e2e run also covers TLS, WAN
+    latency and the transient-retry path a local instance never triggers.
+
+    Tests in this directory must therefore stay additive and self-cleaning. The
+    target is shared, so deleting by label or with a bare `MATCH (n)` would take
+    other nodes with it; scope every write and every cleanup to a per-run tag.
+    """
+    from tests.conftest import e2e_neo4j_config
+
+    resolved = e2e_neo4j_config().neo4j
     return WheelerConfig(
         neo4j=Neo4jConfig(
-            uri="bolt://localhost:7687",
-            username="neo4j",
-            password="research-graph",
-            database="neo4j",
+            uri=resolved.uri,
+            username=resolved.username,
+            password=resolved.password,
+            database=resolved.database,
         ),
         project=ProjectMeta(
             name="SRM-E2E-Test",

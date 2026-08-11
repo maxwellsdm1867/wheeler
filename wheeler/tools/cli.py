@@ -575,19 +575,31 @@ def _looks_like_aura(uri: str) -> bool:
     return "databases.neo4j.io" in uri or uri.startswith(("neo4j+s://", "bolt+s://"))
 
 
-def _print_connection_status() -> None:
-    """Show which layer supplies each Neo4j field, plus keychain state."""
+def _print_connection_status(profile: str | None = None) -> None:
+    """Show which layer supplies each Neo4j field, plus keychain state.
+
+    `profile` names the slot to report on; without it the active one
+    (`WHEELER_PROFILE`, else `default`) is used.
+    """
     from wheeler import credentials
     from wheeler.config import neo4j_sources, shadowed_by_env
 
-    profile = credentials.active_profile()
+    # The project's EFFECTIVE profile, not just the env/default one: a project
+    # bound via `neo4j.profile` in its wheeler.yaml was reported as 'default'
+    # showing localhost, while `load_config` was resolving somewhere else
+    # entirely. A status display that disagrees with the connection is worse
+    # than none.
+    if not profile:
+        from wheeler.config import effective_profile, load_config
+
+        profile = effective_profile(load_config())
 
     table = Table(title=f"Neo4j connection (profile '{profile}')")
     table.add_column("Field", style="cyan", no_wrap=True)
     table.add_column("Source", no_wrap=True)
     table.add_column("From", style="dim")
     table.add_column("Value")
-    for row in neo4j_sources():
+    for row in neo4j_sources(profile=profile):
         style = _SOURCE_STYLES.get(row.source, "")
         # escape(): a URI can carry square brackets (bolt://[::1]:7687) and rich
         # would read those as markup.
@@ -611,7 +623,7 @@ def _print_connection_status() -> None:
     else:
         console.print(f"Keychain: [yellow]unavailable[/yellow] {escape(detail)}")
 
-    shadowed = shadowed_by_env()
+    shadowed = shadowed_by_env(profile)
     if shadowed:
         # One shadowing variable is the common case, so agreement matters here:
         # the plural-only phrasing reads as a typo exactly when most users see it.
@@ -808,7 +820,11 @@ def cmd_login(
         console.print(
             f"[dim]Select it with: export {credentials.PROFILE_ENV}={saved}[/dim]"
         )
-    _print_connection_status()
+    # Report on the profile just written, not on whatever `WHEELER_PROFILE`
+    # happens to select. Storing under `--profile aura` and then being shown the
+    # `default` profile's localhost settings reads as "the login did not take",
+    # which is the opposite of what just happened.
+    _print_connection_status(profile=saved)
 
 
 @app.command("logout")

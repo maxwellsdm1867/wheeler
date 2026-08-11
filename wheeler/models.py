@@ -38,6 +38,17 @@ class NodeBase(BaseModel):
     # nodes. Default empty string keeps existing callers unaffected.
     service: str = ""
     display_name: str = ""
+    # Where this node was written: which computer, which database, which project.
+    # A shared graph (Aura) is reached from more than one machine while the files
+    # it indexes stay local, so without these a node cannot distinguish "this
+    # script changed" from "this script lives on my other laptop" -- and only the
+    # first should invalidate anything downstream. Stamped on create from
+    # ``wheeler.machine.origin_props`` and deliberately NOT refreshed on update,
+    # so they name the writer rather than the last toucher.
+    origin_machine: str = ""
+    origin_host: str = ""
+    origin_database: str = ""
+    origin_project: str = ""
     change_log: list[ChangeEntry] = []
     # Generic queryable custom bag for the long tail of fields an external
     # service returns that have no first-class model field. The Neo4j backend

@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Wheeler: provenance-tracked research assistant.",
-    "version": "0.14.0",
+    "version": "0.15.0",
     "pluginRoot": "."
   },
   "plugins": [
@@ -14,7 +14,7 @@
       "name": "wh",
       "source": "./",
       "description": "Provenance-tracked research assistant over a Neo4j knowledge graph.",
-      "version": "0.14.0",
+      "version": "0.15.0",
       "author": {
         "name": "Arthur Hong"
       },

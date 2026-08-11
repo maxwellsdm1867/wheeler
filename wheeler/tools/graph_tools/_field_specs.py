@@ -10,6 +10,7 @@ This is a leaf module: stdlib + pathlib only, no internal imports.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any, Callable
 
 # Signature of every per-field checker.  Each accepts a single value of
@@ -107,12 +108,29 @@ def _check_year(value: Any) -> tuple[object, str | None, str | None]:
 _PATH_MUST_EXIST: frozenset[str] = frozenset({"add_dataset", "add_script", "ensure_artifact"})
 
 
+# A path already in portable ``${ROOT}/...`` form. ``wheeler/portability.py``
+# owns this shape; the pattern is restated here rather than imported because this
+# module is a documented leaf (stdlib only), and the two are kept in step by
+# ``tests/test_portable_paths.py``.
+_PORTABLE_RE = re.compile(r"^\$\{[A-Z0-9_]+\}/")
+
+
 def _check_path(
     value: object, *, must_exist: bool = False,
 ) -> tuple[object, str | None, str | None]:
-    """Normalize path to absolute. Error or warn if file does not exist."""
+    """Normalize path to absolute. Error or warn if file does not exist.
+
+    A value that is ALREADY portable passes through untouched. Resolving one
+    would be actively destructive: ``Path("${PROJECT}/src/a.py").resolve()``
+    silently yields ``<cwd>/${PROJECT}/src/a.py``, a path that exists nowhere and
+    that no longer names the file. Such a value is already machine-independent,
+    and it reaches here whenever an update carries a stored path (an artifact
+    upgrade, a restore replaying an archived node).
+    """
     s = str(value)
     if not s:
+        return s, None, None
+    if _PORTABLE_RE.match(s):
         return s, None, None
     resolved = Path(s).resolve()
     resolved_str = str(resolved)

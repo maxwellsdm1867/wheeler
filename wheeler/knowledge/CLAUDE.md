@@ -36,9 +36,16 @@ write_synthesis(Path("synthesis"), "F-3a2b", markdown)  # atomic MD write
 ```python
 from wheeler.knowledge.render import render_synthesis
 
-md = render_synthesis(model, relationships=[...])
+md = render_synthesis(model, relationships=[...], roots=config.resolved_roots)
 # Returns markdown with YAML frontmatter, [[backlinks]], artifact embeds
 ```
 
 The `relationships` parameter adds a Relationships section listing
 all connected nodes with their types and directions.
+
+`roots` resolves a stored portable path (`${PROJECT}/src/a.py`) into one this
+machine can open. Synthesis is the layer a HUMAN reads in Obsidian, where a
+sentinel is neither clickable nor copyable, so this view resolves while the graph
+node and the JSON keep the portable form. It is passed in rather than looked up
+because this package takes no config dependency; omit it and the stored value
+renders unchanged. Callers that hold a config should always pass it.

@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import stored_path_on_disk as _on_disk
+
 from wheeler.integrations.asta.theorizer import (
     RunMeta,
     parse_theorizer,
@@ -684,7 +686,7 @@ class TestIngestTheorizerE2E:
         assert raw_node is not None
         # Path points into the durable raw store, NOT the ephemeral input path.
         assert ".wheeler/asta/raw/asta-theorizer" in raw_node["path"]
-        assert Path(raw_node["path"]).exists()  # the saved file is reachable
+        assert _on_disk(raw_node["path"]).exists()  # the saved file is reachable
         assert raw_node["service"] == "asta:theorizer"
         assert raw_node["custom"]["run_id"] == RUN_ID
         assert float(raw_node["custom"]["cost"]) == pytest.approx(RUN_COST)

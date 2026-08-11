@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import stored_path_on_disk as _on_disk
+
 from wheeler.integrations.asta.semantic_scholar import (
     S2Parsed,
     parse_semantic_scholar,
@@ -596,7 +598,7 @@ class TestIngestSemanticScholarE2E:
         raw_node = await backend.get_node("Dataset", report1.artifact)
         assert raw_node is not None
         assert ".wheeler/asta/raw/asta-semantic-scholar" in raw_node["path"]
-        assert Path(raw_node["path"]).exists()
+        assert _on_disk(raw_node["path"]).exists()
         assert raw_node["service"] == SERVICE_TAG
 
         # --- Second ingest of the SAME artifact: idempotent ---

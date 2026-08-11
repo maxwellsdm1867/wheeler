@@ -64,6 +64,81 @@ class ConsistencyReport:
     total_synthesis: int = 0
 
 
+async def audit_paths(config: WheelerConfig) -> dict:
+    """Report the portable/absolute mix of stored file paths on this machine.
+
+    The graph holds both spellings indefinitely: portable (``${PROJECT}/a.py``)
+    for anything written since portable paths landed, absolute for everything
+    before, upgraded opportunistically as artifacts are touched. That hybrid is
+    fine, but it must not be invisible. Without this the only way to learn that
+    half a graph still holds one machine's absolute paths is to carry it to
+    another computer and watch the file references fail.
+
+    Buckets, per node with a non-empty ``path``:
+
+    - ``portable`` / ``absolute``: which spelling is stored
+    - ``resolvable``: this machine can turn it into a local path at all
+    - ``present``: that local path actually exists on disk
+    - ``by_root``: which named root each portable path uses, with absolute paths
+      under ``(absolute)`` and portable paths naming a root this machine does not
+      configure under ``(unconfigured)``
+    """
+    from wheeler.portability import is_portable, resolve as resolve_portable
+    from wheeler.tools.graph_tools import _get_backend
+
+    try:
+        # `_get_backend` is INSIDE the try because it initialises the backend,
+        # which connects. Leaving it outside made an unreachable graph raise out
+        # of here and take the whole consistency check down with it, when the
+        # rest of that check (JSON and synthesis inventories) is pure file I/O
+        # and still has something useful to say. `check_consistency` degrades the
+        # same way for the same reason.
+        backend = await _get_backend(config)
+        records = await backend.run_cypher(
+            "MATCH (n) WHERE n.path IS NOT NULL AND n.path <> '' "
+            "RETURN n.path AS path"
+        )
+    except Exception as exc:
+        logger.warning("Cannot query graph for path audit: %s", exc)
+        return {"error": str(exc), "total": 0}
+
+    roots = config.resolved_roots
+    counts = {"total": 0, "portable": 0, "absolute": 0, "resolvable": 0, "present": 0}
+    by_root: dict[str, int] = {}
+
+    for rec in records:
+        stored = rec.get("path") or ""
+        if not stored:
+            continue
+        counts["total"] += 1
+
+        if is_portable(stored):
+            counts["portable"] += 1
+            root_name = stored[2 : stored.index("}")].lower()
+        else:
+            counts["absolute"] += 1
+            root_name = "(absolute)"
+
+        resolved = resolve_portable(stored, roots)
+        if resolved is None:
+            by_root["(unconfigured)"] = by_root.get("(unconfigured)", 0) + 1
+            continue
+
+        by_root[root_name] = by_root.get(root_name, 0) + 1
+        counts["resolvable"] += 1
+        try:
+            if resolved.exists():
+                counts["present"] += 1
+        except OSError:  # pragma: no cover - unreadable mount
+            pass
+
+    return {
+        **counts,
+        "by_root": dict(sorted(by_root.items(), key=lambda kv: kv[1], reverse=True)),
+        "configured_roots": sorted(roots),
+    }
+
+
 async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
     """Compare graph, knowledge/, and synthesis/ inventories."""
     from wheeler.tools.graph_tools import _get_backend
@@ -220,7 +295,7 @@ async def repair_consistency(
             knowledge_dir = project_knowledge_dir(config)
             synthesis_dir = project_synthesis_dir(config)
             model = read_node(knowledge_dir, node_id)
-            markdown = render_synthesis(model)
+            markdown = render_synthesis(model, roots=config.resolved_roots)
             write_synthesis(synthesis_dir, node_id, markdown)
             actions.append({"node_id": node_id, "action": "regenerate_synthesis", "status": "ok"})
         except Exception as exc:

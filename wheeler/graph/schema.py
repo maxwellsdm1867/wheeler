@@ -93,6 +93,26 @@ ALLOWED_RELATIONSHIPS: list[str] = [
 ]
 
 
+async def _database_reachable(config: WheelerConfig, db_name: str) -> bool:
+    """Whether *db_name* already exists and answers a trivial query.
+
+    Never raises: an unreachable database, a permissions error and a network
+    blip all mean the same thing to the caller, which is "cannot confirm it is
+    there".
+    """
+    from wheeler.graph.driver import get_async_driver
+
+    try:
+        driver = get_async_driver(config)
+        async with driver.session(database=db_name) as session:
+            result = await session.run("RETURN 1 AS ok")
+            record = await result.single()
+        return bool(record and record["ok"] == 1)
+    except Exception as exc:
+        logger.debug("database %r is not reachable: %s", db_name, exc)
+        return False
+
+
 async def ensure_database(config: WheelerConfig) -> str:
     """Create the project's Neo4j database if it doesn't exist.
 
@@ -127,6 +147,23 @@ async def ensure_database(config: WheelerConfig) -> str:
             )
         logger.info("Ensured database '%s' exists (Enterprise/Aura)", db_name)
     except Exception as exc:
+        # Before downgrading, ask whether the requested database is simply
+        # ALREADY THERE. Aura is the case this exists for: it is Enterprise, it
+        # refuses CREATE DATABASE outright, and its one database is named after
+        # the instance (`2de7b9a2`), not `neo4j`. Treating the refusal as "this
+        # database does not exist" rewrote the config to a database Aura does not
+        # have, so every subsequent query failed against a graph that had been
+        # reachable a moment earlier.
+        if await _database_reachable(config, db_name):
+            logger.info(
+                "CREATE DATABASE '%s' is not permitted here (%s), but that "
+                "database already exists and answers queries, so it is used "
+                "as-is. Expected on Aura, where the instance database is "
+                "provisioned for you.",
+                db_name, type(exc).__name__,
+            )
+            return db_name
+
         # Fall back to the default database with property-tag namespacing.
         # This is a downgrade of the isolation model, not a detail: log it at
         # WARNING with the real cause so a mistyped password does not look

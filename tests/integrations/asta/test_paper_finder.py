@@ -486,7 +486,13 @@ class TestIngestPaperFinderE2E:
         # Path is the durable store copy, not the ephemeral input file.
         assert rec["path"] != str(artifact_file)
         assert ".wheeler/asta/raw/asta-paper-finder/thread-e2e-0001.json" in rec["path"]
-        assert Path(rec["path"]).exists()  # the saved raw output is reachable
+        # The graph stores a portable path (`${PROJECT}/...`), so reaching the
+        # file means resolving it against this machine's roots. Touching the
+        # stored value directly is the thing portable paths make wrong.
+        from wheeler.portability import resolve as _resolve_path
+
+        reachable = _resolve_path(rec["path"], e2e_config.resolved_roots)
+        assert reachable is not None and reachable.exists()  # raw output is reachable
         assert rec["run_id"] == "thread-e2e-0001"
         durable_path = rec["path"]
 

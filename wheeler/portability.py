@@ -27,6 +27,113 @@ _PROJECT_SENTINEL = "${PROJECT}/"
 # ---------------------------------------------------------------------------
 
 
+# A stored path already in portable form. Matched by SHAPE rather than against
+# the known root names on purpose: a "${GDRIVE}/..." value read on a machine with
+# no gdrive root is still portable, and re-relativizing it against the local cwd
+# would corrupt it into a path that resolves nowhere.
+_SENTINEL_RE = re.compile(r"^\$\{[A-Z0-9_]+\}/")
+
+# Root ids that can be turned into a sentinel. Anything else is skipped rather
+# than escaped, because a root name with a brace or a slash in it would produce a
+# sentinel that cannot be parsed back out.
+_ROOT_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def sentinel_for(root_id: str) -> str:
+    """The portable prefix for a root name, e.g. ``data`` -> ``${DATA}/``."""
+    return "${" + root_id.upper() + "}/"
+
+
+def is_portable(stored: str) -> bool:
+    """Whether a stored path is already in ``${ROOT}/`` form."""
+    return bool(_SENTINEL_RE.match(stored or ""))
+
+
+def _usable_roots(roots: dict[str, Path]) -> list[tuple[str, Path]]:
+    """Valid roots, deepest first.
+
+    Deepest first is what makes nested roots behave: with ``project=/a`` and
+    ``data=/a/data``, the file ``/a/data/x.mat`` must portabilize as
+    ``${DATA}/x.mat``, not ``${PROJECT}/data/x.mat``. Sorting by resolved path
+    length is a cheap stand-in for "most specific containing root".
+    """
+    usable: list[tuple[str, Path]] = []
+    for root_id, root in (roots or {}).items():
+        if not root_id or not _ROOT_ID_RE.match(root_id):
+            logger.debug("skipping unusable root name %r", root_id)
+            continue
+        try:
+            usable.append((root_id, Path(root).expanduser().resolve()))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("skipping root %r (%s)", root_id, exc)
+    usable.sort(key=lambda pair: len(str(pair[1])), reverse=True)
+    return usable
+
+
+def to_portable(abs_path: str, roots: dict[str, Path]) -> tuple[str, str]:
+    """Rewrite an absolute path against the deepest containing root.
+
+    Returns ``(portable_or_unchanged, root_id_or_empty)``. A path inside no known
+    root is returned unchanged with an empty root id, which is the correct
+    outcome for genuinely external files (a mounted volume, someone else's home)
+    and keeps this function total.
+
+    Idempotent: a value that is already portable is returned untouched, so a
+    write path that portabilizes and a backup that portabilizes again cannot
+    double-encode.
+
+    Both sides are ``resolve()``d, which matters more than it looks: a Google
+    Drive folder is normally reached through a symlink, so comparing an
+    unresolved file path against a resolved root (or the reverse) silently finds
+    no containment and stores an absolute path forever.
+    """
+    if not abs_path or is_portable(abs_path):
+        return abs_path, ""
+    try:
+        resolved = Path(abs_path).expanduser().resolve()
+    except Exception:
+        return abs_path, ""
+
+    for root_id, root in _usable_roots(roots):
+        try:
+            rel = resolved.relative_to(root)
+        except ValueError:
+            continue
+        rel_str = rel.as_posix()
+        # relative_to yields '.' when the path IS the root; represent that as the
+        # bare sentinel so absolutize round-trips it back to the root itself.
+        if rel_str == ".":
+            return sentinel_for(root_id), root_id
+        return sentinel_for(root_id) + rel_str, root_id
+    return abs_path, ""
+
+
+def resolve(stored: str, roots: dict[str, Path]) -> Path | None:
+    """Resolve a stored path on THIS machine, or None when that is impossible.
+
+    ``None`` means "portable, but its root is not configured here", which is a
+    different fact from "the file is missing" and callers must not conflate the
+    two: a missing file may be stale, an unconfigured root simply lives on
+    another computer. Absolute (legacy) values always resolve, because we know
+    where they point even when nothing is there.
+    """
+    if not stored:
+        return None
+    match = _SENTINEL_RE.match(stored)
+    if not match:
+        try:
+            return Path(stored).expanduser()
+        except Exception:  # pragma: no cover - defensive
+            return None
+
+    prefix = match.group(0)
+    wanted = prefix[2:-2].lower()  # "${DATA}/" -> "data"
+    for root_id, root in _usable_roots(roots):
+        if root_id.lower() == wanted:
+            return root / stored[len(prefix):]
+    return None
+
+
 def relativize(abs_path: str, project_root: Path) -> tuple[str, bool]:
     """Convert an absolute path to a portable sentinel-prefixed relative path.
 
@@ -36,23 +143,13 @@ def relativize(abs_path: str, project_root: Path) -> tuple[str, bool]:
 
     The exactly-equal case (path == project_root) returns
     ``("${PROJECT}/", True)``.
+
+    Single-root wrapper over :func:`to_portable`, kept because ``backup.py`` and
+    ``restore.py`` are written against this shape and only ever deal with the
+    project root.
     """
-    try:
-        resolved = Path(abs_path).resolve()
-        root = project_root.resolve()
-        # Check containment using is_relative_to (Python 3.9+) equivalence.
-        try:
-            rel = resolved.relative_to(root)
-        except ValueError:
-            return abs_path, False
-        # relative_to returns PosixPath('.') for the exact-root case.
-        # Represent that as "${PROJECT}/" (empty suffix, trailing slash only).
-        rel_str = rel.as_posix()
-        if rel_str == ".":
-            return _PROJECT_SENTINEL, True
-        return _PROJECT_SENTINEL + rel_str, True
-    except Exception:
-        return abs_path, False
+    portable, root_id = to_portable(abs_path, {"project": project_root})
+    return portable, bool(root_id)
 
 
 def absolutize(stored: str, project_root: Path) -> str:
@@ -62,7 +159,9 @@ def absolutize(stored: str, project_root: Path) -> str:
     ``project_root``, returning a POSIX-style absolute path string.
 
     Anything that does not start with ``${PROJECT}/`` is returned unchanged
-    (external paths and bare filenames pass through transparently).
+    (external paths and bare filenames pass through transparently). A sentinel
+    naming some OTHER root also passes through unchanged, since this wrapper only
+    knows the project root.
     """
     if stored.startswith(_PROJECT_SENTINEL):
         suffix = stored[len(_PROJECT_SENTINEL):]

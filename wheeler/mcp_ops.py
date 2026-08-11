@@ -37,12 +37,19 @@ mcp = FastMCP(
 @mcp.tool()
 @_logged
 async def detect_stale() -> list[dict]:
-    """Find Wheeler knowledge graph Script nodes whose file has been modified since last recorded hash."""
+    """Find Wheeler knowledge graph Script nodes whose file no longer matches its recorded hash.
+
+    Each result carries a `reason`: `changed` (this machine's file moved, real
+    staleness), `diverged` (another machine's copy differs), or `absent` (the file
+    is not on this computer). Only `changed` invalidates downstream nodes.
+    """
     stale = await provenance.detect_stale_scripts(_config)
     return [
         {
             "node_id": s.node_id,
             "path": s.path,
+            "reason": s.reason,
+            "origin_host": s.origin_host,
             "stored_hash": s.stored_hash,
             "current_hash": s.current_hash,
         }
@@ -272,11 +279,20 @@ async def graph_consistency_check(repair: bool = False) -> dict:
     Use during /wh:dream consolidation or /wh:close end-of-session sweep.
     """
     from dataclasses import asdict
-    from wheeler.consistency import check_consistency, repair_consistency, summarize_drift
+    from wheeler.consistency import (
+        audit_paths,
+        check_consistency,
+        repair_consistency,
+        summarize_drift,
+    )
 
     report = await check_consistency(_config)
     result = asdict(report)
     result["summary"] = summarize_drift(report)
+    # Portable/absolute path mix. Read-only and never repaired here: paths are
+    # upgraded opportunistically by ensure_artifact, where a match has already
+    # proved the two spellings name the same file.
+    result["paths"] = await audit_paths(_config)
 
     if repair:
         repair_log = await repair_consistency(_config, report, dry_run=False)

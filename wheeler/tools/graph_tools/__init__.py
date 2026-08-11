@@ -391,7 +391,9 @@ def _write_synthesis_file(
                 type(model).__name__,
             )
             return False
-        markdown = render_synthesis(model, relationships=relationships)
+        markdown = render_synthesis(
+            model, relationships=relationships, roots=config.resolved_roots,
+        )
         write_synthesis(project_synthesis_dir(config), node_id, markdown)
         return True
     except Exception:
@@ -545,6 +547,46 @@ def reset_backend_cache() -> None:
     _initialized_dbs.clear()
 
 
+def stamp_origin_and_portabilize(
+    args: dict, config: WheelerConfig, *, stamp_origin: bool = True
+) -> None:
+    """Rewrite ``args['path']`` to portable form and add the origin stamp.
+
+    In-place, and the single place the file layer learns either fact. It runs
+    after validation (so ``path`` is already absolute and checked) and before the
+    handler, which means the portable string is what reaches BOTH the graph props
+    the handler builds and the ``knowledge/*.json`` written from these same args.
+    The two layers therefore cannot disagree about where a file lives.
+
+    ``setdefault`` rather than assignment: a restore replaying an archived node
+    passes the original values through, and the machine that wrote a node three
+    months ago on another laptop is the truthful answer, not this one.
+    """
+    from wheeler.machine import origin_props
+    from wheeler.portability import to_portable
+
+    raw = args.get("path")
+    if isinstance(raw, str) and raw:
+        portable, root_id = to_portable(raw, config.resolved_roots)
+        if root_id:
+            logger.debug("path portabilized: %s -> %s", raw, portable)
+        args["path"] = portable
+
+    if not stamp_origin:
+        # UPDATES must not restamp. `origin_*` are ordinary NodeBase fields, so
+        # update_node happily writes whatever is in args, and merging them here
+        # rewrote the ORIGIN of a node this machine merely touched. That defeats
+        # the staleness fix from the back door: machine B runs ensure_artifact on
+        # a file machine A created, the hash-changed or path-upgrade branch calls
+        # update_node, the node is relabelled as B's, and when A later really
+        # edits that file its own change is classified `diverged` and never
+        # cascades. The stamp records the writer, not the last toucher.
+        return
+
+    for key, value in origin_props(config).items():
+        args.setdefault(key, value)
+
+
 async def _get_backend(config: WheelerConfig):
     """Return a cached, initialized backend for *config*."""
     key = _backend_key(config)
@@ -562,7 +604,19 @@ async def _get_backend(config: WheelerConfig):
     return backend
 
 
-def _diagnose_neo4j_error(exc: Exception) -> dict:
+def _local_fix(uri: str, database: str) -> list[str]:
+    """Instance-aware remediation for a local target. Never raises."""
+    try:
+        from wheeler.desktop import explain_target
+
+        return explain_target(uri, database)
+    except Exception:  # pragma: no cover - diagnosis must never mask the error
+        return []
+
+
+def _diagnose_neo4j_error(
+    exc: Exception, target_uri: str = "", target_db: str = ""
+) -> dict:
     """Return user-friendly diagnosis fields for common Neo4j errors."""
     try:
         from neo4j.exceptions import (
@@ -581,14 +635,16 @@ def _diagnose_neo4j_error(exc: Exception) -> dict:
                 ],
             }
         if isinstance(exc, (ServiceUnavailable, DatabaseUnavailable)):
+            # Resolve the project's ACTUAL target rather than assuming 7687 and
+            # "press Start in Desktop". With several instances that advice starts
+            # the wrong one, and the user concludes Wheeler is broken.
             return {
                 "diagnosis": "Cannot connect to Neo4j",
-                "cause": "Neo4j is not running, or another process is using port 7687.",
-                "fix": [
-                    "Open Neo4j Desktop and click Start on your database (look for the green Running indicator).",
-                    "Check for port conflicts: run 'lsof -i :7687' in a terminal.",
-                    "If using Docker: run 'docker start wheeler-neo4j'.",
-                    "If using Homebrew: run 'brew services start neo4j'.",
+                "cause": f"Nothing answered at {target_uri or 'the configured address'}.",
+                "fix": _local_fix(target_uri, target_db) or [
+                    "Start your Neo4j, then retry.",
+                    "Check for port conflicts: lsof -i :7687",
+                    "If using Docker: docker start wheeler-neo4j",
                 ],
             }
     except ImportError:
@@ -677,6 +733,9 @@ async def execute_tool(
                     ),
                     "fields": field_errors,
                 })
+            stamp_origin_and_portabilize(
+                args, config, stamp_origin=tool_name != "update_node"
+            )
 
         result = await handler(backend, args)
 
@@ -846,4 +905,7 @@ async def execute_tool(
         return json.dumps({"error": str(exc), "circuit_open": True})
     except Exception as exc:
         logger.error("execute_tool %s failed: %s", tool_name, exc, exc_info=True)
-        return json.dumps({"error": f"{tool_name} failed: {exc}", **_diagnose_neo4j_error(exc)})
+        return json.dumps({
+            "error": f"{tool_name} failed: {exc}",
+            **_diagnose_neo4j_error(exc, config.neo4j.uri, config.neo4j.database),
+        })

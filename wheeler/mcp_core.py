@@ -250,9 +250,24 @@ async def show_node(node_id: str) -> dict:
     knowledge_path = project_knowledge_dir(_config)
     try:
         model = store.read_node(knowledge_path, node_id)
-        return model.model_dump()
     except FileNotFoundError:
         return {"error": f"Node {node_id} not found"}
+
+    data = model.model_dump()
+    stored = data.get("path") or ""
+    if stored:
+        # `path` is what the caller opens, so it is resolved for this machine;
+        # `stored_path` keeps the machine-independent form the node holds. An
+        # unresolvable value (a root this computer does not configure) is left
+        # portable rather than turned into a local path that points nowhere.
+        from wheeler.portability import is_portable, resolve
+
+        data["stored_path"] = stored
+        if is_portable(stored):
+            resolved = resolve(stored, _config.resolved_roots)
+            data["path"] = str(resolved) if resolved is not None else stored
+            data["path_resolved"] = resolved is not None
+    return data
 
 
 # --- Entity resolution (read-only) ---

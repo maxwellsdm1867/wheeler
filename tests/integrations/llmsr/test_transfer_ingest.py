@@ -472,10 +472,17 @@ class _TransferE2E:
         WAS_GENERATED_BY fan-in (Finding, Document) and the USED fan-out (the
         input Datasets and the source Script). NEVER by service.
 
-        The USED side is narrowed to nodes whose path lies under THIS test's tmp
-        dir. An Execution's inputs are the one edge that can reach a node the
-        test did not create, and teardown deletes whatever it tags, so the path
-        guard makes that impossible by construction.
+        The USED side is narrowed, because an Execution's inputs are the one edge
+        that can reach a node the test did not create, and teardown deletes
+        whatever it tags.
+
+        The narrowing accepts either spelling of "under this test's tree". The
+        tmp-dir prefix alone was silently correct only while stored paths were
+        absolute: a file under this tmp dir is now stored as
+        `${PROJECT}/cellA.csv`, matching no tmp prefix, so the guard excluded the
+        very Datasets it existed to catch and they outlived every teardown. This
+        test's project root IS its tmp dir, so a portable-path node reachable
+        from this run's freshly created Execution was created by this run.
         """
         from wheeler.graph.driver import get_async_driver
 
@@ -497,6 +504,7 @@ class _TransferE2E:
                 await s.run(
                     "MATCH (x:Execution {id: $xid})-[:USED]->(n) "
                     "WHERE n.path STARTS WITH $under "
+                    "   OR n.path STARTS WITH '${PROJECT}/' "
                     "SET n.e2e_tag = $tag",
                     xid=report.execution_id, tag=self._e2e_tag,
                     under=str(self._tmp),

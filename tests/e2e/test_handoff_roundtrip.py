@@ -439,19 +439,29 @@ async def test_handoff_roundtrip_full(tmp_path):
     b_ids = set(backend_b.nodes_by_id.keys())
     assert original_ids_a <= b_ids, f"Missing original IDs on B: {original_ids_a - b_ids}"
 
-    # Path fields on B are absolutized under project_b (not project_a)
+    # Path fields on B must lead into B's tree, never A's.
+    #
+    # This used to assert the STORED value was absolute under project_b. It is
+    # now portable (`${PROJECT}/scripts/run.py`), and that is the stronger
+    # property rather than a weaker one: B's copy stays portable for the next
+    # handoff instead of being re-pinned to whichever machine restored it. The
+    # invariant that matters is unchanged and is what is asserted here: resolving
+    # on B lands under project_b, and A's root appears nowhere.
+    from wheeler.portability import resolve as resolve_path
+
     for nid in (script_id, dataset_id):
         node_b = backend_b.nodes_by_id.get(nid, {})
         path_val = node_b.get("path", "")
         if path_val:
-            assert "${PROJECT}" not in path_val, (
-                f"Sentinel not resolved on B for node {nid}: {path_val}"
-            )
             assert str(project_a) not in path_val, (
                 f"Project A path leaked onto B for node {nid}: {path_val}"
             )
-            assert str(project_b.resolve()) in path_val, (
-                f"Project B root not in path on B for node {nid}: {path_val}"
+            resolved_b = resolve_path(path_val, {"project": project_b.resolve()})
+            assert resolved_b is not None, (
+                f"Path on B does not resolve for node {nid}: {path_val}"
+            )
+            assert str(project_b.resolve()) in str(resolved_b), (
+                f"Path on B does not land under project B for node {nid}: {resolved_b}"
             )
 
     # Every file from project/ in the archive exists on disk under project_b

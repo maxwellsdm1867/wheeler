@@ -4,7 +4,7 @@
     "command": "uvx",
     "args": [
       "--from",
-      "wheeler>=0.14.0",
+      "wheeler>=0.15.0",
       "wheeler-core-mcp"
     ]
   },
@@ -13,7 +13,7 @@
     "command": "uvx",
     "args": [
       "--from",
-      "wheeler>=0.14.0",
+      "wheeler>=0.15.0",
       "wheeler-query-mcp"
     ]
   },
@@ -22,7 +22,7 @@
     "command": "uvx",
     "args": [
       "--from",
-      "wheeler>=0.14.0",
+      "wheeler>=0.15.0",
       "wheeler-mutations-mcp"
     ]
   },
@@ -31,7 +31,7 @@
     "command": "uvx",
     "args": [
       "--from",
-      "wheeler>=0.14.0",
+      "wheeler>=0.15.0",
       "wheeler-ops-mcp"
     ]
   }

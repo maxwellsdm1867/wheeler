@@ -1,7 +1,7 @@
 {
   "name": "wh",
   "displayName": "Wheeler",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Provenance-tracked research assistant: a Neo4j knowledge graph over your files, with 39 research acts and 51 MCP tools.",
   "author": {
     "name": "Arthur Hong"

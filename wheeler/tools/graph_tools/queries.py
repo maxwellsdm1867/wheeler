@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,19 +35,22 @@ class _QueryContext:
     """Holds config-derived values needed by query functions."""
     knowledge_path: Path | None
     project_tag: str
+    roots: dict[str, Path] = field(default_factory=dict)
 
 
 def _extract_context(args: dict) -> _QueryContext:
     """Pop the injected _config and return a QueryContext.
 
-    Extracts both the knowledge_path (for JSON file enrichment) and
-    the project_tag (for Community Edition namespace isolation).
+    Extracts the knowledge_path (for JSON file enrichment), the project_tag (for
+    Community Edition namespace isolation), and the named roots (for turning a
+    stored portable path back into one the caller can open).
     """
     config: WheelerConfig | None = args.pop("_config", None)
     if config is None:
         return _QueryContext(knowledge_path=None, project_tag="")
     kp = getattr(config, "knowledge_path", None)
     ptag = getattr(config.neo4j, "project_tag", "") if hasattr(config, "neo4j") else ""
+    roots = getattr(config, "resolved_roots", None)
     # Anchored on the project root, not the CWD. Every query_* tool enriches its
     # results from knowledge/*.json through here, so a cwd-relative path made a
     # server started in a subdirectory return graph rows with no content attached,
@@ -56,7 +59,31 @@ def _extract_context(args: dict) -> _QueryContext:
     return _QueryContext(
         knowledge_path=project_knowledge_dir(config) if kp else None,
         project_tag=ptag or "",
+        roots=roots if isinstance(roots, dict) else {},
     )
+
+
+def _present_path(stored: str, roots: dict[str, Path]) -> tuple[str, str]:
+    """Render a stored path for a caller as ``(usable, stored)``.
+
+    Queries hand paths to an agent that is going to open the file, so the ``path``
+    a caller sees stays absolute and directly usable exactly as it was before
+    portable paths existed. The portable form travels alongside as
+    ``stored_path`` for anything that needs the machine-independent identity.
+
+    Getting this backwards would break every act that reads a file from a query
+    result, since ``${PROJECT}/src/a.py`` is not openable by anything.
+    """
+    if not stored:
+        return "", ""
+    from wheeler.portability import is_portable, resolve
+
+    if not is_portable(stored):
+        return stored, stored
+    resolved = resolve(stored, roots)
+    # Unresolvable means the root is not configured here: the file is on another
+    # machine. Hand back the portable form rather than a fabricated local path.
+    return (str(resolved) if resolved is not None else stored), stored
 
 
 def _project_where(alias: str, project_tag: str, *, has_existing_where: bool) -> str:
@@ -273,7 +300,8 @@ async def query_datasets(backend, args: dict) -> str:
         if model is not None:
             datasets.append({
                 "id": model.id,
-                "path": model.path,
+                "path": _present_path(model.path, ctx.roots)[0],
+                "stored_path": _present_path(model.path, ctx.roots)[1],
                 "type": model.data_type,
                 "description": model.description,
                 "date_added": model.created,
@@ -282,7 +310,8 @@ async def query_datasets(backend, args: dict) -> str:
         else:
             datasets.append({
                 "id": node_id,
-                "path": r["path"],
+                "path": _present_path(r["path"] or "", ctx.roots)[0],
+                "stored_path": _present_path(r["path"] or "", ctx.roots)[1],
                 "type": r["type"],
                 "description": r["description"],
                 "date_added": r["date"],
@@ -398,7 +427,8 @@ async def query_documents(backend, args: dict) -> str:
             documents.append({
                 "id": model.id,
                 "title": model.title,
-                "path": model.path,
+                "path": _present_path(model.path, ctx.roots)[0],
+                "stored_path": _present_path(model.path, ctx.roots)[1],
                 "section": model.section,
                 "status": model.status,
                 "date": model.created,
@@ -408,7 +438,8 @@ async def query_documents(backend, args: dict) -> str:
             documents.append({
                 "id": node_id,
                 "title": r["title"],
-                "path": r["path"],
+                "path": _present_path(r["path"] or "", ctx.roots)[0],
+                "stored_path": _present_path(r["path"] or "", ctx.roots)[1],
                 "section": r["section"],
                 "status": r["status"],
                 "date": r["date"],
@@ -481,7 +512,8 @@ async def query_plans(backend, args: dict) -> str:
             plans.append({
                 "id": model.id,
                 "title": model.title,
-                "path": model.path,
+                "path": _present_path(model.path, ctx.roots)[0],
+                "stored_path": _present_path(model.path, ctx.roots)[1],
                 "status": model.status,
                 "hash": getattr(model, "hash", ""),
                 "date": model.created,
@@ -492,7 +524,8 @@ async def query_plans(backend, args: dict) -> str:
             plans.append({
                 "id": node_id,
                 "title": r["title"],
-                "path": r["path"],
+                "path": _present_path(r["path"] or "", ctx.roots)[0],
+                "stored_path": _present_path(r["path"] or "", ctx.roots)[1],
                 "status": r["status"],
                 "hash": r["hash"],
                 "date": r["date"],
@@ -583,7 +616,8 @@ async def query_scripts(backend, args: dict) -> str:
         if model is not None:
             scripts.append({
                 "id": model.id,
-                "path": model.path,
+                "path": _present_path(model.path, ctx.roots)[0],
+                "stored_path": _present_path(model.path, ctx.roots)[1],
                 "language": model.language,
                 "hash": model.hash,
                 "version": model.version,
@@ -593,7 +627,8 @@ async def query_scripts(backend, args: dict) -> str:
         else:
             scripts.append({
                 "id": node_id,
-                "path": r["path"],
+                "path": _present_path(r["path"] or "", ctx.roots)[0],
+                "stored_path": _present_path(r["path"] or "", ctx.roots)[1],
                 "language": r["language"],
                 "hash": r["hash"],
                 "version": r["version"],
@@ -773,7 +808,8 @@ async def query_review_queue(backend, args: dict) -> str:
             "verdict": r["verdict"] or "",
             "work_key": r["work_key"] or "",
             "service": r["service"] or "",
-            "path": r["path"] or "",
+            "path": _present_path(r["path"] or "", ctx.roots)[0],
+            "stored_path": _present_path(r["path"] or "", ctx.roots)[1],
             "updated": r["updated"] or "",
         })
 

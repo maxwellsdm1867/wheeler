@@ -137,7 +137,7 @@ async def execute_merge(
     tmp_json = knowledge_dir / f"{keep_id}.json.merge-tmp"
     tmp_json.write_text(keep_model.model_dump_json(indent=2), encoding="utf-8")
 
-    merged_synthesis = render_synthesis(keep_model)
+    merged_synthesis = render_synthesis(keep_model, roots=config.resolved_roots)
     tmp_synth = synthesis_dir / f"{keep_id}.md.merge-tmp"
     synthesis_dir.mkdir(parents=True, exist_ok=True)
     tmp_synth.write_text(merged_synthesis, encoding="utf-8")

@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import stored_path_on_disk as _on_disk
+
 from wheeler.integrations.asta.scholar_qa import (
     ReportRecord,
     RunMeta,
@@ -518,7 +520,7 @@ class TestIngestScholarQaE2E:
         assert raw_node is not None
         assert ".wheeler/asta/raw/asta-scholar-qa" in raw_node["path"]
         assert raw_node["path"].endswith(".md")
-        assert Path(raw_node["path"]).exists()
+        assert _on_disk(raw_node["path"]).exists()
         assert raw_node["service"] == SERVICE_TAG
 
         async with driver.session(database=db) as s:

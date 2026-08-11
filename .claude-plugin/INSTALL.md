@@ -5,22 +5,22 @@
 # Wheeler as a plugin
 
 39 research acts and the four Wheeler MCP servers, for Claude Code and
-OpenAI Codex. Pinned to Wheeler `0.14.0`.
+OpenAI Codex. Pinned to Wheeler `0.15.0`.
 
 > **The pinned version must be on PyPI before this plugin works.** The skills fetch
 > their instructions by calling the `get_act` MCP tool, so `uvx --from
-> wheeler>=0.14.0` has to resolve to a release that actually provides it. If
-> `0.14.0` is not published yet, every skill will load and then report that
+> wheeler>=0.15.0` has to resolve to a release that actually provides it. If
+> `0.15.0` is not published yet, every skill will load and then report that
 > `get_act` is unavailable. Publish first, then install.
 >
-> Developers: `uv` can satisfy `wheeler>=0.14.0` from a locally built artifact of
+> Developers: `uv` can satisfy `wheeler>=0.15.0` from a locally built artifact of
 > the source tree, so the plugin appears to work on the machine it was built on and
 > fails everywhere else. Verify against a clean `UV_CACHE_DIR` outside the repo.
 
 ## Prerequisites
 
 - **`uv`** (provides `uvx`). The MCP servers launch as
-  `uvx --from wheeler>=0.14.0 wheeler-<role>-mcp`, so nothing is installed into
+  `uvx --from wheeler>=0.15.0 wheeler-<role>-mcp`, so nothing is installed into
   your environment and the plugin cannot drift from the package. Install it with
   `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`. The first
   launch resolves the package once (about 13 s); after that the launch overhead is

@@ -27,7 +27,7 @@ from wheeler.integrations.asta._marshal import job_outcome, JobOutcome, ImportRe
 class TestTheorizerFailureReasonCapture:
     """Verify that failed theorizer tasks surface their error reason."""
 
-    def test_job_outcome_extracts_message_when_present(self):
+    def test_job_outcome_extracts_message_when_present(self, e2e_config):
         """job_outcome should extract status.message when present and use it as detail."""
         failed_task = {
             "id": "task-123",
@@ -53,7 +53,7 @@ class TestTheorizerFailureReasonCapture:
         assert outcome.detail, "outcome.detail should be non-empty when message is present"
         assert "quota" in outcome.detail.lower() or "exceeded" in outcome.detail.lower()
 
-    def test_import_report_has_error_reason_field(self):
+    def test_import_report_has_error_reason_field(self, e2e_config):
         """DESIRED: ImportReport must have an error_reason field to hold failure reason.
 
         This test asserts the DESIRED post-fix behavior: ImportReport should have
@@ -65,7 +65,7 @@ class TestTheorizerFailureReasonCapture:
             report, "error_reason"
         ), "ImportReport should have error_reason field to surface failure reason"
 
-    def test_failed_theorizer_captures_error_reason(self):
+    def test_failed_theorizer_captures_error_reason(self, e2e_config):
         """DESIRED: ingest_theorizer must capture outcome.detail in report.error_reason.
 
         When a theorizer task fails with a reason in status.message, the ingest
@@ -94,7 +94,12 @@ class TestTheorizerFailureReasonCapture:
                 "artifacts": [],
             }
 
-            config = load_config()
+        # `e2e_config` rather than `load_config()`: the suite walls unit tests
+        # off from the keychain, so a bare load_config() here resolves to
+        # localhost while the directory's availability probe checks the graph
+        # this project actually uses. The two disagreeing made these tests fail
+        # against a stopped local instance instead of skipping or running.
+            config = e2e_config
             report = loop.run_until_complete(
                 ingest_theorizer(
                     failed_task_with_reason,
@@ -131,7 +136,7 @@ class TestTheorizerFailureReasonCapture:
         finally:
             loop.close()
 
-    def test_failed_theorizer_without_message_generates_fallback_reason(self):
+    def test_failed_theorizer_without_message_generates_fallback_reason(self, e2e_config):
         """DESIRED: When no status.message is present, a fallback reason is generated.
 
         Even when status.message is missing, report.error_reason should have SOME
@@ -152,7 +157,12 @@ class TestTheorizerFailureReasonCapture:
                 "artifacts": [],
             }
 
-            config = load_config()
+        # `e2e_config` rather than `load_config()`: the suite walls unit tests
+        # off from the keychain, so a bare load_config() here resolves to
+        # localhost while the directory's availability probe checks the graph
+        # this project actually uses. The two disagreeing made these tests fail
+        # against a stopped local instance instead of skipping or running.
+            config = e2e_config
             report = loop.run_until_complete(
                 ingest_theorizer(
                     failed_task_no_message,

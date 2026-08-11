@@ -40,9 +40,16 @@ def _live_path(markdown: str) -> str | None:
 
 
 @pytest.fixture
-async def backend_and_config():
-    """Set up backend for test."""
-    config = load_config()
+async def backend_and_config(e2e_config):
+    """Set up backend for test.
+
+    Takes `e2e_config` rather than calling `load_config()`: the suite walls unit
+    tests off from the keychain, so a bare `load_config()` here resolves to
+    localhost while this directory's availability probe checks the graph the
+    project actually uses. The two disagreeing turned a stopped local instance
+    into failures instead of skips.
+    """
+    config = e2e_config
     backend = get_backend(config)
     yield backend, config
     # No cleanup needed: tests manage their own node cleanup

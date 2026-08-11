@@ -14,12 +14,12 @@
 
 [mcp_servers.wheeler_core]
 command = "uvx"
-args = ["--from", "wheeler>=0.14.0", "wheeler-core-mcp"]
+args = ["--from", "wheeler>=0.15.0", "wheeler-core-mcp"]
 enabled = true
 
 [mcp_servers.wheeler_query]
 command = "uvx"
-args = ["--from", "wheeler>=0.14.0", "wheeler-query-mcp"]
+args = ["--from", "wheeler>=0.15.0", "wheeler-query-mcp"]
 enabled = true
 
 [mcp_servers.wheeler_mutations]

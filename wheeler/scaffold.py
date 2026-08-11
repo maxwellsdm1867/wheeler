@@ -63,11 +63,14 @@ def write_config(
     *,
     project: ProjectMeta | None = None,
     paths: ProjectPaths | None = None,
+    neo4j: object | None = None,
     existing_config: WheelerConfig | None = None,
 ) -> Path:
     """Write (or update) ``wheeler.yaml`` in *root*.
 
     If *existing_config* is provided, merges new values into it.
+    ``neo4j`` sets the connection block, which is how `wheeler init` records
+    whether this project runs on a local instance or a cloud one.
     Returns the path to the written file.
     """
     config = existing_config or WheelerConfig()
@@ -75,6 +78,8 @@ def write_config(
         config.project = project
     if paths is not None:
         config.paths = paths
+    if neo4j is not None:
+        config.neo4j = neo4j  # type: ignore[assignment]
 
     config_path = root / "wheeler.yaml"
     data = config.model_dump(exclude_defaults=True)

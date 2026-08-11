@@ -31,6 +31,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import stored_path_on_disk as _on_disk
+
 from wheeler.integrations.llmsr.discover import (
     CLAIM_CONSTANTS,
     CLAIM_FORM,
@@ -748,8 +750,20 @@ class TestIngestDiscoverE2E:
             )
 
     async def _tag_run(self, e2e_config, report):
-        """Tag ONLY the nodes THIS run created: the report ids plus the run's
-        WAS_GENERATED_BY fan-in (Script, Finding, Document). NEVER by service."""
+        """Tag ONLY the nodes THIS run touched: the report ids, the run's
+        WAS_GENERATED_BY fan-in (Script, Finding, Document), and its USED
+        fan-out (the input Datasets). NEVER by service.
+
+        The USED side is not optional. `_record_datasets` registers every input
+        table as a Dataset node, and those are inputs rather than outputs, so the
+        WAS_GENERATED_BY sweep alone never saw them and they survived teardown.
+        That leak was invisible while paths were absolute, because each run wrote
+        its tables to a fresh tmp directory and simply made new nodes every time.
+        Portable paths removed that accidental isolation: two runs of this test
+        both register `${PROJECT}/A.csv`, so run two now dedupes against run one's
+        leftovers and counts 3 fewer creations. The isolation was always a
+        side effect of tmp paths rather than something teardown provided; this
+        makes it real."""
         from wheeler.graph.driver import get_async_driver
 
         driver = get_async_driver(e2e_config)
@@ -759,6 +773,13 @@ class TestIngestDiscoverE2E:
             async with driver.session(database=db) as s:
                 await s.run(
                     "MATCH (n)-[:WAS_GENERATED_BY]->(x:Execution {id: $xid}) "
+                    "SET n.e2e_tag = $tag",
+                    xid=report.execution_id, tag=self._e2e_tag,
+                )
+            async with driver.session(database=db) as s:
+                await s.run(
+                    "MATCH (x:Execution {id: $xid})-[:USED]->(n) "
+                    "WHERE n.custom_run_id = x.session_id "
                     "SET n.e2e_tag = $tag",
                     xid=report.execution_id, tag=self._e2e_tag,
                 )
@@ -883,7 +904,7 @@ class TestIngestDiscoverE2E:
             script_path = await count(
                 "MATCH (n:Script)-[:WAS_GENERATED_BY]->(x:Execution {id:$x}) RETURN n.path", x=xid
             )
-            assert script_path and Path(script_path).exists()
+            assert script_path and _on_disk(script_path).exists()
             assert await count(
                 "MATCH (n:Script)-[:WAS_GENERATED_BY]->(x:Execution {id:$x}) "
                 "RETURN n.custom_equation", x=xid
@@ -1076,7 +1097,7 @@ class TestIngestGroupedDiscoverE2E:
         assert "mean over 3" in finding["description"]
 
         # and the registered Script RUNS: the whole defect is that it did not
-        script_path = Path(script["path"])
+        script_path = _on_disk(script["path"])
         assert script_path.exists()
         run = subprocess.run(
             [sys.executable, str(script_path)],
@@ -1181,12 +1202,20 @@ class _RealRunE2E:
         (the input Datasets). NEVER by service: the e2e config runs on the shared
         default namespace, so a service-scoped delete would wipe real user data.
 
-        The USED side is narrowed further, to nodes whose path lies under THIS
-        test's tmp dir. An Execution's inputs are the one edge that can reach a
-        node the test did not create (an ingest is free to USE a Dataset that was
-        already in the graph), and teardown deletes whatever it tags. The path
-        guard makes that impossible by construction rather than by the caller
-        remembering not to pass a production id.
+        The USED side is narrowed further, because an Execution's inputs are the
+        one edge that can reach a node the test did not create (an ingest is free
+        to USE a Dataset already in the graph) and teardown deletes whatever it
+        tags. The narrowing is by construction, not by the caller remembering.
+
+        It matches on the run id rather than on a tmp-dir path prefix. The prefix
+        guard was silently correct only while stored paths were absolute: a node
+        under this tmp dir is now stored as `${PROJECT}/A.csv`, which starts with
+        no tmp dir, so the guard excluded precisely the Datasets it existed to
+        catch and they survived every teardown. That was invisible until portable
+        paths also made two runs of one test collide on the same stored path,
+        turning a slow leak into a failing assertion. `custom_run_id` is set by
+        `discover._record_datasets` from the run id, which is a fresh uuid per
+        test, so it cannot reach another run's data at all.
         """
         from wheeler.graph.driver import get_async_driver
 
@@ -1207,7 +1236,8 @@ class _RealRunE2E:
                 )
                 await s.run(
                     "MATCH (x:Execution {id: $xid})-[:USED]->(n) "
-                    "WHERE n.path STARTS WITH $under "
+                    "WHERE n.custom_run_id = x.session_id "
+                    "   OR n.path STARTS WITH $under "
                     "SET n.e2e_tag = $tag",
                     xid=report.execution_id, tag=self._e2e_tag,
                     under=str(self._tmp),
@@ -1378,13 +1408,13 @@ class TestIngestMultiDatasetDiscoverE2E(_RealRunE2E):
             assert datasets[name]["seed"] is False
             assert datasets[name]["value"] is not None
             assert list(json.loads(datasets[name]["params"])) == [name]
-            assert Path(datasets[name]["path"]).exists()
+            assert _on_disk(datasets[name]["path"]).exists()
         # a Dataset is an INPUT: it is never generated BY the run
         assert generated_datasets == 0
 
         # 4. and the registered Script RUNS, applying each unit its own constants
         run = subprocess.run(
-            [sys.executable, str(Path(script["path"]))],
+            [sys.executable, str(_on_disk(script["path"]))],
             cwd=self._tmp, capture_output=True, text=True, env=_subprocess_env(),
         )
         assert run.returncode == 0, run.stderr

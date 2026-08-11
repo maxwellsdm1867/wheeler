@@ -710,28 +710,63 @@ async def ensure_artifact(backend, args: dict) -> str:
     Returns JSON with node_id, label, action (created/unchanged/updated),
     path, hash, and optional defaulted_fields / stale_downstream.
     """
+    from wheeler.config import load_config
+    from wheeler.portability import to_portable
+
+    config = args.get("_config") or load_config()
+
     path = args["path"]  # already resolved to absolute by _field_specs
     file_hash = graph_provenance.hash_file(path)
+    portable, _root_id = to_portable(path, config.resolved_roots)
     detected_label, secondary = _detect_artifact_type(
         path, args.get("artifact_type", ""),
     )
 
-    # Multi-label lookup: find any artifact node at this path
+    # Multi-label lookup: find any artifact node naming this file.
+    #
+    # Three spellings are tried, because the graph legitimately holds more than
+    # one at a time: portable (`${PROJECT}/src/a.py`) for anything written since
+    # portable paths landed, absolute for everything written before, and bare
+    # relative for nodes predating path normalization. Querying a single spelling
+    # would miss an existing node and create a SECOND one for a file that already
+    # has one, which is the duplication this function exists to prevent.
     artifact_labels = ["Script", "Dataset", "Document", "Plan", "Finding"]
     or_clause = " OR ".join(f"n:{lbl}" for lbl in artifact_labels)
+    # Scoped to this project's namespace when there is one. `backend.run_cypher`
+    # does no `_wheeler_project` injection (unlike the typed query_* helpers), and
+    # that was harmless only while paths were absolute and therefore globally
+    # unique. Portable paths are unique WITHIN a project: two projects sharing one
+    # Community-Edition database both store the literal string
+    # `${PROJECT}/src/analysis.py`, so an unscoped lookup in one would match the
+    # other's node, overwrite its hash, and propagate staleness through its
+    # downstream chain.
+    ptag = config.neo4j.project_tag
+    ptag_clause = " AND n._wheeler_project = $ptag" if ptag else ""
     lookup_query = (
-        f"MATCH (n) WHERE n.path = $path AND ({or_clause}) "
+        f"MATCH (n) WHERE n.path = $path AND ({or_clause}){ptag_clause} "
         "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2"
     )
-    records = await backend.run_cypher(lookup_query, {"path": path})
-    if not records:
-        # Legacy nodes may store the same file under a relative path.
-        # Try each relative suffix of the resolved absolute path so one
-        # file never gets a second node.
-        for candidate in _relative_path_candidates(path):
-            records = await backend.run_cypher(lookup_query, {"path": candidate})
-            if records:
-                break
+    lookup_params = {"ptag": ptag} if ptag else {}
+
+    spellings = [portable] if portable != path else []
+    spellings.append(path)
+    spellings.extend(_relative_path_candidates(path))
+
+    records: list = []
+    matched_spelling = ""
+    for candidate in spellings:
+        records = await backend.run_cypher(
+            lookup_query, {"path": candidate, **lookup_params}
+        )
+        if records:
+            matched_spelling = candidate
+            if len(records) > 1:
+                logger.warning(
+                    "ensure_artifact: %d nodes share the path %r; using %s. "
+                    "Reconcile them with propose_merge/execute_merge.",
+                    len(records), candidate, records[0]["id"],
+                )
+            break
 
     if not records:
         # Create new node
@@ -743,16 +778,17 @@ async def ensure_artifact(backend, args: dict) -> str:
         if handler is None:
             return json.dumps({"error": f"No handler for {tool_name}"})
 
-        # Delegate to the add_* handler (full create with triple-write via execute_tool)
-        from wheeler.config import load_config
+        # Delegate to the add_* handler (full create with triple-write via
+        # execute_tool, which portabilizes the path and stamps the origin).
         from . import execute_tool as _execute_tool
 
-        result_str = await _execute_tool(tool_name, handler_args, args.get("_config") or load_config())
+        result_str = await _execute_tool(tool_name, handler_args, config)
         parsed = json.loads(result_str)
         if "error" in parsed:
             return result_str
         parsed["action"] = "created"
         parsed["path"] = path
+        parsed["stored_path"] = portable
         parsed["hash"] = file_hash
         if defaulted:
             parsed["defaulted_fields"] = defaulted
@@ -774,6 +810,45 @@ async def ensure_artifact(backend, args: dict) -> str:
             "fix": "Use update_node or delete_node to reconcile before calling ensure_artifact.",
         })
 
+    from . import execute_tool as _execute_tool
+
+    # Opportunistic upgrade: this node was found under an older spelling, and the
+    # match just proved that spelling and the portable one name the same file, so
+    # rewrite it. The hybrid then shrinks as the graph is used, with no bulk
+    # migration pass and no window where a rewrite is guessing.
+    # Upgrade ONLY when the match came from this file's own absolute path.
+    #
+    # A match from `_relative_path_candidates` can name a different file: a legacy
+    # node stored as the bare `analysis.py` matches whether it meant
+    # `/here/src/analysis.py` or `/elsewhere/analysis.py`. Tolerating an ambiguous
+    # MATCH is pre-existing, but WRITING the guess into the node's path would make
+    # the mistake permanent and invisible, so the upgrade is narrower than the
+    # lookup on purpose.
+    upgraded = False
+    if matched_spelling == path and portable != path:
+        upgrade_str = await _execute_tool(
+            "update_node",
+            {
+                "node_id": existing_id,
+                "path": portable,
+                "session_id": args.get("session_id", ""),
+            },
+            config,
+        )
+        if "error" in json.loads(upgrade_str):
+            # Not fatal: the node is still correct under its old spelling, and
+            # the next ensure_artifact will try the upgrade again.
+            logger.warning(
+                "ensure_artifact: could not upgrade %s from %r to %r",
+                existing_id, matched_spelling, portable,
+            )
+        else:
+            upgraded = True
+            logger.info(
+                "ensure_artifact: upgraded %s path %r -> %r",
+                existing_id, matched_spelling, portable,
+            )
+
     # Hash unchanged
     if existing_hash == file_hash:
         return json.dumps({
@@ -781,14 +856,12 @@ async def ensure_artifact(backend, args: dict) -> str:
             "label": existing_label,
             "action": "unchanged",
             "path": path,
+            "stored_path": portable,
+            "path_upgraded": upgraded,
             "hash": file_hash,
         })
 
     # Hash changed: delegate to update_node handler for triple-write
-    from wheeler.config import load_config
-    from . import execute_tool as _execute_tool
-
-    config = args.get("_config") or load_config()
     update_result_str = await _execute_tool(
         "update_node",
         {"node_id": existing_id, "hash": file_hash, "session_id": args.get("session_id", "")},
@@ -812,6 +885,8 @@ async def ensure_artifact(backend, args: dict) -> str:
         "label": existing_label,
         "action": "updated",
         "path": path,
+        "stored_path": portable,
+        "path_upgraded": upgraded,
         "hash": file_hash,
         "previous_hash": existing_hash or "",
         "stale_downstream": stale_count,

@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.14.0-blue" alt="v0.14.0">
+  <img src="https://img.shields.io/badge/v0.15.0-blue" alt="v0.15.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -238,6 +238,17 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.15.0</b> (2026-08-11): one graph per project, on any machine</summary>
+
+- **A stored path means the same file on every machine.** Artifact paths are recorded as `${PROJECT}/src/run.py` and resolved per machine through named roots (`project`, plus anything you map in `~/.wheeler/config.yaml`, e.g. a Google Drive folder). Registering the same file twice, from a different directory or after moving the project, now finds the existing node instead of creating a second one.
+- **A shared graph no longer invalidates itself when opened elsewhere.** Every node records the machine, database and project that wrote it, and staleness is three-valued: only a file this machine owns can cascade. Opening a graph written on another computer used to report every script `FILE_NOT_FOUND` and mark everything downstream stale.
+- **A project names its own database, and its credential names only the server.** `neo4j.profile` in `wheeler.yaml` selects a keychain slot per project, so one project can move to a cloud instance without touching any other on the machine. An explicit `database:` beats the credential's, which is what lets several projects share one server and each keep its own graph.
+- **Several local Neo4j instances at once.** Neo4j Desktop starts one; the `bin/neo4j` inside each instance has no such limit. `wheeler db instances / start / stop / assign-ports` find them (including the JRE Desktop hides), give each its own **seven** ports (bolt, http, routing, backup, cluster, raft, discovery, not just bolt), and refuse to rewrite ports under a running server.
+- **Failures name the fix.** `wheeler db check` separates the three identical-looking local failures: the instance is stopped, no instance serves that port, or it is up but has no such database. `wheeler init` walks you onto a local instance or an Aura one, and `wheeler keepalive` stops a free cloud instance from being deleted after 90 days idle.
+
+</details>
+
+<details>
 <summary><b>v0.14.0</b> (2026-08-07): two hosts, one plugin, no install step</summary>
 
 - **Wheeler runs in OpenAI Codex as well as Claude Code.** The 39 acts exist in exactly one place: their bodies are served over MCP by `get_act`, and each host gets a generated `SKILL.md` stub that fetches them. No act content is authored twice, and mode plus orchestration are derived from each act's existing `allowed-tools` rather than declared, so the two can never disagree.

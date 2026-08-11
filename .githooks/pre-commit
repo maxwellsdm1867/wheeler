@@ -68,6 +68,68 @@ if [[ -n "$STAGED_FILES" ]]; then
     else
         pass "API key safety"
     fi
+
+    # ── Database credentials ─────────────────────────────────────
+    # Deliberately does NOT skip tests/, unlike the API-key scan above. A real
+    # Neo4j password reached a staged test fixture in exactly that way: a
+    # backward-compatibility test was made faithful by copying a working
+    # wheeler.yaml verbatim, password included. Fixtures are where this lands,
+    # so exempting them would exempt the only case that has actually happened.
+    #
+    # Values that are obviously not secrets are allowed through, and the list is
+    # deliberately generous: a scanner noisy enough to train people into
+    # --no-verify protects nothing. Wrong guesses fall the safe way (a blocked
+    # commit is recoverable; a published password is not).
+    CRED_FOUND=0
+    while IFS=: read -r file line content; do
+        case "$file" in
+            .githooks/*|CLAUDE.md|README.md|ARCHITECTURE.md|docs/*) continue ;;
+        esac
+        value=$(echo "$content" | sed -E "s/.*[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][\"']?[[:space:]]*[:=][[:space:]]*//; s/^[\"']//; s/[\"'],?[[:space:]]*\$//; s/[[:space:]]*\$//")
+        # Placeholders, documented defaults, and anything self-describing.
+        # Generous on purpose. A scanner that fires on the repo's own fixtures
+        # is one people learn to bypass with --no-verify, and then it protects
+        # nothing at all. Anything self-describing as a fixture is allowed; the
+        # values this is built to stop (a real password copied out of a working
+        # config) describe themselves as nothing.
+        case "$value" in
+            ""|'${'*|'<'*|*[Tt]est*|*[Ff]ake*|*[Ee]xample*|*[Dd]ummy*|*[Pp]lace*|\
+            *[Cc]hangeme*|*[Rr]edact*|*[Ss]ecret*|*[Xx][Xx]*|*-pass|*_pass|pass-*|\
+            *-pw|*_pw|*[Ff]oo*|*[Bb]ar*|*[Ss]ample*|*[Ss]tub*|*[Mm]ock*|\
+            research-graph|neo4j|None|null|str|True|False) continue ;;
+        esac
+        [[ ${#value} -lt 6 ]] && continue
+        echo -e "  ${RED}BLOCKED${RESET}: possible database password in ${BOLD}${file}:${line}${RESET}"
+        # Never echo the raw line: it contains the very thing being blocked, and
+        # a hook that prints the secret to the terminal (and the scrollback, and
+        # any CI log) has leaked it just as surely as the commit would have.
+        echo -e "  ${DIM}value: ${value:0:2}$(printf '%*s' $(( ${#value} - 2 )) '' | tr ' ' '*')${RESET}"
+        CRED_FOUND=1
+    done < <(git diff --cached -U0 --diff-filter=ACM -- $STAGED_FILES 2>/dev/null | \
+        awk '
+            /^--- / { next }
+            /^\+\+\+ / { file=substr($0,7); next }
+            /^@@ / { split($3,a,","); line=substr(a[1],2); next }
+            # Only a string LITERAL assigned to a password key, or a bare YAML
+            # scalar. Matching any line mentioning "password" flagged
+            # `password=resolved.password`, `password: str` (a type annotation)
+            # and `typer.prompt("Neo4j password")` -- all code, no secret. A
+            # scanner that cries wolf on the codebase it guards gets turned off.
+            /^\+/ && ($0 ~ /[Pp]assword"?'"'"'?[ ]*[:=][ ]*["'"'"'][^"'"'"']+["'"'"']/ || \
+                      $0 ~ /^\+[ ]*[Pp]assword:[ ]*[^ "'"'"'#][^ #,]*[ ]*$/) {
+                gsub(/^\+/, "", $0); print file ":" line ":" $0; line++
+            }
+            /^\+/ { line++ }
+        ')
+
+    if [[ $CRED_FOUND -eq 1 ]]; then
+        echo ""
+        fail "Database credential — replace it with a placeholder, or use the keychain (wheeler login)."
+        echo -e "  ${DIM}If it really is not a secret, make that legible: name it *-test, *-example, or \${VAR}.${RESET}"
+        echo ""
+    else
+        pass "No database credentials staged"
+    fi
 else
     pass "API key safety (no staged files)"
 fi
@@ -121,11 +183,18 @@ PYTHON_CHANGED=$(echo "$STAGED_FILES" | grep -E '\.(py|toml|cfg|yaml|yml)$' || t
 if [[ -z "$PYTHON_CHANGED" ]]; then
     pass "Tests ${DIM}(skipped, no code changes)${RESET}"
 elif [[ -d ".venv" ]]; then
-    info "Running tests..."
+    info "Running tests (excluding e2e)..."
+    # e2e is EXCLUDED here and still runs in full at pre-push.
+    #
+    # Those tests hit a real graph, and since the project can be bound to a
+    # remote one they may cross a WAN: the suite went from about a minute to
+    # nine, on every commit, for coverage pre-push already provides. A gate slow
+    # enough to make people reach for --no-verify protects nothing.
+    #
     # Strip inherited GIT_* env vars so tests that spawn `git` subprocesses
     # (test_portability, test_backup, etc.) cannot accidentally write into
     # the in-flight commit's index via GIT_INDEX_FILE.
-    TEST_OUTPUT=$(env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_EXEC_PATH -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_AUTHOR_DATE -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u GIT_COMMITTER_DATE -u GIT_REFLOG_ACTION .venv/bin/python -m pytest tests/ -q --tb=short 2>&1) || true
+    TEST_OUTPUT=$(env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_EXEC_PATH -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_AUTHOR_DATE -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u GIT_COMMITTER_DATE -u GIT_REFLOG_ACTION .venv/bin/python -m pytest tests/ -q --tb=short --ignore=tests/e2e 2>&1) || true
     TEST_EXIT=${PIPESTATUS[0]:-$?}
 
     # Check if pytest actually reported failures

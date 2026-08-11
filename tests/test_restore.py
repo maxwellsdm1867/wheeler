@@ -838,8 +838,16 @@ async def test_restore_fresh_populates_graph(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_restore_fresh_absolutizes_path_fields(tmp_path):
-    """Path fields carrying ${PROJECT}/ sentinel are rewritten to target_root."""
+async def test_restore_fresh_rebinds_path_fields_to_target_root(tmp_path):
+    """A restored path field resolves against the TARGET root, not the sender's.
+
+    This used to assert the stored value was absolute. It no longer is, and that
+    is the improvement rather than a regression: the write path keeps paths in
+    portable ``${PROJECT}/`` form, so a restored graph is portable on the next
+    machine too instead of being re-pinned to whichever one restored it. What
+    matters, and what is asserted here, is unchanged: the value must resolve to a
+    file under the restore target.
+    """
     target = tmp_path / "target"
     target.mkdir()
 
@@ -857,9 +865,12 @@ async def test_restore_fresh_absolutizes_path_fields(tmp_path):
     assert result["status"] in ("ok", "partial")
     node = backend.nodes_by_id.get("F-bb000001", {})
     stored_path = node.get("path", "")
-    assert "${PROJECT}" not in stored_path, f"sentinel still in path: {stored_path}"
-    assert str(target.resolve()) in stored_path, (
-        f"target root not in path: {stored_path}"
+
+    from wheeler.portability import resolve as resolve_path
+
+    resolved = resolve_path(stored_path, {"project": target.resolve()})
+    assert resolved == target.resolve() / "results" / "fig1.png", (
+        f"restored path does not land under the target root: {stored_path}"
     )
 
 

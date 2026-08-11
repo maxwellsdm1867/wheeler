@@ -87,14 +87,14 @@ class TestSaveLoadDelete:
             "default",
             "neo4j+s://abc123.databases.neo4j.io",
             "neo4j",
-            "s3cret",
+            "s3cret-test",
             "neo4j",
         )
         record = credentials.load("default")
         assert record == {
             "uri": "neo4j+s://abc123.databases.neo4j.io",
             "username": "neo4j",
-            "password": "s3cret",
+            "password": "s3cret-test",
             "database": "neo4j",
         }
 
@@ -297,9 +297,10 @@ class TestPrecedence:
         config = load_config(path)
         assert config.neo4j.uri == "bolt://env-host:7687"
         assert config.neo4j.username == "keychain-user"
-        # The keychain record always carries a database, so YAML only wins when
-        # the stored record is silent about it: prove that by storing no db.
-        assert config.neo4j.database == "neo4j"
+        # An explicit YAML `database` beats the stored one: the credential names
+        # the SERVER, the project names the DATABASE. That is what lets several
+        # projects share one connection and each keep its own graph.
+        assert config.neo4j.database == "yaml-db"
         assert config.neo4j.password == "keychain-pass"
 
     def test_yaml_database_survives_a_keychain_record_without_one(
@@ -390,7 +391,9 @@ class TestSourceReport:
         assert by_field["uri"].origin == "NEO4J_URI"
         assert by_field["username"].source == "keychain"
         assert "default" in by_field["username"].origin
-        assert by_field["database"].source == "keychain"
+        # `database` is the one field a project outranks the keychain on.
+        assert by_field["database"].source == "yaml"
+        assert by_field["database"].value == "yaml-db"
 
     def test_yaml_and_default_are_distinguished(self, tmp_path, clean_neo4j_env, fake_keyring):
         path = write_yaml(tmp_path, {"uri": "bolt://from-yaml:7687"})
@@ -436,3 +439,266 @@ class TestSourceReport:
     ):
         monkeypatch.setenv("NEO4J_URI", "bolt://env-host:7687")
         assert shadowed_by_env() == []
+
+
+class TestProjectProfileBinding:
+    """`neo4j.profile` in wheeler.yaml selects which keychain slot a project uses.
+
+    The alternative is storing the credential under `default`, and that is not a
+    style preference: the keychain outranks wheeler.yaml, so a `default` record
+    silently overrides the `neo4j:` block of EVERY project on the machine. A repo
+    pinned to its own database would quietly read and write somewhere else with
+    nothing in its own config saying so.
+    """
+
+    def _store(self, profile: str, uri: str, database: str) -> None:
+        credentials.save(profile, uri, f"{profile}-user", f"{profile}-pass", database)
+        reset_keychain_cache()
+
+    def test_declared_profile_selects_its_slot(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        self._store("aura-x", "neo4j+s://cloud:7687", "cloud-db")
+        path = write_yaml(
+            tmp_path, {"profile": "aura-x", "uri": "bolt://localhost:7687"}
+        )
+        config = load_config(path)
+        assert config.neo4j.uri == "neo4j+s://cloud:7687"
+        assert config.neo4j.database == "cloud-db"
+
+    def test_the_project_names_the_database_the_credential_names_the_server(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        """The rule that makes several projects share one server.
+
+        Without it, every project connecting through one credential is dragged
+        onto whichever database that credential was created with, and
+        `wheeler db use` cannot do anything.
+        """
+        self._store("aura-x", "neo4j+s://cloud:7687", "cloud-db")
+        path = write_yaml(
+            tmp_path, {"profile": "aura-x", "database": "retina_rgc"}
+        )
+        config = load_config(path)
+        assert config.neo4j.uri == "neo4j+s://cloud:7687"   # server: credential
+        assert config.neo4j.username == "aura-x-user"       # identity: credential
+        assert config.neo4j.database == "retina_rgc"        # database: project
+
+        # And --status must report the same thing, or it lies to the user.
+        rows = {r.field: r for r in neo4j_sources(path)}
+        assert rows["database"].value == "retina_rgc"
+        assert rows["database"].source == "yaml"
+        assert rows["uri"].source == "keychain"
+
+    def test_a_project_without_the_binding_is_untouched(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        """The whole point: one project moving to the cloud moves only itself."""
+        self._store("aura-x", "neo4j+s://cloud:7687", "cloud-db")
+        path = write_yaml(
+            tmp_path, {"uri": "bolt://127.0.0.1:7687", "database": "someones-project"}
+        )
+        config = load_config(path)
+        assert config.neo4j.uri == "bolt://127.0.0.1:7687"
+        assert config.neo4j.database == "someones-project"
+
+    def test_env_profile_overrides_the_declared_one(
+        self, tmp_path, clean_neo4j_env, fake_keyring, monkeypatch
+    ):
+        self._store("aura-x", "neo4j+s://cloud:7687", "cloud-db")
+        self._store("other", "bolt://other:7687", "other-db")
+        path = write_yaml(tmp_path, {"profile": "aura-x"})
+        monkeypatch.setenv(credentials.PROFILE_ENV, "other")
+
+        config = load_config(path)
+        assert config.neo4j.uri == "bolt://other:7687"
+
+    def test_missing_slot_falls_through_to_yaml(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        """A fresh clone, or a machine that never ran `wheeler login`."""
+        path = write_yaml(
+            tmp_path,
+            {"profile": "never-stored", "uri": "bolt://fallback:7687", "database": "fb"},
+        )
+        config = load_config(path)
+        assert config.neo4j.uri == "bolt://fallback:7687"
+        assert config.neo4j.database == "fb"
+
+    def test_sources_report_matches_what_load_config_resolved(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        """`neo4j_sources` must follow the same profile, or `--status` lies."""
+        self._store("aura-x", "neo4j+s://cloud:7687", "cloud-db")
+        path = write_yaml(tmp_path, {"profile": "aura-x", "uri": "bolt://localhost:7687"})
+
+        config = load_config(path)
+        rows = {r.field: r for r in neo4j_sources(path)}
+        assert rows["uri"].value == config.neo4j.uri
+        assert rows["uri"].source == "keychain"
+        assert "aura-x" in rows["uri"].origin
+
+
+class TestLocalAndCloudRoutesBothWork:
+    """Both routes must be first-class: local stays easy, cloud stays honest.
+
+    The failure this pins down is asymmetric. A local project must never be
+    disturbed by a cloud credential existing elsewhere on the machine, and a
+    cloud project must never quietly degrade to localhost when its credential is
+    missing, because the first looks like data loss and the second looks like
+    "the graph forgot everything".
+    """
+
+    def test_a_local_project_is_unaffected_by_a_stored_cloud_credential(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        credentials.save("some-cloud", "neo4j+s://cloud:7687", "u", "p", "clouddb")
+        reset_keychain_cache()
+        path = write_yaml(
+            tmp_path, {"uri": "bolt://localhost:7687", "database": "my_local_db"}
+        )
+
+        config = load_config(path)
+        assert config.neo4j.uri == "bolt://localhost:7687"
+        assert config.neo4j.database == "my_local_db"
+        assert config.neo4j.profile_missing is False
+
+    def test_a_local_project_with_no_keychain_at_all_is_fine(
+        self, tmp_path, clean_neo4j_env, monkeypatch
+    ):
+        """No keychain, no stored credential, no error: the plain local case."""
+
+        def boom():
+            raise credentials.KeyringUnavailable("not installed")
+
+        monkeypatch.setattr(credentials, "_load_keyring", boom)
+        reset_keychain_cache()
+        path = write_yaml(tmp_path, {"uri": "bolt://127.0.0.1:7687", "database": "d"})
+
+        config = load_config(path)
+        assert config.neo4j.uri == "bolt://127.0.0.1:7687"
+        assert config.neo4j.profile_missing is False
+
+    def test_a_cloud_project_uses_the_cloud_when_it_is_set_up(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        credentials.save("aura-x", "neo4j+s://cloud:7687", "u", "p", "clouddb")
+        reset_keychain_cache()
+        path = write_yaml(tmp_path, {"profile": "aura-x"})
+
+        config = load_config(path)
+        assert config.neo4j.uri == "neo4j+s://cloud:7687"
+        assert config.neo4j.database == "clouddb"
+        assert config.neo4j.profile_missing is False
+
+    def test_a_cloud_project_refuses_rather_than_falling_back_to_localhost(
+        self, tmp_path, clean_neo4j_env, fake_keyring, monkeypatch
+    ):
+        """A missing credential must be loud. Silently using localhost would
+        either fail against a stopped instance or, worse, succeed against a
+        DIFFERENT graph and take the writes."""
+        from wheeler.graph.neo4j_backend import Neo4jBackend
+
+        # The suite-wide kill switch means "do not use stored credentials", which
+        # is a legitimate fall-through rather than the error case. Lift it here so
+        # this exercises an available keychain that simply lacks the slot.
+        monkeypatch.delenv(credentials.DISABLE_ENV, raising=False)
+        reset_keychain_cache()
+        path = write_yaml(tmp_path, {"profile": "never-stored"})
+        config = load_config(path)
+        assert config.neo4j.profile_missing is True
+
+        with pytest.raises(RuntimeError) as excinfo:
+            Neo4jBackend(config)._driver()
+        message = str(excinfo.value)
+        assert "never-stored" in message
+        assert "wheeler login" in message
+
+    def test_the_keychain_kill_switch_is_not_treated_as_a_missing_credential(
+        self, tmp_path, clean_neo4j_env, monkeypatch
+    ):
+        """`WHEELER_NO_KEYCHAIN` is an explicit operator choice, so falling
+        through to yaml is the REQUESTED behaviour, not a silent substitution."""
+        monkeypatch.setenv(credentials.DISABLE_ENV, "1")
+        reset_keychain_cache()
+        path = write_yaml(
+            tmp_path, {"profile": "aura-x", "uri": "bolt://localhost:7687"}
+        )
+
+        config = load_config(path)
+        assert config.neo4j.profile_missing is False
+        assert config.neo4j.uri == "bolt://localhost:7687"
+
+
+class TestExistingUsersAreNotDisturbed:
+    """A config written before any of this existed must keep working, verbatim.
+
+    Every new mechanism here is OPT-IN through a `profile:` key that no existing
+    file has. The rule: if a project does not ask for the new behaviour, it must
+    get byte-for-byte the old one, and nothing may rewrite its file.
+    """
+
+    LEGACY = {
+        "uri": "bolt://127.0.0.1:7687",
+        "username": "neo4j",
+        "password": "legacy-yaml-pass",
+        "database": "wh-off-parasol-model",
+    }
+
+    def test_a_legacy_local_config_resolves_exactly_as_before(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        path = write_yaml(tmp_path, dict(self.LEGACY))
+        config = load_config(path)
+
+        assert config.neo4j.uri == self.LEGACY["uri"]
+        assert config.neo4j.username == self.LEGACY["username"]
+        assert config.neo4j.password == self.LEGACY["password"]
+        assert config.neo4j.database == self.LEGACY["database"]
+        # Opted into nothing, so nothing new applies.
+        assert config.neo4j.profile == ""
+        assert config.neo4j.profile_missing is False
+
+    def test_a_legacy_config_is_not_rewritten_by_loading_it(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        """Reading a config must never edit it. Only `wheeler db use` writes."""
+        path = write_yaml(tmp_path, dict(self.LEGACY))
+        before = path.read_bytes()
+        load_config(path)
+        assert path.read_bytes() == before
+
+    def test_wheeler_init_leaves_an_existing_config_alone(self, tmp_path, monkeypatch):
+        """Re-running init on a configured project must not touch wheeler.yaml.
+
+        This is the upgrade path: a user pulls a new Wheeler, runs init again out
+        of habit, and their local binding has to survive it.
+        """
+        from typer.testing import CliRunner
+
+        from wheeler.cli import app
+
+        project = tmp_path / "existing"
+        project.mkdir()
+        config_path = project / "wheeler.yaml"
+        config_path.write_text(yaml.safe_dump({"neo4j": dict(self.LEGACY)}))
+        before = config_path.read_bytes()
+
+        result = CliRunner().invoke(
+            app,
+            ["init", str(project), "--skip-install", "--skip-mcp", "-y"],
+        )
+        assert result.exit_code == 0, result.output
+        assert config_path.read_bytes() == before, "init rewrote an existing config"
+
+    def test_a_legacy_config_still_wins_over_an_unrelated_stored_credential(
+        self, tmp_path, clean_neo4j_env, fake_keyring
+    ):
+        """Another project's cloud login must not reach into this one."""
+        credentials.save("aura-other", "neo4j+s://cloud:7687", "u", "p", "clouddb")
+        reset_keychain_cache()
+        path = write_yaml(tmp_path, dict(self.LEGACY))
+
+        config = load_config(path)
+        assert config.neo4j.uri == self.LEGACY["uri"]
+        assert config.neo4j.database == self.LEGACY["database"]

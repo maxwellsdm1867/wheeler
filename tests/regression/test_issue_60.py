@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from wheeler.config import load_config
 from wheeler.consistency import check_consistency
 from wheeler.models import ScriptModel, ExecutionModel
 
@@ -21,13 +20,13 @@ from wheeler.models import ScriptModel, ExecutionModel
 class TestTripleWriteConsistency:
     """Verify that new nodes written via execute_tool appear in all three layers."""
 
-    async def test_add_script_writes_all_three_layers(self, tmp_path):
+    async def test_add_script_writes_all_three_layers(self, tmp_path, e2e_config):
         """When add_script succeeds, graph, JSON, and synthesis all get the node."""
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.knowledge.store import read_node
         from wheeler.knowledge.render import render_synthesis
 
-        config = load_config()
+        config = e2e_config
         knowledge_dir = tmp_path / "knowledge"
         synthesis_dir = tmp_path / "synthesis"
         knowledge_dir.mkdir()
@@ -78,13 +77,13 @@ class TestTripleWriteConsistency:
         assert len(records) > 0, f"Script node {script_id} missing from graph"
         assert records[0]["id"] == script_id
 
-    async def test_add_finding_writes_all_three_layers(self, tmp_path):
+    async def test_add_finding_writes_all_three_layers(self, tmp_path, e2e_config):
         """When add_finding succeeds, all three layers receive the node."""
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.knowledge.store import read_node
         from wheeler.models import FindingModel
 
-        config = load_config()
+        config = e2e_config
         knowledge_dir = tmp_path / "knowledge"
         synthesis_dir = tmp_path / "synthesis"
         knowledge_dir.mkdir()
@@ -126,11 +125,11 @@ class TestTripleWriteConsistency:
         )
         assert len(records) > 0, f"Finding node {finding_id} missing from graph"
 
-    async def test_consistency_check_sees_new_nodes_in_all_layers(self, tmp_path):
+    async def test_consistency_check_sees_new_nodes_in_all_layers(self, tmp_path, e2e_config):
         """After triple-write, consistency check should report zero drift."""
         from wheeler.tools.graph_tools import execute_tool, _get_backend
 
-        config = load_config()
+        config = e2e_config
         knowledge_dir = tmp_path / "knowledge"
         synthesis_dir = tmp_path / "synthesis"
         knowledge_dir.mkdir()
@@ -172,11 +171,19 @@ class TestTripleWriteConsistency:
             "graph write failed"
         )
 
-    async def test_detects_legacy_analysis_nodes(self, tmp_path):
-        """Legacy A-* Analysis JSON files (pre-migration) should be detected as json_only."""
+    async def test_detects_legacy_analysis_nodes(self, tmp_path, e2e_config):
+        """Legacy A-* Analysis JSON files (pre-migration) must still be DETECTED.
+
+        They are reported as `unreadable` rather than `json_only` since fd7bd2e,
+        which split the two deliberately: `json_only` is expected drift that
+        repair can reconcile, while a file that does not parse at all needs a
+        migration and would be silently miscounted otherwise. The property this
+        test exists for is unchanged, and is what is asserted below: a legacy
+        Analysis file is not lost from the report.
+        """
         from wheeler.config import load_config
 
-        config = load_config()
+        config = e2e_config
         knowledge_dir = tmp_path / "knowledge"
         synthesis_dir = tmp_path / "synthesis"
         knowledge_dir.mkdir()
@@ -212,21 +219,26 @@ class TestTripleWriteConsistency:
         ):
             report = await check_consistency(config)
 
-        # The legacy Analysis node should be in json_only
-        assert legacy_analysis_id in report.json_only, (
-            "Legacy Analysis node should be detected as json_only "
-            "(exists in JSON but not in graph)"
+        # Detected, and specifically as unreadable: it exists in JSON, is absent
+        # from the graph, and does not parse as any current node type.
+        assert legacy_analysis_id in report.unreadable, (
+            "Legacy Analysis node should be detected as unreadable "
+            f"(json_only={report.json_only}, unreadable={report.unreadable})"
+        )
+        assert legacy_analysis_id not in report.json_only, (
+            "unreadable and json_only are separate buckets because their "
+            "remedies differ: repair can reconcile one and not the other"
         )
         assert report.total_json >= 1
         assert report.total_graph == 0
 
-    async def test_provenance_execution_writes_all_layers(self, tmp_path):
+    async def test_provenance_execution_writes_all_layers(self, tmp_path, e2e_config):
         """When execution_kind is set, the auto-created Execution should reach all layers."""
         from wheeler.tools.graph_tools import execute_tool
         from wheeler.knowledge.store import read_node
         from wheeler.models import ExecutionModel
 
-        config = load_config()
+        config = e2e_config
         knowledge_dir = tmp_path / "knowledge"
         synthesis_dir = tmp_path / "synthesis"
         knowledge_dir.mkdir()

@@ -316,7 +316,7 @@ async def propagate_invalidation(
                 # must not abort propagation.
                 try:
                     synthesis_path = project_synthesis_dir(config)
-                    markdown = render_synthesis(node_model)
+                    markdown = render_synthesis(node_model, roots=config.resolved_roots)
                     write_synthesis(synthesis_path, dep_id, markdown)
                 except Exception as exc:
                     logger.warning(
@@ -410,13 +410,20 @@ async def detect_and_propagate_stale(config: WheelerConfig) -> dict:
     entities via PROV relationships.
 
     This is the function Wheeler's ``detect_stale`` MCP tool should call.
+
+    Only scripts classified ``changed`` invalidate anything. ``diverged`` (another
+    machine's copy differs) and ``absent`` (the file is not on this computer) are
+    reported and nothing more: a graph shared between two machines would otherwise
+    invalidate itself the first time it was opened from the second one. See
+    ``wheeler.graph.provenance.detect_stale_scripts`` for the classification.
     """
     from wheeler.graph.provenance import detect_stale_scripts
 
     stale_scripts = await detect_stale_scripts(config)
     all_affected: list[InvalidatedNode] = []
 
-    for stale in stale_scripts:
+    changed = [s for s in stale_scripts if s.reason == "changed"]
+    for stale in changed:
         affected = await propagate_invalidation(
             config,
             changed_node_id=stale.node_id,
@@ -424,14 +431,24 @@ async def detect_and_propagate_stale(config: WheelerConfig) -> dict:
         )
         all_affected.extend(affected)
 
+    by_reason: dict[str, int] = {}
+    for s in stale_scripts:
+        by_reason[s.reason] = by_reason.get(s.reason, 0) + 1
+
     return {
+        # Unchanged meaning: how many scripts no longer match. `changed` is the
+        # subset that actually propagated.
         "stale_scripts": len(stale_scripts),
+        "changed": len(changed),
+        "by_reason": by_reason,
         "downstream_affected": len(all_affected),
         "details": {
             "scripts": [
                 {
                     "id": s.node_id,
                     "path": s.path,
+                    "reason": s.reason,
+                    "origin_host": s.origin_host,
                     "stored_hash": s.stored_hash[:12],
                     "current_hash": s.current_hash[:12],
                 }

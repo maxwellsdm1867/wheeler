@@ -373,9 +373,34 @@ def _obsidian_backlinks(text: str) -> str:
     return _NODE_ID_RE.sub(r"[[\1]]", text)
 
 
+def _resolved_for_display(model: NodeBase, roots: dict | None) -> NodeBase:
+    """A copy of *model* whose ``path`` is resolved for this machine.
+
+    Returns the model untouched when there is nothing to do, so the common case
+    allocates nothing. Never raises: a path that cannot be resolved here (its
+    root belongs to another computer) is left in portable form, which at least
+    tells the reader where it lives instead of inventing a local path.
+    """
+    stored = getattr(model, "path", "") or ""
+    if not stored or not roots:
+        return model
+    try:
+        from wheeler.portability import is_portable, resolve
+
+        if not is_portable(stored):
+            return model
+        resolved = resolve(stored, roots)
+        if resolved is None:
+            return model
+        return model.model_copy(update={"path": str(resolved)})
+    except Exception:  # pragma: no cover - display must never break a write
+        return model
+
+
 def render_synthesis(
     model: NodeBase,
     relationships: list[dict] | None = None,
+    roots: dict | None = None,
 ) -> str:
     """Render a node as Obsidian-compatible markdown with YAML frontmatter.
 
@@ -387,7 +412,15 @@ def render_synthesis(
         Optional list of relationship dicts with keys:
         ``source_id``, ``target_id``, ``relationship``, ``target_label``,
         ``target_title``.  Used to build a Relationships section.
+    roots
+        Optional ``{name: Path}`` mapping used to turn a stored portable path
+        (``${PROJECT}/src/a.py``) into one this machine can open. Synthesis is
+        the layer a HUMAN reads in Obsidian, where a sentinel is unopenable and
+        unclickable, so this view resolves while the graph and the JSON keep the
+        portable form. Passed in rather than looked up because this module takes
+        no config dependency; omitting it renders the stored value unchanged.
     """
+    model = _resolved_for_display(model, roots)
     # YAML frontmatter
     fm: dict = {
         "id": model.id,

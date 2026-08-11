@@ -100,6 +100,19 @@ class Neo4jBackend(GraphBackend):
     def _driver(self):
         from wheeler.graph.driver import get_async_driver
 
+        # A project that named a keychain profile and did not get one must not
+        # silently connect somewhere else. Falling through would reach the
+        # built-in localhost default, which is either a stopped instance or,
+        # worse, a DIFFERENT graph that answers happily and takes the writes.
+        if getattr(self._config.neo4j, "profile_missing", False):
+            declared = self._config.neo4j.profile
+            raise RuntimeError(
+                f"this project connects through the keychain profile "
+                f"{declared!r}, and no credential is stored under that name on "
+                f"this machine. Refusing to fall back to "
+                f"{self._config.neo4j.uri}, which is not the graph this project "
+                f"asked for. Fix with: wheeler login --profile {declared}"
+            )
         return get_async_driver(self._config)
 
     @property
@@ -182,6 +195,18 @@ class Neo4jBackend(GraphBackend):
         # Inject project namespace tag when isolation is active
         if self._project_tag:
             props["_wheeler_project"] = self._project_tag
+
+        # Stamp the origin (machine / database / project) on every node.
+        # This belongs at the backend rather than in the add_* handlers because
+        # each handler builds an explicit props dict, so anything merged into the
+        # tool args upstream never reaches Neo4j. Doing it here also covers nodes
+        # created outside a handler, such as the provenance-helper Execution.
+        # Existing keys win, so a restore replaying an archived node keeps the
+        # machine that originally wrote it.
+        from wheeler.machine import origin_props
+
+        for key, value in origin_props(self._config).items():
+            props.setdefault(key, value)
 
         # Build SET clause from properties -- reference via $props.key
         # to avoid kwarg collision with the Neo4j driver's own parameters.
