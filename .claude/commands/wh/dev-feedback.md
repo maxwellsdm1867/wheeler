@@ -57,6 +57,25 @@ Wait for the user to respond before filing anything. They may add issues you mis
 
 ### Step 3: File GitHub issues
 
+**First, capture the version. Measure it, never guess it.** Every issue must record which Wheeler was actually running when the bug appeared, because by the time anyone works the issue the bug may already be fixed in a later release. Without this, whoever picks it up has to re-derive the version from the issue's filing date, and a bug fixed three releases ago looks identical to a live one.
+
+Run this once, before filing anything:
+
+```bash
+python -c "import wheeler, pathlib; print('version:', wheeler.__version__); print('install:', pathlib.Path(wheeler.__file__).parent)"
+```
+
+Record what it prints. Two details matter beyond the number:
+
+- **The install path.** Wheeler is often used from a different install than the dev checkout (for example `~/wheeler-user-test/.venv/`), and the MCP servers inherit whichever one launched them. A bug in one install may not exist in the other, so name the path.
+- **The commit, when it is a dev checkout.** A version like `0.15.0` covers every commit since that tag, which can be dozens. If `wheeler.__file__` sits inside a git repo, add the commit:
+
+```bash
+git -C "$(python -c "import wheeler, pathlib; print(pathlib.Path(wheeler.__file__).parent.parent)")" rev-parse --short HEAD 2>/dev/null
+```
+
+If the version cannot be determined, write `unknown` and say why. Do not substitute the version of this repo for the version that was running.
+
 For each confirmed issue, create a GitHub issue using `gh issue create`.
 
 **Repo:** `maxwellsdm1867/wheeler`
@@ -113,6 +132,13 @@ Use code blocks. If no error message, show the wrong output vs what was expected
 - Do not change [X]
 - This issue is only about [Y], not [Z]
 
+## Environment
+
+- **Wheeler version:** [exact value from `wheeler.__version__`, e.g. 0.15.0, or `unknown` with the reason]
+- **Install path:** [the directory `wheeler.__file__` resolves to, e.g. /Users/x/wheeler-user-test/.venv/lib/python3.14/site-packages/wheeler]
+- **Commit:** [short SHA if the install is a git checkout, else `n/a` for a released install]
+- **Graph:** [database name and whether it is local or remote, if the bug touches the graph]
+
 ## Context
 
 - **Severity:** Critical / High / Medium / Low
@@ -150,6 +176,7 @@ Filed 3 issues:
 - **Acceptance criteria must be checkable.** "Works better" is not a criterion. "Returns connected graph with <20% isolated nodes" is.
 - **Scope boundaries prevent sprawl.** AI agents perform dramatically worse on multi-file edits. Keep each issue focused on one change.
 - **Severity reflects research impact.** A bug that silently corrupts the knowledge graph is Critical even if it's a one-line fix.
+- **The version is evidence, not metadata.** Record the version and install path that were actually running. A stale version turns a fixed bug into a live-looking one, and the reader cannot tell the difference. This has already cost a full reproduce-and-triage pass on an issue that had been fixed nine days earlier.
 - **Never use em dashes.** Use colons, commas, periods, parentheses.
 
 $ARGUMENTS
