@@ -200,6 +200,7 @@ async def add_question(backend, args: dict) -> str:
 
 async def add_dataset(backend, args: dict) -> str:
     node_id = args.get("id") or generate_node_id("D")
+    now = _now()
     path = args["path"]
     display_name = os.path.basename(path) if path else args["description"][:40]
 
@@ -217,7 +218,10 @@ async def add_dataset(backend, args: dict) -> str:
         "type": args["type"],
         "description": args["description"],
         "hash": args.get("hash", ""),
-        "date_added": _now(),
+        # The session sweep in /wh:close filters on coalesce(n.updated, n.date),
+        # so a Dataset carrying only the legacy date_added is invisible to it.
+        "date": now,
+        "updated": now,
         "tier": args.get("tier", "generated"),
         "stability": default_stability("Dataset", args.get("tier", "generated")),
         "session_id": args.get("session_id", ""),

@@ -279,8 +279,9 @@ async def query_datasets(backend, args: dict) -> str:
             "OR toLower(d.path) CONTAINS toLower($kw))"
             f"{pw} "
             "RETURN d.id AS id, d.path AS path, d.type AS type, "
-            "d.description AS description, d.date_added AS date "
-            "ORDER BY d.date_added DESC LIMIT $limit",
+            "d.description AS description, "
+            "coalesce(d.date, d.date_added) AS date "
+            "ORDER BY date DESC LIMIT $limit",
             _inject_ptag({"kw": keyword, "limit": limit}, ctx.project_tag),
         )
     else:
@@ -288,8 +289,9 @@ async def query_datasets(backend, args: dict) -> str:
             "MATCH (d:Dataset)"
             f"{_project_where('d', ctx.project_tag, has_existing_where=False)} "
             "RETURN d.id AS id, d.path AS path, d.type AS type, "
-            "d.description AS description, d.date_added AS date "
-            "ORDER BY d.date_added DESC LIMIT $limit",
+            "d.description AS description, "
+            "coalesce(d.date, d.date_added) AS date "
+            "ORDER BY date DESC LIMIT $limit",
             _inject_ptag({"limit": limit}, ctx.project_tag),
         )
 
