@@ -1,0 +1,16 @@
+[
+  {"query": "i want to make a wheeler skill that figures out what i'm asking about and pulls in the right graph context", "should_trigger": true},
+  {"query": "can you build me a skill that checks the knowledge graph before it touches any of my analysis scripts", "should_trigger": true},
+  {"query": "turn this into a skill: every time i ask about a figure, look up what produced it first", "should_trigger": true},
+  {"query": "make it automatic that you check for a duplicate finding before writing a new one", "should_trigger": true},
+  {"query": "i keep having to remind you to read the graph first, can we package that", "should_trigger": true},
+  {"query": "create a skill for reviewing a harvested batch that reads the review queue and writes decisions back", "should_trigger": true},
+  {"query": "add a new /wh: command for summarizing a plan", "should_trigger": false},
+  {"query": "scaffold an adapter so paper finder results land in the graph with provenance", "should_trigger": false},
+  {"query": "why didn't wheeler-context-first fire when i asked about the swap figure?", "should_trigger": false},
+  {"query": "what does search_context actually return, walk me through the hops", "should_trigger": false},
+  {"query": "write a python script that dumps every finding to csv", "should_trigger": false},
+  {"query": "look up what produced swap_refit_comparison.png", "should_trigger": false},
+  {"query": "add a note that the cross-type swap only recovers under theta0 refit", "should_trigger": false},
+  {"query": "make me a skill for formatting my matlab plots consistently", "should_trigger": false}
+]
