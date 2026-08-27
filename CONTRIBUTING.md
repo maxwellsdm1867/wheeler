@@ -15,6 +15,49 @@ uv sync --extra dev          # creates .venv/, installs core + dev deps from uv.
 
 That's it. `uv run wheeler --version` should now print the installed version.
 
+### Project-local Codex development
+
+To expose this checkout's 39 Wheeler skills and four MCP servers to Codex,
+generate machine-local wiring from the repository root:
+
+```bash
+python scripts/configure-codex-dev.py
+```
+
+On Windows, the generator uses native `uv` when available and otherwise falls
+back to WSL. You can select WSL explicitly from PowerShell:
+
+```powershell
+python scripts/configure-codex-dev.py --host wsl --wsl-distro Ubuntu
+```
+
+The generated `.agents/skills` link and `.codex/config.toml` are excluded only
+in this checkout. The MCP commands use `uv run --frozen` against the editable
+source tree. WSL gets a distro-local environment outside the mounted checkout,
+so it cannot replace a Windows `.venv`. Credentials are read at runtime and are
+never written to the generated Codex configuration.
+
+After restarting Codex in the project, run the strict certificate. It requires
+all 39 skills, the exact 53-tool MCP surface, the Codex `start` act, an
+authenticated Neo4j `RETURN 1`, and a real E2E run with no skips:
+
+```bash
+uv run --frozen --extra dev python scripts/certify-codex-dev.py
+```
+
+When Windows is using the WSL fallback because native `uv` is unavailable, run
+the certifier with the checkout's already-synced Windows development Python. It
+will reuse the generated WSL launcher for MCP and E2E execution:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\certify-codex-dev.py
+```
+
+The local E2E defaults are `bolt://localhost:7687`, user `neo4j`, database
+`neo4j`, and the development password used by `bin/setup.sh`. Override the
+standard `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, and `NEO4J_DATABASE`
+environment variables when your local service differs.
+
 For the full bootstrap (Neo4j in Docker, schema init, git hooks, zsh
 completions) the bundled script still works:
 
