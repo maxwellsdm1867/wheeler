@@ -28,8 +28,10 @@ from wheeler.acts import load_acts
 
 REPO = bp._repo_root()
 SOURCE_COMMANDS = REPO / "wheeler" / "_data" / "commands"
+SOURCE_PLUGIN_SKILLS = REPO / "wheeler" / "_data" / "plugin_skills"
 
 EXPECTED_ACT_COUNT = 39
+EXPECTED_PLUGIN_SKILLS = {"wheeler-voice"}
 
 # Reserved marketplace names the host rejects.
 RESERVED_MARKETPLACE_NAMES = {
@@ -62,7 +64,11 @@ def scratch_root(tmp_path: Path) -> Path:
 
 
 def _skill_paths(files: dict[str, str]) -> list[str]:
-    return sorted(p for p in files if p.startswith(f"{bp.SKILLS_DIR}/"))
+    return sorted(
+        p
+        for p in files
+        if p.startswith(f"{bp.SKILLS_DIR}/") and p.endswith("/SKILL.md")
+    )
 
 
 def _split_skill(text: str) -> tuple[dict, str]:
@@ -85,15 +91,15 @@ def test_source_tree_is_39_acts_plus_the_authoring_guide():
     assert len(names) == EXPECTED_ACT_COUNT + 1
 
 
-def test_emits_one_skill_per_act_and_excludes_claude_md(files):
-    """39 acts, not 40. `_data/commands/CLAUDE.md` is the authoring guide."""
+def test_emits_acts_plus_self_contained_plugin_skills(files):
+    """Acts become stubs; standalone workflows ship as full plugin skills."""
     skills = sorted(p.split("/")[1] for p in _skill_paths(files))
-    assert len(skills) == EXPECTED_ACT_COUNT
+    assert len(skills) == EXPECTED_ACT_COUNT + len(EXPECTED_PLUGIN_SKILLS)
     assert "CLAUDE" not in skills and "claude" not in skills
-    assert skills == sorted(a.act_id for a in load_acts())
+    assert skills == sorted({a.act_id for a in load_acts()} | EXPECTED_PLUGIN_SKILLS)
 
 
-def test_every_skill_is_one_SKILL_md_in_its_own_dir(files):
+def test_every_skill_has_a_skill_md_in_its_own_dir(files):
     for path in _skill_paths(files):
         parts = path.split("/")
         assert len(parts) == 3, path
@@ -120,19 +126,33 @@ def test_invocation_spelling_is_unchanged(files):
         assert act in skills, f"/{bp.PLUGIN_NAME}:{act} would not resolve"
 
 
-def test_frontmatter_opens_the_file(files):
+def test_every_skill_frontmatter_opens_the_file(files):
     """A parser that does not see `---` on line 1 treats the block as prose.
 
     That would silently drop `description` and `allowed-tools`, and take Claude
-    Code's mode enforcement with them. Every SKILL.md installed on a real
-    machine opens with `---`; the generated-file banner goes after it.
+    Code's mode enforcement with them.
     """
     for path in _skill_paths(files):
         text = files[path]
         assert text.startswith("---\n"), path
+
+
+def test_act_stubs_carry_the_generated_banner(files):
+    """Generated act stubs identify their source after valid frontmatter."""
+    for act in load_acts():
+        path = f"{bp.SKILLS_DIR}/{act.act_id}/SKILL.md"
+        text = files[path]
         assert "GENERATED FILE" in text, path
         banner_at = text.index("GENERATED FILE")
         assert banner_at > text.index("\n---", 4), path
+
+
+def test_self_contained_plugin_skills_ship_verbatim(files):
+    for source in sorted(SOURCE_PLUGIN_SKILLS.rglob("*")):
+        if not source.is_file():
+            continue
+        rel = source.relative_to(SOURCE_PLUGIN_SKILLS).as_posix()
+        assert files[f"{bp.SKILLS_DIR}/{rel}"] == source.read_text()
 
 
 def test_skill_frontmatter_matches_source_act(files):

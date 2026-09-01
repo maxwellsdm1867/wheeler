@@ -120,7 +120,8 @@ For finer control than whole servers, Codex also accepts `enabled_tools` /
 ## Regenerating
 
 Everything here is generated from `wheeler/_data/commands/*.md` and
-`wheeler/_data/agents/*.md`:
+`wheeler/_data/agents/*.md`, plus self-contained skills under
+`wheeler/_data/plugin_skills/`:
 
 ```bash
 python -m wheeler.build_plugin           # write

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Wheeler Voice"
+  short_description: "Voice router for native Wheeler skills"
+  default_prompt: "Use $wheeler-voice to route my spoken request unchanged to the appropriate Wheeler skill and hand off the conversation."
+
+policy:
+  allow_implicit_invocation: true
