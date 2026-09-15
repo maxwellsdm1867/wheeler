@@ -556,6 +556,27 @@ _backend_cache: dict[tuple, Any] = {}
 _initialized_dbs: set[tuple[str, str, str]] = set()
 
 
+def _with_version(result_str: str, version: int) -> str:
+    """Put the node's content version into the tool result.
+
+    A writer that has just created or edited a node is the one caller who knows
+    it needs a version: to cite what it wrote as ``[F-3a2b@2]``, or to pass
+    ``if_changed_since`` later. Without this it has to call ``show_node`` again
+    purely to learn a number the write path already computed, which is the extra
+    round trip the rest of this work removes. Errors pass through untouched.
+    """
+    if not version:
+        return result_str
+    try:
+        parsed = json.loads(result_str)
+        if isinstance(parsed, dict) and "error" not in parsed:
+            parsed["content_version"] = version
+            return json.dumps(parsed)
+    except Exception:
+        pass
+    return result_str
+
+
 async def _stamp_graph_version(backend, result_str: str, args: dict, bumped: tuple[int, str, int]) -> None:
     """Mirror the JSON layer's new version and content hash onto the graph node.
 
@@ -812,6 +833,8 @@ async def execute_tool(
         # Dual-write: persist node as JSON file + synthesis markdown
         if tool_name in _MUTATION_TOOLS:
             json_ok, synthesis_ok, content_hash, content_tokens = _write_knowledge_file(tool_name, args, result, config)
+            if content_hash:
+                result = _with_version(result, 1)
             # Build receipt (graph succeeded if we reached this point)
             try:
                 parsed = json.loads(result)
@@ -912,10 +935,12 @@ async def execute_tool(
             bumped = _update_knowledge_tier(args, result, config)
             if bumped:
                 await _stamp_graph_version(backend, result, args, bumped)
+                result = _with_version(result, bumped[0])
         elif tool_name == "update_node":
             json_ok, synthesis_ok, new_version, new_hash, new_tokens = _update_knowledge_node(args, result, config)
             if new_version:
                 await _stamp_graph_version(backend, result, args, (new_version, new_hash, new_tokens))
+                result = _with_version(result, new_version)
             # Build receipt
             try:
                 parsed = json.loads(result)

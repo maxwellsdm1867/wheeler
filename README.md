@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.15.0-blue" alt="v0.15.0">
+  <img src="https://img.shields.io/badge/v0.16.0-blue" alt="v0.16.0">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
@@ -238,6 +238,17 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.16.0</b> (2026-09-15): pointers, versions, and one call to register</summary>
+
+- **Register a whole execution in one call**: `register_batch` takes the Execution, its findings, every produced file and every edge at once, with `@alias` references so no id has to round-trip through the model. Chosen by measurement over five alternatives: 3 turns instead of 75 on a 43-edge execution.
+- **Nodes carry a content version**: every node has `content_version` and `content_hash`, the state before each edit is kept in `knowledge/versions/`, edges record which version of each endpoint they were made against, and a citation can pin one (`[F-3a2b@2]`) so it reports as outdated when the node moves on. Nodes written before this are read as version 1 and never migrated.
+- **Listings return pointers**: `query_*` and search return `{id, type, headline, updated, content_version, degree}` by default, with the full text one `full=true` or one `show_node` away. Every disclosure level scored the same on a ten-task benchmark, so the smallest won.
+- **Tools return what you act on**: write results drop the echo of what you just sent, `show_node` reads many nodes at once and can answer "has this changed", and raw Cypher is capped and scoped. Replayed over a month of real sessions this removes 42 percent of result bytes.
+- **Fixes**: OpenQuestion nodes are visible to the `/wh:close` sweep again, and the statusline percentage matches `/context`.
+
+</details>
+
+<details>
 <summary><b>v0.15.0</b> (2026-08-11): one graph per project, on any machine</summary>
 
 - **A stored path means the same file on every machine.** Artifact paths are recorded as `${PROJECT}/src/run.py` and resolved per machine through named roots (`project`, plus anything you map in `~/.wheeler/config.yaml`, e.g. a Google Drive folder). Registering the same file twice, from a different directory or after moving the project, now finds the existing node instead of creating a second one.
@@ -259,28 +270,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 
 </details>
 
-<details>
-<summary><b>v0.13.0</b> (2026-07-29): score the FORM, not the parameterization</summary>
-
-- **One law, many recordings**: `--data` is now repeatable and nameable, and `--seed-from` / `--score-on` keep two roles apart, so a form extracted from one cell can be scored on cells it never saw, each refitting its own constants. That is a test of the FORM rather than of one lucky parameterization.
-- **`wheeler llmsr transfer`**: asks whether the LAW carries over to a recording the search never scored, and reports it beside the different question of whether the CONSTANTS carry over, both labelled and both landing in the graph with provenance.
-- **Declarable optimizer that notices when it is stuck**: `--optimizer` takes your own, and the default `auto` escalates from BFGS to Nelder-Mead when no start moved off its init, which is what a flat gradient looks like. Optimizer failure on one cell used to be indistinguishable from the form being wrong there.
-- **Bring your own metric, loader, optimizer or recipe**: four open registries, all offerable by the interview, plus `wheeler llmsr scaffold-spec` and a cookbook of executed recipes. A loader is also how one dead cell gets excluded before strict per-group validity rejects a correct law.
-- **Upstream's own scoring door, selectable**: `--use-spec-evaluate` runs the spec's `@evaluate.run`, so a spec that trains its own model inside `evaluate` runs unmodified. Every number now travels named after the quantity that produced it rather than after the metric you declared.
-
-</details>
-
-<details>
-<summary><b>v0.12.0</b> (2026-07-28): batch review and bring-your-own objectives</summary>
-
-- **A harvested batch is reviewed, not endorsed inline**: an Asta Research Assistant harvest now renders a self-contained `harvest.html` (verdicts, summaries, the figures the assistant produced), tags every node with its batch, and queues the decisions for `/wh:discuss <batch>` later, instead of asking you to rule on a dozen outcomes from a terminal summary you have not read.
-- **Bring your own LLM-SR error function**: the metric contract takes an arbitrary objective registered from your own module, a declared data shape (so a candidate can be a simulator returning variable-length output, not just a tabular predictor), and hard constraints that reject a candidate outright rather than penalizing it in the loss.
-- **Per-group equation fitting**: `wheeler llmsr init --group-by <column>` refits each cell, trial, or subject's own constants under the same candidate form, so a law whose constants vary across individuals is scored on its FORM instead of being rejected by a single pooled fit.
-- **`update_node` can clear a field**: an empty string is now a real value that clears a string field, so a dangling path is repairable; omitting an argument still means leave unchanged.
-- **Asta and LLM-SR reliability**: Paper Finder sends positive-only queries, Theorizer surfaces real failure reasons, papers dedupe on normalized title, never-assessed work-logs are flagged rather than presented as reviewed, and the LLM-SR CLI no longer vanishes when scipy is absent.
-
-</details>
-
 ---
 
 ## Architecture
@@ -292,10 +281,10 @@ Claude Code (interactive)
     │       ├── YAML frontmatter: tool restrictions per mode
     │       └── System prompt: workflow + provenance protocol
     │
-    ├── MCP Servers (51 tools)
-    │       ├── wheeler_core (12): health, status, context, search, cypher
+    ├── MCP Servers (54 tools)
+    │       ├── wheeler_core (14): health, status, context, search, cypher
     │       ├── wheeler_query (11): read-only query_* tools
-    │       ├── wheeler_mutations (18): add_*, link, delete, update, merge
+    │       ├── wheeler_mutations (19): add_*, link, delete, update, merge
     │       └── wheeler_ops (10): staleness, citations, consistency
     │
 bin/wh (headless)
@@ -323,7 +312,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 2567 tests
+tests/                        # 3160 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -335,7 +324,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (2567 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (3160 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
