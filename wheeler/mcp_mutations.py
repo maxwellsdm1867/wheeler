@@ -1,18 +1,16 @@
 """Wheeler Mutations MCP Server: all graph write operations.
 
-18 tools for creating, modifying, and deleting graph nodes and relationships.
+19 tools for creating, modifying, and deleting graph nodes and relationships.
 Run: python -m wheeler.mcp_mutations
 
-Bulk registration prototypes (register_batch, ensure_artifacts,
-link_nodes_batch) are registered in addition when the environment variable
-WHEELER_BATCH_TOOLS=1 is set. They exist to be measured (issue #117) before
-the batch API shape is committed (issue #116).
+register_batch is the bulk path: a whole execution's provenance (nodes, files,
+edges) in one call. It was chosen over split batch tools and a manifest CLI by
+measurement (evals/batch_registration/REPORT.md, issues #116 and #117).
 """
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -30,7 +28,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_mutations",
-    instructions="Create, update, link, unlink, and delete graph nodes: add_finding, add_hypothesis, add_question, add_dataset, add_paper, add_document, add_note, add_plan, add_execution, ensure_artifact, link_nodes, unlink_nodes, update_node, set_tier, delete_node. Prefer ensure_artifact for registering any file artifact (script/dataset/figure/plan/document); it hashes and creates-or-updates in one call.",
+    instructions="Create, update, link, unlink, and delete graph nodes: add_finding, add_hypothesis, add_question, add_dataset, add_paper, add_document, add_note, add_plan, add_execution, ensure_artifact, link_nodes, unlink_nodes, update_node, set_tier, delete_node, register_batch. Prefer ensure_artifact for registering any file artifact (script/dataset/figure/plan/document); it hashes and creates-or-updates in one call. To register a whole execution (its Execution, findings, files and all their edges) use register_batch: one call instead of one per item.",
 )
 
 
@@ -711,14 +709,10 @@ async def update_node(
     return json.loads(result)
 
 
-# --- Bulk registration prototypes (flagged, see module docstring) ---
+# --- Bulk registration ---
 
 
-def batch_tools_enabled() -> bool:
-    """Whether the bulk prototypes register on this server (WHEELER_BATCH_TOOLS=1)."""
-    return os.environ.get("WHEELER_BATCH_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")
-
-
+@mcp.tool()
 @_logged
 async def register_batch(
     nodes: list[dict] | None = None,
@@ -778,61 +772,6 @@ def _compact(result: dict) -> dict:
     if problems:
         out["problems"] = problems
     return out
-
-
-@_logged
-async def ensure_artifacts(artifacts: list[dict]) -> dict:
-    """Register MANY files at once (hash + create-or-update each), in input order.
-
-    Each item takes the same fields as ensure_artifact: path (required), title,
-    description, artifact_type, language, data_type, confidence, status. Returns
-    {"status", "artifacts": [{index, path, status, node_id, label}], "ids"} so the
-    ids can be fed straight into link_nodes_batch. One failing file never
-    aborts the others.
-    """
-    from wheeler.tools.graph_tools.batch import register_batch as _register
-
-    result = await _register(
-        {"artifacts": artifacts}, _config, session_id=_SESSION_ID,
-        base_dir=Path(_config.project_root),
-    )
-    return {k: result[k] for k in ("status", "counts", "failures", "ids", "artifacts") if k in result} | (
-        {"errors": result["errors"]} if "errors" in result else {}
-    )
-
-
-@_logged
-async def link_nodes_batch(edges: list) -> dict:
-    """Create MANY relationships in one call. N >= 50 is fine.
-
-    edges: [{"source": "F-...", "relationship": "SUPPORTS", "target": "H-..."}] or
-    the short form ["F-...", "SUPPORTS", "H-..."]. Same relationship vocabulary
-    and aliases as link_nodes. Returns per-edge status (linked / error) in
-    input order; a bad edge is reported and the rest still land.
-    """
-    from wheeler.tools.graph_tools.batch import register_batch as _register
-
-    result = await _register({"edges": edges}, _config, session_id=_SESSION_ID)
-    return {k: result[k] for k in ("status", "counts", "failures", "edges") if k in result} | (
-        {"errors": result["errors"]} if "errors" in result else {}
-    )
-
-
-BATCH_TOOLS = (register_batch, ensure_artifacts, link_nodes_batch)
-
-
-def register_batch_tools(server: FastMCP) -> list[str]:
-    """Register the bulk prototypes on *server*. Returns the names registered."""
-    names = []
-    for fn in BATCH_TOOLS:
-        server.tool()(fn)
-        names.append(fn.__name__)
-    return names
-
-
-if batch_tools_enabled():
-    register_batch_tools(mcp)
-
 
 
 # --- Entry point ---

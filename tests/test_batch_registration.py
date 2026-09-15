@@ -123,40 +123,21 @@ class TestValidateManifest:
 
 
 # ---------------------------------------------------------------------------
-# MCP surface: the prototypes register only behind the flag
+# MCP surface: register_batch ships, the split prototypes do not
 # ---------------------------------------------------------------------------
 
 
-class TestFlaggedSurface:
-    def test_flag_helper_reads_env(self, monkeypatch):
-        from wheeler.mcp_mutations import batch_tools_enabled
+class TestSurface:
+    def test_register_batch_is_a_first_class_logged_mutation_tool(self):
+        from wheeler.mcp_mutations import mcp
 
-        monkeypatch.delenv("WHEELER_BATCH_TOOLS", raising=False)
-        assert batch_tools_enabled() is False
-        monkeypatch.setenv("WHEELER_BATCH_TOOLS", "1")
-        assert batch_tools_enabled() is True
-
-    def test_register_batch_tools_adds_exactly_three_logged_tools(self):
-        from fastmcp import FastMCP
-
-        from wheeler.mcp_mutations import register_batch_tools
-
-        server = FastMCP("t")
-        names = register_batch_tools(server)
-        assert sorted(names) == ["ensure_artifacts", "link_nodes_batch", "register_batch"]
-        tools = asyncio.run(server.list_tools())
-        assert len(tools) == 3
-        for t in tools:
-            assert t.description
-            fn = getattr(t, "fn", None)
-            assert fn is None or getattr(fn, "_wheeler_logged", False)
-
-    def test_default_server_does_not_carry_them_unless_flagged(self):
-        from wheeler.mcp_mutations import batch_tools_enabled, mcp
-
-        names = {t.name for t in asyncio.run(mcp.list_tools())}
-        has = {"register_batch", "ensure_artifacts", "link_nodes_batch"} <= names
-        assert has == batch_tools_enabled()
+        tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
+        assert "register_batch" in tools
+        assert tools["register_batch"].description
+        fn = getattr(tools["register_batch"], "fn", None)
+        assert fn is None or getattr(fn, "_wheeler_logged", False)
+        # The split prototypes measured in evals/batch_registration lost; they are not shipped.
+        assert "ensure_artifacts" not in tools and "link_nodes_batch" not in tools
 
 
 # ---------------------------------------------------------------------------

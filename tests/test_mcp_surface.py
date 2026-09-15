@@ -20,11 +20,11 @@ import pytest
 SERVERS = [
     ("wheeler.mcp_core", 14),
     ("wheeler.mcp_query", 11),
-    ("wheeler.mcp_mutations", 18),
+    ("wheeler.mcp_mutations", 19),
     ("wheeler.mcp_ops", 10),
 ]
 
-TOTAL_TOOLS = 53
+TOTAL_TOOLS = 54
 
 
 async def _tool_names(module_path: str) -> set[str]:
@@ -47,7 +47,7 @@ async def test_server_tool_count(module_path, expected):
 
 
 @pytest.mark.asyncio
-async def test_total_surface_is_53_tools():
+async def test_total_surface_is_54_tools():
     names: set[str] = set()
     for module_path, _ in SERVERS:
         names |= await _tool_names(module_path)
@@ -97,7 +97,7 @@ async def test_mutations_server_holds_the_write_verbs():
         "add_finding", "add_hypothesis", "add_question", "add_dataset", "add_paper",
         "add_document", "add_note", "add_script", "add_analysis", "add_plan",
         "add_execution", "ensure_artifact", "link_nodes", "unlink_nodes",
-        "delete_node", "execute_merge", "set_tier", "update_node",
+        "delete_node", "execute_merge", "set_tier", "update_node", "register_batch",
     }
     names = await _tool_names("wheeler.mcp_mutations")
     assert expected_writes <= names, f"missing write tools: {sorted(expected_writes - names)}"

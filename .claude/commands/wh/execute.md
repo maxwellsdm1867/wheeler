@@ -142,18 +142,38 @@ Every execution must record full provenance using Script + Execution nodes.
 
 ### Provenance Protocol (mandatory)
 
-**When running a script:**
-1. Register the script: `ensure_artifact(path)`. Returns node_id whether new or existing.
-2. Create Execution node: `add_execution` with kind="script", description of what's being done
-3. Link: `link_nodes(execution_id, script_id, "USED")`
-4. Link: `link_nodes(execution_id, dataset_id, "USED")` for each input dataset
-5. After analysis produces results, for each Finding/Dataset created:
-   `link_nodes(finding_id, execution_id, "WAS_GENERATED_BY")`
+**Register in ONE call, not one call per item.** `register_batch` takes the
+whole execution's provenance at once: the Execution and any text Findings under
+`nodes`, every produced file under `artifacts` (same fields as `ensure_artifact`),
+and every edge under `edges`. Items carry an `@alias` so edges can reference
+nodes that do not have an id yet; existing graph nodes are referenced by their
+literal id. Measured on a 23-file, 6-finding, 43-edge execution, this is one
+mutation call instead of 73 and about one fifth of the tokens
+(`evals/batch_registration/REPORT.md`).
 
-**When discussion produces insights (findings, hypotheses, questions):**
-1. Create Execution node: `add_execution` with kind="discuss"
-2. Link inputs that were discussed: `link_nodes(execution_id, entity_id, "USED")`
-3. Link outputs: `link_nodes(output_id, execution_id, "WAS_GENERATED_BY")`
+**When running a script:**
+```
+register_batch(
+  nodes=[{"alias": "@exec", "type": "execution", "kind": "script", "description": "<what was run>"},
+         {"alias": "@f1", "type": "finding", "description": "<result, verbatim>", "confidence": 0.7}],
+  artifacts=[{"alias": "@script", "path": "<abs path>", "title": "<slug>", "description": "..."},
+             {"alias": "@fig1", "path": "<canonical export path>", "title": "<prefixed slug>", "description": "..."}],
+  edges=[["@exec", "USED", "@script"], ["@exec", "USED", "D-<input dataset>"],
+         ["@fig1", "WAS_GENERATED_BY", "@exec"], ["@f1", "WAS_GENERATED_BY", "@exec"],
+         ["@f1", "APPEARS_IN", "@fig1"], ["@f1", "RELEVANT_TO", "Q-<question>"]],
+)
+```
+The result maps every alias to its node id and lists only the items that
+failed; fix those with the smallest follow-up call. Batch per task (or per
+plan step) rather than waiting for the end of the whole execution, so a crash
+mid-run leaves the finished tasks registered.
+
+**When discussion produces insights (findings, hypotheses, questions):** same
+call with kind="discuss": inputs discussed as `USED` edges from `@exec`, each
+new insight as a node with a `WAS_GENERATED_BY` edge to `@exec`.
+
+Single-item `ensure_artifact`, `add_execution` and `link_nodes` still work and
+are fine for a one-off (one figure, one link). Do not use them in a loop.
 
 Do NOT skip provenance. Every entity created must be traceable to an Execution.
 

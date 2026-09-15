@@ -23,6 +23,7 @@ allowed-tools:
   - mcp__wheeler_query__query_plans
   - mcp__wheeler_query__query_executions
   - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__register_batch
   - mcp__wheeler_mutations__unlink_nodes
   - mcp__wheeler_mutations__delete_node
   - mcp__wheeler_mutations__add_execution
@@ -177,10 +178,12 @@ Approve all / Edit / Skip?
 ```
 
 ### 1.5 Create approved links
-For each approved group:
-1. `add_execution` with the proposed kind and description
-2. `link_nodes(execution_id, input_id, "USED")` for each input
-3. `link_nodes(output_id, execution_id, "WAS_GENERATED_BY")` for each output
+One `register_batch` call for ALL approved groups: under `nodes`, one
+`{"alias": "@g1", "type": "execution", "kind": ..., "description": ...}` per
+group; under `edges`, `["@g1", "USED", <input_id>]` for each input and
+`[<output_id>, "WAS_GENERATED_BY", "@g1"]` for each output. The result names
+any edge that failed (for example an id that no longer exists); report those
+groups as unresolved rather than retrying item by item.
 
 ### 1.6 Staleness pass
 Run `detect_stale` to flag any staleness issues before moving to synthesis.
@@ -321,17 +324,20 @@ The file on disk is the rendered view. The graph is the authoritative record. Wi
    ```
    This is THE Execution that future closes use as the `$since` boundary.
 
-3. Link the Document to the close Execution:
-   `link_nodes(source_id=W-xxxx, target_id=X-close, relationship="WAS_GENERATED_BY")`
-
-4. Link the close Execution to every source node cited:
-   For each ID in the `source_nodes` frontmatter list, call
-   `link_nodes(source_id=X-close, target_id=<NODE_ID>, relationship="USED")`.
-   This gives the Document a full provenance fan-out: the synthesis "used" every finding, hypothesis, question, plan, and execution it summarized.
-
-5. For each plan touched, also create a direct derivation link:
-   `link_nodes(source_id=W-xxxx, target_id=PL-yyyy, relationship="WAS_DERIVED_FROM")`.
-   This makes the SESSION queryable as evidence for plan progress.
+3. Wire the Document, the close Execution and every source node in ONE call:
+   ```
+   register_batch(edges=[
+     ["W-xxxx", "WAS_GENERATED_BY", "X-close"],
+     ["X-close", "USED", "<NODE_ID>"],          # one per id in the source_nodes frontmatter list
+     ["W-xxxx", "WAS_DERIVED_FROM", "PL-yyyy"], # one per plan touched
+   ])
+   ```
+   This gives the Document a full provenance fan-out (the synthesis "used"
+   every finding, hypothesis, question, plan and execution it summarized) and
+   makes the SESSION queryable as evidence for plan progress. Steps 2 and 3
+   can also be a single `register_batch` with the close Execution under
+   `nodes` as `@close`; either way it is at most two mutation calls, never one
+   per source node.
 
 ### 2.4 Validate citations
 Call `validate_citations(path={absolute path to SESSION file})`. Every `[NODE_ID]` in the prose must resolve to a real graph node. If validation fails, fix the broken citations before reporting close as complete.

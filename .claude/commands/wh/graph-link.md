@@ -17,6 +17,7 @@ allowed-tools:
   - mcp__wheeler_query__query_plans
   - mcp__wheeler_mutations__add_execution
   - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__register_batch
 ---
 
 ## Connectivity Check
@@ -129,13 +130,13 @@ Wait for the scientist's response. Do not proceed without explicit approval.
 
 ## Phase 4: Apply Approved Groups
 
-For each approved group (in order):
+Apply ALL approved groups with one `register_batch` call:
 
-1. Call `add_execution(kind=..., description=..., used_entities="<comma-separated input IDs>")`. Capture the returned `X-...` ID.
-2. For each output node in the group, call `link_nodes(source_id=<output_id>, target_id=<exec_id>, rel_type="WAS_GENERATED_BY")`.
-3. Track the operation count (executions created, links created).
+1. Under `nodes`, one entry per group: `{"alias": "@g<n>", "type": "execution", "kind": ..., "description": ...}`.
+2. Under `edges`, for each group: `["@g<n>", "USED", <input_id>]` per input and `[<output_id>, "WAS_GENERATED_BY", "@g<n>"]` per output.
+3. Read the result: `ids` maps each `@g<n>` to its `X-...` id, `counts` gives executions and links created, and `problems` lists any edge that failed with its group alias.
 
-If any tool call errors, STOP and report which group's link failed. Do not proceed to subsequent groups (orphans for those groups remain orphans).
+Report every failed edge by group. A failed edge in one group does not undo the others (nothing is rolled back), so state exactly which groups landed and which orphans remain.
 
 For "Needs Review" entries: do nothing. Leave them as orphans with a note in the report.
 
