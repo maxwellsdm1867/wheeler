@@ -135,8 +135,10 @@ Look for consolidation opportunities:
    ```cypher
    MATCH (newer:Finding)-[r:RELEVANT_TO|AROSE_FROM]->(older:Finding)
    WHERE newer.date IS NOT NULL AND older.date IS NOT NULL
+     AND newer.date <> '' AND older.date <> ''
      AND newer.date > older.date
-     AND duration.between(date(older.date), date()).days <= 30
+     AND CASE WHEN older.date IS NULL OR older.date = '' THEN false
+              ELSE duration.between(date(older.date), date()).days <= 30 END
      AND newer.description IS NOT NULL AND older.description IS NOT NULL
      AND size(newer.description) > 40 AND size(older.description) > 40
    RETURN older.id AS older_id, older.description AS older_desc, older.date AS older_date,
@@ -336,7 +338,8 @@ Query for SESSION documents created since the last dream:
 
 ```cypher
 MATCH (w:Document {section: "session-synthesis"})
-WHERE datetime(w.date) > datetime($last_dream_at)
+WHERE CASE WHEN w.date IS NULL OR w.date = '' THEN false
+       ELSE datetime(w.date) > datetime($last_dream_at) END
 RETURN w.id AS id, w.path AS path, w.date AS date, w.title AS title
 ORDER BY w.date DESC
 ```

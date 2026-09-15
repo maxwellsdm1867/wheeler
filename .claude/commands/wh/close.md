@@ -79,13 +79,24 @@ If this returns any rows, warn the scientist before proceeding:
 
 Then continue with the valid `$since` boundary. The warning is mandatory; stopping is not.
 
+### A note on every timestamp comparison below
+
+Never hand `datetime()` a value that may be null or empty. ONE node with
+`started_at = ""` aborts the entire query with `Cannot parse '' as a DateTime`,
+and guarding with `<> ''` in the same `WHERE` does not help, because the planner
+does not evaluate the conditions in order. Wrap the comparison in `CASE` instead,
+as every query below does. This is not hypothetical: a malformed close Execution
+(the thing phase 1.1 warns about) is exactly such a node, so the unguarded form
+would warn about the problem in 1.1 and then crash on it in 2.1.
+
 ### 1.2 Find recent entities
 Wheeler stores timestamps as ISO 8601 on `n.updated` (Plan, Document, Dataset, Question) and/or `n.date` (Finding, Hypothesis, Note, Dataset, Question). Paper writes only `date_added` and is excluded below. Dataset and Question nodes written before v0.15.1 carry only `date_added`, so they fall outside this window; the null-timestamp guard in 1.3 still surfaces them. The graph schema does not write `n.created`, so do not query it.
 
 ```cypher
 MATCH (n)
 WHERE coalesce(n.updated, n.date) IS NOT NULL
-  AND datetime(coalesce(n.updated, n.date)) >= datetime($since)
+  AND CASE WHEN coalesce(n.updated, n.date) IS NULL OR coalesce(n.updated, n.date) = '' THEN false
+       ELSE datetime(coalesce(n.updated, n.date)) >= datetime($since) END
   AND NOT n:Execution AND NOT n:Paper
 RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,
        coalesce(n.updated, n.date) AS timestamp
@@ -95,12 +106,13 @@ ORDER BY timestamp
 If the Cypher errors OR returns 0 rows on a session that should have activity, fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_plans`, `query_scripts` and filter by recent timestamps. Also ask the scientist what was worked on if the graph has few recent nodes.
 
 ### 1.3 Find orphans
-For each recent entity, check if it has a WAS_GENERATED_BY link to an Execution. A node with no `updated` and no `date` at all is included regardless of the window: a missing timestamp means a writer forgot to stamp it, and the sweep must surface that node as a suspect rather than silently drop it.
+For each recent entity, check if it has a WAS_GENERATED_BY link to an Execution. A node with no usable timestamp is included regardless of the window: a missing or empty timestamp means a writer forgot to stamp it, and the sweep must surface that node as a suspect rather than silently drop it.
 
 ```cypher
 MATCH (n)
-WHERE (coalesce(n.updated, n.date) IS NULL
-       OR datetime(coalesce(n.updated, n.date)) >= datetime($since))
+WHERE (coalesce(n.updated, n.date) IS NULL OR coalesce(n.updated, n.date) = ''
+       OR CASE WHEN coalesce(n.updated, n.date) IS NULL OR coalesce(n.updated, n.date) = '' THEN false
+               ELSE datetime(coalesce(n.updated, n.date)) >= datetime($since) END)
   AND NOT n:Execution AND NOT n:Paper
   AND NOT (n)-[:WAS_GENERATED_BY]->(:Execution)
 RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,
@@ -108,7 +120,7 @@ RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,
 ORDER BY timestamp
 ```
 
-Rows with a null `timestamp` are unstamped nodes (legacy Dataset or Question nodes carrying only `date_added`, or a new type whose writer never set `date`). Report them to the scientist alongside the in-window orphans.
+Rows with a null or empty `timestamp` are unstamped nodes (legacy Dataset or Question nodes carrying only `date_added`, or a new type whose writer never set `date`). Report them to the scientist alongside the in-window orphans.
 
 If the Cypher errors OR returns 0 rows on a session that should have activity, inspect each recent entity individually with `show_node` and check its relationships, or fall back to the `query_*` tools.
 
@@ -197,7 +209,8 @@ Run these queries against the same `$since` timestamp. Collect the results into 
 
 ```cypher
 // Findings created in window
-MATCH (f:Finding) WHERE datetime(f.date) >= datetime($since)
+MATCH (f:Finding) WHERE CASE WHEN f.date IS NULL OR f.date = '' THEN false
+       ELSE datetime(f.date) >= datetime($since) END
 RETURN f.id, f.description, f.confidence, f.tier, f.date
 ORDER BY f.date DESC
 ```
@@ -205,28 +218,32 @@ ORDER BY f.date DESC
 ```cypher
 // Hypotheses created or updated in window
 MATCH (h:Hypothesis)
-WHERE datetime(coalesce(h.updated, h.date)) >= datetime($since)
+WHERE CASE WHEN coalesce(h.updated, h.date) IS NULL OR coalesce(h.updated, h.date) = '' THEN false
+       ELSE datetime(coalesce(h.updated, h.date)) >= datetime($since) END
 RETURN h.id, h.statement, h.status, coalesce(h.updated, h.date) AS ts
 ORDER BY ts DESC
 ```
 
 ```cypher
 // Open Questions opened in window (and any resolved in window via status field)
-MATCH (q:OpenQuestion) WHERE datetime(coalesce(q.date, q.date_added)) >= datetime($since)
+MATCH (q:OpenQuestion) WHERE CASE WHEN coalesce(q.date, q.date_added) IS NULL OR coalesce(q.date, q.date_added) = '' THEN false
+       ELSE datetime(coalesce(q.date, q.date_added)) >= datetime($since) END
 RETURN q.id, q.question, q.priority, q.status, coalesce(q.date, q.date_added) AS date
 ORDER BY q.priority DESC
 ```
 
 ```cypher
 // Plans touched in window (status transitions via updated timestamp)
-MATCH (pl:Plan) WHERE datetime(pl.updated) >= datetime($since)
+MATCH (pl:Plan) WHERE CASE WHEN pl.updated IS NULL OR pl.updated = '' THEN false
+       ELSE datetime(pl.updated) >= datetime($since) END
 RETURN pl.id, pl.title, pl.status, pl.updated, pl.path
 ORDER BY pl.updated DESC
 ```
 
 ```cypher
 // Executions run in window (the actual work done)
-MATCH (x:Execution) WHERE datetime(x.started_at) >= datetime($since)
+MATCH (x:Execution) WHERE CASE WHEN x.started_at IS NULL OR x.started_at = '' THEN false
+       ELSE datetime(x.started_at) >= datetime($since) END
 OPTIONAL MATCH (x)-[:USED]->(s:Script)
 RETURN x.id, x.kind, x.description, s.id AS script_id, x.started_at
 ORDER BY x.started_at DESC
@@ -234,7 +251,8 @@ ORDER BY x.started_at DESC
 
 ```cypher
 // Documents written in window
-MATCH (w:Document) WHERE datetime(w.date) >= datetime($since)
+MATCH (w:Document) WHERE CASE WHEN w.date IS NULL OR w.date = '' THEN false
+       ELSE datetime(w.date) >= datetime($since) END
 RETURN w.id, w.title, w.section, w.status, w.date, w.path
 ORDER BY w.date DESC
 ```

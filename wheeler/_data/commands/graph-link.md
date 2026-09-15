@@ -52,7 +52,8 @@ Determine the orphan set:
    ```cypher
    MATCH (n)
    WHERE coalesce(n.updated, n.date) IS NOT NULL
-     AND datetime(coalesce(n.updated, n.date)) >= datetime() - duration({hours: $hours})
+     AND CASE WHEN coalesce(n.updated, n.date) IS NULL OR coalesce(n.updated, n.date) = '' THEN false
+       ELSE datetime(coalesce(n.updated, n.date)) >= datetime() - duration({hours: $hours}) END
      AND NOT n:Execution AND NOT n:Paper
      AND NOT (n)-[:WAS_GENERATED_BY]->(:Execution)
    RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,

@@ -33,17 +33,24 @@ import pytest
 from tests.e2e.conftest import E2E_TAG
 
 
+# Scoped to the nodes this test creates. The unscoped form matched EVERY close
+# Execution in the database, so the assertion below was really about whatever
+# else happened to be in a shared instance: a malformed close belonging to some
+# other project (or the untagged legacy one already present) sorts first under
+# `started_at DESC` and failed this test at random. The scenario under test is
+# the two closes created below, so the query should look at exactly those.
 BOUNDARY_QUERY = """
 MATCH (x:Execution {kind: "close"})
+WHERE x.e2e_tag = $tag
 RETURN x.started_at AS last_close, x.id AS close_id
 ORDER BY x.started_at DESC LIMIT 1
 """.strip()
 
 
-async def _run_cypher(driver, db, query: str) -> list[dict]:
+async def _run_cypher(driver, db, query: str, **params) -> list[dict]:
     """Run a read-only Cypher query and return list of records as dicts."""
     async with driver.session(database=db) as session:
-        result = await session.run(query)
+        result = await session.run(query, **params)
         return [dict(r) async for r in result]
 
 
@@ -105,7 +112,7 @@ class TestIssue58:
                 """, tag=E2E_TAG)
 
             # Run the boundary query
-            rows = await _run_cypher(driver, db, BOUNDARY_QUERY)
+            rows = await _run_cypher(driver, db, BOUNDARY_QUERY, tag=E2E_TAG)
 
             assert len(rows) > 0, (
                 "Boundary query returned 0 rows with two close Executions present"
