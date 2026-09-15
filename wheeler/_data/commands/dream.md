@@ -336,7 +336,8 @@ Query for SESSION documents created since the last dream:
 
 ```cypher
 MATCH (w:Document {section: "session-synthesis"})
-WHERE datetime(w.date) > datetime($last_dream_at)
+WHERE CASE WHEN w.date IS NULL OR w.date = '' THEN false
+       ELSE datetime(w.date) > datetime($last_dream_at) END
 RETURN w.id AS id, w.path AS path, w.date AS date, w.title AS title
 ORDER BY w.date DESC
 ```
