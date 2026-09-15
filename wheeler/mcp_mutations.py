@@ -2,11 +2,18 @@
 
 18 tools for creating, modifying, and deleting graph nodes and relationships.
 Run: python -m wheeler.mcp_mutations
+
+Bulk registration prototypes (register_batch, ensure_artifacts,
+link_nodes_batch) are registered in addition when the environment variable
+WHEELER_BATCH_TOOLS=1 is set. They exist to be measured (issue #117) before
+the batch API shape is committed (issue #116).
 """
 
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Literal
 
 from fastmcp import FastMCP
@@ -702,6 +709,130 @@ async def update_node(
 
     result = await graph_tools.execute_tool("update_node", update_args, _config)
     return json.loads(result)
+
+
+# --- Bulk registration prototypes (flagged, see module docstring) ---
+
+
+def batch_tools_enabled() -> bool:
+    """Whether the bulk prototypes register on this server (WHEELER_BATCH_TOOLS=1)."""
+    return os.environ.get("WHEELER_BATCH_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+@_logged
+async def register_batch(
+    nodes: list[dict] | None = None,
+    artifacts: list[dict] | None = None,
+    edges: list | None = None,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> dict:
+    """Register a whole execution's provenance in ONE call: nodes, files and edges.
+
+    Use this instead of a run of ensure_artifact / add_* / link_nodes calls.
+    Items may carry an alias ("@fig1") and edges may reference aliases or
+    existing node ids, so you never have to wait for an id to come back.
+
+    Args:
+      nodes: non-file nodes. Each {"alias": "@x", "type": one of
+        execution|finding|hypothesis|question|note, ...fields of the matching
+        add_* tool}. Example execution: {"alias": "@exec", "type": "execution",
+        "kind": "script_run", "description": "..."}. Example finding:
+        {"alias": "@f1", "type": "finding", "description": "...", "confidence": 0.7}.
+      artifacts: files on disk, one {"alias": "@fig1", "path": "...", "title": "...",
+        "description": "...", "artifact_type": optional} each. Same fields as
+        ensure_artifact. Relative paths resolve against the project root.
+      edges: [{"source": "@fig1", "relationship": "WAS_GENERATED_BY", "target": "@exec"}]
+        or the short form ["@fig1", "WAS_GENERATED_BY", "@exec"]. Endpoints are
+        aliases defined above or literal node ids ("Q-1a2b3c4d").
+      dry_run: validate only (structure, files exist, relationship names,
+        literal ids exist in the graph). Nothing is written.
+      verbose: include a row for every successful item too. Default returns
+        only counts, the alias -> id map, and the rows that failed.
+
+    One bad item never aborts the rest; the top-level status is ok, partial or
+    failed, and "ids" maps every alias to its node id.
+    """
+    from wheeler.tools.graph_tools.batch import register_batch as _register
+
+    manifest = {"nodes": nodes or [], "artifacts": artifacts or [], "edges": edges or []}
+    result = await _register(
+        manifest, _config, session_id=_SESSION_ID, dry_run=dry_run,
+        base_dir=Path(_config.project_root),
+    )
+    return result if (verbose or dry_run) else _compact(result)
+
+
+_OK_STATUSES = {"created", "unchanged", "updated", "linked"}
+
+
+def _compact(result: dict) -> dict:
+    """Drop the rows that succeeded; the caller only needs ids and failures."""
+    out = {k: v for k, v in result.items() if k not in ("nodes", "artifacts", "edges")}
+    problems = [
+        {"section": section, **row}
+        for section in ("nodes", "artifacts", "edges")
+        for row in result.get(section, [])
+        if row.get("status") not in _OK_STATUSES
+    ]
+    if problems:
+        out["problems"] = problems
+    return out
+
+
+@_logged
+async def ensure_artifacts(artifacts: list[dict]) -> dict:
+    """Register MANY files at once (hash + create-or-update each), in input order.
+
+    Each item takes the same fields as ensure_artifact: path (required), title,
+    description, artifact_type, language, data_type, confidence, status. Returns
+    {"status", "artifacts": [{index, path, status, node_id, label}], "ids"} so the
+    ids can be fed straight into link_nodes_batch. One failing file never
+    aborts the others.
+    """
+    from wheeler.tools.graph_tools.batch import register_batch as _register
+
+    result = await _register(
+        {"artifacts": artifacts}, _config, session_id=_SESSION_ID,
+        base_dir=Path(_config.project_root),
+    )
+    return {k: result[k] for k in ("status", "counts", "failures", "ids", "artifacts") if k in result} | (
+        {"errors": result["errors"]} if "errors" in result else {}
+    )
+
+
+@_logged
+async def link_nodes_batch(edges: list) -> dict:
+    """Create MANY relationships in one call. N >= 50 is fine.
+
+    edges: [{"source": "F-...", "relationship": "SUPPORTS", "target": "H-..."}] or
+    the short form ["F-...", "SUPPORTS", "H-..."]. Same relationship vocabulary
+    and aliases as link_nodes. Returns per-edge status (linked / error) in
+    input order; a bad edge is reported and the rest still land.
+    """
+    from wheeler.tools.graph_tools.batch import register_batch as _register
+
+    result = await _register({"edges": edges}, _config, session_id=_SESSION_ID)
+    return {k: result[k] for k in ("status", "counts", "failures", "edges") if k in result} | (
+        {"errors": result["errors"]} if "errors" in result else {}
+    )
+
+
+BATCH_TOOLS = (register_batch, ensure_artifacts, link_nodes_batch)
+
+
+def register_batch_tools(server: FastMCP) -> list[str]:
+    """Register the bulk prototypes on *server*. Returns the names registered."""
+    names = []
+    for fn in BATCH_TOOLS:
+        server.tool()(fn)
+        names.append(fn.__name__)
+    return names
+
+
+if batch_tools_enabled():
+    register_batch_tools(mcp)
+
 
 
 # --- Entry point ---
