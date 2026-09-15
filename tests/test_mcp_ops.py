@@ -69,10 +69,13 @@ class TestValidateCitations:
         with patch("wheeler.mcp_ops.citations.validate_citations", new_callable=AsyncMock, return_value=mock_results):
             from wheeler.mcp_ops import validate_citations
             result = await validate_citations("See [F-3a2b] and [H-0000]")
+            full = await validate_citations("See [F-3a2b] and [H-0000]", verbose=True)
         assert result["total"] == 2
         assert result["valid"] == 1
-        assert result["results"][0]["status"] == "valid"
-        assert result["results"][1]["status"] == "not_found"
+        assert result["by_status"] == {"valid": 1, "not_found": 1}
+        # Valid citations are counted, not listed: the caller acts on the problems.
+        assert [r["status"] for r in result["results"]] == ["not_found"]
+        assert [r["status"] for r in full["results"]] == ["valid", "not_found"]
 
 class TestScanDependencies:
     """scan_dependencies delegates to depscanner — test MCP wrapper."""

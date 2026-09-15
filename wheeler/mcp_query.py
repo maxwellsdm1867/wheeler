@@ -15,8 +15,18 @@ from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
     _config,
     _logged,
+    _trim_rows,
     _verify_backend,
 )
+
+
+def _shape(result: dict, full: bool) -> dict:
+    """Long text fields are cut to 240 chars unless full=True.
+
+    A listing is for choosing which nodes matter; show_node reads the ones
+    chosen. Ten full questions were 10 KB per call (docs/mcp-token-audit.md).
+    """
+    return result if full else _trim_rows(result)
 
 mcp = FastMCP(
     "wheeler_query",
@@ -29,57 +39,57 @@ mcp = FastMCP(
 
 @mcp.tool()
 @_logged
-async def query_findings(keyword: str = "", limit: int = 10) -> dict:
+async def query_findings(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Finding nodes in the Wheeler knowledge graph, optionally filtered by keyword."""
     result = await graph_tools.execute_tool(
         "query_findings", {"keyword": keyword, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_hypotheses(status: str = "all", limit: int = 10) -> dict:
+async def query_hypotheses(status: str = "all", limit: int = 10, full: bool = False) -> dict:
     """List Hypothesis nodes in the Wheeler knowledge graph, optionally filtered by status (open/supported/rejected/all)."""
     result = await graph_tools.execute_tool(
         "query_hypotheses", {"status": status, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_open_questions(limit: int = 10) -> dict:
+async def query_open_questions(limit: int = 10, full: bool = False) -> dict:
     """List OpenQuestion nodes in the Wheeler knowledge graph, sorted by priority."""
     result = await graph_tools.execute_tool(
         "query_open_questions", {"limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_datasets(keyword: str = "", limit: int = 10) -> dict:
+async def query_datasets(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Dataset nodes in the Wheeler knowledge graph."""
     result = await graph_tools.execute_tool(
         "query_datasets", {"keyword": keyword, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_papers(keyword: str = "", limit: int = 10) -> dict:
+async def query_papers(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Paper nodes in the Wheeler knowledge graph by title or authors."""
     result = await graph_tools.execute_tool(
         "query_papers", {"keyword": keyword, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_documents(keyword: str = "", status: str = "", limit: int = 10) -> dict:
+async def query_documents(keyword: str = "", status: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Document nodes in the Wheeler knowledge graph.
 
     Returns documents registered as graph nodes (research drafts, synthesis
@@ -89,12 +99,12 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10) 
     result = await graph_tools.execute_tool(
         "query_documents", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_plans(keyword: str = "", status: str = "", limit: int = 10) -> dict:
+async def query_plans(keyword: str = "", status: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Plan nodes in the Wheeler knowledge graph by keyword and/or status.
 
     Returns plans registered as graph nodes (research investigations).
@@ -103,46 +113,45 @@ async def query_plans(keyword: str = "", status: str = "", limit: int = 10) -> d
     result = await graph_tools.execute_tool(
         "query_plans", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_notes(keyword: str = "", limit: int = 10) -> dict:
+async def query_notes(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search ResearchNote nodes in the Wheeler knowledge graph."""
     result = await graph_tools.execute_tool(
         "query_notes", {"keyword": keyword, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_analyses(keyword: str = "", limit: int = 20) -> dict:
+async def query_analyses(keyword: str = "", limit: int = 20, full: bool = False) -> dict:
     """Search Script nodes in the Wheeler knowledge graph by path or language (legacy alias for query_scripts)."""
     result = await graph_tools.execute_tool(
         "query_scripts", {"keyword": keyword, "limit": limit}, _config
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
-async def query_executions(keyword: str = "", kind: str = "", limit: int = 10) -> dict:
+async def query_executions(keyword: str = "", kind: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Execution nodes in the Wheeler knowledge graph by kind or keyword."""
     result = await graph_tools.execute_tool(
         "query_executions",
         {"keyword": keyword, "kind": kind, "limit": limit},
         _config,
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 @mcp.tool()
 @_logged
 async def query_review_queue(
-    batch: str = "", state: str = "undiscussed", limit: int = 20
-) -> dict:
+    batch: str = "", state: str = "undiscussed", limit: int = 20, full: bool = False) -> dict:
     """List Wheeler knowledge graph nodes awaiting human review after a batch ingest.
 
     A service harvest (for example an Asta Research Assistant mission) can land
@@ -161,7 +170,7 @@ async def query_review_queue(
         {"batch": batch, "state": state, "limit": limit},
         _config,
     )
-    return json.loads(result)
+    return _shape(json.loads(result), full)
 
 
 # --- Entry point ---

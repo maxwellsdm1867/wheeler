@@ -173,3 +173,60 @@ async def _verify_backend() -> None:
             _config.graph.backend,
             exc,
         )
+
+
+# --- Result diet -------------------------------------------------------------
+# Every byte a tool returns is re-read by the model on every later turn of the
+# session, so a wrapper's result should carry what the caller acts on (ids,
+# statuses, failures) and nothing it already knows or never uses. The full
+# payload stays one flag away (verbose=True on writes, full=True on reads).
+# Audit that motivated this: docs/mcp-token-audit.md.
+
+TEXT_KEYS = ("description", "statement", "question", "content", "text", "summary", "abstract")
+DEFAULT_TEXT_CHARS = 240
+
+
+def _trim_text(value, max_chars: int = DEFAULT_TEXT_CHARS):
+    """Cut a long string and say how much was cut, so the caller can ask for it."""
+    if not isinstance(value, str) or len(value) <= max_chars:
+        return value
+    return value[:max_chars].rstrip() + f"... [+{len(value) - max_chars} chars]"
+
+
+def _trim_rows(obj, max_chars: int = DEFAULT_TEXT_CHARS):
+    """Recursively trim the long text fields inside lists and dicts of rows."""
+    if isinstance(obj, dict):
+        return {
+            k: (_trim_text(v, max_chars) if k in TEXT_KEYS else _trim_rows(v, max_chars))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_trim_rows(x, max_chars) for x in obj]
+    return obj
+
+
+def _strip_empty(d: dict) -> dict:
+    """Drop keys whose value is empty: '', None, [] or {}."""
+    return {k: v for k, v in d.items() if v not in ("", None, [], {})}
+
+
+def _compact_write_result(parsed: dict) -> dict:
+    """Shape an add_* result: provenance inputs as a count, similar-node hints short.
+
+    The linked_inputs list repeats the ids the caller just passed in, and a
+    near-duplicate hint only needs enough text to recognise the node.
+    """
+    if not isinstance(parsed, dict):
+        return parsed
+    prov = parsed.get("provenance")
+    if isinstance(prov, dict) and isinstance(prov.get("linked_inputs"), list):
+        prov = dict(prov)
+        prov["linked_inputs_count"] = len(prov.pop("linked_inputs"))
+        parsed["provenance"] = prov
+    sim = parsed.get("similar_existing")
+    if isinstance(sim, list):
+        parsed["similar_existing"] = [
+            {**m, "text": _trim_text(m.get("text", ""), 120)} if isinstance(m, dict) else m
+            for m in sim
+        ]
+    return parsed

@@ -790,6 +790,13 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ## MCP Tools (54 total, 4 servers)
 
+Result shaping: every MCP wrapper returns what the caller acts on (ids, statuses,
+failures, headlines) and keeps the full payload one flag away (`verbose=true` on
+writes, `full=true` on listings and search, `include_change_log` on `show_node`,
+`max_related` on `search_context`, `limit` on `run_cypher`). The core handlers in
+`tools/graph_tools/` still return complete results; only the model-facing layer is
+shaped. Measured motivation and the per-tool decisions: `docs/mcp-token-audit.md`.
+
 The MCP surface is four role-scoped servers, all wrapping the same underlying implementation in `wheeler/tools/graph_tools/`. A host loads them via `.mcp.json` (Claude Code) or `[mcp_servers.*]` (Codex). The v0.9.1-era monolith was deleted once the splits covered its whole surface; `tests/test_mcp_surface.py` guards the counts and keeps it from returning.
 
 | Server | Module | Tools | Scope |
