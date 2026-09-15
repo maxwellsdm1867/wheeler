@@ -1,0 +1,6 @@
+runs/*/project/
+runs/*/transcript.jsonl
+runs/*/stderr.log
+runs/*/*.log
+.run.lock
+logs/

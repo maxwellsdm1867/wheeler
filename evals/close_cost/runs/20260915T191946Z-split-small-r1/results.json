@@ -1,0 +1,406 @@
+{
+  "arm": "split",
+  "context": "small",
+  "context_target_tokens": 30000,
+  "context_fixture_tokens": 30329,
+  "context_files": 2,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T191946Z-split-small-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T191946Z-split-small-r1/project",
+  "project_tag": "closecost-20260915T191946Z-split-small",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost",
+  "started_at": "2026-09-15T19:19:46+00:00",
+  "gold": {
+    "since": "2026-09-13T19:19:46+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-82b23391",
+      "D-ec2ecdbb",
+      "D-f4defdfe",
+      "F-059725fb",
+      "F-17e6f04a",
+      "F-2972dd89",
+      "F-3011863d",
+      "F-334840be",
+      "F-4d610ce1",
+      "F-5c85af68",
+      "F-8fad95ee",
+      "F-b6bff549",
+      "F-c7f48a24",
+      "F-f0ff6891",
+      "F-f6c11ea5",
+      "H-072a39ae",
+      "H-78928d3e",
+      "H-8919e989",
+      "N-02753c0d",
+      "N-333e5791",
+      "N-dd780237",
+      "PL-ac096f5e",
+      "PL-aca47e9c",
+      "Q-3f21012a",
+      "Q-780b6c75",
+      "Q-ac4d8646",
+      "Q-c88213d6",
+      "S-5035404f",
+      "S-6143cc92",
+      "S-8fe061e2",
+      "S-dfda231b",
+      "W-35df062f",
+      "W-4be3105c"
+    ],
+    "orphan_ids": [
+      "D-82b23391",
+      "F-3011863d",
+      "F-4d610ce1",
+      "F-5c85af68",
+      "F-c7f48a24",
+      "H-072a39ae",
+      "H-78928d3e",
+      "N-333e5791",
+      "N-dd780237",
+      "PL-ac096f5e",
+      "Q-3f21012a",
+      "Q-ac4d8646",
+      "Q-c88213d6",
+      "S-5035404f",
+      "S-dfda231b",
+      "W-35df062f"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-dfda231b"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "seed": {
+    "nodes": 43,
+    "edges": 27,
+    "draft_path": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T191946Z-split-small-r1/project/docs/DRAFT-SESSION.md",
+    "stamp": {
+      "stamped": 43,
+      "malformed_close": "X-59169d2a"
+    },
+    "stale_file": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T191946Z-split-small-r1/project/scripts/bootstrap.py",
+    "since": "2026-09-13T19:19:46+00:00",
+    "seed_wall_s": 1.618
+  },
+  "wall_clock_s": 68.901,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 71,
+  "unparseable_lines": 0,
+  "assistant_lines": 23,
+  "turns": 9,
+  "parent_turns": 3,
+  "subagent_turns": 6,
+  "subagent_assistant_lines": 17,
+  "subagent_usage_visible": true,
+  "agent_calls": 1,
+  "tokens": {
+    "input_tokens": 18,
+    "cache_creation_input_tokens": 122730,
+    "cache_read_input_tokens": 389160,
+    "output_tokens": 23,
+    "total_input_incl_cache": 511908
+  },
+  "parent_tokens": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 74598,
+    "cache_read_input_tokens": 175086,
+    "output_tokens": 7,
+    "total_input_incl_cache": 249690
+  },
+  "subagent_tokens": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 48132,
+    "cache_read_input_tokens": 214074,
+    "output_tokens": 16,
+    "total_input_incl_cache": 262218
+  },
+  "parent_context_peak_tokens": 100497,
+  "subagent_context_peak_tokens": 48134,
+  "context_first_turn_tokens": 52039,
+  "tool_calls": {
+    "run_cypher": 10,
+    "Read": 3,
+    "Bash": 2,
+    "Agent": 1,
+    "ToolSearch": 1,
+    "detect_stale": 1,
+    "graph_consistency_check": 1,
+    "validate_citations": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Read",
+    "Agent",
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "detect_stale",
+    "graph_consistency_check",
+    "Read",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "Bash",
+    "validate_citations",
+    "Bash"
+  ],
+  "sweep_tool_calls": 13,
+  "parent_sweep_tool_calls": 0,
+  "context_reads": 2,
+  "consistency_graph_only": null,
+  "result": {
+    "subtype": "success",
+    "num_turns": 4,
+    "duration_ms": 66743,
+    "duration_api_ms": 67157,
+    "total_cost_usd": 0.5804344,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 74598,
+      "cache_read_input_tokens": 175086,
+      "output_tokens": 3102,
+      "output_tokens_details": {
+        "thinking_tokens": 32
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 74598,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 617,
+          "cache_read_input_tokens": 97152,
+          "cache_creation_input_tokens": 3343,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 3343
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 2759,
+        "outputTokens": 11,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.002814,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 20,
+        "outputTokens": 7057,
+        "cacheReadInputTokens": 437292,
+        "cacheCreationInputTokens": 123062,
+        "webSearchRequests": 0,
+        "costUSD": 0.5776204,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 493,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "DIGEST {\"since\": \"2026-09-13T19:19:46+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-82b23391\", \"D-ec2ecdbb\", \"D-f4defdfe\", \"F-059725fb\", \"F-17e6f04a\", \"F-2972dd89\", \"F-3011863d\", \"F-334840be\", \"F-4d610ce1\", \"F-5c85af68\", \"F-8fad95ee\", \"F-b6bff549\", \"F-c7f48a24\", \"F-f0ff6891\", \"F-f6c11ea5\", \"H-072a39ae\", \"H-78928d3e\", \"H-8919e989\", \"N-02753c0d\", \"N-333e5791\", \"N-dd780237\", \"PL-ac096f5e\", \"PL-aca47e9c\", \"Q-3f21012a\", \"Q-780b6c75\", \"Q-ac4d8646\", \"Q-c88213d6\", \"S-5035404f\", \"S-6143cc92\", \"S-8fe061e2\", \"S-dfda231b\", \"W-35df062f\", \"W-4be3105c\"], \"orphan_ids\": [\"D-82b23391\", \"F-3011863d\", \"F-4d610ce1\", \"F-5c85af68\", \"F-c7f48a24\", \"H-072a39ae\", \"H-78928d3e\", \"N-333e5791\", \"N-dd780237\", \"PL-ac096f5e\", \"Q-3f21012a\", \"Q-ac4d8646\", \"Q-c88213d6\", \"S-5035404f\", \"S-dfda231b\", \"W-35df062f\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-dfda231b\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "digest": {
+    "since": "2026-09-13T19:19:46+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-82b23391",
+      "D-ec2ecdbb",
+      "D-f4defdfe",
+      "F-059725fb",
+      "F-17e6f04a",
+      "F-2972dd89",
+      "F-3011863d",
+      "F-334840be",
+      "F-4d610ce1",
+      "F-5c85af68",
+      "F-8fad95ee",
+      "F-b6bff549",
+      "F-c7f48a24",
+      "F-f0ff6891",
+      "F-f6c11ea5",
+      "H-072a39ae",
+      "H-78928d3e",
+      "H-8919e989",
+      "N-02753c0d",
+      "N-333e5791",
+      "N-dd780237",
+      "PL-ac096f5e",
+      "PL-aca47e9c",
+      "Q-3f21012a",
+      "Q-780b6c75",
+      "Q-ac4d8646",
+      "Q-c88213d6",
+      "S-5035404f",
+      "S-6143cc92",
+      "S-8fe061e2",
+      "S-dfda231b",
+      "W-35df062f",
+      "W-4be3105c"
+    ],
+    "orphan_ids": [
+      "D-82b23391",
+      "F-3011863d",
+      "F-4d610ce1",
+      "F-5c85af68",
+      "F-c7f48a24",
+      "H-072a39ae",
+      "H-78928d3e",
+      "N-333e5791",
+      "N-dd780237",
+      "PL-ac096f5e",
+      "Q-3f21012a",
+      "Q-ac4d8646",
+      "Q-c88213d6",
+      "S-5035404f",
+      "S-dfda231b",
+      "W-35df062f"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-dfda231b"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "digest_line": "DIGEST {\"since\": \"2026-09-13T19:19:46+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-82b23391\", \"D-ec2ecdbb\", \"D-f4defdfe\", \"F-059725fb\", \"F-17e6f04a\", \"F-2972dd89\", \"F-3011863d\", \"F-334840be\", \"F-4d610ce1\", \"F-5c85af68\", \"F-8fad95ee\", \"F-b6bff549\", \"F-c7f48a24\", \"F-f0ff6891\", \"F-f6c11ea5\", \"H-072a39ae\", \"H-78928d3e\", \"H-8919e989\", \"N-02753c0d\", \"N-333e5791\", \"N-dd780237\", \"PL-ac096f5e\", \"PL-aca47e9c\", \"Q-3f21012a\", \"Q-780b6c75\", \"Q-ac4d8646\", \"Q-c88213d6\", \"S-5035404f\", \"S-6143cc92\", \"S-8fe061e2\", \"S-dfda231b\", \"W-35df062f\", \"W-4be3105c\"], \"orphan_ids\": [\"D-82b23391\", \"F-3011863d\", \"F-4d610ce1\", \"F-5c85af68\", \"F-c7f48a24\", \"H-072a39ae\", \"H-78928d3e\", \"N-333e5791\", \"N-dd780237\", \"PL-ac096f5e\", \"Q-3f21012a\", \"Q-ac4d8646\", \"Q-c88213d6\", \"S-5035404f\", \"S-dfda231b\", \"W-35df062f\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-dfda231b\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "totals": {
+    "input": 2779,
+    "cache_read": 437292,
+    "cache_creation": 123062,
+    "output": 7068,
+    "source": "modelUsage",
+    "context_total": 563133,
+    "cost_usd": 0.5804344
+  },
+  "score": {
+    "window": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "orphan": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "stale": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "inventory": {
+      "exact": true,
+      "got": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      },
+      "want": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      }
+    },
+    "malformed_closes": {
+      "exact": true,
+      "got": 1,
+      "want": 1
+    },
+    "citations": {
+      "exact": true,
+      "got": {
+        "total": 4,
+        "valid": 2
+      },
+      "want": {
+        "total": 4,
+        "valid": 2
+      }
+    },
+    "since": {
+      "exact": true,
+      "got": "2026-09-13T19:19:46+00:00",
+      "want": "2026-09-13T19:19:46+00:00"
+    },
+    "consistency_ok": {
+      "exact": true,
+      "got": true,
+      "want": true
+    },
+    "all_exact": true,
+    "ok": true
+  },
+  "context_achieved_tokens": 100497,
+  "context_target_missed": false,
+  "finished_at": "2026-09-15T19:20:57+00:00",
+  "cleanup": {
+    "deleted": 43,
+    "remaining": 0
+  }
+}

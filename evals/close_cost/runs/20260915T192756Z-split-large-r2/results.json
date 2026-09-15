@@ -1,0 +1,423 @@
+{
+  "arm": "split",
+  "context": "large",
+  "context_target_tokens": 400000,
+  "context_fixture_tokens": 406063,
+  "context_files": 20,
+  "model": "sonnet",
+  "repeat_index": 2,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192756Z-split-large-r2",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192756Z-split-large-r2/project",
+  "project_tag": "closecost-20260915T192756Z-split-large",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost",
+  "started_at": "2026-09-15T19:27:56+00:00",
+  "gold": {
+    "since": "2026-09-13T19:27:56+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-1f74caa4",
+      "D-443a6b64",
+      "D-689e50bd",
+      "F-1bdd3809",
+      "F-1f8ea845",
+      "F-5bfd60dc",
+      "F-67adfb3b",
+      "F-6c04fc60",
+      "F-6c4139cc",
+      "F-83b306d1",
+      "F-85a58ee3",
+      "F-a4108e87",
+      "F-cc4ced0d",
+      "F-dd752985",
+      "F-ed2d6197",
+      "H-5ba1d6df",
+      "H-da1e2c0f",
+      "H-f52ea6c7",
+      "N-18ff3dcb",
+      "N-2e990744",
+      "N-9f33bd36",
+      "PL-40140521",
+      "PL-46e9f63c",
+      "Q-0f35183d",
+      "Q-50f65b69",
+      "Q-cb0ad2ff",
+      "Q-d90b6985",
+      "S-242b16e7",
+      "S-28c2c541",
+      "S-47fe4d7c",
+      "S-ae8bc5e4",
+      "W-8aca36fa",
+      "W-af0158b0"
+    ],
+    "orphan_ids": [
+      "D-689e50bd",
+      "F-5bfd60dc",
+      "F-6c04fc60",
+      "F-83b306d1",
+      "F-a4108e87",
+      "H-da1e2c0f",
+      "H-f52ea6c7",
+      "N-18ff3dcb",
+      "N-9f33bd36",
+      "PL-40140521",
+      "Q-0f35183d",
+      "Q-50f65b69",
+      "Q-d90b6985",
+      "S-47fe4d7c",
+      "S-ae8bc5e4",
+      "W-af0158b0"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-47fe4d7c"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "seed": {
+    "nodes": 43,
+    "edges": 27,
+    "draft_path": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192756Z-split-large-r2/project/docs/DRAFT-SESSION.md",
+    "stamp": {
+      "stamped": 43,
+      "malformed_close": "X-29fa92d3"
+    },
+    "stale_file": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192756Z-split-large-r2/project/scripts/bootstrap.py",
+    "since": "2026-09-13T19:27:56+00:00",
+    "seed_wall_s": 1.602
+  },
+  "wall_clock_s": 91.63,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 112,
+  "unparseable_lines": 0,
+  "assistant_lines": 40,
+  "turns": 9,
+  "parent_turns": 3,
+  "subagent_turns": 6,
+  "subagent_assistant_lines": 16,
+  "subagent_usage_visible": true,
+  "agent_calls": 1,
+  "tokens": {
+    "input_tokens": 18,
+    "cache_creation_input_tokens": 508917,
+    "cache_read_input_tokens": 804690,
+    "output_tokens": 24,
+    "total_input_incl_cache": 1313625
+  },
+  "parent_tokens": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 475490,
+    "cache_read_input_tokens": 575928,
+    "output_tokens": 8,
+    "total_input_incl_cache": 1051424
+  },
+  "subagent_tokens": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 33427,
+    "cache_read_input_tokens": 228762,
+    "output_tokens": 16,
+    "total_input_incl_cache": 262201
+  },
+  "parent_context_peak_tokens": 501389,
+  "subagent_context_peak_tokens": 48028,
+  "context_first_turn_tokens": 52237,
+  "tool_calls": {
+    "Read": 21,
+    "run_cypher": 10,
+    "Agent": 1,
+    "ToolSearch": 1,
+    "detect_stale": 1,
+    "graph_consistency_check": 1,
+    "Bash": 1,
+    "validate_citations": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Agent",
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "detect_stale",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "Read",
+    "graph_consistency_check",
+    "Bash",
+    "validate_citations"
+  ],
+  "sweep_tool_calls": 13,
+  "parent_sweep_tool_calls": 0,
+  "context_reads": 20,
+  "consistency_graph_only": null,
+  "result": {
+    "subtype": "success",
+    "num_turns": 22,
+    "duration_ms": 89412,
+    "duration_api_ms": 88358,
+    "total_cost_usd": 2.2600377,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 475490,
+      "cache_read_input_tokens": 575928,
+      "output_tokens": 5798,
+      "output_tokens_details": {
+        "thinking_tokens": 621
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 475490,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 656,
+          "cache_read_input_tokens": 497796,
+          "cache_creation_input_tokens": 3591,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 3591
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 2957,
+        "outputTokens": 11,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.003012,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 20,
+        "outputTokens": 9967,
+        "cacheReadInputTokens": 852716,
+        "cacheCreationInputTokens": 509415,
+        "webSearchRequests": 0,
+        "costUSD": 2.2570257,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 1555,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "DIGEST {\"since\": \"2026-09-13T19:27:56+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-1f74caa4\", \"D-443a6b64\", \"D-689e50bd\", \"F-1bdd3809\", \"F-1f8ea845\", \"F-5bfd60dc\", \"F-67adfb3b\", \"F-6c04fc60\", \"F-6c4139cc\", \"F-83b306d1\", \"F-85a58ee3\", \"F-a4108e87\", \"F-cc4ced0d\", \"F-dd752985\", \"F-ed2d6197\", \"H-5ba1d6df\", \"H-da1e2c0f\", \"H-f52ea6c7\", \"N-18ff3dcb\", \"N-2e990744\", \"N-9f33bd36\", \"PL-40140521\", \"PL-46e9f63c\", \"Q-0f35183d\", \"Q-50f65b69\", \"Q-cb0ad2ff\", \"Q-d90b6985\", \"S-242b16e7\", \"S-28c2c541\", \"S-47fe4d7c\", \"S-ae8bc5e4\", \"W-8aca36fa\", \"W-af0158b0\"], \"orphan_ids\": [\"D-689e50bd\", \"F-5bfd60dc\", \"F-6c04fc60\", \"F-83b306d1\", \"F-a4108e87\", \"H-da1e2c0f\", \"H-f52ea6c7\", \"N-18ff3dcb\", \"N-9f33bd36\", \"PL-40140521\", \"Q-0f35183d\", \"Q-50f65b69\", \"Q-d90b6985\", \"S-47fe4d7c\", \"S-ae8bc5e4\", \"W-af0158b0\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-47fe4d7c\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "digest": {
+    "since": "2026-09-13T19:27:56+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-1f74caa4",
+      "D-443a6b64",
+      "D-689e50bd",
+      "F-1bdd3809",
+      "F-1f8ea845",
+      "F-5bfd60dc",
+      "F-67adfb3b",
+      "F-6c04fc60",
+      "F-6c4139cc",
+      "F-83b306d1",
+      "F-85a58ee3",
+      "F-a4108e87",
+      "F-cc4ced0d",
+      "F-dd752985",
+      "F-ed2d6197",
+      "H-5ba1d6df",
+      "H-da1e2c0f",
+      "H-f52ea6c7",
+      "N-18ff3dcb",
+      "N-2e990744",
+      "N-9f33bd36",
+      "PL-40140521",
+      "PL-46e9f63c",
+      "Q-0f35183d",
+      "Q-50f65b69",
+      "Q-cb0ad2ff",
+      "Q-d90b6985",
+      "S-242b16e7",
+      "S-28c2c541",
+      "S-47fe4d7c",
+      "S-ae8bc5e4",
+      "W-8aca36fa",
+      "W-af0158b0"
+    ],
+    "orphan_ids": [
+      "D-689e50bd",
+      "F-5bfd60dc",
+      "F-6c04fc60",
+      "F-83b306d1",
+      "F-a4108e87",
+      "H-da1e2c0f",
+      "H-f52ea6c7",
+      "N-18ff3dcb",
+      "N-9f33bd36",
+      "PL-40140521",
+      "Q-0f35183d",
+      "Q-50f65b69",
+      "Q-d90b6985",
+      "S-47fe4d7c",
+      "S-ae8bc5e4",
+      "W-af0158b0"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-47fe4d7c"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "digest_line": "DIGEST {\"since\": \"2026-09-13T19:27:56+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-1f74caa4\", \"D-443a6b64\", \"D-689e50bd\", \"F-1bdd3809\", \"F-1f8ea845\", \"F-5bfd60dc\", \"F-67adfb3b\", \"F-6c04fc60\", \"F-6c4139cc\", \"F-83b306d1\", \"F-85a58ee3\", \"F-a4108e87\", \"F-cc4ced0d\", \"F-dd752985\", \"F-ed2d6197\", \"H-5ba1d6df\", \"H-da1e2c0f\", \"H-f52ea6c7\", \"N-18ff3dcb\", \"N-2e990744\", \"N-9f33bd36\", \"PL-40140521\", \"PL-46e9f63c\", \"Q-0f35183d\", \"Q-50f65b69\", \"Q-cb0ad2ff\", \"Q-d90b6985\", \"S-242b16e7\", \"S-28c2c541\", \"S-47fe4d7c\", \"S-ae8bc5e4\", \"W-8aca36fa\", \"W-af0158b0\"], \"orphan_ids\": [\"D-689e50bd\", \"F-5bfd60dc\", \"F-6c04fc60\", \"F-83b306d1\", \"F-a4108e87\", \"H-da1e2c0f\", \"H-f52ea6c7\", \"N-18ff3dcb\", \"N-9f33bd36\", \"PL-40140521\", \"Q-0f35183d\", \"Q-50f65b69\", \"Q-d90b6985\", \"S-47fe4d7c\", \"S-ae8bc5e4\", \"W-af0158b0\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-47fe4d7c\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "totals": {
+    "input": 2977,
+    "cache_read": 852716,
+    "cache_creation": 509415,
+    "output": 9978,
+    "source": "modelUsage",
+    "context_total": 1365108,
+    "cost_usd": 2.2600377
+  },
+  "score": {
+    "window": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "orphan": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "stale": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "inventory": {
+      "exact": true,
+      "got": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      },
+      "want": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      }
+    },
+    "malformed_closes": {
+      "exact": true,
+      "got": 1,
+      "want": 1
+    },
+    "citations": {
+      "exact": true,
+      "got": {
+        "total": 4,
+        "valid": 2
+      },
+      "want": {
+        "total": 4,
+        "valid": 2
+      }
+    },
+    "since": {
+      "exact": true,
+      "got": "2026-09-13T19:27:56+00:00",
+      "want": "2026-09-13T19:27:56+00:00"
+    },
+    "consistency_ok": {
+      "exact": true,
+      "got": true,
+      "want": true
+    },
+    "all_exact": true,
+    "ok": true
+  },
+  "context_achieved_tokens": 501389,
+  "context_target_missed": false,
+  "finished_at": "2026-09-15T19:29:30+00:00",
+  "cleanup": {
+    "deleted": 43,
+    "remaining": 0
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "targets": {
+    "small": {
+      "target_tokens": 30000,
+      "estimated_tokens": 30329,
+      "n_files": 2,
+      "files": [
+        {
+          "path": "small/session_01.md",
+          "estimated_tokens": 15160,
+          "bytes": 51890,
+          "lines": 496
+        },
+        {
+          "path": "small/session_02.md",
+          "estimated_tokens": 15169,
+          "bytes": 51515,
+          "lines": 596
+        }
+      ]
+    },
+    "large": {
+      "target_tokens": 400000,
+      "estimated_tokens": 406063,
+      "n_files": 20,
+      "files": [
+        {
+          "path": "large/session_01.md",
+          "estimated_tokens": 20157,
+          "bytes": 68945,
+          "lines": 759
+        },
+        {
+          "path": "large/session_02.md",
+          "estimated_tokens": 20100,
+          "bytes": 69185,
+          "lines": 703
+        },
+        {
+          "path": "large/session_03.md",
+          "estimated_tokens": 20609,
+          "bytes": 70220,
+          "lines": 643
+        },
+        {
+          "path": "large/session_04.md",
+          "estimated_tokens": 20254,
+          "bytes": 69249,
+          "lines": 711
+        },
+        {
+          "path": "large/session_05.md",
+          "estimated_tokens": 20237,
+          "bytes": 68789,
+          "lines": 718
+        },
+        {
+          "path": "large/session_06.md",
+          "estimated_tokens": 20678,
+          "bytes": 70889,
+          "lines": 723
+        },
+        {
+          "path": "large/session_07.md",
+          "estimated_tokens": 20004,
+          "bytes": 67927,
+          "lines": 756
+        },
+        {
+          "path": "large/session_08.md",
+          "estimated_tokens": 20300,
+          "bytes": 69421,
+          "lines": 695
+        },
+        {
+          "path": "large/session_09.md",
+          "estimated_tokens": 20295,
+          "bytes": 69580,
+          "lines": 774
+        },
+        {
+          "path": "large/session_10.md",
+          "estimated_tokens": 20285,
+          "bytes": 69436,
+          "lines": 650
+        },
+        {
+          "path": "large/session_11.md",
+          "estimated_tokens": 20278,
+          "bytes": 69193,
+          "lines": 725
+        },
+        {
+          "path": "large/session_12.md",
+          "estimated_tokens": 20851,
+          "bytes": 71664,
+          "lines": 751
+        },
+        {
+          "path": "large/session_13.md",
+          "estimated_tokens": 20001,
+          "bytes": 68342,
+          "lines": 675
+        },
+        {
+          "path": "large/session_14.md",
+          "estimated_tokens": 20321,
+          "bytes": 69645,
+          "lines": 803
+        },
+        {
+          "path": "large/session_15.md",
+          "estimated_tokens": 20195,
+          "bytes": 69144,
+          "lines": 776
+        },
+        {
+          "path": "large/session_16.md",
+          "estimated_tokens": 20595,
+          "bytes": 70153,
+          "lines": 771
+        },
+        {
+          "path": "large/session_17.md",
+          "estimated_tokens": 20160,
+          "bytes": 69248,
+          "lines": 659
+        },
+        {
+          "path": "large/session_18.md",
+          "estimated_tokens": 20349,
+          "bytes": 69487,
+          "lines": 752
+        },
+        {
+          "path": "large/session_19.md",
+          "estimated_tokens": 20144,
+          "bytes": 68804,
+          "lines": 759
+        },
+        {
+          "path": "large/session_20.md",
+          "estimated_tokens": 20250,
+          "bytes": 69211,
+          "lines": 813
+        }
+      ]
+    }
+  }
+}

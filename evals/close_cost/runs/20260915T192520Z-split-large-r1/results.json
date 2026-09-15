@@ -1,0 +1,453 @@
+{
+  "arm": "split",
+  "context": "large",
+  "context_target_tokens": 400000,
+  "context_fixture_tokens": 406063,
+  "context_files": 20,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192520Z-split-large-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192520Z-split-large-r1/project",
+  "project_tag": "closecost-20260915T192520Z-split-large",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost",
+  "started_at": "2026-09-15T19:25:20+00:00",
+  "gold": {
+    "since": "2026-09-13T19:25:20+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-271b3270",
+      "D-6dc447c5",
+      "D-9ffbbd5a",
+      "F-17231bc5",
+      "F-206f5ced",
+      "F-272a4dab",
+      "F-3a9bfacb",
+      "F-46e526c3",
+      "F-513fe0e3",
+      "F-66f9e4aa",
+      "F-ba5e2ad7",
+      "F-d2c5499c",
+      "F-e45d0f67",
+      "F-ea7a0637",
+      "F-f45f1fcc",
+      "H-b2a09013",
+      "H-ceee59d2",
+      "H-dbd788fd",
+      "N-6b6f689b",
+      "N-a86028b4",
+      "N-e4dd25a8",
+      "PL-d1399b0e",
+      "PL-e9c466ae",
+      "Q-4b378e87",
+      "Q-4c457aeb",
+      "Q-96fd3bcb",
+      "Q-ed5beca3",
+      "S-2fcd6913",
+      "S-443c7843",
+      "S-5b5efcc9",
+      "S-7b80238c",
+      "W-2ce84b3c",
+      "W-e7f04fb9"
+    ],
+    "orphan_ids": [
+      "D-9ffbbd5a",
+      "F-3a9bfacb",
+      "F-66f9e4aa",
+      "F-d2c5499c",
+      "F-ea7a0637",
+      "H-b2a09013",
+      "H-ceee59d2",
+      "N-6b6f689b",
+      "N-e4dd25a8",
+      "PL-d1399b0e",
+      "Q-4c457aeb",
+      "Q-96fd3bcb",
+      "Q-ed5beca3",
+      "S-2fcd6913",
+      "S-7b80238c",
+      "W-e7f04fb9"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-7b80238c"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "seed": {
+    "nodes": 43,
+    "edges": 27,
+    "draft_path": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192520Z-split-large-r1/project/docs/DRAFT-SESSION.md",
+    "stamp": {
+      "stamped": 43,
+      "malformed_close": "X-accd793d"
+    },
+    "stale_file": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192520Z-split-large-r1/project/scripts/bootstrap.py",
+    "since": "2026-09-13T19:25:20+00:00",
+    "seed_wall_s": 1.718
+  },
+  "wall_clock_s": 154.791,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 184,
+  "unparseable_lines": 0,
+  "assistant_lines": 70,
+  "turns": 14,
+  "parent_turns": 4,
+  "subagent_turns": 10,
+  "subagent_assistant_lines": 25,
+  "subagent_usage_visible": true,
+  "agent_calls": 1,
+  "tokens": {
+    "input_tokens": 28,
+    "cache_creation_input_tokens": 692266,
+    "cache_read_input_tokens": 1662404,
+    "output_tokens": 58,
+    "total_input_incl_cache": 2354698
+  },
+  "parent_tokens": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 639952,
+    "cache_read_input_tokens": 1238760,
+    "output_tokens": 6,
+    "total_input_incl_cache": 1878720
+  },
+  "subagent_tokens": {
+    "input_tokens": 20,
+    "cache_creation_input_tokens": 52314,
+    "cache_read_input_tokens": 423644,
+    "output_tokens": 52,
+    "total_input_incl_cache": 475978
+  },
+  "parent_context_peak_tokens": 665851,
+  "subagent_context_peak_tokens": 52316,
+  "context_first_turn_tokens": 52237,
+  "tool_calls": {
+    "Read": 41,
+    "run_cypher": 10,
+    "Grep": 5,
+    "Bash": 5,
+    "Agent": 1,
+    "ToolSearch": 1,
+    "detect_stale": 1,
+    "graph_consistency_check": 1,
+    "validate_citations": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Agent",
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "detect_stale",
+    "graph_consistency_check",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "Read",
+    "Grep",
+    "Bash",
+    "Bash",
+    "Bash",
+    "Bash",
+    "Bash",
+    "Grep",
+    "Grep",
+    "Grep",
+    "Grep",
+    "validate_citations"
+  ],
+  "sweep_tool_calls": 13,
+  "parent_sweep_tool_calls": 0,
+  "context_reads": 40,
+  "consistency_graph_only": null,
+  "result": {
+    "subtype": "success",
+    "num_turns": 42,
+    "duration_ms": 152455,
+    "duration_api_ms": 151577,
+    "total_cost_usd": 3.2141836,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 639952,
+      "cache_read_input_tokens": 1238760,
+      "output_tokens": 8917,
+      "output_tokens_details": {
+        "thinking_tokens": 533
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 639952,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 621,
+          "cache_read_input_tokens": 662845,
+          "cache_creation_input_tokens": 3004,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 3004
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 2957,
+        "outputTokens": 15,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.003032,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 30,
+        "outputTokens": 17430,
+        "cacheReadInputTokens": 1714718,
+        "cacheCreationInputTokens": 693568,
+        "webSearchRequests": 0,
+        "costUSD": 3.2111516,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 3477,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "DIGEST {\"since\": \"2026-09-13T19:25:20+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-271b3270\",\"D-6dc447c5\",\"D-9ffbbd5a\",\"F-17231bc5\",\"F-206f5ced\",\"F-272a4dab\",\"F-3a9bfacb\",\"F-46e526c3\",\"F-513fe0e3\",\"F-66f9e4aa\",\"F-ba5e2ad7\",\"F-d2c5499c\",\"F-e45d0f67\",\"F-ea7a0637\",\"F-f45f1fcc\",\"H-b2a09013\",\"H-ceee59d2\",\"H-dbd788fd\",\"N-6b6f689b\",\"N-a86028b4\",\"N-e4dd25a8\",\"PL-d1399b0e\",\"PL-e9c466ae\",\"Q-4b378e87\",\"Q-4c457aeb\",\"Q-96fd3bcb\",\"Q-ed5beca3\",\"S-2fcd6913\",\"S-443c7843\",\"S-5b5efcc9\",\"S-7b80238c\",\"W-2ce84b3c\",\"W-e7f04fb9\"], \"orphan_ids\": [\"D-9ffbbd5a\",\"F-3a9bfacb\",\"F-66f9e4aa\",\"F-d2c5499c\",\"F-ea7a0637\",\"H-b2a09013\",\"H-ceee59d2\",\"N-6b6f689b\",\"N-e4dd25a8\",\"PL-d1399b0e\",\"Q-4c457aeb\",\"Q-96fd3bcb\",\"Q-ed5beca3\",\"S-2fcd6913\",\"S-7b80238c\",\"W-e7f04fb9\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-7b80238c\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "digest": {
+    "since": "2026-09-13T19:25:20+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-271b3270",
+      "D-6dc447c5",
+      "D-9ffbbd5a",
+      "F-17231bc5",
+      "F-206f5ced",
+      "F-272a4dab",
+      "F-3a9bfacb",
+      "F-46e526c3",
+      "F-513fe0e3",
+      "F-66f9e4aa",
+      "F-ba5e2ad7",
+      "F-d2c5499c",
+      "F-e45d0f67",
+      "F-ea7a0637",
+      "F-f45f1fcc",
+      "H-b2a09013",
+      "H-ceee59d2",
+      "H-dbd788fd",
+      "N-6b6f689b",
+      "N-a86028b4",
+      "N-e4dd25a8",
+      "PL-d1399b0e",
+      "PL-e9c466ae",
+      "Q-4b378e87",
+      "Q-4c457aeb",
+      "Q-96fd3bcb",
+      "Q-ed5beca3",
+      "S-2fcd6913",
+      "S-443c7843",
+      "S-5b5efcc9",
+      "S-7b80238c",
+      "W-2ce84b3c",
+      "W-e7f04fb9"
+    ],
+    "orphan_ids": [
+      "D-9ffbbd5a",
+      "F-3a9bfacb",
+      "F-66f9e4aa",
+      "F-d2c5499c",
+      "F-ea7a0637",
+      "H-b2a09013",
+      "H-ceee59d2",
+      "N-6b6f689b",
+      "N-e4dd25a8",
+      "PL-d1399b0e",
+      "Q-4c457aeb",
+      "Q-96fd3bcb",
+      "Q-ed5beca3",
+      "S-2fcd6913",
+      "S-7b80238c",
+      "W-e7f04fb9"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-7b80238c"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "digest_line": "DIGEST {\"since\": \"2026-09-13T19:25:20+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-271b3270\",\"D-6dc447c5\",\"D-9ffbbd5a\",\"F-17231bc5\",\"F-206f5ced\",\"F-272a4dab\",\"F-3a9bfacb\",\"F-46e526c3\",\"F-513fe0e3\",\"F-66f9e4aa\",\"F-ba5e2ad7\",\"F-d2c5499c\",\"F-e45d0f67\",\"F-ea7a0637\",\"F-f45f1fcc\",\"H-b2a09013\",\"H-ceee59d2\",\"H-dbd788fd\",\"N-6b6f689b\",\"N-a86028b4\",\"N-e4dd25a8\",\"PL-d1399b0e\",\"PL-e9c466ae\",\"Q-4b378e87\",\"Q-4c457aeb\",\"Q-96fd3bcb\",\"Q-ed5beca3\",\"S-2fcd6913\",\"S-443c7843\",\"S-5b5efcc9\",\"S-7b80238c\",\"W-2ce84b3c\",\"W-e7f04fb9\"], \"orphan_ids\": [\"D-9ffbbd5a\",\"F-3a9bfacb\",\"F-66f9e4aa\",\"F-d2c5499c\",\"F-ea7a0637\",\"H-b2a09013\",\"H-ceee59d2\",\"N-6b6f689b\",\"N-e4dd25a8\",\"PL-d1399b0e\",\"Q-4c457aeb\",\"Q-96fd3bcb\",\"Q-ed5beca3\",\"S-2fcd6913\",\"S-7b80238c\",\"W-e7f04fb9\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-7b80238c\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "totals": {
+    "input": 2987,
+    "cache_read": 1714718,
+    "cache_creation": 693568,
+    "output": 17445,
+    "source": "modelUsage",
+    "context_total": 2411273,
+    "cost_usd": 3.2141836
+  },
+  "score": {
+    "window": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "orphan": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "stale": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "inventory": {
+      "exact": true,
+      "got": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      },
+      "want": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      }
+    },
+    "malformed_closes": {
+      "exact": true,
+      "got": 1,
+      "want": 1
+    },
+    "citations": {
+      "exact": true,
+      "got": {
+        "total": 4,
+        "valid": 2
+      },
+      "want": {
+        "total": 4,
+        "valid": 2
+      }
+    },
+    "since": {
+      "exact": true,
+      "got": "2026-09-13T19:25:20+00:00",
+      "want": "2026-09-13T19:25:20+00:00"
+    },
+    "consistency_ok": {
+      "exact": true,
+      "got": true,
+      "want": true
+    },
+    "all_exact": true,
+    "ok": true
+  },
+  "context_achieved_tokens": 665851,
+  "context_target_missed": false,
+  "finished_at": "2026-09-15T19:27:56+00:00",
+  "cleanup": {
+    "deleted": 43,
+    "remaining": 0
+  }
+}

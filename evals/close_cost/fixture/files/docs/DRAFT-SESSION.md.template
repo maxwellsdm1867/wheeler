@@ -1,0 +1,14 @@
+---
+title: Draft session notes
+section: draft
+---
+
+# Draft session notes
+
+The per-cell coefficient spread is larger than the within-cell interval width
+[{CITE1}], and the effect survives dropping the two shortest recordings
+[{CITE2}]. A separate pass suggested the spread tracks recording duration
+[{CITE3}], which has not been wired to an execution yet.
+
+An earlier pass reported the opposite sign [{FAKE}]; that record no longer
+exists and the claim should not be carried forward.
