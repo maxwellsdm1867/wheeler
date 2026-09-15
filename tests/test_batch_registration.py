@@ -290,14 +290,38 @@ def test_compact_keeps_ids_counts_and_only_failed_rows():
     full = {
         "status": "partial", "counts": {"nodes": 1, "artifacts": 1, "edges": 2}, "failures": 1,
         "ids": {"@a": "F-1", "@b": "F-2"},
-        "nodes": [{"index": 0, "alias": "@a", "status": "created"}],
-        "artifacts": [{"index": 0, "alias": "@b", "status": "unchanged"}],
+        "nodes": [{"index": 0, "alias": "@a", "status": "created", "node_id": "F-1"}],
+        "artifacts": [{"index": 0, "alias": "@b", "status": "unchanged", "node_id": "F-2"}],
         "edges": [
             {"index": 0, "status": "linked"},
             {"index": 1, "status": "error", "error": "One or both nodes not found"},
         ],
     }
     out = _compact(full)
-    assert set(out) == {"status", "counts", "failures", "ids", "problems"}
+    assert set(out) == {"status", "counts", "failures", "ids", "node_ids", "problems"}
+    assert out["node_ids"] == {"nodes": ["F-1"], "artifacts": ["F-2"]}
     assert out["problems"] == [{"section": "edges", "index": 1, "status": "error", "error": "One or both nodes not found"}]
     assert "problems" not in _compact({**full, "edges": full["edges"][:1], "failures": 0})
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_mcp_register_batch_compact_returns_artifact_ids_in_input_order_without_aliases(live_cfg, tmp_path, monkeypatch):
+    """Criterion 2 of #116 in the shipped default output, not only with verbose=True."""
+    import wheeler.mcp_mutations as mm
+
+    monkeypatch.setattr(mm, "_config", live_cfg)
+    files = []
+    for name in ("a.py", "b.csv", "c.png"):
+        f = tmp_path / name
+        f.write_bytes(b"\x89PNG\r\n\x1a\n" + name.encode() if name.endswith(".png") else name.encode())
+        files.append({"path": str(f)})
+    fn = getattr(mm.register_batch, "fn", mm.register_batch)
+    out = await fn(artifacts=files)
+    assert out["status"] == "ok"
+    assert out["ids"] == {}
+    ids = out["node_ids"]["artifacts"]
+    assert len(ids) == 3 and ids[0].startswith("S-") and ids[1].startswith("D-") and ids[2].startswith("F-")
+    again = await fn(artifacts=files)
+    assert again["node_ids"]["artifacts"] == ids
+    assert "problems" not in again

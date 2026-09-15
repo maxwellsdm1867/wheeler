@@ -742,7 +742,8 @@ async def register_batch(
       dry_run: validate only (structure, files exist, relationship names,
         literal ids exist in the graph). Nothing is written.
       verbose: include a row for every successful item too. Default returns
-        only counts, the alias -> id map, and the rows that failed.
+        counts, the alias -> id map, node_ids per section in input order, and
+        only the rows that failed.
 
     One bad item never aborts the rest; the top-level status is ok, partial or
     failed, and "ids" maps every alias to its node id.
@@ -761,8 +762,20 @@ _OK_STATUSES = {"created", "unchanged", "updated", "linked"}
 
 
 def _compact(result: dict) -> dict:
-    """Drop the rows that succeeded; the caller only needs ids and failures."""
+    """Drop the rows that succeeded; keep ids (in input order) and failures.
+
+    ``ids`` covers aliased items only, so ``node_ids`` lists every created or
+    matched node id per section in input order (None where the item failed).
+    Without it a caller registering artifacts without aliases would have no way
+    to learn their ids short of a second call.
+    """
     out = {k: v for k, v in result.items() if k not in ("nodes", "artifacts", "edges")}
+    if "nodes" in result or "artifacts" in result:
+        out["node_ids"] = {
+            section: [row.get("node_id") for row in result.get(section, [])]
+            for section in ("nodes", "artifacts")
+            if result.get(section)
+        }
     problems = [
         {"section": section, **row}
         for section in ("nodes", "artifacts", "edges")
