@@ -411,6 +411,11 @@ def _delete_knowledge_and_synthesis(
 # --- Synthesis write ---
 
 
+def _synthesis_enabled(config: object) -> bool:
+    """Whether this project renders the human-facing synthesis layer."""
+    return bool(getattr(config, "synthesis_enabled", True))
+
+
 def _write_synthesis_file(
     node_id: str,
     model: object,
@@ -419,8 +424,12 @@ def _write_synthesis_file(
 ) -> bool:
     """Best-effort synthesis markdown write.
 
-    Returns True if the synthesis file was written successfully.
+    Returns True if the synthesis file was written successfully, and also when
+    the layer is switched off: there is then nothing to write, so the write
+    receipt must not record a failed layer.
     """
+    if not _synthesis_enabled(config):
+        return True
     try:
         from wheeler.knowledge.render import render_synthesis
         from wheeler.knowledge.store import write_synthesis
@@ -452,8 +461,12 @@ async def _update_synthesis_for_link(
     """Update synthesis files for both endpoints of a new relationship.
 
     Queries all relationships for each node and re-renders their
-    synthesis files with a Relationships section.
+    synthesis files with a Relationships section. Skipped when the synthesis
+    layer is off, which is where most of the saving is: this runs two graph
+    queries per endpoint on EVERY link.
     """
+    if not _synthesis_enabled(config):
+        return
     try:
         from wheeler.knowledge.store import read_node
         from wheeler.models import PREFIX_TO_LABEL, title_for_node

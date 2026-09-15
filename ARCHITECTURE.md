@@ -788,6 +788,26 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ---
 
+## The synthesis layer is optional
+
+`synthesis/<id>.md` is a HUMAN VIEW: Obsidian-compatible markdown with
+`[[backlinks]]`, rendered from the knowledge JSON. Nothing in Wheeler reads it
+back. Every tool reads `knowledge/<id>.json` or queries the graph, so the view
+is write-only from the system's point of view.
+
+Set `synthesis_enabled: false` in `wheeler.yaml` to skip it. That drops a file
+write on every mutation and, more significantly, the re-render of BOTH endpoints
+on every link, which costs two graph queries each (about 17 ms per edge
+measured; roughly 18 percent of the wall clock of registering a 20-edge
+execution). The default is `true`, and a config that predates the key reads as
+`true`, so no existing project changes behaviour.
+
+With the layer off, `graph_consistency_check` stops reporting `synthesis_missing`
+(the absence of every file is the configured state, not drift) but still reports
+`synthesis_orphaned`, since a file left over from before the switch is real.
+Turning the layer back on does not backfill: run `repair=True` to regenerate the
+views from the JSON.
+
 ## Content versions (append-only)
 
 A node's id is stable for life; its content has a version. `content_version`
