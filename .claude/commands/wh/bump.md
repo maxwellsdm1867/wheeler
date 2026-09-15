@@ -76,8 +76,9 @@ Check how many `mcp_*.py` files exist (excluding `mcp_shared.py`). Update the "N
 
 ## Step 4.5: Regenerate the plugin tree
 
-The generated plugin files pin the version in their `uvx --from wheeler==X.Y.Z`
-command, so a bump makes them stale and `tests/test_build_plugin.py` fails:
+The generated plugin files carry the version in their `uvx --from wheeler>=X.Y.Z`
+command (a floor, not a pin: a freshly pushed bump can reference a version PyPI
+has not published yet), so a bump makes them stale and `tests/test_build_plugin.py` fails:
 
 ```bash
 python -m wheeler.build_plugin

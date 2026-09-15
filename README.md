@@ -282,9 +282,9 @@ Claude Code (interactive)
     │       └── System prompt: workflow + provenance protocol
     │
     ├── MCP Servers (54 tools)
-    │       ├── wheeler_core (12): health, status, context, search, cypher
+    │       ├── wheeler_core (14): health, status, context, search, cypher
     │       ├── wheeler_query (11): read-only query_* tools
-    │       ├── wheeler_mutations (18): add_*, link, delete, update, merge
+    │       ├── wheeler_mutations (19): add_*, link, delete, update, merge
     │       └── wheeler_ops (10): staleness, citations, consistency
     │
 bin/wh (headless)
@@ -312,7 +312,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 3159 tests
+tests/                        # 3160 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -324,7 +324,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use `/wh:dev-feedback` from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (3159 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (3160 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 

@@ -834,6 +834,7 @@ async def ensure_artifact(backend, args: dict) -> str:
     # the mistake permanent and invisible, so the upgrade is narrower than the
     # lookup on purpose.
     upgraded = False
+    upgraded_version = 0
     if matched_spelling == path and portable != path:
         upgrade_str = await _execute_tool(
             "update_node",
@@ -853,9 +854,13 @@ async def ensure_artifact(backend, args: dict) -> str:
             )
         else:
             upgraded = True
+            # The upgrade is itself a content change, so it bumped the version.
+            # The lookup above read the PRE-upgrade number; reporting that would
+            # hand the caller a version to cite that is already superseded.
+            upgraded_version = json.loads(upgrade_str).get("content_version") or 0
             logger.info(
-                "ensure_artifact: upgraded %s path %r -> %r",
-                existing_id, matched_spelling, portable,
+                "ensure_artifact: upgraded %s path %r -> %r (v%s)",
+                existing_id, matched_spelling, portable, upgraded_version or "?",
             )
 
     # Hash unchanged
@@ -869,8 +874,11 @@ async def ensure_artifact(backend, args: dict) -> str:
             "path_upgraded": upgraded,
             "hash": file_hash,
             # The caller may want to cite this node; it should not need a second
-            # call to learn a version the lookup already read.
-            "content_version": existing.get("content_version") or 1,
+            # call to learn a version. Prefer the upgrade's own number: a path
+            # upgrade above bumps the version, and the lookup read the value
+            # from before it. Every artifact written before portable paths hits
+            # this branch on its first re-registration.
+            "content_version": upgraded_version or existing.get("content_version") or 1,
         })
 
     # Hash changed: delegate to update_node handler for triple-write

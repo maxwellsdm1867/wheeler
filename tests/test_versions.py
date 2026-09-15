@@ -459,3 +459,60 @@ def test_a_failed_write_is_not_given_a_version():
     assert _with_version(_json.dumps({"node_id": "F-1"}), 0) == _json.dumps({"node_id": "F-1"})
     assert _json.loads(_with_version(_json.dumps({"node_id": "F-1"}), 4))["content_version"] == 4
     assert _with_version("not json", 2) == "not json"
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_ensure_artifact_reports_the_post_upgrade_version(live_cfg, tmp_path, monkeypatch):
+    """The opportunistic path upgrade bumps the version, so the unchanged branch
+    must report the number AFTER it.
+
+    A node stored under an absolute path gets its path rewritten to the portable
+    spelling on the next ensure_artifact. That rewrite goes through update_node,
+    so it is a content change and bumps the version. The lookup that decided the
+    hash was unchanged ran BEFORE the upgrade, so reporting its version hands the
+    caller a number that is already superseded, and a citation pinned to it
+    validates as outdated. Every artifact written before portable paths takes
+    this branch on its first re-registration, so it is the common case on a
+    migrated graph, not an edge case.
+    """
+    import wheeler.mcp_mutations as mut
+    from wheeler.validation.citations import CitationStatus, validate_citations
+
+    monkeypatch.setattr(mut, "_config", live_cfg)
+    fn = getattr(mut.ensure_artifact, "fn", mut.ensure_artifact)
+
+    f = tmp_path / "legacy_script.py"
+    f.write_text("x = 1\n")
+    created = await fn(str(f))
+    nid = created["node_id"]
+
+    # Make it look like a node written before portable paths: absolute path in
+    # both layers, so the next call matches on the absolute spelling and upgrades.
+    _graph(_URI, "MATCH (n {id: $id}) SET n.path = $p", id=nid, p=str(f))
+    kfile = tmp_path / "knowledge" / f"{nid}.json"
+    data = json.loads(kfile.read_text())
+    data["path"] = str(f)
+    kfile.write_text(json.dumps(data, indent=2))
+
+    # Same bytes on disk, so this is the unchanged branch, but the path upgrade fires.
+    out = await fn(str(f))
+    assert out["action"] == "unchanged"
+
+    truth = json.loads((tmp_path / "knowledge" / f"{nid}.json").read_text())["content_version"]
+    on_graph = _graph(_URI, "MATCH (n {id: $id}) RETURN n.content_version AS v", id=nid)[0]["v"]
+    assert truth == on_graph, "layers disagree about the version"
+    assert out["content_version"] == truth, (
+        f"reported v{out['content_version']} but the node is at v{truth}"
+    )
+
+    # the consequence the number exists to prevent
+    pinned = await validate_citations(f"claim [{nid}@{out['content_version']}]", live_cfg)
+    assert CitationStatus.OUTDATED not in [r.status for r in pinned]
+
+    # and the sibling branch stays correct when the content really changes
+    f.write_text("x = 2\n")
+    changed = await fn(str(f))
+    assert changed["action"] == "updated"
+    truth2 = json.loads((tmp_path / "knowledge" / f"{nid}.json").read_text())["content_version"]
+    assert changed["content_version"] == truth2
