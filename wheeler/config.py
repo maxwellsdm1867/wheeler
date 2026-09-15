@@ -178,6 +178,14 @@ class WheelerConfig(BaseModel):
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     knowledge_path: str = "knowledge"
     synthesis_path: str = "synthesis"
+    # The synthesis layer is a HUMAN VIEW: Obsidian-compatible markdown with
+    # backlinks, rendered from the knowledge JSON. Nothing in Wheeler reads it
+    # back; every tool reads the JSON or the graph. Projects that do not browse
+    # the graph in Obsidian can turn it off and skip a file write, a re-render
+    # of both endpoints on every link, and the two graph queries each of those
+    # re-renders costs (about 17 ms per edge measured). Default stays on so no
+    # existing project changes behaviour.
+    synthesis_enabled: bool = True
     # Root of the project tree. "." means "discover it" (see
     # `resolved_project_root`). The raw "." is intentional here so
     # serialisation round-trips cleanly in wheeler.yaml.

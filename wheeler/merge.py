@@ -101,6 +101,7 @@ async def execute_merge(
     from wheeler.knowledge.store import read_node
     from wheeler.knowledge.store import delete_node as delete_knowledge_file
     from wheeler.knowledge.render import render_synthesis
+    from wheeler.knowledge.store import synthesis_enabled
     from wheeler.models import ChangeEntry
 
     backend = await _get_backend(config)
@@ -137,10 +138,12 @@ async def execute_merge(
     tmp_json = knowledge_dir / f"{keep_id}.json.merge-tmp"
     tmp_json.write_text(keep_model.model_dump_json(indent=2), encoding="utf-8")
 
-    merged_synthesis = render_synthesis(keep_model, roots=config.resolved_roots)
+    write_the_view = synthesis_enabled(config)
     tmp_synth = synthesis_dir / f"{keep_id}.md.merge-tmp"
-    synthesis_dir.mkdir(parents=True, exist_ok=True)
-    tmp_synth.write_text(merged_synthesis, encoding="utf-8")
+    if write_the_view:
+        merged_synthesis = render_synthesis(keep_model, roots=config.resolved_roots)
+        synthesis_dir.mkdir(parents=True, exist_ok=True)
+        tmp_synth.write_text(merged_synthesis, encoding="utf-8")
 
     # --- Phase 2: Commit ---
     actions = []
@@ -166,9 +169,13 @@ async def execute_merge(
     tmp_json.rename(target_json)
     actions.append({"step": "update_keep_json", "status": "ok"})
 
-    target_synth = synthesis_dir / f"{keep_id}.md"
-    tmp_synth.rename(target_synth)
-    actions.append({"step": "update_keep_synthesis", "status": "ok"})
+    # Only when the view was written above; with the synthesis layer off there
+    # is no temp file to promote, and renaming a file that does not exist would
+    # abort the merge after the graph delete has already committed.
+    if write_the_view:
+        target_synth = synthesis_dir / f"{keep_id}.md"
+        tmp_synth.rename(target_synth)
+        actions.append({"step": "update_keep_synthesis", "status": "ok"})
 
     # Step 4: Delete merge_from files
     try:

@@ -95,7 +95,7 @@ Every mutation (`add_finding`, `link_nodes`, `set_tier`, etc.) writes **three pl
 
 1. Neo4j graph node (via `GraphBackend` ABC)
 2. `knowledge/{id}.json` (atomic tmp-rename)
-3. `synthesis/{id}.md` (atomic tmp-rename, Obsidian-compatible)
+3. `synthesis/{id}.md` (atomic tmp-rename, Obsidian-compatible; skipped when `synthesis_enabled: false`, since nothing in Wheeler reads this layer back)
 
 Plus an embedding in `.wheeler/embeddings/` if search is enabled, plus a `WriteReceipt` in `.wheeler/repair_queue.jsonl` if any layer fails, plus a `trace_id` in `.wheeler/request_log.jsonl` for correlation.
 

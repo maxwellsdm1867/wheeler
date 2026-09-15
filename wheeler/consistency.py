@@ -163,6 +163,7 @@ async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
     # Synthesis inventory: node views only. Index and report views (INDEX.md,
     # MORNING-{date}.md, ...) have no backing JSON by design, so counting them
     # here would report them as orphaned and get them deleted by repair.
+    synthesis_on = bool(getattr(config, "synthesis_enabled", True))
     synthesis_dir = project_synthesis_dir(config)
     if synthesis_dir.is_dir():
         synth_ids = {
@@ -208,7 +209,10 @@ async def check_consistency(config: WheelerConfig) -> ConsistencyReport:
     return ConsistencyReport(
         graph_only=sorted(graph_ids - json_ids),
         json_only=json_only,
-        synthesis_missing=sorted(json_ids - synth_ids),
+        # With the synthesis layer off there is no view to be missing, so the
+        # absence of every file is the configured state, not drift. Orphans are
+        # still reported: a leftover file from before the switch is real.
+        synthesis_missing=sorted(json_ids - synth_ids) if synthesis_on else [],
         synthesis_orphaned=sorted(synth_ids - json_ids),
         unreadable=unreadable,
         total_graph=len(graph_ids),
