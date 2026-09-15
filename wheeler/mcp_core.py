@@ -383,7 +383,14 @@ async def show_node(
             token = if_changed_since.strip().lower()
             cur_hash = str(data.get("content_hash") or "")
             cur_v = int(data.get("content_version") or 1)
-            same = (token == cur_hash.lower()) or (token.lstrip("v").isdigit() and int(token.lstrip("v")) == cur_v)
+            # Both sides must be non-empty to match on the hash. A node written
+            # before versioning has no content_hash, so an empty or whitespace
+            # token would otherwise compare equal to it and this would answer
+            # "unchanged" for content the caller has never seen.
+            same = bool(token) and (
+                (bool(cur_hash) and token == cur_hash.lower())
+                or (token.lstrip("v").isdigit() and int(token.lstrip("v")) == cur_v)
+            )
             if same:
                 return {"id": nid, "content_version": cur_v, "content_hash": cur_hash, "changed": False}
             data["changed"] = True
@@ -495,6 +502,12 @@ async def _read_node_any_layer(nid: str) -> dict | None:
                 data = {k: v for k, v in dict(node).items() if not k.startswith("_")}
                 data.setdefault("id", nid)
                 data.setdefault("type", label)
+                # The graph carries raw properties, not model defaults, and a
+                # node written before versioning has no content_version at all.
+                # Without this the caller gets None and cannot tell "version 1"
+                # from "this tool is broken". 98 percent of a real graph is
+                # this shape, and only real legacy data surfaced it.
+                data.setdefault("content_version", 1)
                 data["source"] = "graph"
         if data is None:
             return None
