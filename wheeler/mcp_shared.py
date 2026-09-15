@@ -235,14 +235,16 @@ def _compact_write_result(parsed: dict) -> dict:
 
 # --- Disclosure level ----------------------------------------------------------
 # What a LISTING returns by default. The node is never lost: show_node reads it
-# in full. Chosen by measurement (evals/disclosure): "pointer" rows are
+# in full. Chosen by measurement (evals/disclosure/REPORT.md, 2026-09-15): every
+# level scored 100 percent on ten graph tasks on two models, including the tasks
+# that need a node's body, so the smallest shape wins. "pointer" rows are
 # {id, type, headline, updated, content_version, degree}; "trimmed" keeps text
 # cut to 240 chars; "full" is the pre-2026-09 behaviour. full=True on any
 # listing overrides the level for that call.
 DISCLOSURE_LEVELS = ("full", "trimmed", "pointer")
-DISCLOSURE: str = (os.environ.get("WHEELER_DISCLOSURE", "trimmed").strip().lower() or "trimmed")
+DISCLOSURE: str = (os.environ.get("WHEELER_DISCLOSURE", "pointer").strip().lower() or "pointer")
 if DISCLOSURE not in DISCLOSURE_LEVELS:
-    DISCLOSURE = "trimmed"
+    DISCLOSURE = "pointer"
 
 HEADLINE_CHARS = 100
 # Row keys carried into a pointer row unchanged: they are what a caller ranks
@@ -305,8 +307,12 @@ def _pointer_row(row: dict, meta: dict) -> dict:
     if headline:
         out["headline"] = headline
     for key in ("updated", "content_version", "degree"):
-        if m.get(key) not in (None, ""):
-            out[key] = m[key]
+        val = m.get(key)
+        if val in (None, ""):
+            continue
+        if key == "updated" and isinstance(val, str) and len(val) >= 10:
+            val = val[:10]  # the day is enough to rank by recency; the node has the timestamp
+        out[key] = val
     for key in POINTER_KEEP:
         if key in row and row[key] not in (None, ""):
             out[key] = row[key]

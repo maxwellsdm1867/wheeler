@@ -823,11 +823,20 @@ already a scientist-facing string.
 
 `WHEELER_DISCLOSURE` (env, read by the MCP servers) sets what `query_*`,
 `search_findings` and `search_context` return by default: `pointer` rows
-`{id, type, headline (<=100 chars), updated, content_version, degree}`,
+`{id, type, headline (<=100 chars), updated (date), content_version, degree}`,
 `trimmed` (text cut to 240 chars), or `full`. `full=true` on any listing
 overrides the level for that call, and `show_node` always returns the node in
-full. The default level is chosen by measurement (`evals/disclosure/`); see
-`docs/mcp-token-audit.md` for the result-diet audit that motivated it.
+full. The default is `pointer`, chosen by measurement (`evals/disclosure/REPORT.md`):
+ten graph tasks on two models scored 100 percent at every level, including the
+tasks that require a node's body, so listing shape costs no accuracy and the
+smallest one wins; on real recorded listings pointer rows are 60 percent smaller
+than full. See `docs/mcp-token-audit.md` for the result-diet audit that motivated it.
+
+Raw Cypher is the one read path that is not project-scoped. When a project tag is
+set, `run_cypher` binds `$ptag` for every query, names the tag in its result and
+warns when a query does not filter on `_wheeler_project`; in a shared database an
+unscoped MATCH reads every project's nodes (the disclosure experiment hit exactly
+this when five runs shared one database).
 
 ## MCP Tools (54 total, 4 servers)
 

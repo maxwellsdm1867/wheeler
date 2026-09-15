@@ -96,6 +96,23 @@ class TestCitationPins:
         assert extract_citation_pins("[F-3a2b@4] then [F-3a2b@2]") == {"F-3a2b": 2}
 
 
+class TestDisclosureDefault:
+    def test_default_level_is_pointer_and_env_overrides(self, monkeypatch):
+        import importlib
+
+        from wheeler import mcp_shared
+
+        assert mcp_shared.DISCLOSURE_LEVELS == ("full", "trimmed", "pointer")
+        monkeypatch.delenv("WHEELER_DISCLOSURE", raising=False)
+        assert importlib.reload(mcp_shared).DISCLOSURE == "pointer"
+        monkeypatch.setenv("WHEELER_DISCLOSURE", "trimmed")
+        assert importlib.reload(mcp_shared).DISCLOSURE == "trimmed"
+        monkeypatch.setenv("WHEELER_DISCLOSURE", "nonsense")
+        assert importlib.reload(mcp_shared).DISCLOSURE == "pointer"
+        monkeypatch.delenv("WHEELER_DISCLOSURE", raising=False)
+        importlib.reload(mcp_shared)
+
+
 class TestPointerHelpers:
     def test_headline_prefers_title_then_cuts_text_at_a_word(self):
         from wheeler.mcp_shared import _headline

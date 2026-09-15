@@ -1,0 +1,173 @@
+{
+  "answer_line": "Reply with exactly one line: ANSWER <json>",
+  "tasks": [
+    {
+      "id": 1,
+      "kind": "lookup",
+      "may_need_body": false,
+      "prompt": "Which script generated the figure stored at figures/fig03_off_parasol_kernels.png? Give the Script node's id.",
+      "shape": "a JSON string holding one Script node id, for example \"S-0123abcd\"",
+      "gold": {
+        "type": "id",
+        "value": "S2"
+      }
+    },
+    {
+      "id": 2,
+      "kind": "one-hop",
+      "may_need_body": false,
+      "prompt": "List every Finding that SUPPORTS the hypothesis stating that ON parasol spike-history kernels shorten by more than 30 percent between 10 percent and 50 percent contrast.",
+      "shape": "a sorted JSON list of Finding node ids",
+      "gold": {
+        "type": "id_set",
+        "value": [
+          "F01",
+          "F02",
+          "F03",
+          "F05"
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "kind": "two-hop",
+      "may_need_body": false,
+      "prompt": "Which datasets did the execution that produced figures/fig05_ahp_amplitude_vs_tau.png use?",
+      "shape": "a sorted JSON list of Dataset node ids",
+      "gold": {
+        "type": "id_set",
+        "value": [
+          "Dint2",
+          "Draw3"
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "kind": "deep-trace",
+      "may_need_body": false,
+      "prompt": "Trace figures/fig02_on_kernels_overlay.png back to its raw dataset through every execution and intermediate dataset, and name the scripts those executions used.",
+      "shape": "a JSON object {\"chain\": [...], \"scripts\": [...]} where chain is the ordered list of node ids from the figure to the raw dataset, alternating the node and the execution that generated it (figure, execution, dataset, execution, ..., raw dataset), and scripts is the sorted list of Script ids USED by those executions",
+      "gold": {
+        "type": "chain_and_set",
+        "chain": [
+          "fig02",
+          "X3",
+          "Dint2",
+          "X2",
+          "Dint1",
+          "X1",
+          "Draw1"
+        ],
+        "set": [
+          "S1",
+          "S3",
+          "S4"
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "kind": "content-read",
+      "may_need_body": true,
+      "prompt": "Find the finding about first-spike latency to a contrast step in ON parasol cells. What confidence does it carry, and what numeric histogram peak latency in milliseconds does it state at 10 percent contrast?",
+      "shape": "a JSON object {\"confidence\": <number>, \"peak_latency_ms\": <number>}",
+      "gold": {
+        "type": "object",
+        "value": {
+          "confidence": 0.72,
+          "peak_latency_ms": 47.3
+        },
+        "finding": "F11"
+      }
+    },
+    {
+      "id": 6,
+      "kind": "content-read",
+      "may_need_body": true,
+      "prompt": "Which finding mentions cesium-blocked control epochs? Give its node id.",
+      "shape": "a JSON string holding one Finding node id",
+      "gold": {
+        "type": "id",
+        "value": "F10"
+      }
+    },
+    {
+      "id": 7,
+      "kind": "contradiction",
+      "may_need_body": false,
+      "prompt": "Which findings CONTRADICT a hypothesis, and which hypothesis does each one contradict?",
+      "shape": "a sorted JSON list of two-element lists [finding_id, hypothesis_id]",
+      "gold": {
+        "type": "pair_set",
+        "value": [
+          [
+            "F04",
+            "H1"
+          ],
+          [
+            "F06",
+            "H1"
+          ],
+          [
+            "F09",
+            "H2"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "kind": "staleness",
+      "may_need_body": false,
+      "prompt": "Which figure nodes are downstream of the script scripts/fit_srm.py, that is, would go stale if that script changed? A figure counts as downstream when a chain of WAS_GENERATED_BY and USED edges leads from the figure back to the script, through any number of executions and intermediate datasets.",
+      "shape": "a sorted JSON list of figure node ids",
+      "gold": {
+        "type": "id_set",
+        "value": [
+          "fig01",
+          "fig02",
+          "fig05"
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "kind": "counting",
+      "may_need_body": false,
+      "prompt": "How many Finding nodes are RELEVANT_TO the open question about contrast-dependent shortening of the spike-history kernel, and which three of those findings were updated most recently (most recent first)?",
+      "shape": "a JSON object {\"count\": <integer>, \"top3\": [id, id, id]}",
+      "gold": {
+        "type": "count_and_chain",
+        "count": 11,
+        "chain": [
+          "F02",
+          "F05",
+          "F12"
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "kind": "literature",
+      "may_need_body": false,
+      "prompt": "Which papers are cited by the document titled \"Contrast-dependent shortening of spike-history kernels in primate parasol cells\"?",
+      "shape": "a sorted JSON list of Paper node ids",
+      "gold": {
+        "type": "id_set",
+        "value": [
+          "P01",
+          "P02",
+          "P03",
+          "P04",
+          "P05",
+          "P06",
+          "P07",
+          "P11",
+          "P12",
+          "P14"
+        ]
+      }
+    }
+  ]
+}

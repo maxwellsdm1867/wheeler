@@ -1,0 +1,7 @@
+You are answering a question about the Wheeler knowledge graph of this project. Use the Wheeler MCP tools. Prefer the fewest calls that answer correctly; read a node's full content only when you need it.
+
+Question: Which datasets did the execution that produced figures/fig05_ahp_amplitude_vs_tau.png use?
+
+Answer shape: a sorted JSON list of Dataset node ids.
+
+Reply with exactly one line: ANSWER <json>

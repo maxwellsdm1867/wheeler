@@ -551,7 +551,10 @@ async def run_cypher(query: str, limit: int = 100) -> dict:
             whole words. CALL is refused even for read-only procedures such as
             fulltext queries, since a procedure name does not reveal whether it
             writes; use search_findings for fulltext. This query is NOT
-            project-scoped, unlike every query_* tool.
+            project-scoped, unlike every query_* tool: when the result carries
+            project_tag, other projects share this database, so add
+            `WHERE n._wheeler_project = $ptag` to every MATCH ($ptag is bound
+            for you) or you will read their nodes as if they were yours.
         limit: maximum rows returned (default 100). When the query yields
             more, the result carries truncated=true and total_rows; add a
             WHERE or LIMIT to the query rather than raising this blindly.
@@ -574,16 +577,20 @@ async def run_cypher(query: str, limit: int = 100) -> dict:
 
     try:
         backend = await graph_tools._get_backend(_config)
-        records = await backend.run_cypher(query)
+        tag = _config.neo4j.project_tag
+        # $ptag is always bound when a project tag exists, so a scoped query
+        # never fails on a missing parameter; the result names the tag so the
+        # caller can see that scoping applies.
+        records = await backend.run_cypher(query, {"ptag": tag} if tag else None)
         total = len(records)
+        out: dict = {"results": records, "count": total}
         if limit and total > limit:
-            return {
-                "results": records[:limit],
-                "count": limit,
-                "truncated": True,
-                "total_rows": total,
-            }
-        return {"results": records, "count": total}
+            out = {"results": records[:limit], "count": limit, "truncated": True, "total_rows": total}
+        if tag:
+            out["project_tag"] = tag
+            if "_wheeler_project" not in query:
+                out["warning"] = "unscoped query in a shared database: add WHERE n._wheeler_project = $ptag"
+        return out
     except Exception as exc:
         return {"error": str(exc), "results": [], "count": 0}
 

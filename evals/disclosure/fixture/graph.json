@@ -1,0 +1,1217 @@
+{
+  "seed": 20260914,
+  "description": "Synthetic retinal-electrophysiology research graph for the progressive-disclosure experiment. Node paths are relative to the scratch project root; run.py copies fixture/files there and resolves them.",
+  "nodes": [
+    {
+      "key": "Q1",
+      "tool": "add_question",
+      "args": {
+        "question": "Does the spike-history kernel of primate parasol retinal ganglion cells shorten under high contrast, and is the shortening explained by adaptation of the slow afterhyperpolarization rather than by a change in spike threshold?",
+        "priority": 8
+      }
+    },
+    {
+      "key": "H1",
+      "tool": "add_hypothesis",
+      "args": {
+        "statement": "The contrast-dependent shortening of the spike-history kernel is absent in OFF parasol cells: their slow kernel time constant is contrast-invariant between 10 percent and 50 percent contrast.",
+        "status": "rejected"
+      }
+    },
+    {
+      "key": "H2",
+      "tool": "add_hypothesis",
+      "args": {
+        "statement": "ON parasol spike-history kernels shorten by more than 30 percent (slow time constant) between 10 percent and 50 percent contrast.",
+        "status": "supported"
+      }
+    },
+    {
+      "key": "H3",
+      "tool": "add_hypothesis",
+      "args": {
+        "statement": "Kernel shortening is driven by a reduction of the slow afterhyperpolarization current, not by a change in spike threshold.",
+        "status": "open"
+      }
+    },
+    {
+      "key": "P01",
+      "tool": "add_paper",
+      "args": {
+        "title": "Spike-history dependence of retinal ganglion cell firing under natural contrast",
+        "authors": "Alvarez, M., Okonkwo, T., Lindqvist, S.",
+        "year": 2019,
+        "doi": "10.99999/disclosure-fixture.p01"
+      }
+    },
+    {
+      "key": "P02",
+      "tool": "add_paper",
+      "args": {
+        "title": "A spike response model of primate parasol cells",
+        "authors": "Bergström, L., Nakamura, K.",
+        "year": 2015,
+        "doi": "10.99999/disclosure-fixture.p02"
+      }
+    },
+    {
+      "key": "P03",
+      "tool": "add_paper",
+      "args": {
+        "title": "Afterhyperpolarization currents in mammalian retinal ganglion cells",
+        "authors": "Chen, Y., Duarte, P., Feldman, R.",
+        "year": 2012,
+        "doi": "10.99999/disclosure-fixture.p03"
+      }
+    },
+    {
+      "key": "P04",
+      "tool": "add_paper",
+      "args": {
+        "title": "Contrast adaptation in the primate retina: cellular mechanisms",
+        "authors": "Duarte, P., Alvarez, M.",
+        "year": 2017,
+        "doi": "10.99999/disclosure-fixture.p04"
+      }
+    },
+    {
+      "key": "P05",
+      "tool": "add_paper",
+      "args": {
+        "title": "Generalized linear models of retinal spike trains",
+        "authors": "Eriksen, H., Fischer, G., Gupta, A.",
+        "year": 2008,
+        "doi": "10.99999/disclosure-fixture.p05"
+      }
+    },
+    {
+      "key": "P06",
+      "tool": "add_paper",
+      "args": {
+        "title": "Dynamic threshold models reproduce adaptation in ganglion cell spiking",
+        "authors": "Fischer, G., Hoang, L.",
+        "year": 2020,
+        "doi": "10.99999/disclosure-fixture.p06"
+      }
+    },
+    {
+      "key": "P07",
+      "tool": "add_paper",
+      "args": {
+        "title": "ON and OFF parasol cells differ in intrinsic excitability",
+        "authors": "Gupta, A., Ibarra, C.",
+        "year": 2016,
+        "doi": "10.99999/disclosure-fixture.p07"
+      }
+    },
+    {
+      "key": "P08",
+      "tool": "add_paper",
+      "args": {
+        "title": "Slow potassium currents shape the interspike interval distribution in retina",
+        "authors": "Hoang, L., Jensen, O., Kimura, S.",
+        "year": 2014,
+        "doi": "10.99999/disclosure-fixture.p08"
+      }
+    },
+    {
+      "key": "P09",
+      "tool": "add_paper",
+      "args": {
+        "title": "The h-current in retinal ganglion cells: pharmacology and function",
+        "authors": "Ibarra, C., Lindqvist, S.",
+        "year": 2011,
+        "doi": "10.99999/disclosure-fixture.p09"
+      }
+    },
+    {
+      "key": "P10",
+      "tool": "add_paper",
+      "args": {
+        "title": "First-spike latency coding in the retina",
+        "authors": "Jensen, O., Moreau, D.",
+        "year": 2013,
+        "doi": "10.99999/disclosure-fixture.p10"
+      }
+    },
+    {
+      "key": "P11",
+      "tool": "add_paper",
+      "args": {
+        "title": "Firing-rate adaptation and history filters: a unifying account",
+        "authors": "Kimura, S., Nakamura, K., Okonkwo, T.",
+        "year": 2021,
+        "doi": "10.99999/disclosure-fixture.p11"
+      }
+    },
+    {
+      "key": "P12",
+      "tool": "add_paper",
+      "args": {
+        "title": "Bootstrap methods for neural time constant estimation",
+        "authors": "Lindqvist, S., Petrov, V.",
+        "year": 2018,
+        "doi": "10.99999/disclosure-fixture.p12"
+      }
+    },
+    {
+      "key": "P13",
+      "tool": "add_paper",
+      "args": {
+        "title": "Cesium block of Ih alters spike timing in ganglion cells",
+        "authors": "Moreau, D., Chen, Y.",
+        "year": 2010,
+        "doi": "10.99999/disclosure-fixture.p13"
+      }
+    },
+    {
+      "key": "P14",
+      "tool": "add_paper",
+      "args": {
+        "title": "Contrast gain control at the ganglion cell spike generator",
+        "authors": "Nakamura, K., Bergström, L.",
+        "year": 2022,
+        "doi": "10.99999/disclosure-fixture.p14"
+      }
+    },
+    {
+      "key": "P15",
+      "tool": "add_paper",
+      "args": {
+        "title": "Sodium channel inactivation and spike-history effects in the retina",
+        "authors": "Okonkwo, T., Quiroga, F.",
+        "year": 2009,
+        "doi": "10.99999/disclosure-fixture.p15"
+      }
+    },
+    {
+      "key": "P16",
+      "tool": "add_paper",
+      "args": {
+        "title": "Rate matching as a control for adaptation studies",
+        "authors": "Petrov, V., Eriksen, H.",
+        "year": 2019,
+        "doi": "10.99999/disclosure-fixture.p16"
+      }
+    },
+    {
+      "key": "P17",
+      "tool": "add_paper",
+      "args": {
+        "title": "Power-law dynamics of neuronal adaptation",
+        "authors": "Quiroga, F., Rasmussen, E.",
+        "year": 2007,
+        "doi": "10.99999/disclosure-fixture.p17"
+      }
+    },
+    {
+      "key": "P18",
+      "tool": "add_paper",
+      "args": {
+        "title": "Recording stability criteria for long whole-cell retinal recordings",
+        "authors": "Rasmussen, E., Sato, M.",
+        "year": 2016,
+        "doi": "10.99999/disclosure-fixture.p18"
+      }
+    },
+    {
+      "key": "P19",
+      "tool": "add_paper",
+      "args": {
+        "title": "Input resistance as a marker of cell health in patch recordings",
+        "authors": "Sato, M., Thornton, W.",
+        "year": 2014,
+        "doi": "10.99999/disclosure-fixture.p19"
+      }
+    },
+    {
+      "key": "P20",
+      "tool": "add_paper",
+      "args": {
+        "title": "Kernel estimation for point-process models of spiking",
+        "authors": "Thornton, W., Alvarez, M.",
+        "year": 2023,
+        "doi": "10.99999/disclosure-fixture.p20"
+      }
+    },
+    {
+      "key": "W1",
+      "tool": "add_document",
+      "args": {
+        "title": "Contrast-dependent shortening of spike-history kernels in primate parasol cells",
+        "path": "docs/manuscript_kernel_shortening.md",
+        "status": "draft"
+      }
+    },
+    {
+      "key": "W2",
+      "tool": "add_document",
+      "args": {
+        "title": "Literature review: spike-history and afterhyperpolarization in retinal ganglion cells",
+        "path": "docs/review_ahp_literature.md",
+        "status": "revision"
+      }
+    },
+    {
+      "key": "W3",
+      "tool": "add_document",
+      "args": {
+        "title": "Lab notebook: SRM fitting protocol and parameter conventions",
+        "path": "docs/notebook_srm_protocol.md",
+        "status": "final"
+      }
+    },
+    {
+      "key": "Draw1",
+      "tool": "add_dataset",
+      "args": {
+        "path": "data/raw/on_parasol_contrast_steps_2026-03.csv",
+        "type": "csv",
+        "description": "Raw spike times and stimulus contrast per epoch, 17 ON parasol cells, 3 retinas, March 2026.",
+        "tier": "reference"
+      }
+    },
+    {
+      "key": "Draw2",
+      "tool": "add_dataset",
+      "args": {
+        "path": "data/raw/off_parasol_contrast_steps_2026-04.csv",
+        "type": "csv",
+        "description": "Raw spike times and stimulus contrast per epoch, 11 OFF parasol cells plus 2 ON controls, April 2026.",
+        "tier": "reference"
+      }
+    },
+    {
+      "key": "Draw3",
+      "tool": "add_dataset",
+      "args": {
+        "path": "data/raw/on_parasol_current_clamp_2026-05.csv",
+        "type": "csv",
+        "description": "Current-clamp membrane voltage traces for AHP and latency analysis, 15 ON parasol cells, May 2026.",
+        "tier": "reference"
+      }
+    },
+    {
+      "key": "Dint1",
+      "tool": "add_dataset",
+      "args": {
+        "path": "data/interim/on_parasol_spike_trains.csv",
+        "type": "csv",
+        "description": "Binned ON parasol spike trains (2 ms) with contrast labels, output of preprocess_epochs.py.",
+        "tier": "generated"
+      }
+    },
+    {
+      "key": "Dint2",
+      "tool": "add_dataset",
+      "args": {
+        "path": "data/interim/srm_fits_on_parasol.csv",
+        "type": "csv",
+        "description": "Fitted SRM kernel parameters per cell and contrast level, output of fit_srm.py.",
+        "tier": "generated"
+      }
+    },
+    {
+      "key": "S1",
+      "tool": "add_script",
+      "args": {
+        "path": "scripts/preprocess_epochs.py",
+        "language": "python"
+      }
+    },
+    {
+      "key": "S2",
+      "tool": "add_script",
+      "args": {
+        "path": "scripts/analyze_off_parasol.py",
+        "language": "python"
+      }
+    },
+    {
+      "key": "S3",
+      "tool": "add_script",
+      "args": {
+        "path": "scripts/fit_srm.py",
+        "language": "python"
+      }
+    },
+    {
+      "key": "S4",
+      "tool": "add_script",
+      "args": {
+        "path": "scripts/plot_on_kernels.py",
+        "language": "python"
+      }
+    },
+    {
+      "key": "S5",
+      "tool": "add_script",
+      "args": {
+        "path": "scripts/ahp_analysis.py",
+        "language": "python"
+      }
+    },
+    {
+      "key": "S6",
+      "tool": "add_script",
+      "args": {
+        "path": "scripts/latency_summary.py",
+        "language": "python"
+      }
+    },
+    {
+      "key": "X1",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "preprocess_epochs.py on the 2026-03 ON parasol raw epochs: 2 ms binning, artefact rejection, contrast labelling",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "X2",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "fit_srm.py on the binned ON parasol spike trains: two-exponential history kernel per cell and contrast",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "X3",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "plot_on_kernels.py on the ON parasol SRM fits: kernel overlays, tau versus contrast, power-law fit",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "X4",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "analyze_off_parasol.py on the 2026-04 OFF parasol raw epochs: preprocessing, SRM fits and OFF versus ON comparison",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "X5",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "ahp_analysis.py on the current-clamp traces and the ON parasol SRM fits: AHP amplitude, threshold dynamics, cesium controls",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "X6",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "latency_summary.py on the current-clamp traces: first-spike latency histograms and their relation to kernel shortening",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "X7",
+      "tool": "add_execution",
+      "args": {
+        "kind": "script_run",
+        "description": "ahp_analysis.py --bootstrap on the ON parasol SRM fits: 10,000-resample confidence intervals for the time constant ratios",
+        "status": "completed"
+      }
+    },
+    {
+      "key": "F01",
+      "tool": "add_finding",
+      "args": {
+        "description": "Spike-history kernel time constant of ON parasol cells falls from 38.4 ms at 10 percent contrast to 21.7 ms at 50 percent contrast (n = 17 cells, 3 retinas). The fit used the two-exponential SRM kernel from fit_srm.py with 2 ms bins; the fast component (tau_1 = 4.1 +/- 0.6 ms) was contrast-independent, so the shortening is carried entirely by the slow component. Median shortening was 43 percent (IQR 35 to 51 percent), exceeding the 30 percent threshold in every retina. Bootstrap 95 percent CI on the pooled ratio of slow time constants (50 over 10 percent): 0.51 to 0.63.",
+        "confidence": 0.85
+      },
+      "title": "ON parasol slow kernel time constant falls 43 percent from 10 to 50 percent contrast"
+    },
+    {
+      "key": "F02",
+      "tool": "add_finding",
+      "args": {
+        "description": "Kernel shortening in ON parasol cells is graded across five contrast levels (10, 20, 30, 40, 50 percent) rather than stepped: slow time constant 38.4, 33.0, 28.9, 24.6, 21.7 ms. A power law tau_slow = 91.2 * c^-0.36 (c in percent) fits with R^2 = 0.97 across cells, and the exponent did not differ between retinas (range -0.33 to -0.39). A saturating exponential fit worse (R^2 = 0.91) and left structured residuals at 40 and 50 percent contrast, so the graded description is preferred for the manuscript figure.",
+        "confidence": 0.78
+      },
+      "title": "Slow kernel time constant follows a power law in contrast with exponent -0.36"
+    },
+    {
+      "key": "F03",
+      "tool": "add_finding",
+      "args": {
+        "description": "The contrast dependence of the slow kernel is stable across the recording: splitting each cell's epochs into first and second halves gives power-law exponents of -0.35 and -0.37 (paired difference 0.02, p = 0.61, n = 17), so the shortening is not a rundown artefact. Cells recorded for more than 40 minutes (n = 6) showed the same exponents as short recordings (-0.36 versus -0.36).",
+        "confidence": 0.7
+      },
+      "title": "Contrast dependence of the slow kernel is stable within recordings"
+    },
+    {
+      "key": "F04",
+      "tool": "add_finding",
+      "args": {
+        "description": "OFF parasol cells also shorten their spike-history kernel with contrast: slow time constant 44.9 ms at 10 percent falling to 27.2 ms at 50 percent contrast (n = 11 cells, 2 retinas), a 39 percent median reduction (IQR 31 to 46 percent). This is opposite to the prediction that OFF parasol kernels are contrast-invariant. The fast component (3.8 +/- 0.5 ms) was unchanged, matching the ON parasol pattern. Fits used the same fit_srm.py settings (2 ms bins, two-exponential kernel, 300 ms history window).",
+        "confidence": 0.8
+      },
+      "title": "OFF parasol cells also shorten their spike-history kernel with contrast"
+    },
+    {
+      "key": "F05",
+      "tool": "add_finding",
+      "args": {
+        "description": "Kernel shortening in ON parasol cells does not depend on mean firing rate: restricting the 50 percent contrast epochs to rate-matched windows (mean rate 22 to 26 Hz, matching the 10 percent contrast rate) still gives tau_slow = 23.1 ms versus 38.4 ms at 10 percent contrast (n = 12 cells with enough rate-matched epochs). Rate matching removed 31 percent of the spikes but changed the ratio of time constants by only 0.03.",
+        "confidence": 0.74
+      },
+      "title": "Kernel shortening survives firing-rate matching"
+    },
+    {
+      "key": "F06",
+      "tool": "add_finding",
+      "args": {
+        "description": "The ratio of OFF to ON parasol slow time constants is constant across contrast at 1.19 +/- 0.07 (10 percent: 1.17, 30 percent: 1.21, 50 percent: 1.25). If OFF cells lacked the shortening the ratio would rise to about 2.1 at 50 percent contrast; the observed value rules that out with a 95 percent CI of 1.05 to 1.33. The comparison uses the 2026-03 ON dataset and the 2026-04 OFF dataset, which were recorded with the same stimulus protocol and bath temperature (32 to 33 C).",
+        "confidence": 0.76
+      },
+      "title": "OFF to ON slow time constant ratio is constant at 1.19 across contrast"
+    },
+    {
+      "key": "F07",
+      "tool": "add_finding",
+      "args": {
+        "description": "A subset of 3 of 11 OFF parasol cells showed less than 15 percent shortening between 10 and 50 percent contrast (values 8, 11 and 14 percent). These cells had the lowest baseline firing rates (below 9 Hz at 10 percent contrast). This is consistent with a contrast-invariant OFF subpopulation, but the sample is too small to separate it from noise (permutation p = 0.19).",
+        "confidence": 0.4
+      },
+      "title": "A small OFF parasol subset shows less than 15 percent shortening"
+    },
+    {
+      "key": "F08",
+      "tool": "add_finding",
+      "args": {
+        "description": "Slow afterhyperpolarization amplitude, measured from the average post-spike voltage in current-clamp recordings, falls from -6.2 mV at 10 percent contrast to -3.4 mV at 50 percent contrast (n = 8 ON parasol cells). Across cells, AHP amplitude and slow kernel time constant are correlated with r = 0.81 (p = 0.002), and the per-cell change in AHP amplitude predicts the change in tau_slow with a slope of 4.6 ms per mV (95 percent CI 2.9 to 6.3). Spike threshold, estimated from the dV/dt criterion, moved by only 0.8 mV over the same contrast range.",
+        "confidence": 0.68
+      },
+      "title": "Slow AHP amplitude falls with contrast and tracks the slow kernel time constant"
+    },
+    {
+      "key": "F09",
+      "tool": "add_finding",
+      "args": {
+        "description": "Two ON parasol cells in the 2026-04 OFF-cell dataset (recorded as controls) showed kernel shortening of only 18 and 22 percent between 10 and 50 percent contrast, below the 30 percent threshold. Both had unusually high input resistance (over 180 MOhm) and may have been damaged during sealing; they are excluded from the main ON parasol sample but are reported here for completeness.",
+        "confidence": 0.45
+      },
+      "title": "Two control ON parasol cells shortened by less than 30 percent"
+    },
+    {
+      "key": "F10",
+      "tool": "add_finding",
+      "args": {
+        "description": "Spike threshold dynamics do not account for the kernel shortening. A dynamic-threshold SRM variant (threshold rising by theta_0 after each spike and decaying with time constant tau_theta) fitted to the same ON parasol epochs gives tau_theta = 12.3 ms at 10 percent contrast and 11.6 ms at 50 percent contrast (n = 8 cells), a change of 6 percent that is far smaller than the 43 percent shortening of the slow history kernel. Fixing the threshold parameters at their 10 percent values and refitting only the kernel at 50 percent contrast recovers the full shortening (tau_slow = 22.0 ms versus 21.7 ms in the free fit). In cesium-blocked control epochs (2 mM external Cs+ to suppress the h-current, n = 5 cells), the slow kernel time constant at 10 percent contrast rose to 46.1 ms and the contrast-dependent shortening was reduced to 27 percent, which points to a hyperpolarization-activated conductance contributing to the slow kernel. Together these two controls favour a conductance-based mechanism over a threshold-based one, although the cesium sample is small.",
+        "confidence": 0.62
+      },
+      "title": "Threshold dynamics do not account for the kernel shortening"
+    },
+    {
+      "key": "F11",
+      "tool": "add_finding",
+      "args": {
+        "description": "First-spike latency to a contrast step in ON parasol cells shortens with step amplitude. Latency was measured from step onset to the first spike in each epoch, pooled over 15 cells, and summarised by the mode of the pooled latency histogram (1 ms bins) rather than by the mean, because the distribution has a long tail from epochs in which the cell skipped the first stimulus cycle. At 10 percent contrast the histogram peak latency is 47.3 ms; at 50 percent contrast it is 31.8 ms. The latency shift is complete within the first 200 ms of the step and does not change over the 4 s step duration.",
+        "confidence": 0.72
+      },
+      "title": "First-spike latency to a contrast step in ON parasol cells shortens with step amplitude"
+    },
+    {
+      "key": "F12",
+      "tool": "add_finding",
+      "args": {
+        "description": "Latency shortening and kernel shortening co-vary across cells: the per-cell reduction in first-spike latency between 10 and 50 percent contrast correlates with the per-cell reduction in slow kernel time constant with r = 0.66 (p = 0.008, n = 15 ON parasol cells). The correlation survives partialling out the change in mean firing rate (partial r = 0.58). This is an interpretation: the two measures may share a common cause in the afterhyperpolarization rather than one driving the other.",
+        "confidence": 0.6
+      },
+      "title": "Latency shortening and kernel shortening co-vary across cells"
+    },
+    {
+      "key": "F13",
+      "tool": "add_finding",
+      "args": {
+        "description": "Bootstrap over cells (10,000 resamples, seed 7) gives a 95 percent CI for the pooled ON parasol slow time constant ratio (50 over 10 percent contrast) of 0.52 to 0.62, consistent with the parametric interval 0.51 to 0.63 reported earlier. The bootstrap distribution is slightly right-skewed (skewness 0.31) because three cells with long baseline kernels dominate the upper tail.",
+        "confidence": 0.8
+      },
+      "title": "Bootstrap CI for the ON parasol slow time constant ratio is 0.52 to 0.62"
+    },
+    {
+      "key": "F14",
+      "tool": "add_finding",
+      "args": {
+        "description": "Bootstrap over cells (10,000 resamples, seed 7) gives a 95 percent CI for the pooled OFF parasol slow time constant ratio (50 over 10 percent contrast) of 0.55 to 0.68 (n = 11 cells). The ON and OFF intervals overlap by 0.07, and a two-sample bootstrap of the difference in ratios gives a 95 percent CI of -0.04 to 0.13, so the two cell types shorten by statistically indistinguishable amounts.",
+        "confidence": 0.77
+      },
+      "title": "Bootstrap CI for the OFF parasol slow time constant ratio is 0.55 to 0.68"
+    },
+    {
+      "key": "fig01",
+      "tool": "ensure_artifact",
+      "args": {
+        "path": "figures/fig01_kernel_tau_vs_contrast.png",
+        "title": "fig01_kernel_tau_vs_contrast",
+        "description": "Slow kernel time constant versus contrast for 17 ON parasol cells with power-law fit."
+      }
+    },
+    {
+      "key": "fig02",
+      "tool": "ensure_artifact",
+      "args": {
+        "path": "figures/fig02_on_kernels_overlay.png",
+        "title": "fig02_on_kernels_overlay",
+        "description": "Overlay of ON parasol spike-history kernels at five contrast levels, population mean."
+      }
+    },
+    {
+      "key": "fig03",
+      "tool": "ensure_artifact",
+      "args": {
+        "path": "figures/fig03_off_parasol_kernels.png",
+        "title": "fig03_off_parasol_kernels",
+        "description": "OFF parasol spike-history kernels at 10 and 50 percent contrast, 11 cells."
+      }
+    },
+    {
+      "key": "fig04",
+      "tool": "ensure_artifact",
+      "args": {
+        "path": "figures/fig04_off_vs_on_tau_ratio.png",
+        "title": "fig04_off_vs_on_tau_ratio",
+        "description": "Ratio of OFF to ON slow time constants across contrast with bootstrap CI."
+      }
+    },
+    {
+      "key": "fig05",
+      "tool": "ensure_artifact",
+      "args": {
+        "path": "figures/fig05_ahp_amplitude_vs_tau.png",
+        "title": "fig05_ahp_amplitude_vs_tau",
+        "description": "Slow AHP amplitude against slow kernel time constant per cell, 8 ON parasol cells."
+      }
+    },
+    {
+      "key": "fig06",
+      "tool": "ensure_artifact",
+      "args": {
+        "path": "figures/fig06_first_spike_latency.png",
+        "title": "fig06_first_spike_latency",
+        "description": "First-spike latency histograms at 10 and 50 percent contrast, 15 ON parasol cells."
+      }
+    }
+  ],
+  "edges": [
+    [
+      "Dint1",
+      "WAS_GENERATED_BY",
+      "X1"
+    ],
+    [
+      "Dint2",
+      "WAS_GENERATED_BY",
+      "X2"
+    ],
+    [
+      "fig01",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "fig02",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "fig03",
+      "WAS_GENERATED_BY",
+      "X4"
+    ],
+    [
+      "fig04",
+      "WAS_GENERATED_BY",
+      "X4"
+    ],
+    [
+      "fig05",
+      "WAS_GENERATED_BY",
+      "X5"
+    ],
+    [
+      "fig06",
+      "WAS_GENERATED_BY",
+      "X6"
+    ],
+    [
+      "F01",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "F02",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "F03",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "F05",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "F04",
+      "WAS_GENERATED_BY",
+      "X4"
+    ],
+    [
+      "F06",
+      "WAS_GENERATED_BY",
+      "X4"
+    ],
+    [
+      "F07",
+      "WAS_GENERATED_BY",
+      "X4"
+    ],
+    [
+      "F09",
+      "WAS_GENERATED_BY",
+      "X4"
+    ],
+    [
+      "F08",
+      "WAS_GENERATED_BY",
+      "X5"
+    ],
+    [
+      "F10",
+      "WAS_GENERATED_BY",
+      "X5"
+    ],
+    [
+      "F11",
+      "WAS_GENERATED_BY",
+      "X6"
+    ],
+    [
+      "F12",
+      "WAS_GENERATED_BY",
+      "X6"
+    ],
+    [
+      "F13",
+      "WAS_GENERATED_BY",
+      "X7"
+    ],
+    [
+      "F14",
+      "WAS_GENERATED_BY",
+      "X7"
+    ],
+    [
+      "X1",
+      "USED",
+      "S1"
+    ],
+    [
+      "X1",
+      "USED",
+      "Draw1"
+    ],
+    [
+      "X2",
+      "USED",
+      "S3"
+    ],
+    [
+      "X2",
+      "USED",
+      "Dint1"
+    ],
+    [
+      "X3",
+      "USED",
+      "S4"
+    ],
+    [
+      "X3",
+      "USED",
+      "Dint2"
+    ],
+    [
+      "X4",
+      "USED",
+      "S2"
+    ],
+    [
+      "X4",
+      "USED",
+      "Draw2"
+    ],
+    [
+      "X5",
+      "USED",
+      "S5"
+    ],
+    [
+      "X5",
+      "USED",
+      "Dint2"
+    ],
+    [
+      "X5",
+      "USED",
+      "Draw3"
+    ],
+    [
+      "X6",
+      "USED",
+      "S6"
+    ],
+    [
+      "X6",
+      "USED",
+      "Draw3"
+    ],
+    [
+      "X7",
+      "USED",
+      "S5"
+    ],
+    [
+      "X7",
+      "USED",
+      "Dint2"
+    ],
+    [
+      "F01",
+      "APPEARS_IN",
+      "fig01"
+    ],
+    [
+      "F02",
+      "APPEARS_IN",
+      "fig02"
+    ],
+    [
+      "F03",
+      "APPEARS_IN",
+      "fig02"
+    ],
+    [
+      "F04",
+      "APPEARS_IN",
+      "fig03"
+    ],
+    [
+      "F05",
+      "APPEARS_IN",
+      "fig01"
+    ],
+    [
+      "F06",
+      "APPEARS_IN",
+      "fig04"
+    ],
+    [
+      "F07",
+      "APPEARS_IN",
+      "fig04"
+    ],
+    [
+      "F08",
+      "APPEARS_IN",
+      "fig05"
+    ],
+    [
+      "F09",
+      "APPEARS_IN",
+      "fig03"
+    ],
+    [
+      "F10",
+      "APPEARS_IN",
+      "fig05"
+    ],
+    [
+      "F11",
+      "APPEARS_IN",
+      "fig06"
+    ],
+    [
+      "F12",
+      "APPEARS_IN",
+      "fig06"
+    ],
+    [
+      "F13",
+      "APPEARS_IN",
+      "fig05"
+    ],
+    [
+      "F14",
+      "APPEARS_IN",
+      "fig06"
+    ],
+    [
+      "F01",
+      "SUPPORTS",
+      "H2"
+    ],
+    [
+      "F02",
+      "SUPPORTS",
+      "H2"
+    ],
+    [
+      "F03",
+      "SUPPORTS",
+      "H2"
+    ],
+    [
+      "F05",
+      "SUPPORTS",
+      "H2"
+    ],
+    [
+      "F07",
+      "SUPPORTS",
+      "H1"
+    ],
+    [
+      "F08",
+      "SUPPORTS",
+      "H3"
+    ],
+    [
+      "F10",
+      "SUPPORTS",
+      "H3"
+    ],
+    [
+      "F04",
+      "CONTRADICTS",
+      "H1"
+    ],
+    [
+      "F06",
+      "CONTRADICTS",
+      "H1"
+    ],
+    [
+      "F09",
+      "CONTRADICTS",
+      "H2"
+    ],
+    [
+      "F01",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F02",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F03",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F04",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F05",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F06",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F07",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F08",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F09",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F10",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F12",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "H1",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "H2",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "H3",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "P01",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "P02",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "P04",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "P06",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "P14",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P01"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P02"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P03"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P04"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P05"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P06"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P07"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P11"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P12"
+    ],
+    [
+      "W1",
+      "CITES",
+      "P14"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P03"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P05"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P06"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P08"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P09"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P10"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P11"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P13"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P15"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P16"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P17"
+    ],
+    [
+      "W2",
+      "CITES",
+      "P20"
+    ],
+    [
+      "F02",
+      "WAS_DERIVED_FROM",
+      "F01"
+    ],
+    [
+      "F03",
+      "WAS_DERIVED_FROM",
+      "F02"
+    ],
+    [
+      "F12",
+      "WAS_DERIVED_FROM",
+      "F11"
+    ],
+    [
+      "X2",
+      "WAS_INFORMED_BY",
+      "X1"
+    ],
+    [
+      "X3",
+      "WAS_INFORMED_BY",
+      "X2"
+    ],
+    [
+      "X5",
+      "WAS_INFORMED_BY",
+      "X2"
+    ],
+    [
+      "X7",
+      "WAS_INFORMED_BY",
+      "X5"
+    ]
+  ],
+  "update_order": [
+    "F13",
+    "F14",
+    "F11",
+    "F01",
+    "F03",
+    "F04",
+    "F06",
+    "F07",
+    "F08",
+    "F09",
+    "F10",
+    "F12",
+    "F05",
+    "F02"
+  ],
+  "files": {
+    "figures/fig01_kernel_tau_vs_contrast.png": "figure",
+    "figures/fig02_on_kernels_overlay.png": "figure",
+    "figures/fig03_off_parasol_kernels.png": "figure",
+    "figures/fig04_off_vs_on_tau_ratio.png": "figure",
+    "figures/fig05_ahp_amplitude_vs_tau.png": "figure",
+    "figures/fig06_first_spike_latency.png": "figure",
+    "scripts/preprocess_epochs.py": "script",
+    "scripts/analyze_off_parasol.py": "script",
+    "scripts/fit_srm.py": "script",
+    "scripts/plot_on_kernels.py": "script",
+    "scripts/ahp_analysis.py": "script",
+    "scripts/latency_summary.py": "script",
+    "data/raw/on_parasol_contrast_steps_2026-03.csv": "dataset",
+    "data/raw/off_parasol_contrast_steps_2026-04.csv": "dataset",
+    "data/raw/on_parasol_current_clamp_2026-05.csv": "dataset",
+    "data/interim/on_parasol_spike_trains.csv": "dataset",
+    "data/interim/srm_fits_on_parasol.csv": "dataset",
+    "docs/manuscript_kernel_shortening.md": "document",
+    "docs/review_ahp_literature.md": "document",
+    "docs/notebook_srm_protocol.md": "document"
+  },
+  "counts": {
+    "nodes": 65,
+    "edges": 109,
+    "by_tool": {
+      "add_dataset": 5,
+      "add_document": 3,
+      "add_execution": 7,
+      "add_finding": 14,
+      "add_hypothesis": 3,
+      "add_paper": 20,
+      "add_question": 1,
+      "add_script": 6,
+      "ensure_artifact": 6
+    },
+    "by_rel": {
+      "APPEARS_IN": 14,
+      "CITES": 22,
+      "CONTRADICTS": 3,
+      "RELEVANT_TO": 19,
+      "SUPPORTS": 7,
+      "USED": 15,
+      "WAS_DERIVED_FROM": 3,
+      "WAS_GENERATED_BY": 22,
+      "WAS_INFORMED_BY": 4
+    }
+  }
+}

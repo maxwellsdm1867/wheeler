@@ -1,0 +1,154 @@
+{
+  "level": "pointer",
+  "task": 10,
+  "kind": "literature",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/t10-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/project",
+  "project_tag": "disclosure-20260915T050829Z-pointer",
+  "started_at": "2026-09-15T05:13:16+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id_set",
+    "value": [
+      "P-02571a85",
+      "P-26d9a171",
+      "P-7c378f0b",
+      "P-8cc4aba2",
+      "P-b49132d8",
+      "P-bc44c089",
+      "P-bcb4489b",
+      "P-d54fc83e",
+      "P-dd54b451",
+      "P-ea5e8c40"
+    ]
+  },
+  "wall_clock_s": 9.141,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 15,
+  "unparseable_lines": 0,
+  "turns": 4,
+  "tokens": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 25170,
+    "cache_read_input_tokens": 176109,
+    "output_tokens": 68,
+    "total_input_incl_cache": 201287
+  },
+  "tool_calls": {
+    "ToolSearch": 1,
+    "query_documents": 1,
+    "run_cypher": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "query_documents",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 1,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 1,
+  "result": {
+    "subtype": "success",
+    "num_turns": 4,
+    "duration_ms": 7013,
+    "duration_api_ms": 7716,
+    "total_cost_usd": 0.1417208,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 25170,
+      "cache_read_input_tokens": 176109,
+      "output_tokens": 470,
+      "output_tokens_details": {
+        "thinking_tokens": 58
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 25170,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 96,
+          "cache_read_input_tokens": 50751,
+          "cache_creation_input_tokens": 316,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 316
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 993,
+        "outputTokens": 22,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001103,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 8,
+        "outputTokens": 470,
+        "cacheReadInputTokens": 176109,
+        "cacheCreationInputTokens": 25170,
+        "webSearchRequests": 0,
+        "costUSD": 0.1406178,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 58,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER [\"P-02571a85\",\"P-26d9a171\",\"P-7c378f0b\",\"P-8cc4aba2\",\"P-b49132d8\",\"P-bc44c089\",\"P-bcb4489b\",\"P-d54fc83e\",\"P-dd54b451\",\"P-ea5e8c40\"]",
+  "answer": [
+    "P-02571a85",
+    "P-26d9a171",
+    "P-7c378f0b",
+    "P-8cc4aba2",
+    "P-b49132d8",
+    "P-bc44c089",
+    "P-bcb4489b",
+    "P-d54fc83e",
+    "P-dd54b451",
+    "P-ea5e8c40"
+  ],
+  "answer_line": "ANSWER [\"P-02571a85\",\"P-26d9a171\",\"P-7c378f0b\",\"P-8cc4aba2\",\"P-b49132d8\",\"P-bc44c089\",\"P-bcb4489b\",\"P-d54fc83e\",\"P-dd54b451\",\"P-ea5e8c40\"]",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:13:26+00:00"
+}

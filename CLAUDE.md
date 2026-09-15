@@ -158,7 +158,8 @@ Every node carries `content_version` (1 at creation, +1 on each `update_node` or
 made against, citations may pin one (`[F-3a2b@2]`, validated as `outdated` when
 the node moved on), and `show_node` can read a version, answer
 `if_changed_since`, and list one hop of `neighbors` with a `moved` flag. Listings
-return pointers by default (`WHEELER_DISCLOSURE`); `show_node` is the deep read.
+return pointers by default (`WHEELER_DISCLOSURE=pointer`, chosen by
+`evals/disclosure`); `show_node` is the deep read.
 See ARCHITECTURE.md "Content versions" and "Disclosure levels".
 
 ### Provenance, stability, and staleness

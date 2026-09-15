@@ -1,0 +1,149 @@
+{
+  "level": "trimmed",
+  "task": 9,
+  "kind": "counting",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed/t9-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed/project",
+  "project_tag": "disclosure-20260915T050829Z-trimmed",
+  "started_at": "2026-09-15T05:12:48+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "count_and_chain",
+    "count": 11,
+    "chain": [
+      "F-52b8b65d",
+      "F-feca3e7f",
+      "F-932fe9cf"
+    ]
+  },
+  "wall_clock_s": 22.012,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 28,
+  "unparseable_lines": 0,
+  "turns": 8,
+  "tokens": {
+    "input_tokens": 16,
+    "cache_creation_input_tokens": 29092,
+    "cache_read_input_tokens": 387270,
+    "output_tokens": 95,
+    "total_input_incl_cache": 416378
+  },
+  "tool_calls": {
+    "run_cypher": 4,
+    "ToolSearch": 1,
+    "search_context": 1,
+    "query_open_questions": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "search_context",
+    "run_cypher",
+    "query_open_questions",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 1,
+  "search_calls": 1,
+  "hop_calls": 1,
+  "cypher_calls": 4,
+  "result": {
+    "subtype": "success",
+    "num_turns": 8,
+    "duration_ms": 19846,
+    "duration_api_ms": 20090,
+    "total_cost_usd": 0.20617999999999997,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 16,
+      "cache_creation_input_tokens": 29092,
+      "cache_read_input_tokens": 387270,
+      "output_tokens": 1124,
+      "output_tokens_details": {
+        "thinking_tokens": 217
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 29092,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 51,
+          "cache_read_input_tokens": 54334,
+          "cache_creation_input_tokens": 655,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 655
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1016,
+        "outputTokens": 14,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001086,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 16,
+        "outputTokens": 1124,
+        "cacheReadInputTokens": 387270,
+        "cacheCreationInputTokens": 29092,
+        "webSearchRequests": 0,
+        "costUSD": 0.205094,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 217,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER {\"count\": 11, \"top3\": [\"F-52b8b65d\", \"F-feca3e7f\", \"F-932fe9cf\"]}",
+  "answer": {
+    "count": 11,
+    "top3": [
+      "F-52b8b65d",
+      "F-feca3e7f",
+      "F-932fe9cf"
+    ]
+  },
+  "answer_line": "ANSWER {\"count\": 11, \"top3\": [\"F-52b8b65d\", \"F-feca3e7f\", \"F-932fe9cf\"]}",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:13:10+00:00"
+}

@@ -1,0 +1,7 @@
+claude -p 'You are answering a question about the Wheeler knowledge graph of this project. Use the Wheeler MCP tools. Prefer the fewest calls that answer correctly; read a node'"'"'s full content only when you need it.
+
+Question: How many Finding nodes are RELEVANT_TO the open question about contrast-dependent shortening of the spike-history kernel, and which three of those findings were updated most recently (most recent first)?
+
+Answer shape: a JSON object {"count": <integer>, "top3": [id, id, id]}.
+
+Reply with exactly one line: ANSWER <json>' --model opus --output-format stream-json --verbose --max-turns 40 --mcp-config .mcp.json --strict-mcp-config --no-session-persistence --allowedTools mcp__wheeler_query mcp__wheeler_core Read Glob Grep

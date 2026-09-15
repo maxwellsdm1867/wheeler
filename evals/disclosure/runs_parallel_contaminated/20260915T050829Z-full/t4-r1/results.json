@@ -1,0 +1,168 @@
+{
+  "level": "full",
+  "task": 4,
+  "kind": "deep-trace",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-full",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-full/t4-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-full/project",
+  "project_tag": "disclosure-20260915T050829Z-full",
+  "started_at": "2026-09-15T05:10:51+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "chain_and_set",
+    "chain": [
+      "F-e682ead8",
+      "X-adc2d6f5",
+      "D-3f8b7ecf",
+      "X-f22dae53",
+      "D-6dd20fe4",
+      "X-9c300e13",
+      "D-a395d895"
+    ],
+    "set": [
+      "S-10d10069",
+      "S-7aca3823",
+      "S-969399cf"
+    ]
+  },
+  "wall_clock_s": 76.863,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 96,
+  "unparseable_lines": 0,
+  "turns": 13,
+  "tokens": {
+    "input_tokens": 26,
+    "cache_creation_input_tokens": 35829,
+    "cache_read_input_tokens": 678229,
+    "output_tokens": 37,
+    "total_input_incl_cache": 714084
+  },
+  "tool_calls": {
+    "run_cypher": 11,
+    "ToolSearch": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 11,
+  "result": {
+    "subtype": "success",
+    "num_turns": 13,
+    "duration_ms": 74966,
+    "duration_api_ms": 74730,
+    "total_cost_usd": 0.3413848,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 26,
+      "cache_creation_input_tokens": 35829,
+      "cache_read_input_tokens": 678229,
+      "output_tokens": 6124,
+      "output_tokens_details": {
+        "thinking_tokens": 3880
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 35829,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 154,
+          "cache_read_input_tokens": 60097,
+          "cache_creation_input_tokens": 1629,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1629
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1061,
+        "outputTokens": 14,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001131,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 26,
+        "outputTokens": 6124,
+        "cacheReadInputTokens": 678229,
+        "cacheCreationInputTokens": 35829,
+        "webSearchRequests": 0,
+        "costUSD": 0.3402538,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 3880,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "Confirmed: D-e5549dcf is the terminal raw (reference-tier) dataset with no upstream generation.\n\nANSWER {\"chain\": [\"F-361aeed8\", \"X-fbc09537\", \"D-8d9829c0\", \"X-79fde71f\", \"D-39f95308\", \"X-1e255bbd\", \"D-e5549dcf\"], \"scripts\": [\"S-5b6722c3\", \"S-ac386983\", \"S-b8309b91\"]}",
+  "answer": {
+    "chain": [
+      "F-361aeed8",
+      "X-fbc09537",
+      "D-8d9829c0",
+      "X-79fde71f",
+      "D-39f95308",
+      "X-1e255bbd",
+      "D-e5549dcf"
+    ],
+    "scripts": [
+      "S-5b6722c3",
+      "S-ac386983",
+      "S-b8309b91"
+    ]
+  },
+  "answer_line": "ANSWER {\"chain\": [\"F-361aeed8\", \"X-fbc09537\", \"D-8d9829c0\", \"X-79fde71f\", \"D-39f95308\", \"X-1e255bbd\", \"D-e5549dcf\"], \"scripts\": [\"S-5b6722c3\", \"S-ac386983\", \"S-b8309b91\"]}",
+  "score": {
+    "score": 0.0,
+    "verdict": "wrong",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:12:08+00:00"
+}

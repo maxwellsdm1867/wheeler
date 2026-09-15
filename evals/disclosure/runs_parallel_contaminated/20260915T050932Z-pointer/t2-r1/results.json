@@ -1,0 +1,160 @@
+{
+  "level": "pointer",
+  "task": 2,
+  "kind": "one-hop",
+  "may_need_body": false,
+  "model": "opus",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050932Z-pointer",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050932Z-pointer/t2-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050932Z-pointer/project",
+  "project_tag": "disclosure-20260915T050932Z-pointer",
+  "started_at": "2026-09-15T05:09:57+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id_set",
+    "value": [
+      "F-2d2f6287",
+      "F-494eccce",
+      "F-cb5e2b55",
+      "F-f13c844e"
+    ]
+  },
+  "wall_clock_s": 19.422,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 24,
+  "unparseable_lines": 0,
+  "turns": 7,
+  "tokens": {
+    "input_tokens": 14,
+    "cache_creation_input_tokens": 26307,
+    "cache_read_input_tokens": 248301,
+    "output_tokens": 115,
+    "total_input_incl_cache": 274622
+  },
+  "tool_calls": {
+    "run_cypher": 5,
+    "ToolSearch": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 5,
+  "result": {
+    "subtype": "success",
+    "num_turns": 7,
+    "duration_ms": 17555,
+    "duration_api_ms": 18228,
+    "total_cost_usd": 0.4156085,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 26307,
+      "cache_read_input_tokens": 248301,
+      "output_tokens": 1090,
+      "output_tokens_details": {
+        "thinking_tokens": 118
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 26307,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 183,
+          "cache_read_input_tokens": 40444,
+          "cache_creation_input_tokens": 538,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 538
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1003,
+        "outputTokens": 13,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001068,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-opus-5": {
+        "inputTokens": 14,
+        "outputTokens": 1090,
+        "cacheReadInputTokens": 248301,
+        "cacheCreationInputTokens": 26307,
+        "webSearchRequests": 0,
+        "costUSD": 0.4145405,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 118,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER [\"F-0b0b1e01\",\"F-2d2f6287\",\"F-494eccce\",\"F-522a9be9\",\"F-52b8b65d\",\"F-57735acb\",\"F-9512802b\",\"F-bae7e085\",\"F-c84f013e\",\"F-cb5e2b55\",\"F-d825cbdf\",\"F-dc7dcba5\",\"F-dc9d04cb\",\"F-e34ef94f\",\"F-e5d521d0\",\"F-e860c237\",\"F-f0417eb2\",\"F-f13c844e\",\"F-f24f0cf0\",\"F-feca3e7f\"]",
+  "answer": [
+    "F-0b0b1e01",
+    "F-2d2f6287",
+    "F-494eccce",
+    "F-522a9be9",
+    "F-52b8b65d",
+    "F-57735acb",
+    "F-9512802b",
+    "F-bae7e085",
+    "F-c84f013e",
+    "F-cb5e2b55",
+    "F-d825cbdf",
+    "F-dc7dcba5",
+    "F-dc9d04cb",
+    "F-e34ef94f",
+    "F-e5d521d0",
+    "F-e860c237",
+    "F-f0417eb2",
+    "F-f13c844e",
+    "F-f24f0cf0",
+    "F-feca3e7f"
+  ],
+  "answer_line": "ANSWER [\"F-0b0b1e01\",\"F-2d2f6287\",\"F-494eccce\",\"F-522a9be9\",\"F-52b8b65d\",\"F-57735acb\",\"F-9512802b\",\"F-bae7e085\",\"F-c84f013e\",\"F-cb5e2b55\",\"F-d825cbdf\",\"F-dc7dcba5\",\"F-dc9d04cb\",\"F-e34ef94f\",\"F-e5d521d0\",\"F-e860c237\",\"F-f0417eb2\",\"F-f13c844e\",\"F-f24f0cf0\",\"F-feca3e7f\"]",
+  "score": {
+    "score": 0.2,
+    "verdict": "partial",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:10:17+00:00"
+}

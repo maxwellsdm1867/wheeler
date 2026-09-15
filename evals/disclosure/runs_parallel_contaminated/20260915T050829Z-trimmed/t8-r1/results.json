@@ -1,0 +1,150 @@
+{
+  "level": "trimmed",
+  "task": 8,
+  "kind": "staleness",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed/t8-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed/project",
+  "project_tag": "disclosure-20260915T050829Z-trimmed",
+  "started_at": "2026-09-15T05:11:39+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id_set",
+    "value": [
+      "F-361aeed8",
+      "F-7374f924",
+      "F-d0a9f800"
+    ]
+  },
+  "wall_clock_s": 68.972,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 97,
+  "unparseable_lines": 0,
+  "turns": 15,
+  "tokens": {
+    "input_tokens": 30,
+    "cache_creation_input_tokens": 32469,
+    "cache_read_input_tokens": 769723,
+    "output_tokens": 53,
+    "total_input_incl_cache": 802222
+  },
+  "tool_calls": {
+    "run_cypher": 13,
+    "ToolSearch": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 13,
+  "result": {
+    "subtype": "success",
+    "num_turns": 15,
+    "duration_ms": 67158,
+    "duration_api_ms": 67220,
+    "total_cost_usd": 0.3425376,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 30,
+      "cache_creation_input_tokens": 32469,
+      "cache_read_input_tokens": 769723,
+      "output_tokens": 5753,
+      "output_tokens_details": {
+        "thinking_tokens": 3809
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 32469,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 765,
+          "cache_read_input_tokens": 57875,
+          "cache_creation_input_tokens": 491,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 491
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1032,
+        "outputTokens": 19,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001127,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 30,
+        "outputTokens": 5753,
+        "cacheReadInputTokens": 769723,
+        "cacheCreationInputTokens": 32469,
+        "webSearchRequests": 0,
+        "costUSD": 0.3414106,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 3809,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER [\"F-361aeed8\", \"F-7374f924\", \"F-d0a9f800\"]",
+  "answer": [
+    "F-361aeed8",
+    "F-7374f924",
+    "F-d0a9f800"
+  ],
+  "answer_line": "ANSWER [\"F-361aeed8\", \"F-7374f924\", \"F-d0a9f800\"]",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:12:48+00:00"
+}

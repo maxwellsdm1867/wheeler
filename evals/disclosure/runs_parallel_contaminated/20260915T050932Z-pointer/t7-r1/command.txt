@@ -1,0 +1,7 @@
+claude -p 'You are answering a question about the Wheeler knowledge graph of this project. Use the Wheeler MCP tools. Prefer the fewest calls that answer correctly; read a node'"'"'s full content only when you need it.
+
+Question: Which findings CONTRADICT a hypothesis, and which hypothesis does each one contradict?
+
+Answer shape: a sorted JSON list of two-element lists [finding_id, hypothesis_id].
+
+Reply with exactly one line: ANSWER <json>' --model opus --output-format stream-json --verbose --max-turns 40 --mcp-config .mcp.json --strict-mcp-config --no-session-persistence --allowedTools mcp__wheeler_query mcp__wheeler_core Read Glob Grep

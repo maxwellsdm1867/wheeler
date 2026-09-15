@@ -1,0 +1,117 @@
+{
+  "level": "trimmed",
+  "model": "sonnet",
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051952Z-trimmed",
+  "project_tag": "disclosure-20260915T051952Z-trimmed",
+  "seed": {
+    "nodes": 65,
+    "edges": 109,
+    "titled": 14,
+    "seed_wall_s": 5.007
+  },
+  "n_runs": 10,
+  "mean_score": 1.0,
+  "accuracy": 1.0,
+  "mean_turns": 6.8,
+  "mean_context_tokens": 348572.6,
+  "mean_output_tokens": 1204.6,
+  "mean_wall_s": 20.159,
+  "mean_show_node_calls": 0.1,
+  "mean_cypher_calls": 4.0,
+  "may_need_body": {
+    "n": 2,
+    "accuracy": 1.0,
+    "mean_score": 1.0
+  },
+  "no_body_needed": {
+    "n": 8,
+    "accuracy": 1.0,
+    "mean_score": 1.0
+  },
+  "per_task": [
+    {
+      "task": 1,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 6,
+      "context_tokens": 301207
+    },
+    {
+      "task": 2,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 5,
+      "context_tokens": 250596
+    },
+    {
+      "task": 3,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 5,
+      "context_tokens": 249801
+    },
+    {
+      "task": 4,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 11,
+      "context_tokens": 560535
+    },
+    {
+      "task": 5,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 6,
+      "context_tokens": 308022
+    },
+    {
+      "task": 6,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 4,
+      "context_tokens": 199628
+    },
+    {
+      "task": 7,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 3,
+      "context_tokens": 148728
+    },
+    {
+      "task": 8,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 17,
+      "context_tokens": 914833
+    },
+    {
+      "task": 9,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 7,
+      "context_tokens": 352714
+    },
+    {
+      "task": 10,
+      "repeat": 1,
+      "verdict": "correct",
+      "score": 1.0,
+      "turns": 4,
+      "context_tokens": 199662
+    }
+  ],
+  "cleanup": {
+    "deleted": 65,
+    "remaining": 0
+  }
+}

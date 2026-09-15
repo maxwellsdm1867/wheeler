@@ -1,0 +1,166 @@
+{
+  "level": "trimmed",
+  "task": 4,
+  "kind": "deep-trace",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051952Z-trimmed",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051952Z-trimmed/t4-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051952Z-trimmed/project",
+  "project_tag": "disclosure-20260915T051952Z-trimmed",
+  "started_at": "2026-09-15T05:20:37+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "chain_and_set",
+    "chain": [
+      "F-480663b5",
+      "X-6387287e",
+      "D-6b1dad32",
+      "X-8756fd2f",
+      "D-6433ea8b",
+      "X-52c5c071",
+      "D-c013aab7"
+    ],
+    "set": [
+      "S-1b89ecdd",
+      "S-2490cb21",
+      "S-d4efc230"
+    ]
+  },
+  "wall_clock_s": 20.918,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 39,
+  "unparseable_lines": 0,
+  "turns": 11,
+  "tokens": {
+    "input_tokens": 22,
+    "cache_creation_input_tokens": 26654,
+    "cache_read_input_tokens": 533859,
+    "output_tokens": 172,
+    "total_input_incl_cache": 560535
+  },
+  "tool_calls": {
+    "run_cypher": 9,
+    "ToolSearch": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 9,
+  "result": {
+    "subtype": "success",
+    "num_turns": 11,
+    "duration_ms": 18949,
+    "duration_api_ms": 19604,
+    "total_cost_usd": 0.23048280000000002,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 22,
+      "cache_creation_input_tokens": 26654,
+      "cache_read_input_tokens": 533859,
+      "output_tokens": 1592,
+      "output_tokens_details": {
+        "thinking_tokens": 182
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 26654,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 188,
+          "cache_read_input_tokens": 52197,
+          "cache_creation_input_tokens": 354,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 354
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1061,
+        "outputTokens": 14,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001131,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 22,
+        "outputTokens": 1592,
+        "cacheReadInputTokens": 533859,
+        "cacheCreationInputTokens": 26654,
+        "webSearchRequests": 0,
+        "costUSD": 0.22935180000000002,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 182,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "This dataset path is `data/raw/...` with tier \"reference\" \u2014 the raw dataset. Chain complete.\n\nScripts used: S-d4efc230, S-2490cb21, S-1b89ecdd (sorted).\n\nANSWER {\"chain\": [\"F-480663b5\", \"X-6387287e\", \"D-6b1dad32\", \"X-8756fd2f\", \"D-6433ea8b\", \"X-52c5c071\", \"D-c013aab7\"], \"scripts\": [\"S-1b89ecdd\", \"S-2490cb21\", \"S-d4efc230\"]}",
+  "answer": {
+    "chain": [
+      "F-480663b5",
+      "X-6387287e",
+      "D-6b1dad32",
+      "X-8756fd2f",
+      "D-6433ea8b",
+      "X-52c5c071",
+      "D-c013aab7"
+    ],
+    "scripts": [
+      "S-1b89ecdd",
+      "S-2490cb21",
+      "S-d4efc230"
+    ]
+  },
+  "answer_line": "ANSWER {\"chain\": [\"F-480663b5\", \"X-6387287e\", \"D-6b1dad32\", \"X-8756fd2f\", \"D-6433ea8b\", \"X-52c5c071\", \"D-c013aab7\"], \"scripts\": [\"S-1b89ecdd\", \"S-2490cb21\", \"S-d4efc230\"]}",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:20:58+00:00"
+}

@@ -1,0 +1,148 @@
+{
+  "level": "pointer",
+  "task": 3,
+  "kind": "two-hop",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/t3-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/project",
+  "project_tag": "disclosure-20260915T050829Z-pointer",
+  "started_at": "2026-09-15T05:10:09+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id_set",
+    "value": [
+      "D-0fdf4930",
+      "D-2b98c913"
+    ]
+  },
+  "wall_clock_s": 37.768,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 58,
+  "unparseable_lines": 0,
+  "turns": 13,
+  "tokens": {
+    "input_tokens": 26,
+    "cache_creation_input_tokens": 29236,
+    "cache_read_input_tokens": 651884,
+    "output_tokens": 78,
+    "total_input_incl_cache": 681146
+  },
+  "tool_calls": {
+    "run_cypher": 5,
+    "Bash": 5,
+    "ToolSearch": 1,
+    "Read": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "Bash",
+    "Bash",
+    "Bash",
+    "Bash",
+    "Read",
+    "Bash"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 5,
+  "result": {
+    "subtype": "success",
+    "num_turns": 13,
+    "duration_ms": 35665,
+    "duration_api_ms": 34585,
+    "total_cost_usd": 0.2760308,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 26,
+      "cache_creation_input_tokens": 29236,
+      "cache_read_input_tokens": 651884,
+      "output_tokens": 2755,
+      "output_tokens_details": {
+        "thinking_tokens": 861
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 29236,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 28,
+          "cache_read_input_tokens": 54850,
+          "cache_creation_input_tokens": 283,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 283
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 988,
+        "outputTokens": 24,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001108,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 26,
+        "outputTokens": 2755,
+        "cacheReadInputTokens": 651884,
+        "cacheCreationInputTokens": 29236,
+        "webSearchRequests": 0,
+        "costUSD": 0.2749228,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 861,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER [\"D-0fdf4930\", \"D-2b98c913\"]",
+  "answer": [
+    "D-0fdf4930",
+    "D-2b98c913"
+  ],
+  "answer_line": "ANSWER [\"D-0fdf4930\", \"D-2b98c913\"]",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:10:47+00:00"
+}
