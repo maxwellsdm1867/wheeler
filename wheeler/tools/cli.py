@@ -50,6 +50,12 @@ try:
     from wheeler.integrations.asta.cli import integrate_app
 
     app.add_typer(integrate_app, name="integrate")
+
+    # Generic bulk registration from a manifest file (issue #116 prototype).
+    # Lives beside the asta verbs because `integrate` is the marshal-in group.
+    from wheeler.integrations.register import register_manifest
+
+    integrate_app.command("register")(register_manifest)
 except ImportError:
     pass
 

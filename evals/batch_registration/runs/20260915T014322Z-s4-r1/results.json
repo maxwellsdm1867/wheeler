@@ -1,0 +1,199 @@
+{
+  "strategy": 4,
+  "strategy_name": "manifest + validate: --dry-run first, then register",
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014322Z-s4-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014322Z-s4-r1/project",
+  "project_tag": "batchreg-20260915T014322Z-s4-r1",
+  "started_at": "2026-09-15T01:43:22+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch",
+  "seeds": {
+    "QUESTION_ID": "Q-84f09790",
+    "DATASET_ID": "D-710af1c0"
+  },
+  "wall_clock_s": 56.407,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 40,
+  "unparseable_lines": 0,
+  "assistant_lines": 15,
+  "turns": 8,
+  "tokens": {
+    "input_tokens": 16,
+    "cache_creation_input_tokens": 46908,
+    "cache_read_input_tokens": 425764,
+    "output_tokens": 55,
+    "total_input_incl_cache": 472688
+  },
+  "tool_calls": {
+    "Read": 3,
+    "Bash": 3,
+    "Glob": 2,
+    "Write": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Bash",
+    "Glob",
+    "Glob",
+    "Read",
+    "Read",
+    "Write",
+    "Bash",
+    "Bash"
+  ],
+  "max_consecutive_tool": {
+    "tool": "Glob",
+    "run": 2
+  },
+  "mutation_calls": 1,
+  "cli_register_calls": 1,
+  "cli_dry_run_calls": 1,
+  "subagent_assistant_lines": 0,
+  "subagent_usage_visible": false,
+  "result": {
+    "subtype": "success",
+    "num_turns": 10,
+    "duration_ms": 49903,
+    "duration_api_ms": 46909,
+    "total_cost_usd": 0.33099379999999995,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 16,
+      "cache_creation_input_tokens": 46908,
+      "cache_read_input_tokens": 425764,
+      "output_tokens": 5624,
+      "output_tokens_details": {
+        "thinking_tokens": 767
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 46908,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 65,
+          "cache_read_input_tokens": 66843,
+          "cache_creation_input_tokens": 772,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 772
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1877,
+        "outputTokens": 12,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001937,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 16,
+        "outputTokens": 5624,
+        "cacheReadInputTokens": 425764,
+        "cacheCreationInputTokens": 46908,
+        "webSearchRequests": 0,
+        "costUSD": 0.3290567999999999,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 767,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "All 7 nodes (execution + 6 findings) plus 23 artifacts and 43 edges landed with 0 failures, matching the contract (30 total nodes created).\n\nDONE 30 43",
+  "done_line": {
+    "nodes": 30,
+    "edges": 43
+  },
+  "finished_at": "2026-09-15T01:44:19+00:00",
+  "score": {
+    "nodes_created": 30,
+    "nodes_matched": 30,
+    "nodes_expected": 30,
+    "node_recall": 1.0,
+    "node_precision": 1.0,
+    "edges_created": 43,
+    "edges_matched": 43,
+    "edges_expected": 43,
+    "edge_recall": 1.0,
+    "edge_precision": 1.0,
+    "execution_found": true,
+    "execution_count": 1,
+    "edges_crossing_tag": 0,
+    "seeds_intact": true,
+    "unmatched_artifacts": [],
+    "label_mismatches": [],
+    "unmatched_findings": [],
+    "missed_edges": [],
+    "extra_edges": [],
+    "extra_nodes": [],
+    "shared_nodes": [],
+    "notes": [],
+    "resolved_ids": {
+      "QUESTION_ID": "Q-84f09790",
+      "DATASET_ID": "D-710af1c0",
+      "exec": "X-bcd1417f",
+      "scripts/load_epochs.py": "S-356ab081",
+      "scripts/fit_lag1_history.py": "S-e05b3ac3",
+      "scripts/count_events.py": "S-630fa63e",
+      "scripts/bootstrap_ci.py": "S-3b8450d1",
+      "scripts/make_figures.py": "S-24681756",
+      "data/lag1_counts_by_cell.csv": "D-456e21dc",
+      "data/history_fit_params.csv": "D-101f9b4e",
+      "data/bootstrap_ci.csv": "D-77387d15",
+      "data/event_times_cell01.csv": "D-696086c8",
+      "data/summary_table.csv": "D-72a147a7",
+      "figures/fig01_lag1_counts_hist.png": "F-49040ba2",
+      "figures/fig02_event_raster_cell01.png": "F-814167c6",
+      "figures/fig03_history_kernel.png": "F-f0595615",
+      "figures/fig04_fit_residuals.png": "F-3484a95d",
+      "figures/fig05_bootstrap_ci.png": "F-d934d4ad",
+      "figures/fig06_fano_factor.png": "F-6bf0b41e",
+      "figures/fig07_count_autocorr.png": "F-16075c8c",
+      "figures/fig08_rate_vs_coef.png": "F-5f86c15e",
+      "figures/fig09_per_cell_params.png": "F-37f6f62c",
+      "figures/fig10_summary_grid.png": "F-abe97b4e",
+      "docs/METHODS.md": "W-71cf7166",
+      "docs/RESULTS.md": "W-9ecebe14",
+      "docs/NOTES.md": "W-7840b7bd",
+      "finding:negative in 9 of 12 cells": "F-d7243b8b",
+      "finding:decays within 150 ms": "F-a67af2d5",
+      "finding:excludes zero for the population mean": "F-8f5754de",
+      "finding:exceeds Poisson expectation by 1.6x": "F-7f98c8be",
+      "finding:weaker lag-1 suppression": "F-bd5eab91",
+      "finding:improves held-out log-likelihood": "F-c569a1cc"
+    }
+  },
+  "files": {
+    "knowledge_json": 32,
+    "synthesis_md": 32,
+    "repair_queue_lines": 0
+  },
+  "cleanup": {
+    "deleted": 32,
+    "remaining": 0
+  }
+}

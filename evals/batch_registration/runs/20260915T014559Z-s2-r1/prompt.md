@@ -1,0 +1,39 @@
+You are registering the provenance of one completed analysis run into the Wheeler knowledge graph.
+
+Project directory (your cwd): /Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014559Z-s2-r1/project
+
+Read `BRIEF.md` first. It describes one execution (kind `script_run`), every file the run produced (23 files: scripts, data tables, figures, documents, each with a title and a one-line description), six findings stated verbatim (each with a confidence and the ONE figure it appears in), and the two graph nodes the run consumed, which already exist in the graph:
+
+- open question: Q-432724fd
+- raw dataset: D-75f499ec
+
+Target graph state (this is the complete contract):
+
+1. One Execution node, kind `script_run`, with the description given in the brief.
+2. One node per produced file (23), registered from its path with the title and description from the brief. Scripts become Script nodes, CSVs Dataset nodes, PNGs figure Finding nodes, markdown Document nodes.
+3. One Finding node per finding (6), description = the finding text verbatim, confidence as stated.
+4. Edges (43 in total):
+   - every file node `WAS_GENERATED_BY` the execution (23)
+   - every finding `WAS_GENERATED_BY` the execution (6)
+   - every finding `APPEARS_IN` its one figure node (6)
+   - every finding `RELEVANT_TO` Q-432724fd (6)
+   - the execution `USED` D-75f499ec and `USED` Q-432724fd (2)
+
+Do not create anything not listed above. Do not modify Q-432724fd or D-75f499ec. Do not run the analysis scripts.
+
+## Method (strategy 2: batch MCP tools)
+
+The mutations server exposes batch tools. Prefer the single-call form:
+
+- `register_batch(manifest)`: one call that takes the whole manifest with three sections, `nodes` (the execution and the six findings, each with an `alias` such as `@exec`, `@f1`), `artifacts` (the 23 files, each with `alias`, `path`, `title`, `description`), and `edges` (dicts `{source, relationship, target}` or triples `[source, relationship, target]` whose endpoints are `@alias` references or literal node ids such as Q-432724fd and D-75f499ec). Sections resolve in order (nodes, artifacts, edges), so every edge can reference an alias defined above it.
+
+If `register_batch` is unavailable, use `ensure_artifacts` (all 23 files in one call) plus `add_execution`, `add_finding` per finding, and `link_nodes_batch` (all 43 edges in one call).
+
+Aim for at most 3 mutation tool calls in total. Read the tool descriptions once, build the complete manifest in your head from the brief, and submit it. If the batch call reports errors for some items, fix only those items with the smallest follow-up call. Do NOT fall back to one `link_nodes` call per edge. Do NOT write files or use Bash.
+
+When finished, reply with exactly one line and nothing else:
+
+DONE <n_nodes> <n_edges>
+
+where n_nodes is the number of graph nodes you created (execution + files + findings, expected 30) and n_edges the number of edges you created (expected 43).
+

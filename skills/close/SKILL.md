@@ -22,6 +22,7 @@ allowed-tools:
   - mcp__wheeler_query__query_plans
   - mcp__wheeler_query__query_executions
   - mcp__wheeler_mutations__link_nodes
+  - mcp__wheeler_mutations__register_batch
   - mcp__wheeler_mutations__unlink_nodes
   - mcp__wheeler_mutations__delete_node
   - mcp__wheeler_mutations__add_execution
@@ -50,6 +51,7 @@ allowed-tools:
   - mcp__plugin_wh_wheeler_query__query_plans
   - mcp__plugin_wh_wheeler_query__query_executions
   - mcp__plugin_wh_wheeler_mutations__link_nodes
+  - mcp__plugin_wh_wheeler_mutations__register_batch
   - mcp__plugin_wh_wheeler_mutations__unlink_nodes
   - mcp__plugin_wh_wheeler_mutations__delete_node
   - mcp__plugin_wh_wheeler_mutations__add_execution

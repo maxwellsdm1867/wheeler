@@ -1,12 +1,17 @@
 """Wheeler Mutations MCP Server: all graph write operations.
 
-18 tools for creating, modifying, and deleting graph nodes and relationships.
+19 tools for creating, modifying, and deleting graph nodes and relationships.
 Run: python -m wheeler.mcp_mutations
+
+register_batch is the bulk path: a whole execution's provenance (nodes, files,
+edges) in one call. It was chosen over split batch tools and a manifest CLI by
+measurement (evals/batch_registration/REPORT.md, issues #116 and #117).
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Literal
 
 from fastmcp import FastMCP
@@ -23,7 +28,7 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_mutations",
-    instructions="Create, update, link, unlink, and delete graph nodes: add_finding, add_hypothesis, add_question, add_dataset, add_paper, add_document, add_note, add_plan, add_execution, ensure_artifact, link_nodes, unlink_nodes, update_node, set_tier, delete_node. Prefer ensure_artifact for registering any file artifact (script/dataset/figure/plan/document); it hashes and creates-or-updates in one call.",
+    instructions="Create, update, link, unlink, and delete graph nodes: add_finding, add_hypothesis, add_question, add_dataset, add_paper, add_document, add_note, add_plan, add_execution, ensure_artifact, link_nodes, unlink_nodes, update_node, set_tier, delete_node, register_batch. Prefer ensure_artifact for registering any file artifact (script/dataset/figure/plan/document); it hashes and creates-or-updates in one call. To register a whole execution (its Execution, findings, files and all their edges) use register_batch: one call instead of one per item.",
 )
 
 
@@ -702,6 +707,84 @@ async def update_node(
 
     result = await graph_tools.execute_tool("update_node", update_args, _config)
     return json.loads(result)
+
+
+# --- Bulk registration ---
+
+
+@mcp.tool()
+@_logged
+async def register_batch(
+    nodes: list[dict] | None = None,
+    artifacts: list[dict] | None = None,
+    edges: list | None = None,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> dict:
+    """Register a whole execution's provenance in ONE call: nodes, files and edges.
+
+    Use this instead of a run of ensure_artifact / add_* / link_nodes calls.
+    Items may carry an alias ("@fig1") and edges may reference aliases or
+    existing node ids, so you never have to wait for an id to come back.
+
+    Args:
+      nodes: non-file nodes. Each {"alias": "@x", "type": one of
+        execution|finding|hypothesis|question|note, ...fields of the matching
+        add_* tool}. Example execution: {"alias": "@exec", "type": "execution",
+        "kind": "script_run", "description": "..."}. Example finding:
+        {"alias": "@f1", "type": "finding", "description": "...", "confidence": 0.7}.
+      artifacts: files on disk, one {"alias": "@fig1", "path": "...", "title": "...",
+        "description": "...", "artifact_type": optional} each. Same fields as
+        ensure_artifact. Relative paths resolve against the project root.
+      edges: [{"source": "@fig1", "relationship": "WAS_GENERATED_BY", "target": "@exec"}]
+        or the short form ["@fig1", "WAS_GENERATED_BY", "@exec"]. Endpoints are
+        aliases defined above or literal node ids ("Q-1a2b3c4d").
+      dry_run: validate only (structure, files exist, relationship names,
+        literal ids exist in the graph). Nothing is written.
+      verbose: include a row for every successful item too. Default returns
+        counts, the alias -> id map, node_ids per section in input order, and
+        only the rows that failed.
+
+    One bad item never aborts the rest; the top-level status is ok, partial or
+    failed, and "ids" maps every alias to its node id.
+    """
+    from wheeler.tools.graph_tools.batch import register_batch as _register
+
+    manifest = {"nodes": nodes or [], "artifacts": artifacts or [], "edges": edges or []}
+    result = await _register(
+        manifest, _config, session_id=_SESSION_ID, dry_run=dry_run,
+        base_dir=Path(_config.project_root),
+    )
+    return result if (verbose or dry_run) else _compact(result)
+
+
+_OK_STATUSES = {"created", "unchanged", "updated", "linked"}
+
+
+def _compact(result: dict) -> dict:
+    """Drop the rows that succeeded; keep ids (in input order) and failures.
+
+    ``ids`` covers aliased items only, so ``node_ids`` lists every created or
+    matched node id per section in input order (None where the item failed).
+    Without it a caller registering artifacts without aliases would have no way
+    to learn their ids short of a second call.
+    """
+    out = {k: v for k, v in result.items() if k not in ("nodes", "artifacts", "edges")}
+    if "nodes" in result or "artifacts" in result:
+        out["node_ids"] = {
+            section: [row.get("node_id") for row in result.get(section, [])]
+            for section in ("nodes", "artifacts")
+            if result.get(section)
+        }
+    problems = [
+        {"section": section, **row}
+        for section in ("nodes", "artifacts", "edges")
+        for row in result.get(section, [])
+        if row.get("status") not in _OK_STATUSES
+    ]
+    if problems:
+        out["problems"] = problems
+    return out
 
 
 # --- Entry point ---

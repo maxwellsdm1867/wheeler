@@ -1,0 +1,7 @@
+[batchreg-20260915T014322Z-s5-r1] project at /Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014322Z-s5-r1/project
+[batchreg-20260915T014322Z-s5-r1] seeded {'QUESTION_ID': 'Q-915abcde', 'DATASET_ID': 'D-9f00c6ba'}
+[batchreg-20260915T014322Z-s5-r1] launching claude (sonnet, max 250 turns)
+[batchreg-20260915T014322Z-s5-r1] claude exited rc=0 in 168.48s, 77 turns, 2082 output tokens
+[batchreg-20260915T014322Z-s5-r1] score: nodes 30/30 edges 43/43 (recall 1.0, precision 1.0, 43 edges, 30 nodes created)
+[batchreg-20260915T014322Z-s5-r1] cleanup: {'deleted': 32, 'remaining': 0}
+[batchreg-20260915T014322Z-s5-r1] wrote /Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014322Z-s5-r1/results.json
