@@ -291,6 +291,7 @@ async def propagate_invalidation(
                 from wheeler.knowledge.render import render_synthesis
                 from wheeler.knowledge.store import (
                     read_node, write_node, write_synthesis,
+                    synthesis_enabled,
                 )
                 from wheeler.models import ChangeEntry
 
@@ -315,9 +316,10 @@ async def propagate_invalidation(
                 # stale/stability state.  Best-effort: a render failure
                 # must not abort propagation.
                 try:
-                    synthesis_path = project_synthesis_dir(config)
-                    markdown = render_synthesis(node_model, roots=config.resolved_roots)
-                    write_synthesis(synthesis_path, dep_id, markdown)
+                    if synthesis_enabled(config):
+                        synthesis_path = project_synthesis_dir(config)
+                        markdown = render_synthesis(node_model, roots=config.resolved_roots)
+                        write_synthesis(synthesis_path, dep_id, markdown)
                 except Exception as exc:
                     logger.warning(
                         "Synthesis write failed during invalidation "

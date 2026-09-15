@@ -797,10 +797,18 @@ is write-only from the system's point of view.
 
 Set `synthesis_enabled: false` in `wheeler.yaml` to skip it. That drops a file
 write on every mutation and, more significantly, the re-render of BOTH endpoints
-on every link, which costs two graph queries each (about 17 ms per edge
-measured; roughly 18 percent of the wall clock of registering a 20-edge
-execution). The default is `true`, and a config that predates the key reads as
-`true`, so no existing project changes behaviour.
+on every link, which costs two graph queries each. Measured: a `link_nodes` call
+takes about 16 ms with the layer on and about 8 ms with it off, so the re-render
+itself is roughly 8 ms per edge, and registering a 20-edge execution runs 20 to
+33 percent faster. The cost is linear, not quadratic, on a hub node: 30 edges
+onto one Execution took the same 18 ms at the end as at the start. The default is
+`true`, and a config that predates the key reads as `true`, so no existing
+project changes behaviour.
+
+Every writer of the synthesis layer must call `knowledge.store.synthesis_enabled`.
+Three of them build the markdown themselves rather than going through the
+dual-write helper (invalidation propagation in `provenance.py`, the same path
+reached by `detect_stale`, and `merge.py`), so gating only the helper leaks.
 
 With the layer off, `graph_consistency_check` stops reporting `synthesis_missing`
 (the absence of every file is the configured state, not drift) but still reports

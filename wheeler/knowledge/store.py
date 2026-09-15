@@ -130,6 +130,17 @@ def node_exists(knowledge_path: Path, node_id: str) -> bool:
     return (knowledge_path / f"{node_id}.json").is_file()
 
 
+def synthesis_enabled(config: object) -> bool:
+    """Whether this project renders the human-facing synthesis layer.
+
+    Lives here because every writer of that layer already imports this module.
+    Two of them (provenance invalidation and merge) build the markdown
+    themselves rather than going through the dual-write helper, so a gate that
+    only guarded that helper leaked. Any new synthesis writer must call this.
+    """
+    return bool(getattr(config, "synthesis_enabled", True))
+
+
 def write_synthesis(synthesis_path: Path, node_id: str, markdown: str) -> Path:
     """Write a synthesis markdown file.  Atomic write (tmp + rename).
 

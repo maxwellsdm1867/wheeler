@@ -181,3 +181,97 @@ async def test_the_write_receipt_does_not_record_a_failed_layer(tmp_path):
         assert json_ok is True and synth_ok is True
     finally:
         _cleanup(cfg)
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_the_writers_that_bypass_the_dual_write_helper_are_gated_too(tmp_path):
+    """Three paths build the markdown themselves instead of going through
+    _write_synthesis_file, so a gate on that helper alone leaked.
+
+    Found by the independent Verifier: ensure_artifact on a hash change runs
+    propagate_invalidation, which writes synthesis directly; detect_stale
+    reaches the same code; and execute_merge renders its own merged view.
+    """
+    from wheeler.graph.provenance import detect_stale_scripts
+    from wheeler.merge import execute_merge
+    from wheeler.tools.graph_tools import execute_tool
+
+    cfg = _cfg(tmp_path, synthesis=False)
+
+    def views():
+        d = tmp_path / "synthesis"
+        return sorted(p.name for p in d.glob("*.md")) if d.exists() else []
+
+    try:
+        script = tmp_path / "a.py"
+        script.write_text("x = 1\n")
+        art = json.loads(await execute_tool("ensure_artifact", {"path": str(script)}, cfg))
+        fin = json.loads(await execute_tool("add_finding", {"description": "downstream", "confidence": 0.6}, cfg))
+        ex = json.loads(await execute_tool("add_execution", {"kind": "script_run", "description": "r"}, cfg))
+        await execute_tool("link_nodes", {"source_id": ex["node_id"], "target_id": art["node_id"], "relationship": "USED"}, cfg)
+        await execute_tool("link_nodes", {"source_id": fin["node_id"], "target_id": ex["node_id"], "relationship": "WAS_GENERATED_BY"}, cfg)
+
+        script.write_text("x = 2\n")  # hash change -> propagate_invalidation
+        await execute_tool("ensure_artifact", {"path": str(script)}, cfg)
+        assert views() == [], f"propagate_invalidation leaked: {views()}"
+
+        script.write_text("x = 3\n")
+        await detect_stale_scripts(cfg)
+        assert views() == [], f"detect_stale leaked: {views()}"
+
+        a = json.loads(await execute_tool("add_finding", {"description": "dup a", "confidence": 0.5}, cfg))
+        b = json.loads(await execute_tool("add_finding", {"description": "dup b", "confidence": 0.5}, cfg))
+        merged = await execute_merge(cfg, a["node_id"], b["node_id"])
+        assert views() == [], f"execute_merge leaked: {views()}"
+        # and the merge itself still completed: the rename it used to do
+        # unconditionally must not abort now that no temp view is written
+        assert merged.get("status") == "merged", merged
+        assert (tmp_path / "knowledge" / f"{a['node_id']}.json").exists()
+    finally:
+        _cleanup(cfg)
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_off_skips_the_relationship_queries_not_just_the_file(tmp_path):
+    """The per-link gate is where the whole performance claim lives.
+
+    Deleting it leaves no file behind either way, because the inner write is
+    also gated, so nothing failed when the Verifier removed it. What it does
+    restore is two graph queries per endpoint on every link. Assert on the
+    queries, not the file.
+    """
+    from wheeler.tools.graph_tools import execute_tool
+    import wheeler.tools.graph_tools as gt
+
+    for enabled, expect in ((False, 0), (True, None)):
+        cfg = _cfg(tmp_path / ("on" if enabled else "off"), synthesis=enabled)
+        try:
+            f = json.loads(await execute_tool("add_finding", {"description": "f", "confidence": 0.5}, cfg))
+            h = json.loads(await execute_tool("add_hypothesis", {"statement": "h"}, cfg))
+            backend = await gt._get_backend(cfg)
+            seen: list[str] = []
+            real = backend.run_cypher
+
+            async def spy(query, params=None, _real=real, _seen=seen):
+                _seen.append(query)
+                return await _real(query, params)
+
+            backend.run_cypher = spy  # type: ignore[method-assign]
+            try:
+                await execute_tool(
+                    "link_nodes",
+                    {"source_id": f["node_id"], "target_id": h["node_id"], "relationship": "SUPPORTS"},
+                    cfg,
+                )
+            finally:
+                backend.run_cypher = real  # type: ignore[method-assign]
+
+            rel_queries = [q for q in seen if "RETURN type(r)" in q]
+            if expect == 0:
+                assert rel_queries == [], f"synthesis off still ran {len(rel_queries)} relationship queries"
+            else:
+                assert len(rel_queries) == 4, f"expected 4 relationship queries with synthesis on, got {len(rel_queries)}"
+        finally:
+            _cleanup(cfg)
