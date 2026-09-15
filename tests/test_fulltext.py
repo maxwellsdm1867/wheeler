@@ -189,7 +189,7 @@ class TestSearchTextInExecuteTool:
                 "wheeler.tools.graph_tools._TOOL_REGISTRY",
                 {"add_finding": AsyncMock(return_value=finding_result)},
             ):
-                with patch("wheeler.tools.graph_tools._write_knowledge_file", return_value=(True, True)):
+                with patch("wheeler.tools.graph_tools._write_knowledge_file", return_value=(True, True, "0123456789abcdef")):
                     await execute_tool(
                         "add_finding",
                         {"description": "spike frequency doubles at 22C", "confidence": 0.85},

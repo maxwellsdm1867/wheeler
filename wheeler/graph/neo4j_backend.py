@@ -87,6 +87,12 @@ def _reassemble_custom(node: dict) -> dict:
     return out
 
 
+def _utc_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 class Neo4jBackend(GraphBackend):
     """Neo4j backend using the existing async driver singleton."""
 
@@ -355,17 +361,23 @@ class Neo4jBackend(GraphBackend):
         rel_props: dict | None = None,
     ) -> bool:
         self._cb.check()
-        params: dict = {"src": src_id, "tgt": tgt_id}
+        params: dict = {"src": src_id, "tgt": tgt_id, "now": _utc_now_iso()}
 
-        # Build the SET clause for relationship properties when provided.
-        set_clause = ""
+        # Every edge records when it was made and which content version of each
+        # endpoint it was made against, read from the nodes in the same query
+        # (no extra round trip). A SUPPORTS edge made against Finding v2 can
+        # then be told apart from the Finding's current v4 without a diff.
+        set_parts = [
+            "r.created_at = $now",
+            "r.source_version = coalesce(a.content_version, 1)",
+            "r.target_version = coalesce(b.content_version, 1)",
+        ]
         if rel_props:
-            set_parts = []
             for i, (k, v) in enumerate(rel_props.items()):
                 param_key = f"rp_{i}"
                 params[param_key] = v
                 set_parts.append(f"r.{k} = ${param_key}")
-            set_clause = " SET " + ", ".join(set_parts)
+        set_clause = " SET " + ", ".join(set_parts)
 
         if self._project_tag:
             stmt = (

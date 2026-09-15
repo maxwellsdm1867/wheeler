@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 from wheeler.graph.schema import NODE_LABELS, PREFIX_TO_LABEL  # noqa: E402
 
 # Matches [F-3a2b], [PL-0012abcd], etc.
+# A citation may pin a content version: [F-3a2b] cites the node, [F-3a2b@2]
+# cites version 2 of it. The bare form is what every act writes today.
 CITATION_PATTERN = re.compile(
-    r"\[((?:PL|F|H|Q|S|X|D|P|W|N|L)-[0-9a-f]{4,8})\]"
+    r"\[((?:PL|F|H|Q|S|X|D|P|W|N|L)-[0-9a-f]{4,8})(?:@(\d+))?\]"
 )
 
 
@@ -24,6 +26,8 @@ class CitationStatus(Enum):
     NOT_FOUND = "not_found"
     MISSING_PROVENANCE = "missing_provenance"
     STALE = "stale"
+    # The citation pins a version ([F-3a2b@2]) and the node has moved past it.
+    OUTDATED = "outdated"
 
 
 @dataclass
@@ -37,9 +41,24 @@ class CitationResult:
 def extract_citations(text: str) -> list[str]:
     """Extract all node ID citations from text using regex.
 
-    Returns a deduplicated list of node IDs (without brackets).
+    Returns a deduplicated list of node IDs (without brackets and without any
+    @version pin; see extract_citation_pins for the pins).
     """
-    return list(dict.fromkeys(CITATION_PATTERN.findall(text)))
+    return list(dict.fromkeys(m.group(1) for m in CITATION_PATTERN.finditer(text)))
+
+
+def extract_citation_pins(text: str) -> dict[str, int]:
+    """Node id -> pinned version for citations written as [F-3a2b@2].
+
+    A node cited both bare and pinned keeps the pin; two different pins keep
+    the lower one, since that is the version the older claim was made against.
+    """
+    pins: dict[str, int] = {}
+    for m in CITATION_PATTERN.finditer(text):
+        if m.group(2):
+            v = int(m.group(2))
+            pins[m.group(1)] = min(v, pins.get(m.group(1), v))
+    return pins
 
 
 def _prefix_from_id(node_id: str) -> str:
@@ -94,6 +113,7 @@ async def validate_citations(
     node_ids = extract_citations(text)
     if not node_ids:
         return []
+    pins = extract_citation_pins(text)
 
     from wheeler.graph.driver import get_async_driver
     driver = get_async_driver(config)
@@ -157,6 +177,19 @@ async def validate_citations(
                         details=f"{label} node not found in graph",
                     ))
                     continue
+
+                # Step 2b: version pin. A claim written against v2 of a node
+                # that is now at v4 is outdated whatever else is true of it.
+                if node_id in pins:
+                    current_v = int(found_nodes[node_id].get("content_version") or 1)
+                    if current_v > pins[node_id]:
+                        results.append(CitationResult(
+                            node_id=node_id,
+                            status=CitationStatus.OUTDATED,
+                            label=label,
+                            details=f"cited v{pins[node_id]}, node is now v{current_v}",
+                        ))
+                        continue
 
                 # Step 3: Provenance check — single query per rule
                 prov_status = CitationStatus.VALID

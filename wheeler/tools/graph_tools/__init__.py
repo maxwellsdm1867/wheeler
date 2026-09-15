@@ -23,6 +23,7 @@ import json
 import logging
 from typing import Any, Awaitable, Callable
 
+from wheeler.graph.schema import PREFIX_TO_LABEL
 from wheeler.config import (
     project_knowledge_dir,
     project_search_store_dir,
@@ -114,24 +115,26 @@ _TOOL_REGISTRY: dict[str, _ToolHandler] = {
 
 def _write_knowledge_file(
     tool_name: str, args: dict, result_str: str, config: WheelerConfig
-) -> tuple[bool, bool]:
+) -> tuple[bool, bool, str]:
     """Best-effort dual-write: persist a new graph node as a JSON file.
 
     Uses the label from the result to look up the Pydantic model class,
     then builds it from the tool args. Any errors are logged but never
     propagated -- the graph write has already succeeded.
 
-    Returns (json_ok, synthesis_ok) indicating which layers succeeded.
+    Returns (json_ok, synthesis_ok, content_hash); the hash is "" when the
+    JSON layer was not written.
     """
     json_ok = False
     synthesis_ok = False
+    content_hash = ""
     try:
         parsed = json.loads(result_str)
         node_id: str | None = parsed.get("node_id")
         label: str | None = parsed.get("label")
         if not node_id or not label:
             logger.warning("_write_knowledge_file: missing node_id/label for %s", tool_name)
-            return (json_ok, synthesis_ok)
+            return (json_ok, synthesis_ok, content_hash)
 
         from wheeler.models import model_for_label
         from wheeler.knowledge.store import write_node
@@ -176,6 +179,12 @@ def _write_knowledge_file(
             actor=args.get("session_id", "system"),
         )]
 
+        from wheeler.knowledge.versions import content_hash_of
+
+        model.content_version = 1
+        model.content_hash = content_hash_of(model)
+        content_hash = model.content_hash
+
         knowledge_dir = project_knowledge_dir(config)
         write_node(knowledge_dir, model)
         json_ok = True
@@ -190,17 +199,22 @@ def _write_knowledge_file(
             tool_name,
             exc_info=True,
         )
-    return (json_ok, synthesis_ok)
+    return (json_ok, synthesis_ok, content_hash)
 
 
 def _update_knowledge_tier(
     args: dict, result_str: str, config: WheelerConfig
-) -> None:
-    """Best-effort tier update: if a JSON file exists for the node, update its tier."""
+) -> tuple[int, str] | None:
+    """Best-effort tier update: if a JSON file exists for the node, update its tier.
+
+    Tier is content (it changes what the node claims to be), so this snapshots
+    and bumps the version like a field update. Returns (version, content_hash)
+    or None when no JSON file was updated.
+    """
     try:
         parsed = json.loads(result_str)
         if "error" in parsed:
-            return
+            return None
 
         node_id: str = args["node_id"]
         new_tier: str = args["tier"]
@@ -213,9 +227,12 @@ def _update_knowledge_tier(
             node = read_node(knowledge_dir, node_id)
         except FileNotFoundError:
             logger.debug("set_tier: no knowledge file for %s, skipping", node_id)
-            return
+            return None
 
+        from wheeler.knowledge import versions as _versions
         from wheeler.models import ChangeEntry
+
+        _versions.snapshot(knowledge_dir, node)
         old_tier = node.tier
         node.tier = new_tier
         node.updated = _now()
@@ -225,11 +242,13 @@ def _update_knowledge_tier(
             changes={"tier": [old_tier, new_tier]},
             actor=args.get("session_id", "system"),
         ))
+        _versions.bump(node)
         write_node(knowledge_dir, node)
-        logger.info("Dual-write tier update: %s -> %s", node_id, new_tier)
+        logger.info("Dual-write tier update: %s -> %s (v%d)", node_id, new_tier, node.content_version)
 
         # Update synthesis file too
         _write_synthesis_file(node_id, node, config)
+        return (node.content_version, node.content_hash)
 
     except Exception:
         logger.error(
@@ -237,27 +256,32 @@ def _update_knowledge_tier(
             args.get("node_id", "?"),
             exc_info=True,
         )
+    return None
 
 
 def _update_knowledge_node(
     args: dict, result_str: str, config: WheelerConfig
-) -> tuple[bool, bool]:
+) -> tuple[bool, bool, int, str]:
     """Best-effort update: if a JSON file exists for the node, update its fields.
 
-    Returns (json_ok, synthesis_ok) indicating which layers succeeded.
+    Snapshots the pre-change state to knowledge/versions/<id>/ and bumps the
+    content version. Returns (json_ok, synthesis_ok, version, content_hash);
+    version is 0 when no JSON file was updated.
     """
     json_ok = False
     synthesis_ok = False
+    new_version = 0
+    new_hash = ""
     try:
         parsed = json.loads(result_str)
         if "error" in parsed:
-            return (json_ok, synthesis_ok)
+            return (json_ok, synthesis_ok, new_version, new_hash)
 
         node_id: str = parsed["node_id"]
         changes: dict = parsed.get("changes", {})
 
         if not changes:
-            return (True, True)  # nothing to update
+            return (True, True, new_version, new_hash)  # nothing to update
 
         from wheeler.knowledge.store import read_node, write_node
 
@@ -267,7 +291,12 @@ def _update_knowledge_node(
             node = read_node(knowledge_dir, node_id)
         except FileNotFoundError:
             logger.debug("update_node: no knowledge file for %s, skipping", node_id)
-            return (json_ok, synthesis_ok)
+            return (json_ok, synthesis_ok, new_version, new_hash)
+
+        # Append-only history: keep the state we are about to replace.
+        from wheeler.knowledge import versions as _versions
+
+        _versions.snapshot(knowledge_dir, node)
 
         # Apply field changes to the model
         now = _now()
@@ -302,10 +331,12 @@ def _update_knowledge_node(
             actor=args.get("session_id", "system"),
         )
         node.change_log.append(change_log_entry)
+        _versions.bump(node)
+        new_version, new_hash = node.content_version, node.content_hash
 
         write_node(knowledge_dir, node)
         json_ok = True
-        logger.info("Update-write: %s fields updated in knowledge file", node_id)
+        logger.info("Update-write: %s fields updated in knowledge file (v%d)", node_id, node.content_version)
 
         # Re-render synthesis
         synthesis_ok = _write_synthesis_file(node_id, node, config)
@@ -316,7 +347,7 @@ def _update_knowledge_node(
             args.get("node_id", "?"),
             exc_info=True,
         )
-    return (json_ok, synthesis_ok)
+    return (json_ok, synthesis_ok, new_version, new_hash)
 
 
 # --- Delete helpers ---
@@ -513,6 +544,23 @@ _backend_cache: dict[tuple, Any] = {}
 # the e2e suite pay all of them per test, since its sandbox mints a fresh
 # project root each time.
 _initialized_dbs: set[tuple[str, str, str]] = set()
+
+
+async def _stamp_graph_version(backend, result_str: str, args: dict, bumped: tuple[int, str]) -> None:
+    """Mirror the JSON layer's new version and content hash onto the graph node.
+
+    Best-effort like every dual-write follow-up: the JSON is the record of
+    versions, the graph copy exists so listings and edge pins can read it
+    without opening files.
+    """
+    try:
+        parsed = json.loads(result_str)
+        node_id = parsed.get("node_id") or args.get("node_id", "")
+        label = parsed.get("label") or PREFIX_TO_LABEL.get(str(node_id).split("-", 1)[0], "")
+        if node_id and label:
+            await backend.update_node(label, node_id, {"content_version": bumped[0], "content_hash": bumped[1]})
+    except Exception:
+        logger.debug("version stamp skipped for %s", args.get("node_id", "?"), exc_info=True)
 
 
 def _backend_key(config: WheelerConfig) -> tuple:
@@ -750,7 +798,7 @@ async def execute_tool(
 
         # Dual-write: persist node as JSON file + synthesis markdown
         if tool_name in _MUTATION_TOOLS:
-            json_ok, synthesis_ok = _write_knowledge_file(tool_name, args, result, config)
+            json_ok, synthesis_ok, content_hash = _write_knowledge_file(tool_name, args, result, config)
             # Build receipt (graph succeeded if we reached this point)
             try:
                 parsed = json.loads(result)
@@ -772,6 +820,12 @@ async def execute_tool(
                 ft_node_id = parsed_for_ft.get("node_id", "")
                 ft_label = parsed_for_ft.get("label", "")
                 if ft_node_id and ft_label:
+                    # One follow-up write carries the fulltext field and the
+                    # version stamp (version 1 + content hash) for the graph node.
+                    stamp: dict = {}
+                    if content_hash:
+                        stamp["content_version"] = 1
+                        stamp["content_hash"] = content_hash
                     # Use full text, not truncated display_name
                     search_text = (
                         args.get("description") or args.get("statement")
@@ -779,9 +833,9 @@ async def execute_tool(
                         or args.get("content") or ""
                     )
                     if search_text:
-                        await backend.update_node(
-                            ft_label, ft_node_id, {"_search_text": search_text}
-                        )
+                        stamp["_search_text"] = search_text
+                    if stamp:
+                        await backend.update_node(ft_label, ft_node_id, stamp)
             except Exception:
                 pass  # best-effort, fulltext is advisory
 
@@ -811,7 +865,7 @@ async def execute_tool(
                         "label": "Execution",
                         "status": "created",
                     })
-                    exec_json_ok, exec_synthesis_ok = _write_knowledge_file(
+                    exec_json_ok, exec_synthesis_ok, exec_hash = _write_knowledge_file(
                         "add_execution", exec_args, exec_result, config,
                     )
                     try:
@@ -828,7 +882,8 @@ async def execute_tool(
                     if exec_desc:
                         try:
                             await backend.update_node(
-                                "Execution", exec_id, {"_search_text": exec_desc}
+                                "Execution", exec_id,
+                                {"_search_text": exec_desc, "content_version": 1, "content_hash": exec_hash}
                             )
                         except Exception:
                             pass
@@ -839,9 +894,13 @@ async def execute_tool(
                     exc_info=True,
                 )
         elif tool_name == "set_tier":
-            _update_knowledge_tier(args, result, config)
+            bumped = _update_knowledge_tier(args, result, config)
+            if bumped:
+                await _stamp_graph_version(backend, result, args, bumped)
         elif tool_name == "update_node":
-            json_ok, synthesis_ok = _update_knowledge_node(args, result, config)
+            json_ok, synthesis_ok, new_version, new_hash = _update_knowledge_node(args, result, config)
+            if new_version:
+                await _stamp_graph_version(backend, result, args, (new_version, new_hash))
             # Build receipt
             try:
                 parsed = json.loads(result)

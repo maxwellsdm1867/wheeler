@@ -50,6 +50,14 @@ class NodeBase(BaseModel):
     origin_database: str = ""
     origin_project: str = ""
     change_log: list[ChangeEntry] = []
+    # Content version, append-only. 1 at creation, +1 on every field or tier
+    # change (never on stale flags or other metadata). The state before each
+    # bump is kept at knowledge/versions/<id>/v<n>.json, so every version is
+    # readable and a citation or edge can pin one. content_hash is a 16-hex
+    # digest of the content fields, for cheap "has this changed" checks.
+    # Named content_version because `version` is already a Dataset field.
+    content_version: int = 1
+    content_hash: str = ""
     # Generic queryable custom bag for the long tail of fields an external
     # service returns that have no first-class model field. The Neo4j backend
     # flattens this to discrete ``custom_<key>`` scalar props on write and
