@@ -135,8 +135,10 @@ Look for consolidation opportunities:
    ```cypher
    MATCH (newer:Finding)-[r:RELEVANT_TO|AROSE_FROM]->(older:Finding)
    WHERE newer.date IS NOT NULL AND older.date IS NOT NULL
+     AND newer.date <> '' AND older.date <> ''
      AND newer.date > older.date
-     AND duration.between(date(older.date), date()).days <= 30
+     AND CASE WHEN older.date IS NULL OR older.date = '' THEN false
+              ELSE duration.between(date(older.date), date()).days <= 30 END
      AND newer.description IS NOT NULL AND older.description IS NOT NULL
      AND size(newer.description) > 40 AND size(older.description) > 40
    RETURN older.id AS older_id, older.description AS older_desc, older.date AS older_date,

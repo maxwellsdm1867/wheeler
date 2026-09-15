@@ -52,7 +52,7 @@ def _timestamp_queries() -> list[tuple[str, str]]:
     out = []
     for act in ("close.md", "dream.md", "graph-link.md"):
         for i, block in enumerate(_cypher_blocks(act)):
-            if re.search(r"datetime\(\s*(?:coalesce\()?[a-z]+\.", block):
+            if re.search(r"\b(?:datetime|date)\(\s*(?:coalesce\()?[a-z]+\.", block):
                 out.append((f"{act}#{i}", block.strip()))
     return out
 
@@ -69,9 +69,10 @@ def test_no_act_parses_a_timestamp_without_a_case_guard():
     for name, q in _timestamp_queries():
         # strip the guarded form, then look for anything left
         stripped = re.sub(
-            r"CASE WHEN [^\n]*IS NULL OR [^\n]*= ''[^\n]*\n\s*ELSE datetime\([^\n]*END", "", q
+            r"CASE WHEN [^\n]*IS NULL OR [^\n]*= ''[^\n]*\n\s*ELSE (?:datetime|duration|date)[^\n]*END",
+            "", q, flags=re.S,
         )
-        if re.search(r"datetime\(\s*(?:coalesce\()?[a-z]+\.", stripped):
+        if re.search(r"\b(?:datetime|date)\(\s*(?:coalesce\()?[a-z]+\.", stripped):
             offenders.append(name)
     assert offenders == [], f"unguarded datetime() over a node property in: {offenders}"
 
@@ -120,3 +121,20 @@ def test_each_act_query_survives_empty_timestamps(name, query, poisoned_graph):
             if "Cannot parse" in str(exc) or "DateTime" in str(exc):
                 pytest.fail(f"{name} still dies on an empty timestamp: {str(exc).splitlines()[0][:120]}")
             raise
+
+
+def test_every_guard_excludes_the_bad_row_rather_than_including_it():
+    """Guard POLARITY, which "does not crash" cannot detect.
+
+    `CASE WHEN <missing> THEN true ELSE ... END` passes both the static shape
+    check and the live query, because it never raises: it just silently treats
+    every unstamped node as in-window. The window queries must exclude them.
+    The one deliberate exception is the phase 1.3 orphan sweep, which surfaces
+    unstamped nodes as suspects on purpose and says so in its prose.
+    """
+    offenders = []
+    for name, q in _timestamp_queries():
+        for guard in re.finditer(r"CASE WHEN .*?THEN (true|false)", q, re.S):
+            if guard.group(1) == "true":
+                offenders.append((name, guard.group(0)[:70]))
+    assert offenders == [], f"guard admits unstamped rows instead of excluding them: {offenders}"
