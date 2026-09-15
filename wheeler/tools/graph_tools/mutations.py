@@ -178,13 +178,17 @@ async def add_hypothesis(backend, args: dict) -> str:
 
 async def add_question(backend, args: dict) -> str:
     node_id = args.get("id") or generate_node_id("Q")
+    now = _now()
     display_name = args["question"][:40]
     await backend.create_node("OpenQuestion", {
         "id": node_id,
         "service": args.get("service", ""),
         "question": args["question"],
         "priority": int(args.get("priority", 5)),
-        "date_added": _now(),
+        # The session sweep in /wh:close filters on coalesce(n.updated, n.date),
+        # so an OpenQuestion carrying only the legacy date_added is invisible to it.
+        "date": now,
+        "updated": now,
         "tier": args.get("tier", "generated"),
         "stability": default_stability("OpenQuestion", args.get("tier", "generated")),
         "session_id": args.get("session_id", ""),

@@ -61,8 +61,8 @@ ORDER BY h.date DESC
 
 **Open Questions:**
 ```cypher
-MATCH (q:OpenQuestion) WHERE q.date_added >= $since
-RETURN q.id AS id, q.question AS question, q.priority AS priority, q.date_added AS date
+MATCH (q:OpenQuestion) WHERE coalesce(q.date, q.date_added) >= $since
+RETURN q.id AS id, q.question AS question, q.priority AS priority, coalesce(q.date, q.date_added) AS date
 ORDER BY q.priority DESC
 ```
 

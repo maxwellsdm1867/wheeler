@@ -79,7 +79,7 @@ If this returns any rows, warn the scientist before proceeding:
 Then continue with the valid `$since` boundary. The warning is mandatory; stopping is not.
 
 ### 1.2 Find recent entities
-Wheeler stores timestamps as ISO 8601 on `n.updated` (Plan, Document) and/or `n.date` (Finding, Hypothesis, Note, Question, Dataset, Paper). The graph schema does not write `n.created`, so do not query it.
+Wheeler stores timestamps as ISO 8601 on `n.updated` (Plan, Document, Dataset, Question) and/or `n.date` (Finding, Hypothesis, Note, Dataset, Question). Paper writes only `date_added` and is excluded below. Dataset and Question nodes written before v0.15.1 carry only `date_added`, so they fall outside this window; the null-timestamp guard in 1.3 still surfaces them. The graph schema does not write `n.created`, so do not query it.
 
 ```cypher
 MATCH (n)
@@ -94,18 +94,20 @@ ORDER BY timestamp
 If the Cypher errors OR returns 0 rows on a session that should have activity, fall back to `query_findings`, `query_hypotheses`, `query_notes`, `query_documents`, `query_datasets`, `query_plans`, `query_scripts` and filter by recent timestamps. Also ask the scientist what was worked on if the graph has few recent nodes.
 
 ### 1.3 Find orphans
-For each recent entity, check if it has a WAS_GENERATED_BY link to an Execution:
+For each recent entity, check if it has a WAS_GENERATED_BY link to an Execution. A node with no `updated` and no `date` at all is included regardless of the window: a missing timestamp means a writer forgot to stamp it, and the sweep must surface that node as a suspect rather than silently drop it.
 
 ```cypher
 MATCH (n)
-WHERE coalesce(n.updated, n.date) IS NOT NULL
-  AND datetime(coalesce(n.updated, n.date)) >= datetime($since)
+WHERE (coalesce(n.updated, n.date) IS NULL
+       OR datetime(coalesce(n.updated, n.date)) >= datetime($since))
   AND NOT n:Execution AND NOT n:Paper
   AND NOT (n)-[:WAS_GENERATED_BY]->(:Execution)
 RETURN n.id AS id, labels(n)[0] AS type, n.title AS title,
        coalesce(n.updated, n.date) AS timestamp
 ORDER BY timestamp
 ```
+
+Rows with a null `timestamp` are unstamped nodes (legacy Dataset or Question nodes carrying only `date_added`, or a new type whose writer never set `date`). Report them to the scientist alongside the in-window orphans.
 
 If the Cypher errors OR returns 0 rows on a session that should have activity, inspect each recent entity individually with `show_node` and check its relationships, or fall back to the `query_*` tools.
 
@@ -207,8 +209,8 @@ ORDER BY ts DESC
 
 ```cypher
 // Open Questions opened in window (and any resolved in window via status field)
-MATCH (q:OpenQuestion) WHERE datetime(q.date_added) >= datetime($since)
-RETURN q.id, q.question, q.priority, q.status, q.date_added
+MATCH (q:OpenQuestion) WHERE datetime(coalesce(q.date, q.date_added)) >= datetime($since)
+RETURN q.id, q.question, q.priority, q.status, coalesce(q.date, q.date_added) AS date
 ORDER BY q.priority DESC
 ```
 
