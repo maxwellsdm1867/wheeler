@@ -115,26 +115,27 @@ _TOOL_REGISTRY: dict[str, _ToolHandler] = {
 
 def _write_knowledge_file(
     tool_name: str, args: dict, result_str: str, config: WheelerConfig
-) -> tuple[bool, bool, str]:
+) -> tuple[bool, bool, str, int]:
     """Best-effort dual-write: persist a new graph node as a JSON file.
 
     Uses the label from the result to look up the Pydantic model class,
     then builds it from the tool args. Any errors are logged but never
     propagated -- the graph write has already succeeded.
 
-    Returns (json_ok, synthesis_ok, content_hash); the hash is "" when the
-    JSON layer was not written.
+    Returns (json_ok, synthesis_ok, content_hash, content_tokens); the hash is
+    "" and the count 0 when the JSON layer was not written.
     """
     json_ok = False
     synthesis_ok = False
     content_hash = ""
+    content_tokens = 0
     try:
         parsed = json.loads(result_str)
         node_id: str | None = parsed.get("node_id")
         label: str | None = parsed.get("label")
         if not node_id or not label:
             logger.warning("_write_knowledge_file: missing node_id/label for %s", tool_name)
-            return (json_ok, synthesis_ok, content_hash)
+            return (json_ok, synthesis_ok, content_hash, content_tokens)
 
         from wheeler.models import model_for_label
         from wheeler.knowledge.store import write_node
@@ -179,11 +180,13 @@ def _write_knowledge_file(
             actor=args.get("session_id", "system"),
         )]
 
-        from wheeler.knowledge.versions import content_hash_of
+        from wheeler.knowledge.versions import content_hash_of, content_tokens_of
 
         model.content_version = 1
         model.content_hash = content_hash_of(model)
+        model.content_tokens = content_tokens_of(model)
         content_hash = model.content_hash
+        content_tokens = model.content_tokens
 
         knowledge_dir = project_knowledge_dir(config)
         write_node(knowledge_dir, model)
@@ -199,17 +202,17 @@ def _write_knowledge_file(
             tool_name,
             exc_info=True,
         )
-    return (json_ok, synthesis_ok, content_hash)
+    return (json_ok, synthesis_ok, content_hash, content_tokens)
 
 
 def _update_knowledge_tier(
     args: dict, result_str: str, config: WheelerConfig
-) -> tuple[int, str] | None:
+) -> tuple[int, str, int] | None:
     """Best-effort tier update: if a JSON file exists for the node, update its tier.
 
     Tier is content (it changes what the node claims to be), so this snapshots
-    and bumps the version like a field update. Returns (version, content_hash)
-    or None when no JSON file was updated.
+    and bumps the version like a field update. Returns
+    (version, content_hash, content_tokens) or None when no JSON file was updated.
     """
     try:
         parsed = json.loads(result_str)
@@ -248,7 +251,7 @@ def _update_knowledge_tier(
 
         # Update synthesis file too
         _write_synthesis_file(node_id, node, config)
-        return (node.content_version, node.content_hash)
+        return (node.content_version, node.content_hash, node.content_tokens)
 
     except Exception:
         logger.error(
@@ -261,7 +264,7 @@ def _update_knowledge_tier(
 
 def _update_knowledge_node(
     args: dict, result_str: str, config: WheelerConfig
-) -> tuple[bool, bool, int, str]:
+) -> tuple[bool, bool, int, str, int]:
     """Best-effort update: if a JSON file exists for the node, update its fields.
 
     Snapshots the pre-change state to knowledge/versions/<id>/ and bumps the
@@ -272,16 +275,17 @@ def _update_knowledge_node(
     synthesis_ok = False
     new_version = 0
     new_hash = ""
+    new_tokens = 0
     try:
         parsed = json.loads(result_str)
         if "error" in parsed:
-            return (json_ok, synthesis_ok, new_version, new_hash)
+            return (json_ok, synthesis_ok, new_version, new_hash, new_tokens)
 
         node_id: str = parsed["node_id"]
         changes: dict = parsed.get("changes", {})
 
         if not changes:
-            return (True, True, new_version, new_hash)  # nothing to update
+            return (True, True, new_version, new_hash, new_tokens)  # nothing to update
 
         from wheeler.knowledge.store import read_node, write_node
 
@@ -291,7 +295,7 @@ def _update_knowledge_node(
             node = read_node(knowledge_dir, node_id)
         except FileNotFoundError:
             logger.debug("update_node: no knowledge file for %s, skipping", node_id)
-            return (json_ok, synthesis_ok, new_version, new_hash)
+            return (json_ok, synthesis_ok, new_version, new_hash, new_tokens)
 
         # Append-only history: keep the state we are about to replace. Only
         # CONTENT changes make a version; a stale flag, stale_since or a
@@ -338,7 +342,7 @@ def _update_knowledge_node(
         node.change_log.append(change_log_entry)
         if content_changed:
             _versions.bump(node)
-            new_version, new_hash = node.content_version, node.content_hash
+            new_version, new_hash, new_tokens = node.content_version, node.content_hash, node.content_tokens
 
         write_node(knowledge_dir, node)
         json_ok = True
@@ -353,7 +357,7 @@ def _update_knowledge_node(
             args.get("node_id", "?"),
             exc_info=True,
         )
-    return (json_ok, synthesis_ok, new_version, new_hash)
+    return (json_ok, synthesis_ok, new_version, new_hash, new_tokens)
 
 
 # --- Delete helpers ---
@@ -552,7 +556,7 @@ _backend_cache: dict[tuple, Any] = {}
 _initialized_dbs: set[tuple[str, str, str]] = set()
 
 
-async def _stamp_graph_version(backend, result_str: str, args: dict, bumped: tuple[int, str]) -> None:
+async def _stamp_graph_version(backend, result_str: str, args: dict, bumped: tuple[int, str, int]) -> None:
     """Mirror the JSON layer's new version and content hash onto the graph node.
 
     Best-effort like every dual-write follow-up: the JSON is the record of
@@ -564,7 +568,10 @@ async def _stamp_graph_version(backend, result_str: str, args: dict, bumped: tup
         node_id = parsed.get("node_id") or args.get("node_id", "")
         label = parsed.get("label") or PREFIX_TO_LABEL.get(str(node_id).split("-", 1)[0], "")
         if node_id and label:
-            await backend.update_node(label, node_id, {"content_version": bumped[0], "content_hash": bumped[1]})
+            await backend.update_node(
+                label, node_id,
+                {"content_version": bumped[0], "content_hash": bumped[1], "content_tokens": bumped[2]},
+            )
     except Exception:
         logger.debug("version stamp skipped for %s", args.get("node_id", "?"), exc_info=True)
 
@@ -804,7 +811,7 @@ async def execute_tool(
 
         # Dual-write: persist node as JSON file + synthesis markdown
         if tool_name in _MUTATION_TOOLS:
-            json_ok, synthesis_ok, content_hash = _write_knowledge_file(tool_name, args, result, config)
+            json_ok, synthesis_ok, content_hash, content_tokens = _write_knowledge_file(tool_name, args, result, config)
             # Build receipt (graph succeeded if we reached this point)
             try:
                 parsed = json.loads(result)
@@ -832,6 +839,7 @@ async def execute_tool(
                     if content_hash:
                         stamp["content_version"] = 1
                         stamp["content_hash"] = content_hash
+                        stamp["content_tokens"] = content_tokens
                     # Use full text, not truncated display_name
                     search_text = (
                         args.get("description") or args.get("statement")
@@ -871,7 +879,7 @@ async def execute_tool(
                         "label": "Execution",
                         "status": "created",
                     })
-                    exec_json_ok, exec_synthesis_ok, exec_hash = _write_knowledge_file(
+                    exec_json_ok, exec_synthesis_ok, exec_hash, exec_tokens = _write_knowledge_file(
                         "add_execution", exec_args, exec_result, config,
                     )
                     try:
@@ -889,7 +897,8 @@ async def execute_tool(
                         try:
                             await backend.update_node(
                                 "Execution", exec_id,
-                                {"_search_text": exec_desc, "content_version": 1, "content_hash": exec_hash}
+                                {"_search_text": exec_desc, "content_version": 1,
+                                 "content_hash": exec_hash, "content_tokens": exec_tokens}
                             )
                         except Exception:
                             pass
@@ -904,9 +913,9 @@ async def execute_tool(
             if bumped:
                 await _stamp_graph_version(backend, result, args, bumped)
         elif tool_name == "update_node":
-            json_ok, synthesis_ok, new_version, new_hash = _update_knowledge_node(args, result, config)
+            json_ok, synthesis_ok, new_version, new_hash, new_tokens = _update_knowledge_node(args, result, config)
             if new_version:
-                await _stamp_graph_version(backend, result, args, (new_version, new_hash))
+                await _stamp_graph_version(backend, result, args, (new_version, new_hash, new_tokens))
             # Build receipt
             try:
                 parsed = json.loads(result)

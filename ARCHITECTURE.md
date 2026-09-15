@@ -819,6 +819,28 @@ What the versions buy:
 The name is `content_version` rather than `version` because `Script.version` is
 already a scientist-facing string.
 
+Every node also carries `content_tokens`, an estimate of what a deep read of it
+costs, refreshed whenever the content version moves and stored on the graph node
+so it is queryable (`ORDER BY n.content_tokens DESC`). It is an estimate on
+purpose: the only tokenizer installed ships with fastembed and would pull a 33 MB
+model on the first node write, and its vocabulary is not the one reading these
+nodes. `wheeler/knowledge/versions.py::estimate_tokens` counts words plus runs of
+punctuation, landing within roughly 15 percent on node content.
+
+**Backward compatibility.** Nodes written before versioning existed are not
+migrated, by design: a real graph is about 98 percent of them (measured), and a
+bulk rewrite would touch every file and every node to change nothing a reader
+needs. Instead every path treats absence as version 1. The model defaults supply
+it when a JSON file is read, `coalesce(n.content_version, 1)` supplies it in
+Cypher, and the graph-fallback read in `show_node` defaults it explicitly because
+the graph carries raw properties rather than model defaults. An edge with no
+version pins never reports `moved`, since an unpinned edge cannot know whether
+its endpoint changed and a false signal is worse than none. The first edit of a
+legacy node snapshots its pre-edit state as v1, so nothing is lost on the way in.
+`tests/test_backward_compat_versions.py` builds genuinely old nodes (stripped in
+both layers, with unpinned edges) and exercises every read and write path over
+them.
+
 The snapshot directory is append-only in the strict sense: `delete_node` removes
 the current file, graph node and synthesis page but leaves `knowledge/versions/<id>/`
 in place, so a deleted node's history is still readable. The consistency checker

@@ -331,7 +331,7 @@ class TestUpdateNodeKnowledgeFile:
             "status": "updated",
         })
 
-        json_ok, synthesis_ok, _v, _h = _update_knowledge_node(
+        json_ok, synthesis_ok, _v, _h, _t = _update_knowledge_node(
             {"node_id": "F-test1234", "session_id": "test"},
             result_str,
             config,
@@ -395,7 +395,7 @@ class TestUpdateNodeKnowledgeFile:
             "status": "updated",
         })
 
-        json_ok, _, _v, _h = _update_knowledge_node(
+        json_ok, _, _v, _h, _t = _update_knowledge_node(
             {"node_id": "W-test1234", "session_id": "test"}, result_str, config
         )
         assert json_ok is True
@@ -425,7 +425,7 @@ class TestUpdateNodeKnowledgeFile:
             "status": "updated",
         })
 
-        json_ok, synthesis_ok, _v, _h = _update_knowledge_node(
+        json_ok, synthesis_ok, _v, _h, _t = _update_knowledge_node(
             {"node_id": "F-missing1"},
             result_str,
             config,
@@ -444,7 +444,7 @@ class TestUpdateNodeKnowledgeFile:
 
         result_str = json.dumps({"error": "Node not found: F-bad12345"})
 
-        json_ok, synthesis_ok, _v, _h = _update_knowledge_node(
+        json_ok, synthesis_ok, _v, _h, _t = _update_knowledge_node(
             {"node_id": "F-bad12345"},
             result_str,
             config,
@@ -491,7 +491,7 @@ class TestUpdateNodeSynthesis:
             "status": "updated",
         })
 
-        json_ok, synthesis_ok, _v, _h = _update_knowledge_node(
+        json_ok, synthesis_ok, _v, _h, _t = _update_knowledge_node(
             {"node_id": "H-test1234", "session_id": "test"},
             result_str,
             config,

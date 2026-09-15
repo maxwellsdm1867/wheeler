@@ -58,6 +58,9 @@ class NodeBase(BaseModel):
     # Named content_version because `version` is already a Dataset field.
     content_version: int = 1
     content_hash: str = ""
+    # Estimated tokens a deep read of this node costs, refreshed whenever the
+    # content version moves. 0 on nodes written before this existed.
+    content_tokens: int = 0
     # Generic queryable custom bag for the long tail of fields an external
     # service returns that have no first-class model field. The Neo4j backend
     # flattens this to discrete ``custom_<key>`` scalar props on write and

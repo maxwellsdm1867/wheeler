@@ -298,3 +298,78 @@ async def test_pointer_level_listing_returns_pointer_rows(live_cfg, monkeypatch)
     assert len(row["updated"]) == 10 and row["updated"][:4] == "2026" or row["updated"][:2] == "20"
     full = await fn(full=True)
     assert len(next(r for r in full["findings"] if r["id"] == fid)["description"]) == 600
+
+
+class TestTokenCounter:
+    """content_tokens: how large a node is, stored with it and queryable in the graph.
+
+    An ESTIMATE by design (see wheeler/knowledge/versions.py): no tokenizer
+    dependency, because the only one installed ships with fastembed and would
+    pull a 33 MB model on the first node write.
+    """
+
+    def test_estimate_is_zero_empty_monotonic_and_in_a_sane_range(self):
+        from wheeler.knowledge.versions import estimate_tokens
+
+        assert estimate_tokens("") == 0
+        assert estimate_tokens("hello world") == 2
+        for text in [
+            "The lag-1 coefficient was 0.42 across 12 ON-parasol cells.",
+            '{"id":"F-3a2b9c1d","description":"spike frequency doubles at 22C"}',
+            "word " * 200,
+        ]:
+            est = estimate_tokens(text)
+            ratio = len(text) / est
+            assert 1.5 <= ratio <= 6.0, f"{ratio:.1f} chars/token for {text[:40]!r}"
+        assert all(
+            estimate_tokens("a " * n) <= estimate_tokens("a " * (n + 5)) for n in range(1, 40)
+        )
+
+    def test_punctuation_runs_count_once_not_per_character(self):
+        from wheeler.knowledge.versions import estimate_tokens
+
+        # A character-wise count made JSON roughly twice as expensive as it is.
+        assert estimate_tokens('{"a":"b"}') < estimate_tokens("a b") + 9
+
+    def test_content_tokens_tracks_content_and_ignores_volatile_fields(self):
+        from wheeler.knowledge.versions import content_tokens_of
+        from wheeler.models import FindingModel
+
+        small = FindingModel(id="F-1", type="Finding", description="short", confidence=0.5)
+        big = FindingModel(id="F-1", type="Finding", description="word " * 300, confidence=0.5)
+        assert 0 < content_tokens_of(small) < content_tokens_of(big)
+
+        noisy = small.model_copy(update={"stale": True, "session_id": "s-1", "display_name": "x"})
+        assert content_tokens_of(noisy) == content_tokens_of(small)
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_content_tokens_lands_in_all_three_layers_and_is_queryable(live_cfg, tmp_path):
+    from wheeler.tools.graph_tools import execute_tool
+
+    short_id = json.loads(await execute_tool(
+        "add_finding", {"description": "brief", "confidence": 0.5}, live_cfg))["node_id"]
+    long_id = json.loads(await execute_tool(
+        "add_finding", {"description": "sentence about parasol cells. " * 60, "confidence": 0.5}, live_cfg))["node_id"]
+
+    for nid in (short_id, long_id):
+        j = json.loads((tmp_path / "knowledge" / f"{nid}.json").read_text())
+        g = _graph(_URI, "MATCH (n {id: $id}) RETURN n.content_tokens AS t", id=nid)[0]["t"]
+        assert j["content_tokens"] > 0 and g == j["content_tokens"], nid
+
+    # queryable in the graph: rank nodes by how expensive they are to read
+    rows = _graph(
+        _URI,
+        "MATCH (n:Finding) WHERE n._wheeler_project = $tag AND n.content_tokens IS NOT NULL "
+        "RETURN n.id AS id ORDER BY n.content_tokens DESC",
+        tag=live_cfg.neo4j.project_tag,
+    )
+    assert [r["id"] for r in rows][:2] == [long_id, short_id]
+
+    # and it is refreshed when the content changes
+    before = json.loads((tmp_path / "knowledge" / f"{short_id}.json").read_text())["content_tokens"]
+    await execute_tool("update_node", {"node_id": short_id, "description": "much longer text " * 40}, live_cfg)
+    after = json.loads((tmp_path / "knowledge" / f"{short_id}.json").read_text())
+    assert after["content_tokens"] > before
+    assert _graph(_URI, "MATCH (n {id: $id}) RETURN n.content_tokens AS t", id=short_id)[0]["t"] == after["content_tokens"]

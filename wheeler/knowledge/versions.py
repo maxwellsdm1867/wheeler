@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from wheeler.models import NodeBase
@@ -25,11 +26,46 @@ from wheeler.models import NodeBase
 # a stale flag or a re-render does not look like an edit.
 VOLATILE_FIELDS: frozenset[str] = frozenset({
     "updated", "change_log", "stale", "stale_since", "session_id",
-    "display_name", "content_version", "content_hash", "stability",
+    "display_name", "content_version", "content_hash", "content_tokens", "stability",
     "origin_machine", "origin_host", "origin_database", "origin_project",
 })
 
 VERSIONS_DIR = "versions"
+
+
+# Rough token estimate, no tokenizer dependency and no model download. The
+# fastembed tokenizer would pull a 33 MB model on first use, which a node write
+# must never trigger, and its vocabulary is not the one that reads these nodes
+# anyway. BPE tokenizers split English prose at roughly 1.3 tokens per word and
+# emit about one token per run of punctuation or symbols, which is what this
+# counts. It is an ESTIMATE for reporting how large a node is, not a billing
+# figure; expect it to be within about 15 percent for node content.
+_WORDISH = re.compile(r"[A-Za-z0-9_]+")
+# A RUN of punctuation, not each character: BPE merges common sequences such as
+# `":"` or `","` into one or two tokens, so counting characters roughly doubles
+# the estimate on JSON, which is the shape node content is measured in.
+_SYMBOL_RUN = re.compile(r"[^A-Za-z0-9_\s]+")
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimated token count of *text*. See the note above on accuracy."""
+    if not text:
+        return 0
+    # Long identifiers and hashes split into several tokens, short words into one.
+    word_tokens = sum(1 + len(w) // 6 for w in _WORDISH.findall(text))
+    symbol_tokens = sum(1 + len(r) // 3 for r in _SYMBOL_RUN.findall(text))
+    return word_tokens + symbol_tokens
+
+
+def content_tokens_of(model: NodeBase) -> int:
+    """Estimated tokens a deep read of this node costs.
+
+    Measured over the same content fields the hash covers, minus empty ones,
+    which is what ``show_node`` returns by default.
+    """
+    data = model.model_dump(exclude=set(VOLATILE_FIELDS))
+    kept = {k: v for k, v in data.items() if v not in ("", None, [], {})}
+    return estimate_tokens(json.dumps(kept, sort_keys=True, default=str))
 
 
 def content_hash_of(model: NodeBase) -> str:
@@ -62,9 +98,10 @@ def snapshot(knowledge_path: Path, model: NodeBase) -> Path | None:
 
 
 def bump(model: NodeBase) -> None:
-    """Advance to the next content version and refresh the content hash."""
+    """Advance to the next content version, refresh the hash and token count."""
     model.content_version = (model.content_version or 1) + 1
     model.content_hash = content_hash_of(model)
+    model.content_tokens = content_tokens_of(model)
 
 
 def list_versions(knowledge_path: Path, node_id: str, current: int | None = None) -> list[int]:
