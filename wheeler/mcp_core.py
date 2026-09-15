@@ -18,6 +18,8 @@ from wheeler.graph import context, schema
 from wheeler.graph.cypher_guard import WRITE_KEYWORDS, is_read_only_cypher
 from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
+    _strip_empty,
+    _trim_text,
     _config,
     _logged,
     _get_embedding_store,
@@ -330,40 +332,92 @@ async def graph_gaps(limit: int = 10, offset: int = 0, summary: bool = False) ->
 
 @mcp.tool()
 @_logged
-async def show_node(node_id: str) -> dict:
-    """Read the full content of a Wheeler knowledge graph node from its JSON file.
+async def show_node(
+    node_id: str = "",
+    node_ids: list[str] | None = None,
+    fields: str = "",
+    include_change_log: bool = False,
+) -> dict:
+    """Read one or many Wheeler knowledge graph nodes with their full content.
 
-    Returns the complete node data including all fields. Use this to
-    read findings, hypotheses, questions, papers, etc. without needing
-    a graph query.
+    Args:
+      node_id: one id (e.g. "F-3a2b"). Or pass node_ids for several in ONE call
+        instead of one call per node; the result is then {"nodes": [...],
+        "missing": [...], "count"}.
+      fields: optional comma-separated list of fields to return (e.g.
+        "description,confidence,path"); default returns every non-empty field.
+      include_change_log: the per-field edit history is omitted by default (it
+        was 40 percent of a typical result); pass true to include it.
+
+    Reads the node's JSON file and falls back to the graph node when the file
+    is missing, so a node that exists in Neo4j is never reported as not found.
     """
+    ids = [i for i in (node_ids or []) if i] or ([node_id] if node_id else [])
+    if not ids:
+        return {"error": "Pass node_id or node_ids"}
+    wanted = {f.strip() for f in fields.split(",") if f.strip()} if fields else None
+
+    found: list[dict] = []
+    missing: list[str] = []
+    for nid in ids:
+        data = await _read_node_any_layer(nid)
+        if data is None:
+            missing.append(nid)
+            continue
+        if not include_change_log:
+            data.pop("change_log", None)
+        data = _strip_empty(data)
+        if wanted:
+            data = {k: v for k, v in data.items() if k in wanted or k in ("id", "type")}
+        found.append(data)
+
+    if node_ids:
+        return {"nodes": found, "missing": missing, "count": len(found)}
+    if not found:
+        return {"error": f"Node {ids[0]} not found"}
+    return found[0]
+
+
+async def _read_node_any_layer(nid: str) -> dict | None:
+    """The node as a dict from its JSON file, else from the graph, else None."""
+    from wheeler.portability import is_portable, resolve
+
+    data: dict | None = None
     try:
         from wheeler.knowledge import store
-    except ImportError as exc:
-        return {
-            "error": (
-                f"Cannot read node files: {exc}. The wheeler.knowledge "
-                "subpackage is missing from this installation (known defect "
-                "in wheels built before v0.9.4). Reinstall with: "
-                "pip install --upgrade --force-reinstall wheeler"
-            )
-        }
 
-    knowledge_path = project_knowledge_dir(_config)
-    try:
-        model = store.read_node(knowledge_path, node_id)
-    except FileNotFoundError:
-        return {"error": f"Node {node_id} not found"}
+        model = store.read_node(project_knowledge_dir(_config), nid)
+        data = model.model_dump()
+    except (FileNotFoundError, ImportError):
+        data = None
+    except Exception:
+        data = None
 
-    data = model.model_dump()
+    if data is None:
+        # The JSON layer can lag or be missing (a node written on another
+        # machine, a repair pending). The graph is the index of record, so read
+        # it rather than sending the caller away with "not found".
+        label = schema.PREFIX_TO_LABEL.get(nid.split("-", 1)[0])
+        if label:
+            try:
+                backend = await graph_tools._get_backend(_config)
+                node = await backend.get_node(label, nid)
+            except Exception:
+                node = None
+            if node:
+                data = {k: v for k, v in dict(node).items() if not k.startswith("_")}
+                data.setdefault("id", nid)
+                data.setdefault("type", label)
+                data["source"] = "graph"
+        if data is None:
+            return None
+
     stored = data.get("path") or ""
     if stored:
         # `path` is what the caller opens, so it is resolved for this machine;
         # `stored_path` keeps the machine-independent form the node holds. An
         # unresolvable value (a root this computer does not configure) is left
         # portable rather than turned into a local path that points nowhere.
-        from wheeler.portability import is_portable, resolve
-
         data["stored_path"] = stored
         if is_portable(stored):
             resolved = resolve(stored, _config.resolved_roots)
@@ -393,7 +447,7 @@ async def propose_merge(node_id_a: str, node_id_b: str) -> dict:
 
 @mcp.tool()
 @_logged
-async def run_cypher(query: str) -> dict:
+async def run_cypher(query: str, limit: int = 100) -> dict:
     """Run a read-only Cypher query against the Wheeler knowledge graph database.
 
     Use for ad-hoc research graph exploration: relationship traversal, path queries,
@@ -411,6 +465,9 @@ async def run_cypher(query: str) -> dict:
             fulltext queries, since a procedure name does not reveal whether it
             writes; use search_findings for fulltext. This query is NOT
             project-scoped, unlike every query_* tool.
+        limit: maximum rows returned (default 100). When the query yields
+            more, the result carries truncated=true and total_rows; add a
+            WHERE or LIMIT to the query rather than raising this blindly.
     """
     # Block write operations. One shared rule (graph/cypher_guard.py), also used
     # by the backend to decide replay safety. The previous local copy scanned
@@ -431,7 +488,15 @@ async def run_cypher(query: str) -> dict:
     try:
         backend = await graph_tools._get_backend(_config)
         records = await backend.run_cypher(query)
-        return {"results": records, "count": len(records)}
+        total = len(records)
+        if limit and total > limit:
+            return {
+                "results": records[:limit],
+                "count": limit,
+                "truncated": True,
+                "total_rows": total,
+            }
+        return {"results": records, "count": total}
     except Exception as exc:
         return {"error": str(exc), "results": [], "count": 0}
 
@@ -457,6 +522,7 @@ async def search_findings(
     limit: int = 10,
     label: str = "",
     mode: str = "multi",
+    full: bool = False,
 ) -> dict:
     """Search across Wheeler knowledge graph nodes for research context retrieval.
 
@@ -472,6 +538,8 @@ async def search_findings(
         label: Optional filter by node type (Finding, Hypothesis, OpenQuestion, Paper, Dataset, Document)
         mode: Retrieval mode -- "multi" (default, all channels), "semantic" (embeddings only),
               "keyword" (graph keyword only), "temporal" (most recent only), "fulltext" (Neo4j fulltext index only)
+        full: return each hit's complete text instead of the first 240 chars
+              (use show_node on the hits you need rather than this)
     """
     try:
         from wheeler.search.retrieval import multi_search
@@ -484,7 +552,7 @@ async def search_findings(
                 {
                     "node_id": r.get("id", ""),
                     "label": r.get("type", ""),
-                    "text": _extract_display_text(r),
+                    "text": (_extract_display_text(r) if full else _trim_text(_extract_display_text(r))),
                     "score": r.get("rrf_score", 0.0),
                 }
                 for r in results
@@ -508,6 +576,7 @@ async def search_context(
     limit: int = 5,
     hops: int = 2,
     label: str = "",
+    max_related: int = 20,
 ) -> dict:
     """Search the knowledge graph and expand results via graph traversal.
 
@@ -524,6 +593,10 @@ async def search_context(
         limit: Maximum seed results (default 5)
         hops: Maximum provenance chain depth (default 2)
         label: Optional filter by node type
+        max_related: cap on related nodes returned (default 20; 0 = no cap).
+            When the neighbourhood is larger the result carries
+            truncated_related=true and total_related still reports the full
+            count; relationships are filtered to the nodes kept.
     """
     from wheeler.search.retrieval import multi_search, expand_search_results
 
@@ -532,6 +605,18 @@ async def search_context(
         expanded = await expand_search_results(
             seeds, _config, max_hops_prov=hops,
         )
+        related = expanded.get("related_nodes") or []
+        if max_related and len(related) > max_related:
+            # One real call returned 94 related nodes (36 KB); the seeds' immediate
+            # neighbourhood is what the caller reads, the tail is noise it pays for.
+            kept = related[:max_related]
+            keep_ids = {n.get("id") for n in kept} | {n.get("id") for n in expanded.get("seed_nodes") or []}
+            expanded["related_nodes"] = kept
+            expanded["relationships"] = [
+                r for r in expanded.get("relationships") or []
+                if r.get("source") in keep_ids and r.get("target") in keep_ids
+            ]
+            expanded["truncated_related"] = True
         return expanded
     except Exception as exc:
         return {

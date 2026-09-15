@@ -36,25 +36,23 @@ mcp = FastMCP(
 
 @mcp.tool()
 @_logged
-async def detect_stale() -> list[dict]:
+async def detect_stale(verbose: bool = False) -> list[dict]:
     """Find Wheeler knowledge graph Script nodes whose file no longer matches its recorded hash.
 
     Each result carries a `reason`: `changed` (this machine's file moved, real
     staleness), `diverged` (another machine's copy differs), or `absent` (the file
     is not on this computer). Only `changed` invalidates downstream nodes.
+    Pass verbose=true to include the stored and current hashes.
     """
     stale = await provenance.detect_stale_scripts(_config)
-    return [
-        {
-            "node_id": s.node_id,
-            "path": s.path,
-            "reason": s.reason,
-            "origin_host": s.origin_host,
-            "stored_hash": s.stored_hash,
-            "current_hash": s.current_hash,
-        }
-        for s in stale
-    ]
+    rows = []
+    for s in stale:
+        row = {"node_id": s.node_id, "path": s.path, "reason": s.reason, "origin_host": s.origin_host}
+        if verbose:
+            row["stored_hash"] = s.stored_hash
+            row["current_hash"] = s.current_hash
+        rows.append(row)
+    return rows
 
 
 @mcp.tool()
@@ -196,23 +194,24 @@ async def extract_citations(text: str) -> list[str]:
 
 @mcp.tool()
 @_logged
-async def validate_citations(text: str) -> dict:
-    """Validate all Wheeler knowledge graph citations in text against Neo4j. Checks existence and provenance."""
+async def validate_citations(text: str, verbose: bool = False) -> dict:
+    """Validate all Wheeler knowledge graph citations in text against Neo4j. Checks existence and provenance.
+
+    Returns total, valid, by_status counts and the citations that are NOT
+    valid (missing, stale, missing_provenance ...) with their details. Valid
+    citations are only counted; pass verbose=true to list them too.
+    """
     results = await citations.validate_citations(text, _config)
     valid = sum(1 for r in results if r.status == citations.CitationStatus.VALID)
-    return {
-        "total": len(results),
-        "valid": valid,
-        "results": [
-            {
-                "node_id": r.node_id,
-                "status": r.status.value,
-                "label": r.label,
-                "details": r.details,
-            }
-            for r in results
-        ],
-    }
+    by_status: dict[str, int] = {}
+    for r in results:
+        by_status[r.status.value] = by_status.get(r.status.value, 0) + 1
+    rows = [
+        {"node_id": r.node_id, "status": r.status.value, "label": r.label, "details": r.details}
+        for r in results
+        if verbose or r.status != citations.CitationStatus.VALID
+    ]
+    return {"total": len(results), "valid": valid, "by_status": by_status, "results": rows}
 
 
 # --- Retrieval quality ---

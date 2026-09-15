@@ -23,6 +23,7 @@ from wheeler.mcp_shared import (
     _SESSION_ID,
     _logged,
     _check_similar_nodes,
+    _compact_write_result,
     _verify_backend,
 )
 
@@ -78,7 +79,7 @@ async def add_finding(
     similar = _check_similar_nodes(description, "Finding", exclude_id=parsed.get("node_id"))
     if similar:
         parsed["similar_existing"] = similar
-    return parsed
+    return _compact_write_result(parsed)
 
 
 @mcp.tool()
@@ -112,7 +113,7 @@ async def add_hypothesis(
     similar = _check_similar_nodes(statement, "Hypothesis", exclude_id=parsed.get("node_id"))
     if similar:
         parsed["similar_existing"] = similar
-    return parsed
+    return _compact_write_result(parsed)
 
 
 @mcp.tool()
@@ -145,7 +146,7 @@ async def add_question(
     similar = _check_similar_nodes(question, "OpenQuestion", exclude_id=parsed.get("node_id"))
     if similar:
         parsed["similar_existing"] = similar
-    return parsed
+    return _compact_write_result(parsed)
 
 
 @mcp.tool()
@@ -193,7 +194,7 @@ async def add_dataset(
         },
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 @mcp.tool()
@@ -221,7 +222,7 @@ async def add_paper(
          "corpus_id": corpus_id, "session_id": _SESSION_ID},
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 @mcp.tool()
@@ -255,7 +256,7 @@ async def add_document(
          "execution_description": execution_description},
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 @mcp.tool()
@@ -287,7 +288,7 @@ async def add_note(
          "execution_description": execution_description},
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 async def _add_script_impl(
@@ -315,7 +316,7 @@ async def _add_script_impl(
         },
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 @mcp.tool()
@@ -388,7 +389,7 @@ async def add_plan(
          "execution_description": execution_description},
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 @mcp.tool()
@@ -425,7 +426,7 @@ async def add_execution(
         },
         _config,
     )
-    return json.loads(result)
+    return _compact_write_result(json.loads(result))
 
 
 @mcp.tool()
@@ -442,57 +443,32 @@ async def ensure_artifact(
     execution_kind: str = "",
     used_entities: str = "",
     execution_description: str = "",
+    verbose: bool = False,
 ) -> dict:
     """Register a file in the Wheeler knowledge graph, or update its hash if already registered.
 
-    PREFERRED way to track any artifact (script, dataset, figure, plan, document).
-    Call this after writing, reading, or modifying a file. Safe to call
-    repeatedly: it is idempotent on unchanged files.
+    PREFERRED way to track any artifact (script, dataset, figure, plan,
+    document). Idempotent on unchanged files. To register many files and their
+    edges at once use register_batch instead of calling this in a loop.
 
-    Auto-detects node type from extension:
-      .py .m .r .jl .sh         -> Script
-      .mat .h5 .hdf5 .csv .npy .parquet .db -> Dataset
-      .md .tex .pdf             -> Document  (or Plan if path is under .plans/)
-      .png .jpg .svg .tif       -> Finding (artifact_type=figure)
-      Unknown extension          -> Document
+    Type is auto-detected from the extension (.py/.m/.r/.jl/.sh Script;
+    .mat/.h5/.csv/.npy/.parquet/.db Dataset; .md/.tex/.pdf Document, or Plan
+    under .plans/; .png/.jpg/.svg/.tif Finding figure; else Document) or
+    forced with artifact_type (script|dataset|document|plan|finding).
 
-    Returns: {node_id, label, action, path, hash, ...}
-      action = "created"   -> new node created, use node_id for link_nodes
-      action = "unchanged" -> file hash matches stored hash, no write
-      action = "updated"   -> file changed on disk; hash updated and
-                              downstream dependents marked stale.
-                              Includes previous_hash and stale_downstream count.
+    Returns {node_id, label, action} where action is created, unchanged, or
+    updated (file changed on disk: hash updated, downstream marked stale,
+    stale_downstream reports how many). {"error": "label_mismatch", ...} when
+    a node at this path has a different label; reconcile with update_node or
+    delete_node. Pass verbose=true to also get path, stored_path and hashes.
 
-    Label-collision: if a node already exists at this path under a different
-    label, returns {"error": "label_mismatch", "node_id", "existing_label"}
-    without mutating. Use update_node or delete_node to reconcile.
-
-    Field constraints (enforced):
-      path: file path (required). File MUST exist on disk. Relative paths
-        are resolved to absolute.
-      artifact_type: override auto-detection. One of 'script', 'dataset',
-        'document', 'plan', 'finding'.
-      description: optional. If omitted, defaults to filename.
-      title: optional. If omitted, defaults to the filename stem, so
-        figure Findings always get a non-null title matching the file slug.
-      language: for Script only. Defaults to extension-derived value.
-      data_type: for Dataset only. Defaults to extension.
-      confidence: for Finding only. 0.0-1.0, default 0.5.
-      status: for Plan/Document only. 'draft' (default) or 'final'.
-
-    Provenance-completing: set execution_kind (e.g. "discuss", "write",
-    "script") to auto-create an Execution activity and link the new node
-    to it via WAS_GENERATED_BY. Pass used_entities as comma-separated
-    node IDs (e.g. "F-abc,D-def") to link what the execution consumed
-    (USED edges from the Execution to each input). This avoids born-orphan
-    artifacts when registering a plan, finding, or document derived from
-    earlier graph context.
-
-    Use instead of add_script, add_dataset, add_document, add_plan, or the
-    three-step "hash_file + query_* + add_*" pattern. Those remain available
-    for cases that need explicit create-only semantics.
-
-    For find-or-create by path, prefer ensure_artifact.
+    Fields: path (required, must exist; relative resolves to absolute),
+    description (defaults to filename), title (defaults to stem), language
+    (Script), data_type (Dataset), confidence 0.0-1.0 (Finding, default 0.5),
+    status draft|final (Plan/Document). Provenance-completing: execution_kind
+    (e.g. "script", "write") creates an Execution and links the node
+    WAS_GENERATED_BY it; used_entities "F-abc,D-def" adds USED edges from that
+    Execution, so the artifact is not born an orphan.
     """
     ea_args: dict = {
         "path": path,
@@ -520,7 +496,23 @@ async def ensure_artifact(
         ea_args["execution_description"] = execution_description
 
     result = await graph_tools.execute_tool("ensure_artifact", ea_args, _config)
-    return json.loads(result)
+    parsed = json.loads(result)
+    return parsed if verbose else _diet_ensure(parsed)
+
+
+# Keys ensure_artifact echoes back that the caller already knows (it passed the
+# path) or never acts on (hashes). Together they were 89 percent of the bytes of
+# 524 real results; see docs/mcp-token-audit.md.
+_ENSURE_ECHO_KEYS = ("path", "stored_path", "hash", "previous_hash", "path_upgraded")
+
+
+def _diet_ensure(parsed: dict) -> dict:
+    if "error" in parsed:
+        return parsed
+    out = {k: v for k, v in parsed.items() if k not in _ENSURE_ECHO_KEYS}
+    if not out.get("stale_downstream"):
+        out.pop("stale_downstream", None)
+    return _compact_write_result(out)
 
 
 @mcp.tool()
@@ -664,33 +656,22 @@ async def update_node(
     started_at: str | None = None,
     ended_at: str | None = None,
     allow_provenance: bool = False,
+    verbose: bool = False,
 ) -> dict:
     """Update fields on an existing Wheeler knowledge graph node. Omitted fields are left unchanged.
 
-    Omitting an argument (or passing null) means "leave this field alone".
-    Passing an empty string is a real value that CLEARS the field, which is
-    how a node whose file was deleted or moved gets its dangling path reset
-    (path=""). The clear is reported in changes and recorded in change_log
-    like any other update.
+    Omitting an argument (or passing null) leaves the field alone. An empty
+    string is a real value that CLEARS the field (path="" resets a dangling
+    path). Fields are validated against the node type's schema; an unknown
+    field is rejected by name, never silently written elsewhere.
 
-    Fields are validated against the node type's schema: a field that does
-    not exist on the node type is rejected with an error naming it, never
-    silently written or misrouted into another field.
+    Constraints: confidence 0.0-1.0; priority 1-10 (10 highest); tier
+    generated|reference; path resolved to absolute. Execution timestamps
+    (started_at, ended_at) are immutable unless allow_provenance=true.
 
-    Field constraints (enforced, same as creation):
-      confidence: float 0.0-1.0
-      priority: integer 1-10, where 10 is highest
-      tier: 'generated' or 'reference'
-      path: resolved to absolute if relative
-
-    Provenance timestamps (started_at, ended_at, Execution nodes only) are
-    immutable by default. To repair a broken Execution record (e.g. backfill
-    an empty started_at), pass the timestamp together with
-    allow_provenance=true; without the flag the call is rejected.
-
-    Returns the node_id, updated fields, and a changes dict showing old vs new values.
-    Use for correcting descriptions, changing status, adjusting confidence,
-    or updating any node field after creation.
+    Returns {node_id, label, status, updated_fields}. The old and new values
+    are recorded in the node's change_log; pass verbose=true to get them back
+    in the result as well.
     """
     update_args: dict = {"node_id": node_id, "session_id": _SESSION_ID}
     for field, val in [
@@ -706,7 +687,12 @@ async def update_node(
         update_args["allow_provenance"] = True
 
     result = await graph_tools.execute_tool("update_node", update_args, _config)
-    return json.loads(result)
+    parsed = json.loads(result)
+    if not verbose:
+        # 96 percent of a real update_node result was this echo of text the
+        # caller had just written (docs/mcp-token-audit.md).
+        parsed.pop("changes", None)
+    return parsed
 
 
 # --- Bulk registration ---
