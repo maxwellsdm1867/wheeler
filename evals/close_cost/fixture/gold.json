@@ -1,0 +1,73 @@
+{
+  "since_key": "XCLOSE_BOUNDARY",
+  "malformed_closes": 1,
+  "window_ids": [
+    "D1",
+    "D2",
+    "D3",
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06",
+    "F07",
+    "F08",
+    "F09",
+    "F10",
+    "F11",
+    "F12",
+    "H1",
+    "H2",
+    "H3",
+    "N1",
+    "N2",
+    "N3",
+    "PL1",
+    "PL2",
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "W1",
+    "W2"
+  ],
+  "orphan_ids": [
+    "D3",
+    "F09",
+    "F10",
+    "F11",
+    "F12",
+    "H2",
+    "H3",
+    "N2",
+    "N3",
+    "PL2",
+    "Q2",
+    "Q3",
+    "Q4",
+    "S3",
+    "S4",
+    "W2"
+  ],
+  "inventory": {
+    "Finding": 12,
+    "Hypothesis": 3,
+    "OpenQuestion": 4,
+    "Plan": 2,
+    "Execution": 4,
+    "Document": 2
+  },
+  "stale": [
+    "S3"
+  ],
+  "citations": {
+    "total": 4,
+    "valid": 2
+  },
+  "consistency_ok": true
+}

@@ -1,0 +1,441 @@
+{
+  "arm": "inline",
+  "context": "large",
+  "context_target_tokens": 400000,
+  "context_fixture_tokens": 406063,
+  "context_files": 20,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192210Z-inline-large-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192210Z-inline-large-r1/project",
+  "project_tag": "closecost-20260915T192210Z-inline-large",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost",
+  "started_at": "2026-09-15T19:22:10+00:00",
+  "gold": {
+    "since": "2026-09-13T19:22:10+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-8c167c69",
+      "D-b75c8680",
+      "D-bedc1c32",
+      "F-05620a39",
+      "F-38a7dbdc",
+      "F-4786585f",
+      "F-57e4aa35",
+      "F-85e59667",
+      "F-9defaa69",
+      "F-a4d22d0f",
+      "F-b9403c8e",
+      "F-c46a31b4",
+      "F-cb686bc5",
+      "F-dce319ab",
+      "F-de15d94e",
+      "H-2cc89cf3",
+      "H-7e0c18f7",
+      "H-7ef9ec03",
+      "N-867cc840",
+      "N-c058f0dd",
+      "N-ce9340ce",
+      "PL-541be1f0",
+      "PL-efc77e89",
+      "Q-57b252e3",
+      "Q-9bfd3606",
+      "Q-bc875f34",
+      "Q-e11faf4d",
+      "S-62c449ff",
+      "S-67172a44",
+      "S-6faac40b",
+      "S-9d5de2b8",
+      "W-2abd02b9",
+      "W-d1a3a655"
+    ],
+    "orphan_ids": [
+      "D-8c167c69",
+      "F-85e59667",
+      "F-a4d22d0f",
+      "F-c46a31b4",
+      "F-cb686bc5",
+      "H-2cc89cf3",
+      "H-7ef9ec03",
+      "N-c058f0dd",
+      "N-ce9340ce",
+      "PL-efc77e89",
+      "Q-57b252e3",
+      "Q-bc875f34",
+      "Q-e11faf4d",
+      "S-62c449ff",
+      "S-67172a44",
+      "W-d1a3a655"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-67172a44"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "seed": {
+    "nodes": 43,
+    "edges": 27,
+    "draft_path": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192210Z-inline-large-r1/project/docs/DRAFT-SESSION.md",
+    "stamp": {
+      "stamped": 43,
+      "malformed_close": "X-79a17442"
+    },
+    "stale_file": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T192210Z-inline-large-r1/project/scripts/bootstrap.py",
+    "since": "2026-09-13T19:22:10+00:00",
+    "seed_wall_s": 1.656
+  },
+  "wall_clock_s": 91.987,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 146,
+  "unparseable_lines": 0,
+  "assistant_lines": 69,
+  "turns": 13,
+  "parent_turns": 13,
+  "subagent_turns": 0,
+  "subagent_assistant_lines": 0,
+  "subagent_usage_visible": false,
+  "agent_calls": 0,
+  "tokens": {
+    "input_tokens": 26,
+    "cache_creation_input_tokens": 644762,
+    "cache_read_input_tokens": 7238565,
+    "output_tokens": 72,
+    "total_input_incl_cache": 7883353
+  },
+  "parent_tokens": {
+    "input_tokens": 26,
+    "cache_creation_input_tokens": 644762,
+    "cache_read_input_tokens": 7238565,
+    "output_tokens": 72,
+    "total_input_incl_cache": 7883353
+  },
+  "subagent_tokens": {
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0,
+    "total_input_incl_cache": 0
+  },
+  "parent_context_peak_tokens": 670661,
+  "subagent_context_peak_tokens": 0,
+  "context_first_turn_tokens": 51911,
+  "tool_calls": {
+    "Read": 41,
+    "run_cypher": 10,
+    "ToolSearch": 1,
+    "detect_stale": 1,
+    "validate_citations": 1,
+    "graph_consistency_check": 1,
+    "Bash": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "detect_stale",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "Read",
+    "validate_citations",
+    "graph_consistency_check",
+    "Bash"
+  ],
+  "sweep_tool_calls": 13,
+  "parent_sweep_tool_calls": 13,
+  "context_reads": 40,
+  "consistency_graph_only": null,
+  "result": {
+    "subtype": "success",
+    "num_turns": 57,
+    "duration_ms": 89996,
+    "duration_api_ms": 88848,
+    "total_cost_usd": 4.1295790000000006,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 26,
+      "cache_creation_input_tokens": 644762,
+      "cache_read_input_tokens": 7238565,
+      "output_tokens": 9999,
+      "output_tokens_details": {
+        "thinking_tokens": 1125
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 644762,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1313,
+          "cache_read_input_tokens": 669906,
+          "cache_creation_input_tokens": 753,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 753
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 2716,
+        "outputTokens": 12,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.0027760000000000003,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 26,
+        "outputTokens": 9999,
+        "cacheReadInputTokens": 7238565,
+        "cacheCreationInputTokens": 644762,
+        "webSearchRequests": 0,
+        "costUSD": 4.126803000000001,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 1125,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "DIGEST {\"since\": \"2026-09-13T19:22:10+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-8c167c69\", \"D-b75c8680\", \"D-bedc1c32\", \"F-05620a39\", \"F-38a7dbdc\", \"F-4786585f\", \"F-57e4aa35\", \"F-85e59667\", \"F-9defaa69\", \"F-a4d22d0f\", \"F-b9403c8e\", \"F-c46a31b4\", \"F-cb686bc5\", \"F-dce319ab\", \"F-de15d94e\", \"H-2cc89cf3\", \"H-7e0c18f7\", \"H-7ef9ec03\", \"N-867cc840\", \"N-c058f0dd\", \"N-ce9340ce\", \"PL-541be1f0\", \"PL-efc77e89\", \"Q-57b252e3\", \"Q-9bfd3606\", \"Q-bc875f34\", \"Q-e11faf4d\", \"S-62c449ff\", \"S-67172a44\", \"S-6faac40b\", \"S-9d5de2b8\", \"W-2abd02b9\", \"W-d1a3a655\"], \"orphan_ids\": [\"D-8c167c69\", \"F-85e59667\", \"F-a4d22d0f\", \"F-c46a31b4\", \"F-cb686bc5\", \"H-2cc89cf3\", \"H-7ef9ec03\", \"N-c058f0dd\", \"N-ce9340ce\", \"PL-efc77e89\", \"Q-57b252e3\", \"Q-bc875f34\", \"Q-e11faf4d\", \"S-62c449ff\", \"S-67172a44\", \"W-d1a3a655\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-67172a44\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "digest": {
+    "since": "2026-09-13T19:22:10+00:00",
+    "malformed_closes": 1,
+    "window_ids": [
+      "D-8c167c69",
+      "D-b75c8680",
+      "D-bedc1c32",
+      "F-05620a39",
+      "F-38a7dbdc",
+      "F-4786585f",
+      "F-57e4aa35",
+      "F-85e59667",
+      "F-9defaa69",
+      "F-a4d22d0f",
+      "F-b9403c8e",
+      "F-c46a31b4",
+      "F-cb686bc5",
+      "F-dce319ab",
+      "F-de15d94e",
+      "H-2cc89cf3",
+      "H-7e0c18f7",
+      "H-7ef9ec03",
+      "N-867cc840",
+      "N-c058f0dd",
+      "N-ce9340ce",
+      "PL-541be1f0",
+      "PL-efc77e89",
+      "Q-57b252e3",
+      "Q-9bfd3606",
+      "Q-bc875f34",
+      "Q-e11faf4d",
+      "S-62c449ff",
+      "S-67172a44",
+      "S-6faac40b",
+      "S-9d5de2b8",
+      "W-2abd02b9",
+      "W-d1a3a655"
+    ],
+    "orphan_ids": [
+      "D-8c167c69",
+      "F-85e59667",
+      "F-a4d22d0f",
+      "F-c46a31b4",
+      "F-cb686bc5",
+      "H-2cc89cf3",
+      "H-7ef9ec03",
+      "N-c058f0dd",
+      "N-ce9340ce",
+      "PL-efc77e89",
+      "Q-57b252e3",
+      "Q-bc875f34",
+      "Q-e11faf4d",
+      "S-62c449ff",
+      "S-67172a44",
+      "W-d1a3a655"
+    ],
+    "inventory": {
+      "Finding": 12,
+      "Hypothesis": 3,
+      "OpenQuestion": 4,
+      "Plan": 2,
+      "Execution": 4,
+      "Document": 2
+    },
+    "stale": [
+      "S-67172a44"
+    ],
+    "citations": {
+      "total": 4,
+      "valid": 2
+    },
+    "consistency_ok": true
+  },
+  "digest_line": "DIGEST {\"since\": \"2026-09-13T19:22:10+00:00\", \"malformed_closes\": 1, \"window_ids\": [\"D-8c167c69\", \"D-b75c8680\", \"D-bedc1c32\", \"F-05620a39\", \"F-38a7dbdc\", \"F-4786585f\", \"F-57e4aa35\", \"F-85e59667\", \"F-9defaa69\", \"F-a4d22d0f\", \"F-b9403c8e\", \"F-c46a31b4\", \"F-cb686bc5\", \"F-dce319ab\", \"F-de15d94e\", \"H-2cc89cf3\", \"H-7e0c18f7\", \"H-7ef9ec03\", \"N-867cc840\", \"N-c058f0dd\", \"N-ce9340ce\", \"PL-541be1f0\", \"PL-efc77e89\", \"Q-57b252e3\", \"Q-9bfd3606\", \"Q-bc875f34\", \"Q-e11faf4d\", \"S-62c449ff\", \"S-67172a44\", \"S-6faac40b\", \"S-9d5de2b8\", \"W-2abd02b9\", \"W-d1a3a655\"], \"orphan_ids\": [\"D-8c167c69\", \"F-85e59667\", \"F-a4d22d0f\", \"F-c46a31b4\", \"F-cb686bc5\", \"H-2cc89cf3\", \"H-7ef9ec03\", \"N-c058f0dd\", \"N-ce9340ce\", \"PL-efc77e89\", \"Q-57b252e3\", \"Q-bc875f34\", \"Q-e11faf4d\", \"S-62c449ff\", \"S-67172a44\", \"W-d1a3a655\"], \"inventory\": {\"Finding\": 12, \"Hypothesis\": 3, \"OpenQuestion\": 4, \"Plan\": 2, \"Execution\": 4, \"Document\": 2}, \"stale\": [\"S-67172a44\"], \"citations\": {\"total\": 4, \"valid\": 2}, \"consistency_ok\": true}",
+  "totals": {
+    "input": 2742,
+    "cache_read": 7238565,
+    "cache_creation": 644762,
+    "output": 10011,
+    "source": "modelUsage",
+    "context_total": 7886069,
+    "cost_usd": 4.1295790000000006
+  },
+  "score": {
+    "window": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "orphan": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "stale": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "exact": true,
+      "missing": [],
+      "extra": [],
+      "note": ""
+    },
+    "inventory": {
+      "exact": true,
+      "got": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      },
+      "want": {
+        "Finding": 12,
+        "Hypothesis": 3,
+        "OpenQuestion": 4,
+        "Plan": 2,
+        "Execution": 4,
+        "Document": 2
+      }
+    },
+    "malformed_closes": {
+      "exact": true,
+      "got": 1,
+      "want": 1
+    },
+    "citations": {
+      "exact": true,
+      "got": {
+        "total": 4,
+        "valid": 2
+      },
+      "want": {
+        "total": 4,
+        "valid": 2
+      }
+    },
+    "since": {
+      "exact": true,
+      "got": "2026-09-13T19:22:10+00:00",
+      "want": "2026-09-13T19:22:10+00:00"
+    },
+    "consistency_ok": {
+      "exact": true,
+      "got": true,
+      "want": true
+    },
+    "all_exact": true,
+    "ok": true
+  },
+  "context_achieved_tokens": 670661,
+  "context_target_missed": false,
+  "finished_at": "2026-09-15T19:23:44+00:00",
+  "cleanup": {
+    "deleted": 43,
+    "remaining": 0
+  }
+}

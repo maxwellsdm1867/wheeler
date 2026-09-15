@@ -1,0 +1,560 @@
+{
+  "seed": 20260915,
+  "since_hours_ago": 48.0,
+  "malformed_close_key": "XCLOSE_BAD",
+  "boundary_close_key": "XCLOSE_BOUNDARY",
+  "stale": {
+    "key": "S3",
+    "path": "scripts/bootstrap.py",
+    "append": "\n# touched after registration, so detect_stale reports it\n"
+  },
+  "nodes": [
+    {
+      "key": "XCLOSE_BOUNDARY",
+      "type": "execution",
+      "hours_ago": 48.0,
+      "fields": {
+        "kind": "close",
+        "description": "Session synthesis: previous close, valid boundary"
+      }
+    },
+    {
+      "key": "XCLOSE_BAD",
+      "type": "execution",
+      "hours_ago": 200.0,
+      "fields": {
+        "kind": "close",
+        "description": "Session synthesis: close with no started_at"
+      }
+    },
+    {
+      "key": "X1",
+      "type": "execution",
+      "hours_ago": 36.0,
+      "fields": {
+        "kind": "script",
+        "description": "Ran load_epochs and the first per-cell fit"
+      }
+    },
+    {
+      "key": "X2",
+      "type": "execution",
+      "hours_ago": 24.0,
+      "fields": {
+        "kind": "script",
+        "description": "Bootstrap pass over the twelve cells"
+      }
+    },
+    {
+      "key": "X3",
+      "type": "execution",
+      "hours_ago": 6.0,
+      "fields": {
+        "kind": "discuss",
+        "description": "Reviewed the spread against the CI widths"
+      }
+    },
+    {
+      "key": "F01",
+      "type": "finding",
+      "hours_ago": 38.5,
+      "fields": {
+        "description": "Per-cell history coefficients span 0.11 to 0.26, wider than any single cell's bootstrap interval.",
+        "confidence": 0.58
+      }
+    },
+    {
+      "key": "F02",
+      "type": "finding",
+      "hours_ago": 37.0,
+      "fields": {
+        "description": "Dropping the two shortest recordings leaves the spread unchanged at 0.12 to 0.25.",
+        "confidence": 0.61
+      }
+    },
+    {
+      "key": "F03",
+      "type": "finding",
+      "hours_ago": 35.5,
+      "fields": {
+        "description": "Bootstrap CI width is flat in resample count above 1000 resamples.",
+        "confidence": 0.64
+      }
+    },
+    {
+      "key": "F04",
+      "type": "finding",
+      "hours_ago": 34.0,
+      "fields": {
+        "description": "Coefficient estimates are insensitive to the epoch segmentation threshold between 0.4 and 0.7.",
+        "confidence": 0.67
+      }
+    },
+    {
+      "key": "F05",
+      "type": "finding",
+      "hours_ago": 32.5,
+      "fields": {
+        "description": "Holding potential does not predict the coefficient across the twelve cells.",
+        "confidence": 0.7
+      }
+    },
+    {
+      "key": "F06",
+      "type": "finding",
+      "hours_ago": 31.0,
+      "fields": {
+        "description": "Epoch count per cell ranges from 41 to 52 and does not correlate with the coefficient.",
+        "confidence": 0.73
+      }
+    },
+    {
+      "key": "F07",
+      "type": "finding",
+      "hours_ago": 29.5,
+      "fields": {
+        "description": "Two cells show a bimodal resample distribution; both are the shortest recordings.",
+        "confidence": 0.76
+      }
+    },
+    {
+      "key": "F08",
+      "type": "finding",
+      "hours_ago": 28.0,
+      "fields": {
+        "description": "Pooling across cells before fitting shrinks the estimate by 38 percent, an artifact of unequal epoch counts.",
+        "confidence": 0.55
+      }
+    },
+    {
+      "key": "F09",
+      "type": "finding",
+      "hours_ago": 26.5,
+      "fields": {
+        "description": "The residual autocorrelation at lag 2 is indistinguishable from zero in every cell.",
+        "confidence": 0.58
+      }
+    },
+    {
+      "key": "F10",
+      "type": "finding",
+      "hours_ago": 25.0,
+      "fields": {
+        "description": "Refitting on the second half of each recording reproduces the per-cell ordering.",
+        "confidence": 0.61
+      }
+    },
+    {
+      "key": "F11",
+      "type": "finding",
+      "hours_ago": 23.5,
+      "fields": {
+        "description": "The coefficient's standard error scales as the inverse square root of epoch count, as expected.",
+        "confidence": 0.64
+      }
+    },
+    {
+      "key": "F12",
+      "type": "finding",
+      "hours_ago": 22.0,
+      "fields": {
+        "description": "Recording duration and coefficient are correlated at r = 0.31, which is not significant at n = 12.",
+        "confidence": 0.67
+      }
+    },
+    {
+      "key": "Q1",
+      "type": "question",
+      "hours_ago": 28.0,
+      "fields": {
+        "question": "Is the between-cell coefficient spread biological, or driven by unequal epoch counts?",
+        "priority": 8
+      }
+    },
+    {
+      "key": "Q2",
+      "type": "question",
+      "hours_ago": 26.0,
+      "fields": {
+        "question": "Does the history kernel need a second lag term for the two bimodal cells?",
+        "priority": 7
+      }
+    },
+    {
+      "key": "Q3",
+      "type": "question",
+      "hours_ago": 24.0,
+      "fields": {
+        "question": "Should the bootstrap resample epochs or whole trials?",
+        "priority": 6
+      }
+    },
+    {
+      "key": "Q4",
+      "type": "question",
+      "hours_ago": 22.0,
+      "fields": {
+        "question": "What is the minimum epoch count for a usable per-cell fit?",
+        "priority": 5
+      }
+    },
+    {
+      "key": "H1",
+      "type": "hypothesis",
+      "hours_ago": 26.0,
+      "fields": {
+        "statement": "The history coefficient is cell-specific and stable within a recording.",
+        "status": "open"
+      }
+    },
+    {
+      "key": "H2",
+      "type": "hypothesis",
+      "hours_ago": 24.0,
+      "fields": {
+        "statement": "The bimodal resample distribution reflects a second, slower adaptation process.",
+        "status": "open"
+      }
+    },
+    {
+      "key": "H3",
+      "type": "hypothesis",
+      "hours_ago": 22.0,
+      "fields": {
+        "statement": "Unequal epoch counts alone explain the apparent between-cell spread.",
+        "status": "open"
+      }
+    },
+    {
+      "key": "N1",
+      "type": "note",
+      "hours_ago": 18.0,
+      "fields": {
+        "content": "Decided to fit per cell and summarize afterwards rather than pooling, because pooling shrinks the estimate by an amount that depends on epoch count.",
+        "context": "kernel fit"
+      }
+    },
+    {
+      "key": "N2",
+      "type": "note",
+      "hours_ago": 16.0,
+      "fields": {
+        "content": "Parked the second-lag model until the two short recordings are re-segmented; fitting it now would confound model choice with data quality.",
+        "context": "kernel fit"
+      }
+    },
+    {
+      "key": "N3",
+      "type": "note",
+      "hours_ago": 14.0,
+      "fields": {
+        "content": "The bootstrap seed is fixed at 0 in scripts/bootstrap.py so the CIs are reproducible run to run.",
+        "context": "kernel fit"
+      }
+    },
+    {
+      "key": "OLD_F1",
+      "type": "finding",
+      "hours_ago": 121.0,
+      "fields": {
+        "description": "An earlier segmentation threshold of 0.3 admitted stimulus artifacts into the epoch count.",
+        "confidence": 0.5
+      }
+    },
+    {
+      "key": "OLD_F2",
+      "type": "finding",
+      "hours_ago": 122.0,
+      "fields": {
+        "description": "The first export was missing the holding potential column, which has since been added.",
+        "confidence": 0.5
+      }
+    },
+    {
+      "key": "OLD_H1",
+      "type": "hypothesis",
+      "hours_ago": 123.0,
+      "fields": {
+        "statement": "The segmentation threshold sets the apparent epoch count.",
+        "status": "rejected"
+      }
+    },
+    {
+      "key": "OLD_N1",
+      "type": "note",
+      "hours_ago": 124.0,
+      "fields": {
+        "content": "Re-exported the raw file with the holding potential column included.",
+        "context": "data export"
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "key": "S1",
+      "path": "scripts/load_epochs.py",
+      "hours_ago": 39.0,
+      "fields": {
+        "artifact_type": "script",
+        "language": "python",
+        "description": "Load one cell's epochs from the raw export"
+      }
+    },
+    {
+      "key": "S2",
+      "path": "scripts/fit_kernel.py",
+      "hours_ago": 33.0,
+      "fields": {
+        "artifact_type": "script",
+        "language": "python",
+        "description": "Fit the one-lag history kernel per cell"
+      }
+    },
+    {
+      "key": "S3",
+      "path": "scripts/bootstrap.py",
+      "hours_ago": 22.0,
+      "fields": {
+        "artifact_type": "script",
+        "language": "python",
+        "description": "Bootstrap confidence intervals for the kernel coefficient"
+      }
+    },
+    {
+      "key": "S4",
+      "path": "scripts/make_figs.py",
+      "hours_ago": 9.0,
+      "fields": {
+        "artifact_type": "script",
+        "language": "python",
+        "description": "Render the figure set for the kernel analysis"
+      }
+    },
+    {
+      "key": "D1",
+      "path": "data/epochs_cell01.csv",
+      "hours_ago": 38.0,
+      "fields": {
+        "artifact_type": "dataset",
+        "type": "raw",
+        "description": "Segmented epochs for cell 01"
+      }
+    },
+    {
+      "key": "D2",
+      "path": "data/kernel_params.csv",
+      "hours_ago": 32.0,
+      "fields": {
+        "artifact_type": "dataset",
+        "type": "derived",
+        "description": "Per-cell history coefficient and stderr"
+      }
+    },
+    {
+      "key": "D3",
+      "path": "data/bootstrap_ci.csv",
+      "hours_ago": 21.0,
+      "fields": {
+        "artifact_type": "dataset",
+        "type": "derived",
+        "description": "Per-cell bootstrap confidence intervals"
+      }
+    },
+    {
+      "key": "W1",
+      "path": "docs/METHODS.md",
+      "hours_ago": 26.0,
+      "fields": {
+        "artifact_type": "document",
+        "title": "Methods: epoch segmentation and kernel fit",
+        "section": "methods",
+        "status": "draft"
+      }
+    },
+    {
+      "key": "PL1",
+      "path": ".plans/PLAN-kernel.md",
+      "hours_ago": 35.0,
+      "fields": {
+        "artifact_type": "plan",
+        "title": "Fit the one-lag history kernel per cell",
+        "status": "in-progress"
+      }
+    },
+    {
+      "key": "PL2",
+      "path": ".plans/PLAN-bootstrap.md",
+      "hours_ago": 12.0,
+      "fields": {
+        "artifact_type": "plan",
+        "title": "Bootstrap the kernel coefficient CIs",
+        "status": "draft"
+      }
+    },
+    {
+      "key": "OLD_D1",
+      "path": "data/legacy_raw.csv",
+      "hours_ago": 125.0,
+      "fields": {
+        "artifact_type": "dataset",
+        "type": "raw",
+        "description": "First raw export, superseded"
+      }
+    }
+  ],
+  "edges": [
+    [
+      "F01",
+      "WAS_GENERATED_BY",
+      "X1"
+    ],
+    [
+      "F02",
+      "WAS_GENERATED_BY",
+      "X1"
+    ],
+    [
+      "F03",
+      "WAS_GENERATED_BY",
+      "X1"
+    ],
+    [
+      "D1",
+      "WAS_GENERATED_BY",
+      "X1"
+    ],
+    [
+      "S1",
+      "WAS_GENERATED_BY",
+      "X1"
+    ],
+    [
+      "F04",
+      "WAS_GENERATED_BY",
+      "X2"
+    ],
+    [
+      "F05",
+      "WAS_GENERATED_BY",
+      "X2"
+    ],
+    [
+      "F06",
+      "WAS_GENERATED_BY",
+      "X2"
+    ],
+    [
+      "H1",
+      "WAS_GENERATED_BY",
+      "X2"
+    ],
+    [
+      "W1",
+      "WAS_GENERATED_BY",
+      "X2"
+    ],
+    [
+      "F07",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "F08",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "Q1",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "N1",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "PL1",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "D2",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "S2",
+      "WAS_GENERATED_BY",
+      "X3"
+    ],
+    [
+      "X1",
+      "USED",
+      "OLD_D1"
+    ],
+    [
+      "X2",
+      "USED",
+      "D1"
+    ],
+    [
+      "X2",
+      "USED",
+      "S2"
+    ],
+    [
+      "X3",
+      "USED",
+      "D3"
+    ],
+    [
+      "X3",
+      "USED",
+      "OLD_F1"
+    ],
+    [
+      "F01",
+      "SUPPORTS",
+      "H1"
+    ],
+    [
+      "F08",
+      "CONTRADICTS",
+      "H3"
+    ],
+    [
+      "F02",
+      "RELEVANT_TO",
+      "Q1"
+    ],
+    [
+      "F09",
+      "RELEVANT_TO",
+      "Q2"
+    ],
+    [
+      "S3",
+      "DEPENDS_ON",
+      "D1"
+    ]
+  ],
+  "draft": {
+    "key": "W2",
+    "template": "docs/DRAFT-SESSION.md.template",
+    "out": "docs/DRAFT-SESSION.md",
+    "hours_ago": 3.0,
+    "cites": [
+      "F01",
+      "F02",
+      "F09"
+    ],
+    "fake": "F-deadbeef",
+    "fields": {
+      "artifact_type": "document",
+      "title": "Draft session notes",
+      "section": "draft",
+      "status": "draft"
+    }
+  }
+}

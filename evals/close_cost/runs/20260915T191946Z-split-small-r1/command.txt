@@ -1,0 +1,152 @@
+claude -p 'You are Wheeler, closing a research session in the project at `/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T191946Z-split-small-r1/project`.
+
+## First: load the session you are closing
+
+Before anything else, read ALL 2 files in `context/`:
+
+- `context/session_01.md`
+- `context/session_02.md`
+
+Read every one of them, in full. They are the working record of the session
+being closed and you need them in context. Read them first, before any other
+tool call. Do not summarize them and do not comment on them.
+
+## Then: delegate the whole mechanical sweep to ONE subagent
+
+Make exactly ONE call to the `Agent` tool (subagent_type `general-purpose`).
+Do not make a second one. Do not run any part of the sweep yourself: no
+`run_cypher`, no `detect_stale`, no `validate_citations`, no
+`graph_consistency_check` from this session.
+
+The subagent must NOT read the files in `context/`. It gets the project
+directory and the sweep instructions, nothing else.
+
+Send the subagent this prompt, with the text between the markers copied
+verbatim:
+
+--- BEGIN SUBAGENT PROMPT ---
+You are running the mechanical sweep of a Wheeler session close. Work only
+from the instructions below. Do not read anything in `context/`: it is not
+relevant to you and it is large.
+
+The project directory is `/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/closecost/evals/close_cost/runs/20260915T191946Z-split-small-r1/project` and it is the current working directory.
+
+This project shares one Neo4j database with other projects, so EVERY Cypher
+`MATCH` must be scoped: add `WHERE n._wheeler_project = $ptag` (using the
+pattern variable of that match). `$ptag` is already bound for you by
+`run_cypher`; do not try to set it. An unscoped query reads other projects'"'"'
+nodes and the answer will be wrong.
+
+The session window start is:
+
+    $since = 2026-09-13T19:19:46+00:00
+
+Substitute that literal string wherever a query below says `$since`.
+
+Run these seven steps and collect the results. Use the Wheeler MCP tools only;
+do not guess, do not stop early, and do not ask any questions.
+
+**Step 1 (window and malformed closes).** Two `run_cypher` calls:
+
+```cypher
+MATCH (x:Execution {kind: "close"})
+WHERE x._wheeler_project = $ptag
+  AND x.started_at IS NOT NULL AND x.started_at <> ""
+RETURN x.started_at AS last_close
+ORDER BY x.started_at DESC LIMIT 1
+```
+
+```cypher
+MATCH (x:Execution {kind: "close"})
+WHERE x._wheeler_project = $ptag
+  AND (x.started_at IS NULL OR x.started_at = "")
+RETURN x.id AS id, x.description AS description
+```
+
+Record the number of rows the second query returns as `malformed_closes`.
+
+**Step 2 (recent entities).** One `run_cypher` call:
+
+```cypher
+MATCH (n)
+WHERE n._wheeler_project = $ptag
+  AND coalesce(n.updated, n.date) IS NOT NULL
+  AND datetime(coalesce(n.updated, n.date)) >= datetime($since)
+  AND NOT n:Execution AND NOT n:Paper
+RETURN n.id AS id, labels(n)[0] AS type
+ORDER BY id
+```
+
+Record every `id` as `window_ids`.
+
+**Step 3 (orphans).** One `run_cypher` call:
+
+```cypher
+MATCH (n)
+WHERE n._wheeler_project = $ptag
+  AND (coalesce(n.updated, n.date) IS NULL
+       OR datetime(coalesce(n.updated, n.date)) >= datetime($since))
+  AND NOT n:Execution AND NOT n:Paper
+  AND NOT (n)-[:WAS_GENERATED_BY]->(:Execution)
+RETURN n.id AS id, labels(n)[0] AS type
+ORDER BY id
+```
+
+Record every `id` as `orphan_ids`.
+
+**Step 4 (staleness).** Call `detect_stale`. Record the `node_id` of every row
+whose `reason` is `changed`, as `stale`.
+
+**Step 5 (inventory).** Six `run_cypher` calls, one per type, each scoped and
+run exactly as written. Record the ROW COUNT of each as `inventory`.
+
+```cypher
+MATCH (f:Finding) WHERE f._wheeler_project = $ptag AND datetime(f.date) >= datetime($since) RETURN f.id
+MATCH (h:Hypothesis) WHERE h._wheeler_project = $ptag AND datetime(coalesce(h.updated, h.date)) >= datetime($since) RETURN h.id
+MATCH (q:OpenQuestion) WHERE q._wheeler_project = $ptag AND datetime(coalesce(q.date, q.date_added)) >= datetime($since) RETURN q.id
+MATCH (pl:Plan) WHERE pl._wheeler_project = $ptag AND datetime(pl.updated) >= datetime($since) RETURN pl.id
+MATCH (x:Execution) WHERE x._wheeler_project = $ptag AND datetime(x.started_at) >= datetime($since) RETURN x.id
+MATCH (w:Document) WHERE w._wheeler_project = $ptag AND datetime(w.date) >= datetime($since) RETURN w.id
+```
+
+Report the counts under the keys `Finding`, `Hypothesis`, `OpenQuestion`,
+`Plan`, `Execution`, `Document`. Report what the queries actually return; do
+not adjust a count because a row looks like it should not be there.
+
+**Step 6 (citations).** Read `docs/DRAFT-SESSION.md` and pass its full text to
+`validate_citations`. Record `total` and `valid` from the result.
+
+**Step 7 (consistency).** Call `graph_consistency_check` with `repair=false`.
+Set `consistency_ok` to `true` when `json_only`, `synthesis_missing` and
+`synthesis_orphaned` are ALL empty, otherwise `false`. Ignore `graph_only`
+entirely: this database is shared, so `graph_only` lists thousands of other
+projects'"'"' nodes and says nothing about this project.
+
+Your final message must end with exactly ONE line of this form, and nothing
+after it:
+
+    DIGEST <json>
+
+where `<json>` is a single-line JSON object with exactly these keys:
+
+```
+{"since": "<iso timestamp from step 1>",
+ "malformed_closes": <int>,
+ "window_ids": ["<id>", ...],
+ "orphan_ids": ["<id>", ...],
+ "inventory": {"Finding": <int>, "Hypothesis": <int>, "OpenQuestion": <int>, "Plan": <int>, "Execution": <int>, "Document": <int>},
+ "stale": ["<script id>", ...],
+ "citations": {"total": <int>, "valid": <int>},
+ "consistency_ok": true|false}
+```
+
+No code fence, no trailing prose, no line breaks inside the JSON.
+--- END SUBAGENT PROMPT ---
+
+## Finally: relay
+
+Take the `DIGEST` line out of the subagent'"'"'s answer and make it the last line
+of your own answer, byte for byte. Do not re-derive it, do not re-check it,
+do not reformat it. If the subagent did not produce one, say so and emit
+`DIGEST {}`.
+' --model sonnet --output-format stream-json --verbose --max-turns 60 --mcp-config .mcp.json --strict-mcp-config --no-session-persistence --allowedTools mcp__wheeler_core mcp__wheeler_query mcp__wheeler_ops Read Glob Grep Agent
