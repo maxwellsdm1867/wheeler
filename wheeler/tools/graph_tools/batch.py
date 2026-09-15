@@ -283,6 +283,8 @@ async def register_batch(
             row.update(status="error", error=parsed.get("error"), detail=parsed.get("fields") or parsed.get("message"))
         else:
             row.update(status="created", node_id=parsed.get("node_id"), label=parsed.get("label"))
+            if parsed.get("content_version"):
+                row["content_version"] = parsed["content_version"]
             if item["alias"]:
                 ids[item["alias"]] = parsed["node_id"]
         node_results.append(row)
@@ -298,6 +300,8 @@ async def register_batch(
             row.update(status="error", error=parsed.get("error"), detail=parsed.get("fields") or parsed.get("message"))
         else:
             row.update(status=parsed.get("action", "created"), node_id=parsed.get("node_id"), label=parsed.get("label"))
+            if parsed.get("content_version"):
+                row["content_version"] = parsed["content_version"]
             if item["alias"] and parsed.get("node_id"):
                 ids[item["alias"]] = parsed["node_id"]
         artifact_results.append(row)

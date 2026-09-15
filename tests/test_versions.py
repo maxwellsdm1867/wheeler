@@ -373,3 +373,89 @@ async def test_content_tokens_lands_in_all_three_layers_and_is_queryable(live_cf
     after = json.loads((tmp_path / "knowledge" / f"{short_id}.json").read_text())
     assert after["content_tokens"] > before
     assert _graph(_URI, "MATCH (n {id: $id}) RETURN n.content_tokens AS t", id=short_id)[0]["t"] == after["content_tokens"]
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_every_write_reports_the_version_it_produced(live_cfg, tmp_path, monkeypatch):
+    """A writer must be able to cite what it just wrote as [id@N].
+
+    The version is known to the write path already; without it in the result the
+    caller has to spend a second show_node call purely to learn a number, which
+    is the round trip the rest of this work exists to remove.
+    """
+    import wheeler.mcp_mutations as mut
+
+    monkeypatch.setattr(mut, "_config", live_cfg)
+    call = lambda n: getattr(getattr(mut, n), "fn", getattr(mut, n))  # noqa: E731
+
+    created = await call("add_finding")("a finding", 0.7)
+    assert created["content_version"] == 1
+
+    edited = await call("update_node")(created["node_id"], description="edited")
+    assert edited["content_version"] == 2
+
+    tiered = await call("set_tier")(created["node_id"], "reference")
+    assert tiered["content_version"] == 3
+
+    # the whole point: pin a citation to the write, with no extra read
+    from wheeler.validation.citations import CitationStatus, validate_citations
+
+    pinned = await validate_citations(f"claim [{created['node_id']}@{tiered['content_version']}]", live_cfg)
+    assert CitationStatus.OUTDATED not in [r.status for r in pinned]
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_ensure_artifact_reports_the_version_on_all_three_branches(live_cfg, tmp_path, monkeypatch):
+    import wheeler.mcp_mutations as mut
+
+    monkeypatch.setattr(mut, "_config", live_cfg)
+    fn = getattr(mut.ensure_artifact, "fn", mut.ensure_artifact)
+    f = tmp_path / "s.py"
+    f.write_text("x = 1\n")
+
+    created = await fn(str(f))
+    assert created["action"] == "created" and created["content_version"] == 1
+
+    unchanged = await fn(str(f))
+    assert unchanged["action"] == "unchanged" and unchanged["content_version"] == 1
+
+    f.write_text("x = 2\n")
+    updated = await fn(str(f))
+    assert updated["action"] == "updated" and updated["content_version"] == 2
+    # the diet still holds: no path or hash echo on the lean form
+    assert not {"path", "stored_path", "hash", "previous_hash"} & set(updated)
+
+
+@needs_neo4j
+@pytest.mark.asyncio
+async def test_register_batch_reports_versions_only_when_something_moved(live_cfg, tmp_path, monkeypatch):
+    import wheeler.mcp_mutations as mut
+
+    monkeypatch.setattr(mut, "_config", live_cfg)
+    fn = getattr(mut.register_batch, "fn", mut.register_batch)
+    a, b = tmp_path / "a.py", tmp_path / "b.py"
+    a.write_text("x = 1\n")
+    b.write_text("y = 1\n")
+
+    first = await fn(artifacts=[{"alias": "@a", "path": str(a)}])
+    assert "content_versions" not in first  # everything at v1, nothing to say
+
+    a.write_text("x = 2\n")
+    second = await fn(artifacts=[{"alias": "@a", "path": str(a)}, {"alias": "@b", "path": str(b)}])
+    assert second["content_versions"] == {"artifacts": [2, 1]}  # in input order
+    assert second["node_ids"]["artifacts"][0] == first["node_ids"]["artifacts"][0]
+
+
+def test_a_failed_write_is_not_given_a_version():
+    """_with_version must not decorate an error result."""
+    import json as _json
+
+    from wheeler.tools.graph_tools import _with_version
+
+    err = _json.dumps({"error": "validation_failed", "fields": {"confidence": "bad"}})
+    assert _with_version(err, 3) == err
+    assert _with_version(_json.dumps({"node_id": "F-1"}), 0) == _json.dumps({"node_id": "F-1"})
+    assert _json.loads(_with_version(_json.dumps({"node_id": "F-1"}), 4))["content_version"] == 4
+    assert _with_version("not json", 2) == "not json"

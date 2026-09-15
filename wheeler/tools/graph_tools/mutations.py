@@ -752,7 +752,8 @@ async def ensure_artifact(backend, args: dict) -> str:
     ptag_clause = " AND n._wheeler_project = $ptag" if ptag else ""
     lookup_query = (
         f"MATCH (n) WHERE n.path = $path AND ({or_clause}){ptag_clause} "
-        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash LIMIT 2"
+        "RETURN n.id AS id, labels(n)[0] AS label, n.hash AS hash, "
+        "coalesce(n.content_version, 1) AS content_version LIMIT 2"
     )
     lookup_params = {"ptag": ptag} if ptag else {}
 
@@ -867,6 +868,9 @@ async def ensure_artifact(backend, args: dict) -> str:
             "stored_path": portable,
             "path_upgraded": upgraded,
             "hash": file_hash,
+            # The caller may want to cite this node; it should not need a second
+            # call to learn a version the lookup already read.
+            "content_version": existing.get("content_version") or 1,
         })
 
     # Hash changed: delegate to update_node handler for triple-write
@@ -898,6 +902,10 @@ async def ensure_artifact(backend, args: dict) -> str:
         "hash": file_hash,
         "previous_hash": existing_hash or "",
         "stale_downstream": stale_count,
+        # The inner update_node bumped the version; hand it back rather than
+        # making the caller re-read the node to find out what it now is.
+        "content_version": update_parsed.get("content_version")
+        or (existing.get("content_version") or 1) + 1,
     })
 
 

@@ -762,6 +762,15 @@ def _compact(result: dict) -> dict:
             for section in ("nodes", "artifacts")
             if result.get(section)
         }
+        # Only when something is not at version 1, which is the case a caller
+        # has to act on (an artifact that already existed and was updated).
+        moved = {
+            section: [row.get("content_version") for row in result.get(section, [])]
+            for section in ("nodes", "artifacts")
+            if any((row.get("content_version") or 1) != 1 for row in result.get(section, []))
+        }
+        if moved:
+            out["content_versions"] = moved
     problems = [
         {"section": section, **row}
         for section in ("nodes", "artifacts", "edges")

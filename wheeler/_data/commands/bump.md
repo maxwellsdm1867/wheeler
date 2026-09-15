@@ -74,6 +74,17 @@ Only change the count if it actually changed. Don't touch counts inside historic
 ### Server count
 Check how many `mcp_*.py` files exist (excluding `mcp_shared.py`). Update the "N servers" count if it changed.
 
+## Step 4.5: Regenerate the plugin tree
+
+The generated plugin files pin the version in their `uvx --from wheeler==X.Y.Z`
+command, so a bump makes them stale and `tests/test_build_plugin.py` fails:
+
+```bash
+python -m wheeler.build_plugin
+```
+
+Never hand-edit the output. Commit the regenerated tree with the bump.
+
 ## Step 5: Add What's New entry
 
 In `README.md`, add a new `<details>` block at the TOP of the What's New section (before existing entries). Use today's date. Format:
