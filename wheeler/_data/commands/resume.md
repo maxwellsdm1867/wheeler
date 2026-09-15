@@ -60,8 +60,8 @@ For the active `PL-xxxx`, run a Cypher query that fetches OpenQuestions tied to 
 
 ```cypher
 MATCH (q:OpenQuestion)-[:AROSE_FROM]->(p:Plan {id: $plan_id})
-RETURN q.id AS id, q.question AS question, q.priority AS priority, q.date_added AS added
-ORDER BY q.priority DESC, q.date_added DESC
+RETURN q.id AS id, q.question AS question, q.priority AS priority, coalesce(q.date, q.date_added) AS added
+ORDER BY q.priority DESC, added DESC
 LIMIT 20
 ```
 
