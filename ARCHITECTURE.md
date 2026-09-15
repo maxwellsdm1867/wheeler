@@ -788,6 +788,61 @@ Wheeler uses lazy imports (inside functions) in four situations:
 
 ---
 
+## Content versions (append-only)
+
+A node's id is stable for life; its content has a version. `content_version`
+is 1 at creation and bumps on every `update_node` field change and every
+`set_tier`, never on metadata (stale flags, session bookkeeping). Before each
+bump the previous state is written once to `knowledge/versions/<id>/v<n>.json`
+(idempotent, never overwritten), so every version that ever existed is readable:
+the current one from `knowledge/<id>.json`, earlier ones from the snapshots. A
+node that was never changed has no snapshot directory. `content_hash` (16 hex
+chars over the content fields) travels with it; both are mirrored onto the graph
+node by the triple-write path. Implementation: `wheeler/knowledge/versions.py`,
+hooks in `tools/graph_tools/__init__.py`.
+
+What the versions buy:
+
+- **Edges pin versions.** `create_relationship` stamps `created_at`,
+  `source_version` and `target_version` on every edge, read from the endpoints in
+  the same query. `show_node(id, neighbors=True)` reports `moved: true` on a
+  neighbour whose content changed after the edge was made: a SUPPORTS edge made
+  against Finding v2 is visible as such when the Finding is at v4.
+- **Citations pin versions.** `[F-3a2b@2]` cites version 2; `validate_citations`
+  returns status `outdated` ("cited v2, node is now v4") when the node has moved
+  past the pin. The bare `[F-3a2b]` form is unchanged.
+- **Cheap freshness checks.** `show_node(id, if_changed_since=<hash or "v3">)`
+  returns `{id, content_version, content_hash, changed: false}` when the caller
+  already has the current content, and the full node otherwise.
+- **Time travel.** `show_node(id, version=n)` reads any earlier version.
+
+The name is `content_version` rather than `version` because `Script.version` is
+already a scientist-facing string.
+
+The snapshot directory is append-only in the strict sense: `delete_node` removes
+the current file, graph node and synthesis page but leaves `knowledge/versions/<id>/`
+in place, so a deleted node's history is still readable. The consistency checker
+globs `knowledge/*.json` non-recursively and does not treat it as an orphan.
+
+## Disclosure levels (listings are pointers)
+
+`WHEELER_DISCLOSURE` (env, read by the MCP servers) sets what `query_*`,
+`search_findings` and `search_context` return by default: `pointer` rows
+`{id, type, headline (<=100 chars), updated (date), content_version, degree}`,
+`trimmed` (text cut to 240 chars), or `full`. `full=true` on any listing
+overrides the level for that call, and `show_node` always returns the node in
+full. The default is `pointer`, chosen by measurement (`evals/disclosure/REPORT.md`):
+ten graph tasks on two models scored 100 percent at every level, including the
+tasks that require a node's body, so listing shape costs no accuracy and the
+smallest one wins; on real recorded listings pointer rows are 60 percent smaller
+than full. See `docs/mcp-token-audit.md` for the result-diet audit that motivated it.
+
+Raw Cypher is the one read path that is not project-scoped. When a project tag is
+set, `run_cypher` binds `$ptag` for every query, names the tag in its result and
+warns when a query does not filter on `_wheeler_project`; in a shared database an
+unscoped MATCH reads every project's nodes (the disclosure experiment hit exactly
+this when five runs shared one database).
+
 ## MCP Tools (54 total, 4 servers)
 
 Result shaping: every MCP wrapper returns what the caller acts on (ids, statuses,

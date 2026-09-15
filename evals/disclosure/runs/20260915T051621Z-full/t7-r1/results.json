@@ -1,0 +1,156 @@
+{
+  "level": "full",
+  "task": 7,
+  "kind": "contradiction",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051621Z-full",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051621Z-full/t7-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051621Z-full/project",
+  "project_tag": "disclosure-20260915T051621Z-full",
+  "started_at": "2026-09-15T05:18:05+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "pair_set",
+    "value": [
+      [
+        "F-0189528c",
+        "H-049c441a"
+      ],
+      [
+        "F-49fff667",
+        "H-049c441a"
+      ],
+      [
+        "F-862dfcf5",
+        "H-5920c977"
+      ]
+    ]
+  },
+  "wall_clock_s": 7.288,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 13,
+  "unparseable_lines": 0,
+  "turns": 3,
+  "tokens": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 24117,
+    "cache_read_input_tokens": 124590,
+    "output_tokens": 36,
+    "total_input_incl_cache": 148713
+  },
+  "tool_calls": {
+    "ToolSearch": 1,
+    "run_cypher": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 1,
+  "result": {
+    "subtype": "success",
+    "num_turns": 3,
+    "duration_ms": 5020,
+    "duration_api_ms": 5643,
+    "total_cost_usd": 0.126023,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 24117,
+      "cache_read_input_tokens": 124590,
+      "output_tokens": 356,
+      "output_tokens_details": {
+        "thinking_tokens": 65
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 24117,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 64,
+          "cache_read_input_tokens": 49700,
+          "cache_creation_input_tokens": 314,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 314
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 990,
+        "outputTokens": 15,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001065,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 6,
+        "outputTokens": 356,
+        "cacheReadInputTokens": 124590,
+        "cacheCreationInputTokens": 24117,
+        "webSearchRequests": 0,
+        "costUSD": 0.124958,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 65,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER [[\"F-0189528c\", \"H-049c441a\"], [\"F-49fff667\", \"H-049c441a\"], [\"F-862dfcf5\", \"H-5920c977\"]]",
+  "answer": [
+    [
+      "F-0189528c",
+      "H-049c441a"
+    ],
+    [
+      "F-49fff667",
+      "H-049c441a"
+    ],
+    [
+      "F-862dfcf5",
+      "H-5920c977"
+    ]
+  ],
+  "answer_line": "ANSWER [[\"F-0189528c\", \"H-049c441a\"], [\"F-49fff667\", \"H-049c441a\"], [\"F-862dfcf5\", \"H-5920c977\"]]",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:18:12+00:00"
+}

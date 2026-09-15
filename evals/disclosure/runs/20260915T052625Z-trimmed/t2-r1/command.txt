@@ -1,0 +1,7 @@
+claude -p 'You are answering a question about the Wheeler knowledge graph of this project. Use the Wheeler MCP tools. Prefer the fewest calls that answer correctly; read a node'"'"'s full content only when you need it.
+
+Question: List every Finding that SUPPORTS the hypothesis stating that ON parasol spike-history kernels shorten by more than 30 percent between 10 percent and 50 percent contrast.
+
+Answer shape: a sorted JSON list of Finding node ids.
+
+Reply with exactly one line: ANSWER <json>' --model opus --output-format stream-json --verbose --max-turns 40 --mcp-config .mcp.json --strict-mcp-config --no-session-persistence --allowedTools mcp__wheeler_query mcp__wheeler_core Read Glob Grep

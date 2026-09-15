@@ -159,9 +159,11 @@ class TestMutationWrappers:
 
 class TestQueryWrappers:
     @pytest.mark.asyncio
-    async def test_every_query_tool_trims_text_unless_full(self):
+    async def test_every_query_tool_trims_text_unless_full(self, monkeypatch):
         import wheeler.mcp_query as q
+        from wheeler import mcp_shared
 
+        monkeypatch.setattr(mcp_shared, "DISCLOSURE", "trimmed")  # the pointer default is tested in test_versions
         long_q = "w" * 1500
         core = json.dumps({"questions": [{"id": "Q-1", "question": long_q, "priority": 5}], "count": 1})
         fn = getattr(q.query_open_questions, "fn", q.query_open_questions)
@@ -201,8 +203,12 @@ class TestCoreWrappers:
         assert uncapped["count"] == 250 and "truncated" not in uncapped
 
     @pytest.mark.asyncio
-    async def test_search_findings_trims_hit_text_unless_full(self):
+    async def test_search_findings_trims_hit_text_unless_full(self, monkeypatch):
+        from wheeler import mcp_core, mcp_shared
         from wheeler.mcp_core import search_findings
+
+        monkeypatch.setattr(mcp_shared, "DISCLOSURE", "trimmed")
+        monkeypatch.setattr(mcp_core, "DISCLOSURE", "trimmed")
 
         fn = getattr(search_findings, "fn", search_findings)
         hits = [{"id": "F-1", "type": "Finding", "description": "d" * 2000, "rrf_score": 0.5}]
@@ -342,3 +348,28 @@ async def test_show_node_batch_change_log_fields_and_graph_fallback(live_cfg, tm
     by_id = {n["id"]: n for n in many["nodes"]}
     assert by_id[ids[1]].get("source") == "graph" and by_id[ids[1]]["description"].startswith("finding 1")
     assert "source" not in by_id[ids[0]]
+
+
+@pytest.mark.asyncio
+async def test_run_cypher_binds_ptag_and_warns_on_unscoped_query_in_shared_db(monkeypatch):
+    """Raw Cypher is not project-scoped; in a shared database an unscoped MATCH reads
+    every project's nodes. The wrapper binds $ptag and says so in the result."""
+    import wheeler.mcp_core as core
+    from wheeler.config import Neo4jConfig, WheelerConfig
+
+    fn = getattr(core.run_cypher, "fn", core.run_cypher)
+    backend = AsyncMock()
+    backend.run_cypher = AsyncMock(return_value=[{"i": 1}])
+    monkeypatch.setattr(core, "_config", WheelerConfig(neo4j=Neo4jConfig(project_tag="proj-a")))
+    with patch("wheeler.mcp_core.graph_tools._get_backend", new_callable=AsyncMock, return_value=backend):
+        unscoped = await fn("MATCH (n:Finding) RETURN n.id")
+        scoped = await fn("MATCH (n:Finding) WHERE n._wheeler_project = $ptag RETURN n.id")
+    assert backend.run_cypher.call_args_list[0].args[1] == {"ptag": "proj-a"}
+    assert unscoped["project_tag"] == "proj-a" and "warning" in unscoped
+    assert scoped["project_tag"] == "proj-a" and "warning" not in scoped
+
+    monkeypatch.setattr(core, "_config", WheelerConfig(neo4j=Neo4jConfig(project_tag="")))
+    with patch("wheeler.mcp_core.graph_tools._get_backend", new_callable=AsyncMock, return_value=backend):
+        solo = await fn("MATCH (n) RETURN n.id")
+    assert backend.run_cypher.call_args_list[-1].args[1] is None
+    assert "project_tag" not in solo and "warning" not in solo

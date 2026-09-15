@@ -7,6 +7,7 @@ session ID, embedding store access, and similarity checking.
 from __future__ import annotations
 
 import functools
+import os
 import logging
 import secrets
 import time
@@ -230,3 +231,117 @@ def _compact_write_result(parsed: dict) -> dict:
             for m in sim
         ]
     return parsed
+
+
+# --- Disclosure level ----------------------------------------------------------
+# What a LISTING returns by default. The node is never lost: show_node reads it
+# in full. Chosen by measurement (evals/disclosure/REPORT.md, 2026-09-15): every
+# level scored 100 percent on ten graph tasks on two models, including the tasks
+# that need a node's body, so the smallest shape wins. "pointer" rows are
+# {id, type, headline, updated, content_version, degree}; "trimmed" keeps text
+# cut to 240 chars; "full" is the pre-2026-09 behaviour. full=True on any
+# listing overrides the level for that call.
+DISCLOSURE_LEVELS = ("full", "trimmed", "pointer")
+DISCLOSURE: str = (os.environ.get("WHEELER_DISCLOSURE", "pointer").strip().lower() or "pointer")
+if DISCLOSURE not in DISCLOSURE_LEVELS:
+    DISCLOSURE = "pointer"
+
+HEADLINE_CHARS = 100
+# Row keys carried into a pointer row unchanged: they are what a caller ranks
+# or filters on, and each is a few tokens.
+POINTER_KEEP = ("score", "relationship", "direction", "priority", "status", "confidence", "tier", "stale", "kind", "year")
+
+
+def _headline(row: dict, n: int = HEADLINE_CHARS) -> str:
+    """A title if the node has one, else the first n chars of its main text at a word break."""
+    for key in ("title", "headline", "display_name") + TEXT_KEYS:
+        val = row.get(key)
+        if isinstance(val, str) and val.strip():
+            text = " ".join(val.split())
+            if len(text) <= n:
+                return text
+            cut = text[:n]
+            if " " in cut[n // 2:]:
+                cut = cut[: cut.rfind(" ")]
+            return cut.rstrip(" ,;:") + "..."
+    return ""
+
+
+def _row_id(row: dict) -> str:
+    return str(row.get("id") or row.get("node_id") or "")
+
+
+async def _node_meta(ids: list[str], config) -> dict[str, dict]:
+    """One query for the pointer fields of many nodes: type, degree, updated, version, title."""
+    if not ids:
+        return {}
+    from wheeler.tools import graph_tools
+
+    tag = config.neo4j.project_tag
+    where = " AND n._wheeler_project = $ptag" if tag else ""
+    params: dict = {"ids": ids}
+    if tag:
+        params["ptag"] = tag
+    try:
+        backend = await graph_tools._get_backend(config)
+        rows = await backend.run_cypher(
+            "MATCH (n) WHERE n.id IN $ids" + where + " "
+            "RETURN n.id AS id, labels(n)[0] AS type, COUNT { (n)--() } AS degree, "
+            "coalesce(n.updated, n.date, n.date_added, n.created) AS updated, "
+            "coalesce(n.content_version, 1) AS content_version, "
+            "coalesce(n.title, '') AS title",
+            params,
+        )
+    except Exception:
+        return {}
+    return {r["id"]: dict(r) for r in rows if r.get("id")}
+
+
+def _pointer_row(row: dict, meta: dict) -> dict:
+    rid = _row_id(row)
+    m = meta.get(rid, {})
+    out: dict = {"id": rid}
+    rtype = m.get("type") or row.get("type") or row.get("label")
+    if rtype:
+        out["type"] = rtype
+    headline = _headline({**row, "title": m.get("title") or row.get("title", "")})
+    if headline:
+        out["headline"] = headline
+    for key in ("updated", "content_version", "degree"):
+        val = m.get(key)
+        if val in (None, ""):
+            continue
+        if key == "updated" and isinstance(val, str) and len(val) >= 10:
+            val = val[:10]  # the day is enough to rank by recency; the node has the timestamp
+        out[key] = val
+    for key in POINTER_KEEP:
+        if key in row and row[key] not in (None, ""):
+            out[key] = row[key]
+    return out
+
+
+async def _pointerize(result, config):
+    """Replace every list of node rows in *result* with pointer rows."""
+    if not isinstance(result, dict):
+        return result
+    lists = {
+        k: v for k, v in result.items()
+        if isinstance(v, list) and v and all(isinstance(x, dict) and _row_id(x) for x in v)
+    }
+    if not lists:
+        return result
+    ids = sorted({_row_id(x) for v in lists.values() for x in v})
+    meta = await _node_meta(ids, config)
+    out = dict(result)
+    for k, rows in lists.items():
+        out[k] = [_pointer_row(r, meta) for r in rows]
+    return out
+
+
+async def _shape_listing(result, config, full: bool):
+    """Apply the disclosure level to a listing result unless the caller asked for full."""
+    if full or DISCLOSURE == "full":
+        return result
+    if DISCLOSURE == "pointer":
+        return await _pointerize(result, config)
+    return _trim_rows(result)

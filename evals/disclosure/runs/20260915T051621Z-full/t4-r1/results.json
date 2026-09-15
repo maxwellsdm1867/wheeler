@@ -1,0 +1,161 @@
+{
+  "level": "full",
+  "task": 4,
+  "kind": "deep-trace",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051621Z-full",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051621Z-full/t4-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T051621Z-full/project",
+  "project_tag": "disclosure-20260915T051621Z-full",
+  "started_at": "2026-09-15T05:17:10+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "chain_and_set",
+    "chain": [
+      "F-3689694c",
+      "X-754f19b8",
+      "D-622a6833",
+      "X-ec96dbd4",
+      "D-14000e8c",
+      "X-4085d823",
+      "D-c836d4cd"
+    ],
+    "set": [
+      "S-3c91b848",
+      "S-8660cf29",
+      "S-c952e479"
+    ]
+  },
+  "wall_clock_s": 27.779,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 38,
+  "unparseable_lines": 0,
+  "turns": 6,
+  "tokens": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 27489,
+    "cache_read_input_tokens": 279065,
+    "output_tokens": 48,
+    "total_input_incl_cache": 306566
+  },
+  "tool_calls": {
+    "run_cypher": 4,
+    "ToolSearch": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 4,
+  "result": {
+    "subtype": "success",
+    "num_turns": 6,
+    "duration_ms": 25325,
+    "duration_api_ms": 25826,
+    "total_cost_usd": 0.190714,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 27489,
+      "cache_read_input_tokens": 279065,
+      "output_tokens": 2374,
+      "output_tokens_details": {
+        "thinking_tokens": 1542
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 27489,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 304,
+          "cache_read_input_tokens": 51895,
+          "cache_creation_input_tokens": 1491,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1491
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1061,
+        "outputTokens": 24,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.0011810000000000002,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 12,
+        "outputTokens": 2374,
+        "cacheReadInputTokens": 279065,
+        "cacheCreationInputTokens": 27489,
+        "webSearchRequests": 0,
+        "costUSD": 0.189533,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 1542,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER {\"chain\": [\"F-3689694c\", \"X-754f19b8\", \"D-622a6833\", \"X-ec96dbd4\", \"D-14000e8c\", \"X-4085d823\", \"D-c836d4cd\"], \"scripts\": [\"S-3c91b848\", \"S-8660cf29\", \"S-c952e479\"]}",
+  "answer": {
+    "chain": [
+      "F-3689694c",
+      "X-754f19b8",
+      "D-622a6833",
+      "X-ec96dbd4",
+      "D-14000e8c",
+      "X-4085d823",
+      "D-c836d4cd"
+    ],
+    "scripts": [
+      "S-3c91b848",
+      "S-8660cf29",
+      "S-c952e479"
+    ]
+  },
+  "answer_line": "ANSWER {\"chain\": [\"F-3689694c\", \"X-754f19b8\", \"D-622a6833\", \"X-ec96dbd4\", \"D-14000e8c\", \"X-4085d823\", \"D-c836d4cd\"], \"scripts\": [\"S-3c91b848\", \"S-8660cf29\", \"S-c952e479\"]}",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:17:37+00:00"
+}

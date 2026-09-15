@@ -170,7 +170,14 @@ class TestSearchFindings:
     """search_findings delegates to multi_search — mock it."""
 
     @pytest.mark.asyncio
-    async def test_search_returns_structure(self):
+    async def test_search_returns_structure(self, monkeypatch):
+        from wheeler import mcp_core, mcp_shared
+
+        # This pins the trimmed shape (node_id/label/text/score). The pointer
+        # default reshapes hits into {id, type, headline, score} rows; that
+        # path is covered by tests/test_versions.py.
+        monkeypatch.setattr(mcp_shared, "DISCLOSURE", "trimmed")
+        monkeypatch.setattr(mcp_core, "DISCLOSURE", "trimmed")
         mock_results = [
             {"id": "F-test1234", "type": "Finding", "description": "test finding", "rrf_score": 0.95},
         ]

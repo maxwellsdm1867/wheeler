@@ -1,0 +1,148 @@
+{
+  "level": "pointer",
+  "task": 8,
+  "kind": "staleness",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/t8-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/project",
+  "project_tag": "disclosure-20260915T050829Z-pointer",
+  "started_at": "2026-09-15T05:12:06+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id_set",
+    "value": [
+      "F-0b009e5c",
+      "F-4b882138",
+      "F-8bcf9d5c"
+    ]
+  },
+  "wall_clock_s": 52.196,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 73,
+  "unparseable_lines": 0,
+  "turns": 13,
+  "tokens": {
+    "input_tokens": 26,
+    "cache_creation_input_tokens": 33498,
+    "cache_read_input_tokens": 656374,
+    "output_tokens": 108,
+    "total_input_incl_cache": 689898
+  },
+  "tool_calls": {
+    "run_cypher": 11,
+    "ToolSearch": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 0,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 11,
+  "result": {
+    "subtype": "success",
+    "num_turns": 13,
+    "duration_ms": 50304,
+    "duration_api_ms": 50518,
+    "total_cost_usd": 0.3081408,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 26,
+      "cache_creation_input_tokens": 33498,
+      "cache_read_input_tokens": 656374,
+      "output_tokens": 4169,
+      "output_tokens_details": {
+        "thinking_tokens": 2564
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 33498,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 70,
+          "cache_read_input_tokens": 57930,
+          "cache_creation_input_tokens": 1465,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1465
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1032,
+        "outputTokens": 20,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001132,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 26,
+        "outputTokens": 4169,
+        "cacheReadInputTokens": 656374,
+        "cacheCreationInputTokens": 33498,
+        "webSearchRequests": 0,
+        "costUSD": 0.30700879999999997,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 2564,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "Confirmed: 3 figure nodes trace back to scripts/fit_srm.py.\n\nANSWER [\"F-0b009e5c\", \"F-4b882138\", \"F-8bcf9d5c\"]",
+  "answer": [
+    "F-0b009e5c",
+    "F-4b882138",
+    "F-8bcf9d5c"
+  ],
+  "answer_line": "ANSWER [\"F-0b009e5c\", \"F-4b882138\", \"F-8bcf9d5c\"]",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:12:58+00:00"
+}

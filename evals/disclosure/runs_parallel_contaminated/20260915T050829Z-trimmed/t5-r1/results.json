@@ -1,0 +1,141 @@
+{
+  "level": "trimmed",
+  "task": 5,
+  "kind": "content-read",
+  "may_need_body": true,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed/t5-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-trimmed/project",
+  "project_tag": "disclosure-20260915T050829Z-trimmed",
+  "started_at": "2026-09-15T05:11:02+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "object",
+    "value": {
+      "confidence": 0.72,
+      "peak_latency_ms": 47.3
+    },
+    "finding": "F-eee65ba0"
+  },
+  "wall_clock_s": 14.906,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 19,
+  "unparseable_lines": 0,
+  "turns": 6,
+  "tokens": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 26999,
+    "cache_read_input_tokens": 279620,
+    "output_tokens": 98,
+    "total_input_incl_cache": 306631
+  },
+  "tool_calls": {
+    "ToolSearch": 2,
+    "show_node": 2,
+    "search_findings": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "search_findings",
+    "show_node",
+    "ToolSearch",
+    "show_node"
+  ],
+  "show_node": {
+    "calls": 2,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 1
+  },
+  "listing_calls": 0,
+  "search_calls": 1,
+  "hop_calls": 0,
+  "cypher_calls": 0,
+  "result": {
+    "subtype": "success",
+    "num_turns": 6,
+    "duration_ms": 12899,
+    "duration_api_ms": 13429,
+    "total_cost_usd": 0.17007,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 26999,
+      "cache_read_input_tokens": 279620,
+      "output_tokens": 502,
+      "output_tokens_details": {
+        "thinking_tokens": 30
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 26999,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 33,
+          "cache_read_input_tokens": 52329,
+          "cache_creation_input_tokens": 567,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 567
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1021,
+        "outputTokens": 17,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001106,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 12,
+        "outputTokens": 502,
+        "cacheReadInputTokens": 279620,
+        "cacheCreationInputTokens": 26999,
+        "webSearchRequests": 0,
+        "costUSD": 0.168964,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 30,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER {\"confidence\": 0.72, \"peak_latency_ms\": 47.3}",
+  "answer": {
+    "confidence": 0.72,
+    "peak_latency_ms": 47.3
+  },
+  "answer_line": "ANSWER {\"confidence\": 0.72, \"peak_latency_ms\": 47.3}",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:11:17+00:00"
+}

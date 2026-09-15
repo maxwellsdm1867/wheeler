@@ -1,0 +1,7 @@
+claude -p 'You are answering a question about the Wheeler knowledge graph of this project. Use the Wheeler MCP tools. Prefer the fewest calls that answer correctly; read a node'"'"'s full content only when you need it.
+
+Question: Trace figures/fig02_on_kernels_overlay.png back to its raw dataset through every execution and intermediate dataset, and name the scripts those executions used.
+
+Answer shape: a JSON object {"chain": [...], "scripts": [...]} where chain is the ordered list of node ids from the figure to the raw dataset, alternating the node and the execution that generated it (figure, execution, dataset, execution, ..., raw dataset), and scripts is the sorted list of Script ids USED by those executions.
+
+Reply with exactly one line: ANSWER <json>' --model opus --output-format stream-json --verbose --max-turns 40 --mcp-config .mcp.json --strict-mcp-config --no-session-persistence --allowedTools mcp__wheeler_query mcp__wheeler_core Read Glob Grep

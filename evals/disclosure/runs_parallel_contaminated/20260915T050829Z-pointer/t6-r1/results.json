@@ -1,0 +1,132 @@
+{
+  "level": "pointer",
+  "task": 6,
+  "kind": "content-read",
+  "may_need_body": true,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/t6-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/project",
+  "project_tag": "disclosure-20260915T050829Z-pointer",
+  "started_at": "2026-09-15T05:11:32+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id",
+    "value": "F-9b0fa5ab"
+  },
+  "wall_clock_s": 9.995,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 14,
+  "unparseable_lines": 0,
+  "turns": 4,
+  "tokens": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 25243,
+    "cache_read_input_tokens": 175474,
+    "output_tokens": 62,
+    "total_input_incl_cache": 200725
+  },
+  "tool_calls": {
+    "ToolSearch": 1,
+    "search_findings": 1,
+    "query_findings": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "search_findings",
+    "query_findings"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 1,
+  "search_calls": 1,
+  "hop_calls": 0,
+  "cypher_calls": 0,
+  "result": {
+    "subtype": "success",
+    "num_turns": 4,
+    "duration_ms": 7828,
+    "duration_api_ms": 8056,
+    "total_cost_usd": 0.1402218,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 25243,
+      "cache_read_input_tokens": 175474,
+      "output_tokens": 308,
+      "output_tokens_details": {
+        "thinking_tokens": 27
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 25243,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 19,
+          "cache_read_input_tokens": 50891,
+          "cache_creation_input_tokens": 249,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 249
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 979,
+        "outputTokens": 16,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001059,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 8,
+        "outputTokens": 308,
+        "cacheReadInputTokens": 175474,
+        "cacheCreationInputTokens": 25243,
+        "webSearchRequests": 0,
+        "costUSD": 0.1391628,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 27,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER \"F-9b0fa5ab\"",
+  "answer": "F-9b0fa5ab",
+  "answer_line": "ANSWER \"F-9b0fa5ab\"",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:11:42+00:00"
+}

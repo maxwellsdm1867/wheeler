@@ -15,18 +15,18 @@ from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
     _config,
     _logged,
-    _trim_rows,
+    _shape_listing,
     _verify_backend,
 )
 
 
-def _shape(result: dict, full: bool) -> dict:
-    """Long text fields are cut to 240 chars unless full=True.
+async def _shape(result: dict, full: bool) -> dict:
+    """Apply the disclosure level (WHEELER_DISCLOSURE) unless full=True.
 
     A listing is for choosing which nodes matter; show_node reads the ones
     chosen. Ten full questions were 10 KB per call (docs/mcp-token-audit.md).
     """
-    return result if full else _trim_rows(result)
+    return await _shape_listing(result, _config, full)
 
 mcp = FastMCP(
     "wheeler_query",
@@ -44,7 +44,7 @@ async def query_findings(keyword: str = "", limit: int = 10, full: bool = False)
     result = await graph_tools.execute_tool(
         "query_findings", {"keyword": keyword, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -54,7 +54,7 @@ async def query_hypotheses(status: str = "all", limit: int = 10, full: bool = Fa
     result = await graph_tools.execute_tool(
         "query_hypotheses", {"status": status, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -64,7 +64,7 @@ async def query_open_questions(limit: int = 10, full: bool = False) -> dict:
     result = await graph_tools.execute_tool(
         "query_open_questions", {"limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -74,7 +74,7 @@ async def query_datasets(keyword: str = "", limit: int = 10, full: bool = False)
     result = await graph_tools.execute_tool(
         "query_datasets", {"keyword": keyword, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -84,7 +84,7 @@ async def query_papers(keyword: str = "", limit: int = 10, full: bool = False) -
     result = await graph_tools.execute_tool(
         "query_papers", {"keyword": keyword, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -99,7 +99,7 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10, 
     result = await graph_tools.execute_tool(
         "query_documents", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -113,7 +113,7 @@ async def query_plans(keyword: str = "", status: str = "", limit: int = 10, full
     result = await graph_tools.execute_tool(
         "query_plans", {"keyword": keyword, "status": status, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -123,7 +123,7 @@ async def query_notes(keyword: str = "", limit: int = 10, full: bool = False) ->
     result = await graph_tools.execute_tool(
         "query_notes", {"keyword": keyword, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -133,7 +133,7 @@ async def query_analyses(keyword: str = "", limit: int = 20, full: bool = False)
     result = await graph_tools.execute_tool(
         "query_scripts", {"keyword": keyword, "limit": limit}, _config
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -145,7 +145,7 @@ async def query_executions(keyword: str = "", kind: str = "", limit: int = 10, f
         {"keyword": keyword, "kind": kind, "limit": limit},
         _config,
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 @mcp.tool()
@@ -170,7 +170,7 @@ async def query_review_queue(
         {"batch": batch, "state": state, "limit": limit},
         _config,
     )
-    return _shape(json.loads(result), full)
+    return await _shape(json.loads(result), full)
 
 
 # --- Entry point ---

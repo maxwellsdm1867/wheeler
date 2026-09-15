@@ -1,0 +1,8 @@
+runs/*/project/
+runs/*/*/transcript.jsonl
+runs/*/*/stderr.log
+runs_parallel_contaminated/*/project/
+runs_parallel_contaminated/*/*/transcript.jsonl
+runs_parallel_contaminated/*/*/stderr.log
+logs/
+logs_parallel_contaminated/

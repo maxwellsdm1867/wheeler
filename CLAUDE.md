@@ -150,6 +150,18 @@ surface directly: per-server tool counts, no duplicate names across servers, eve
 and a `test_monolith_is_gone` check so it cannot be reintroduced. Each server also has its own test
 file (`tests/test_mcp_{core,query,mutations,ops,shared}.py`).
 
+### Content versions and disclosure
+
+Every node carries `content_version` (1 at creation, +1 on each `update_node` or
+`set_tier`) and `content_hash`; the pre-change state is snapshotted to
+`knowledge/versions/<id>/v<n>.json`. Edges record the endpoint versions they were
+made against, citations may pin one (`[F-3a2b@2]`, validated as `outdated` when
+the node moved on), and `show_node` can read a version, answer
+`if_changed_since`, and list one hop of `neighbors` with a `moved` flag. Listings
+return pointers by default (`WHEELER_DISCLOSURE=pointer`, chosen by
+`evals/disclosure`); `show_node` is the deep read.
+See ARCHITECTURE.md "Content versions" and "Disclosure levels".
+
 ### Provenance, stability, and staleness
 
 Wheeler uses W3C PROV-DM relationships: `USED`, `WAS_GENERATED_BY`, `WAS_DERIVED_FROM`, `WAS_INFORMED_BY`, `WAS_ATTRIBUTED_TO`, `WAS_ASSOCIATED_WITH`, plus 8 Wheeler semantic relationships (`SUPPORTS`, `CONTRADICTS`, `CITES`, `APPEARS_IN`, `RELEVANT_TO`, `AROSE_FROM`, `DEPENDS_ON`, `CONTAINS`).

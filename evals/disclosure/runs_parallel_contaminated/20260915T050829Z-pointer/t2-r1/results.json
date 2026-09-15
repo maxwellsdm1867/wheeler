@@ -1,0 +1,144 @@
+{
+  "level": "pointer",
+  "task": 2,
+  "kind": "one-hop",
+  "may_need_body": false,
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer",
+  "out_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/t2-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions/evals/disclosure/runs/20260915T050829Z-pointer/project",
+  "project_tag": "disclosure-20260915T050829Z-pointer",
+  "started_at": "2026-09-15T05:09:48+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/versions",
+  "gold": {
+    "type": "id_set",
+    "value": [
+      "F-0b0b1e01",
+      "F-dc7dcba5",
+      "F-dc9d04cb",
+      "F-e860c237"
+    ]
+  },
+  "wall_clock_s": 20.667,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 26,
+  "unparseable_lines": 0,
+  "turns": 6,
+  "tokens": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 25143,
+    "cache_read_input_tokens": 275761,
+    "output_tokens": 24,
+    "total_input_incl_cache": 300916
+  },
+  "tool_calls": {
+    "run_cypher": 3,
+    "ToolSearch": 1,
+    "query_hypotheses": 1
+  },
+  "tool_call_sequence": [
+    "ToolSearch",
+    "run_cypher",
+    "run_cypher",
+    "query_hypotheses",
+    "run_cypher"
+  ],
+  "show_node": {
+    "calls": 0,
+    "with_neighbors": 0,
+    "with_fields": 0,
+    "with_node_ids": 0,
+    "ids_requested": 0
+  },
+  "listing_calls": 1,
+  "search_calls": 0,
+  "hop_calls": 0,
+  "cypher_calls": 3,
+  "result": {
+    "subtype": "success",
+    "num_turns": 6,
+    "duration_ms": 18647,
+    "duration_api_ms": 19225,
+    "total_cost_usd": 0.1659962,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 25143,
+      "cache_read_input_tokens": 275761,
+      "output_tokens": 918,
+      "output_tokens_details": {
+        "thinking_tokens": 201
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 25143,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 50,
+          "cache_read_input_tokens": 50764,
+          "cache_creation_input_tokens": 276,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 276
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1003,
+        "outputTokens": 13,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001068,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 12,
+        "outputTokens": 918,
+        "cacheReadInputTokens": 275761,
+        "cacheCreationInputTokens": 25143,
+        "webSearchRequests": 0,
+        "costUSD": 0.16492820000000002,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 201,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "ANSWER [\"F-0b0b1e01\", \"F-dc7dcba5\", \"F-dc9d04cb\", \"F-e860c237\"]",
+  "answer": [
+    "F-0b0b1e01",
+    "F-dc7dcba5",
+    "F-dc9d04cb",
+    "F-e860c237"
+  ],
+  "answer_line": "ANSWER [\"F-0b0b1e01\", \"F-dc7dcba5\", \"F-dc9d04cb\", \"F-e860c237\"]",
+  "score": {
+    "score": 1.0,
+    "verdict": "correct",
+    "note": ""
+  },
+  "finished_at": "2026-09-15T05:10:09+00:00"
+}

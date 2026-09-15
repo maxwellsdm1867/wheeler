@@ -18,6 +18,8 @@ from wheeler.graph import context, schema
 from wheeler.graph.cypher_guard import WRITE_KEYWORDS, is_read_only_cypher
 from wheeler.tools import graph_tools
 from wheeler.mcp_shared import (
+    DISCLOSURE,
+    _pointerize,
     _strip_empty,
     _trim_text,
     _config,
@@ -337,17 +339,27 @@ async def show_node(
     node_ids: list[str] | None = None,
     fields: str = "",
     include_change_log: bool = False,
+    neighbors: bool = False,
+    version: int | None = None,
+    if_changed_since: str = "",
 ) -> dict:
     """Read one or many Wheeler knowledge graph nodes with their full content.
 
-    Args:
-      node_id: one id (e.g. "F-3a2b"). Or pass node_ids for several in ONE call
-        instead of one call per node; the result is then {"nodes": [...],
-        "missing": [...], "count"}.
-      fields: optional comma-separated list of fields to return (e.g.
-        "description,confidence,path"); default returns every non-empty field.
-      include_change_log: the per-field edit history is omitted by default (it
-        was 40 percent of a typical result); pass true to include it.
+    Listings return pointers; this is the deep read. Args:
+      node_id: one id (e.g. "F-3a2b"). Or node_ids for several in ONE call;
+        the result is then {"nodes": [...], "missing": [...], "count"}.
+      fields: comma-separated fields to return ("description,confidence");
+        default returns every non-empty field.
+      include_change_log: per-field edit history, omitted by default.
+      neighbors: also return the ONE-HOP neighbourhood as pointer rows:
+        [{id, rel, direction, type, headline, content_version, moved}]. `moved`
+        is true when the neighbour's content changed after the edge was made
+        (edge pinned version differs from the node's current version).
+      version: read an earlier content version (1 = as created). The current
+        version is in every result as content_version.
+      if_changed_since: a content_hash or "v3" you saw earlier. If the node is
+        unchanged you get back only {id, content_version, content_hash,
+        changed: false} instead of the content you already have.
 
     Reads the node's JSON file and falls back to the graph node when the file
     is missing, so a node that exists in Neo4j is never reported as not found.
@@ -360,22 +372,97 @@ async def show_node(
     found: list[dict] = []
     missing: list[str] = []
     for nid in ids:
-        data = await _read_node_any_layer(nid)
+        if version is not None and not node_ids:
+            data = _read_node_version(nid, version)
+        else:
+            data = await _read_node_any_layer(nid)
         if data is None:
             missing.append(nid)
             continue
+        if if_changed_since and not node_ids:
+            token = if_changed_since.strip().lower()
+            cur_hash = str(data.get("content_hash") or "")
+            cur_v = int(data.get("content_version") or 1)
+            same = (token == cur_hash.lower()) or (token.lstrip("v").isdigit() and int(token.lstrip("v")) == cur_v)
+            if same:
+                return {"id": nid, "content_version": cur_v, "content_hash": cur_hash, "changed": False}
+            data["changed"] = True
         if not include_change_log:
             data.pop("change_log", None)
         data = _strip_empty(data)
         if wanted:
             data = {k: v for k, v in data.items() if k in wanted or k in ("id", "type")}
+        if neighbors:
+            data["neighbors"] = await _neighbors_of(nid)
         found.append(data)
 
     if node_ids:
         return {"nodes": found, "missing": missing, "count": len(found)}
     if not found:
+        if version is not None:
+            return {"error": f"Node {ids[0]} has no version {version}"}
         return {"error": f"Node {ids[0]} not found"}
     return found[0]
+
+
+def _read_node_version(nid: str, version: int) -> dict | None:
+    """A specific content version from knowledge/ (current file or a snapshot)."""
+    from wheeler.knowledge import versions as _versions
+
+    try:
+        data = _versions.read_version(project_knowledge_dir(_config), nid, version)
+    except FileNotFoundError:
+        return None
+    current = None
+    try:
+        from wheeler.knowledge import store
+
+        current = store.read_node(project_knowledge_dir(_config), nid).content_version
+    except Exception:
+        pass
+    data["is_current"] = current is not None and current == version
+    return data
+
+
+async def _neighbors_of(nid: str) -> list[dict]:
+    """One hop from *nid* as pointer rows, with the edge's pinned version check."""
+    from wheeler.mcp_shared import _headline
+
+    tag = _config.neo4j.project_tag
+    where = " WHERE n._wheeler_project = $ptag AND m._wheeler_project = $ptag" if tag else ""
+    params: dict = {"id": nid}
+    if tag:
+        params["ptag"] = tag
+    try:
+        backend = await graph_tools._get_backend(_config)
+        rows = await backend.run_cypher(
+            "MATCH (n {id: $id})-[r]-(m)" + where + " "
+            "RETURN type(r) AS rel, startNode(r).id = $id AS outgoing, m.id AS id, "
+            "labels(m)[0] AS type, coalesce(m.title, '') AS title, "
+            "coalesce(m.description, m.statement, m.question, m.content, '') AS text, "
+            "coalesce(m.content_version, 1) AS content_version, "
+            "r.source_version AS source_version, r.target_version AS target_version "
+            "ORDER BY rel, m.id LIMIT 200",
+            params,
+        )
+    except Exception as exc:
+        return [{"error": f"neighbour query failed: {exc}"}]
+    out = []
+    for r in rows:
+        outgoing = bool(r.get("outgoing"))
+        pinned = r.get("target_version") if outgoing else r.get("source_version")
+        row: dict = {
+            "id": r["id"],
+            "rel": r["rel"],
+            "direction": "out" if outgoing else "in",
+            "type": r.get("type") or "",
+            "headline": _headline({"title": r.get("title") or "", "text": r.get("text") or ""}),
+            "content_version": r.get("content_version") or 1,
+        }
+        if pinned is not None and int(pinned) != int(row["content_version"]):
+            row["moved"] = True
+        out.append(row)
+    return out
 
 
 async def _read_node_any_layer(nid: str) -> dict | None:
@@ -464,7 +551,10 @@ async def run_cypher(query: str, limit: int = 100) -> dict:
             whole words. CALL is refused even for read-only procedures such as
             fulltext queries, since a procedure name does not reveal whether it
             writes; use search_findings for fulltext. This query is NOT
-            project-scoped, unlike every query_* tool.
+            project-scoped, unlike every query_* tool: when the result carries
+            project_tag, other projects share this database, so add
+            `WHERE n._wheeler_project = $ptag` to every MATCH ($ptag is bound
+            for you) or you will read their nodes as if they were yours.
         limit: maximum rows returned (default 100). When the query yields
             more, the result carries truncated=true and total_rows; add a
             WHERE or LIMIT to the query rather than raising this blindly.
@@ -487,16 +577,20 @@ async def run_cypher(query: str, limit: int = 100) -> dict:
 
     try:
         backend = await graph_tools._get_backend(_config)
-        records = await backend.run_cypher(query)
+        tag = _config.neo4j.project_tag
+        # $ptag is always bound when a project tag exists, so a scoped query
+        # never fails on a missing parameter; the result names the tag so the
+        # caller can see that scoping applies.
+        records = await backend.run_cypher(query, {"ptag": tag} if tag else None)
         total = len(records)
+        out: dict = {"results": records, "count": total}
         if limit and total > limit:
-            return {
-                "results": records[:limit],
-                "count": limit,
-                "truncated": True,
-                "total_rows": total,
-            }
-        return {"results": records, "count": total}
+            out = {"results": records[:limit], "count": limit, "truncated": True, "total_rows": total}
+        if tag:
+            out["project_tag"] = tag
+            if "_wheeler_project" not in query:
+                out["warning"] = "unscoped query in a shared database: add WHERE n._wheeler_project = $ptag"
+        return out
     except Exception as exc:
         return {"error": str(exc), "results": [], "count": 0}
 
@@ -547,7 +641,7 @@ async def search_findings(
         results = await multi_search(
             query, _config, limit=limit, label=label, mode=mode,
         )
-        return {
+        payload = {
             "results": [
                 {
                     "node_id": r.get("id", ""),
@@ -561,6 +655,9 @@ async def search_findings(
             "query": query,
             "mode": mode,
         }
+        if DISCLOSURE == "pointer" and not full:
+            return await _pointerize(payload, _config)
+        return payload
     except Exception as exc:
         return {
             "error": f"Search failed: {exc}",
@@ -577,6 +674,7 @@ async def search_context(
     hops: int = 2,
     label: str = "",
     max_related: int = 20,
+    full: bool = False,
 ) -> dict:
     """Search the knowledge graph and expand results via graph traversal.
 
@@ -597,6 +695,8 @@ async def search_context(
             When the neighbourhood is larger the result carries
             truncated_related=true and total_related still reports the full
             count; relationships are filtered to the nodes kept.
+        full: return summaries instead of pointer rows when the disclosure
+            level is pointer.
     """
     from wheeler.search.retrieval import multi_search, expand_search_results
 
@@ -617,6 +717,8 @@ async def search_context(
                 if r.get("source") in keep_ids and r.get("target") in keep_ids
             ]
             expanded["truncated_related"] = True
+        if DISCLOSURE == "pointer" and not full:
+            return await _pointerize(expanded, _config)
         return expanded
     except Exception as exc:
         return {
