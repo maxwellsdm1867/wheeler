@@ -65,14 +65,23 @@ process.stdin.on('end', () => {
     const data = JSON.parse(input);
     const model = data.model?.display_name || 'Claude';
     const dir = data.workspace?.current_dir || process.cwd();
-    const remaining = data.context_window?.remaining_percentage;
+    const cw = data.context_window;
 
-    // Context window display
-    const AUTO_COMPACT_BUFFER_PCT = 16.5;
+    // Context window display. The percentage is the raw window usage the
+    // payload reports, the same figure /context shows, so it can be
+    // cross-checked against other tools. No auto-compact buffer is
+    // discounted from it.
+    let usedRaw = null;
+    if (cw?.used_percentage != null) {
+      usedRaw = cw.used_percentage;
+    } else if (cw?.remaining_percentage != null) {
+      usedRaw = 100 - cw.remaining_percentage;
+    } else if (cw?.total_input_tokens != null && cw?.context_window_size > 0) {
+      usedRaw = (cw.total_input_tokens / cw.context_window_size) * 100;
+    }
     let ctx = '';
-    if (remaining != null) {
-      const usableRemaining = Math.max(0, ((remaining - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100);
-      const used = Math.max(0, Math.min(100, Math.round(100 - usableRemaining)));
+    if (usedRaw != null && Number.isFinite(Number(usedRaw))) {
+      const used = Math.max(0, Math.min(100, Math.round(Number(usedRaw))));
       const filled = Math.floor(used / 10);
       const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
       if (used < 50) {
