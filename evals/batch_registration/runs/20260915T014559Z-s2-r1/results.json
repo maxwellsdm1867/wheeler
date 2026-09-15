@@ -1,0 +1,192 @@
+{
+  "strategy": 2,
+  "strategy_name": "batch MCP: register_batch / ensure_artifacts + link_nodes_batch",
+  "model": "opus",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014559Z-s2-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014559Z-s2-r1/project",
+  "project_tag": "batchreg-20260915T014559Z-s2-r1",
+  "started_at": "2026-09-15T01:46:00+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch",
+  "seeds": {
+    "QUESTION_ID": "Q-432724fd",
+    "DATASET_ID": "D-75f499ec"
+  },
+  "wall_clock_s": 45.853,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 23,
+  "unparseable_lines": 0,
+  "assistant_lines": 6,
+  "turns": 3,
+  "tokens": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 36083,
+    "cache_read_input_tokens": 94113,
+    "output_tokens": 5,
+    "total_input_incl_cache": 130202
+  },
+  "tool_calls": {
+    "Read": 1,
+    "ToolSearch": 1,
+    "mcp__wheeler_mutations__register_batch": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "ToolSearch",
+    "mcp__wheeler_mutations__register_batch"
+  ],
+  "max_consecutive_tool": {
+    "tool": "Read",
+    "run": 1
+  },
+  "mutation_calls": 1,
+  "cli_register_calls": 0,
+  "cli_dry_run_calls": 0,
+  "subagent_assistant_lines": 0,
+  "subagent_usage_visible": false,
+  "result": {
+    "subtype": "success",
+    "num_turns": 4,
+    "duration_ms": 41937,
+    "duration_api_ms": 40874,
+    "total_cost_usd": 0.5149065,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 36083,
+      "cache_read_input_tokens": 94113,
+      "output_tokens": 4209,
+      "output_tokens_details": {
+        "thinking_tokens": 670
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 36083,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 9,
+          "cache_read_input_tokens": 43628,
+          "cache_creation_input_tokens": 4613,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4613
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1710,
+        "outputTokens": 11,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.0017649999999999999,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-opus-5": {
+        "inputTokens": 6,
+        "outputTokens": 4209,
+        "cacheReadInputTokens": 94113,
+        "cacheCreationInputTokens": 36083,
+        "webSearchRequests": 0,
+        "costUSD": 0.5131415,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 670,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "DONE 30 43",
+  "done_line": {
+    "nodes": 30,
+    "edges": 43
+  },
+  "finished_at": "2026-09-15T01:46:46+00:00",
+  "score": {
+    "nodes_created": 30,
+    "nodes_matched": 30,
+    "nodes_expected": 30,
+    "node_recall": 1.0,
+    "node_precision": 1.0,
+    "edges_created": 43,
+    "edges_matched": 43,
+    "edges_expected": 43,
+    "edge_recall": 1.0,
+    "edge_precision": 1.0,
+    "execution_found": true,
+    "execution_count": 1,
+    "edges_crossing_tag": 0,
+    "seeds_intact": true,
+    "unmatched_artifacts": [],
+    "label_mismatches": [],
+    "unmatched_findings": [],
+    "missed_edges": [],
+    "extra_edges": [],
+    "extra_nodes": [],
+    "shared_nodes": [],
+    "notes": [],
+    "resolved_ids": {
+      "QUESTION_ID": "Q-432724fd",
+      "DATASET_ID": "D-75f499ec",
+      "exec": "X-24fe245d",
+      "scripts/load_epochs.py": "S-4461433e",
+      "scripts/fit_lag1_history.py": "S-c911c2de",
+      "scripts/count_events.py": "S-d08fe57e",
+      "scripts/bootstrap_ci.py": "S-974dbbb4",
+      "scripts/make_figures.py": "S-0c943ed1",
+      "data/lag1_counts_by_cell.csv": "D-44f634a2",
+      "data/history_fit_params.csv": "D-2b7c2a59",
+      "data/bootstrap_ci.csv": "D-9c4bd76e",
+      "data/event_times_cell01.csv": "D-506ae8ea",
+      "data/summary_table.csv": "D-4d2776fc",
+      "figures/fig01_lag1_counts_hist.png": "F-3c922059",
+      "figures/fig02_event_raster_cell01.png": "F-b634fd44",
+      "figures/fig03_history_kernel.png": "F-8fd129e8",
+      "figures/fig04_fit_residuals.png": "F-56465f8e",
+      "figures/fig05_bootstrap_ci.png": "F-30f623b8",
+      "figures/fig06_fano_factor.png": "F-aa191450",
+      "figures/fig07_count_autocorr.png": "F-88e90c1c",
+      "figures/fig08_rate_vs_coef.png": "F-7311a563",
+      "figures/fig09_per_cell_params.png": "F-a63d1d50",
+      "figures/fig10_summary_grid.png": "F-5c487631",
+      "docs/METHODS.md": "W-dc25ac16",
+      "docs/RESULTS.md": "W-ee881a30",
+      "docs/NOTES.md": "W-b1095759",
+      "finding:negative in 9 of 12 cells": "F-679cb460",
+      "finding:decays within 150 ms": "F-a1fd5f51",
+      "finding:excludes zero for the population mean": "F-e15b20c9",
+      "finding:exceeds Poisson expectation by 1.6x": "F-28786bd6",
+      "finding:weaker lag-1 suppression": "F-a828473f",
+      "finding:improves held-out log-likelihood": "F-5df93f0b"
+    }
+  },
+  "files": {
+    "knowledge_json": 32,
+    "synthesis_md": 32,
+    "repair_queue_lines": 0
+  },
+  "cleanup": {
+    "deleted": 32,
+    "remaining": 0
+  }
+}

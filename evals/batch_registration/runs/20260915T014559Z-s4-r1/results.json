@@ -1,0 +1,203 @@
+{
+  "strategy": 4,
+  "strategy_name": "manifest + validate: --dry-run first, then register",
+  "model": "opus",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014559Z-s4-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014559Z-s4-r1/project",
+  "project_tag": "batchreg-20260915T014559Z-s4-r1",
+  "started_at": "2026-09-15T01:46:00+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch",
+  "seeds": {
+    "QUESTION_ID": "Q-67a8d83d",
+    "DATASET_ID": "D-4ba7976d"
+  },
+  "wall_clock_s": 95.626,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 69,
+  "unparseable_lines": 0,
+  "assistant_lines": 24,
+  "turns": 14,
+  "tokens": {
+    "input_tokens": 28,
+    "cache_creation_input_tokens": 55406,
+    "cache_read_input_tokens": 698226,
+    "output_tokens": 108,
+    "total_input_incl_cache": 753660
+  },
+  "tool_calls": {
+    "Read": 6,
+    "Bash": 4,
+    "Grep": 2,
+    "Write": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Grep",
+    "Read",
+    "Bash",
+    "Bash",
+    "Grep",
+    "Read",
+    "Read",
+    "Read",
+    "Read",
+    "Write",
+    "Bash",
+    "Bash"
+  ],
+  "max_consecutive_tool": {
+    "tool": "Read",
+    "run": 4
+  },
+  "mutation_calls": 1,
+  "cli_register_calls": 1,
+  "cli_dry_run_calls": 1,
+  "subagent_assistant_lines": 0,
+  "subagent_usage_visible": false,
+  "result": {
+    "subtype": "success",
+    "num_turns": 14,
+    "duration_ms": 91795,
+    "duration_api_ms": 88233,
+    "total_cost_usd": 1.0910819999999997,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 28,
+      "cache_creation_input_tokens": 55406,
+      "cache_read_input_tokens": 698226,
+      "output_tokens": 7433,
+      "output_tokens_details": {
+        "thinking_tokens": 1780
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 55406,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 9,
+          "cache_read_input_tokens": 66889,
+          "cache_creation_input_tokens": 675,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 675
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1884,
+        "outputTokens": 12,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001944,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-opus-5": {
+        "inputTokens": 28,
+        "outputTokens": 7433,
+        "cacheReadInputTokens": 698226,
+        "cacheCreationInputTokens": 55406,
+        "webSearchRequests": 0,
+        "costUSD": 1.0891379999999997,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 1780,
+        "canonicalModel": "claude-opus-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "DONE 30 43",
+  "done_line": {
+    "nodes": 30,
+    "edges": 43
+  },
+  "finished_at": "2026-09-15T01:47:36+00:00",
+  "score": {
+    "nodes_created": 30,
+    "nodes_matched": 30,
+    "nodes_expected": 30,
+    "node_recall": 1.0,
+    "node_precision": 1.0,
+    "edges_created": 43,
+    "edges_matched": 43,
+    "edges_expected": 43,
+    "edge_recall": 1.0,
+    "edge_precision": 1.0,
+    "execution_found": true,
+    "execution_count": 1,
+    "edges_crossing_tag": 0,
+    "seeds_intact": true,
+    "unmatched_artifacts": [],
+    "label_mismatches": [],
+    "unmatched_findings": [],
+    "missed_edges": [],
+    "extra_edges": [],
+    "extra_nodes": [],
+    "shared_nodes": [],
+    "notes": [],
+    "resolved_ids": {
+      "QUESTION_ID": "Q-67a8d83d",
+      "DATASET_ID": "D-4ba7976d",
+      "exec": "X-933122f8",
+      "scripts/load_epochs.py": "S-9b1f24ac",
+      "scripts/fit_lag1_history.py": "S-edbd237e",
+      "scripts/count_events.py": "S-22a38213",
+      "scripts/bootstrap_ci.py": "S-cd48be02",
+      "scripts/make_figures.py": "S-8016042d",
+      "data/lag1_counts_by_cell.csv": "D-edfed156",
+      "data/history_fit_params.csv": "D-31bbb380",
+      "data/bootstrap_ci.csv": "D-d6a08e06",
+      "data/event_times_cell01.csv": "D-293f9897",
+      "data/summary_table.csv": "D-d0c114c3",
+      "figures/fig01_lag1_counts_hist.png": "F-648b8214",
+      "figures/fig02_event_raster_cell01.png": "F-cfa3c4cd",
+      "figures/fig03_history_kernel.png": "F-c7383d5a",
+      "figures/fig04_fit_residuals.png": "F-3b2c4e85",
+      "figures/fig05_bootstrap_ci.png": "F-5b49f911",
+      "figures/fig06_fano_factor.png": "F-287aa75f",
+      "figures/fig07_count_autocorr.png": "F-f056065e",
+      "figures/fig08_rate_vs_coef.png": "F-fb4c9e38",
+      "figures/fig09_per_cell_params.png": "F-5de7614c",
+      "figures/fig10_summary_grid.png": "F-148e0307",
+      "docs/METHODS.md": "W-2323a11f",
+      "docs/RESULTS.md": "W-6b5d090c",
+      "docs/NOTES.md": "W-3c8ecc40",
+      "finding:negative in 9 of 12 cells": "F-1ab1dac9",
+      "finding:decays within 150 ms": "F-e78b599f",
+      "finding:excludes zero for the population mean": "F-c6143047",
+      "finding:exceeds Poisson expectation by 1.6x": "F-ee290a07",
+      "finding:weaker lag-1 suppression": "F-5ec461f7",
+      "finding:improves held-out log-likelihood": "F-a0f29c8e"
+    }
+  },
+  "files": {
+    "knowledge_json": 32,
+    "synthesis_md": 32,
+    "repair_queue_lines": 0
+  },
+  "cleanup": {
+    "deleted": 32,
+    "remaining": 0
+  }
+}

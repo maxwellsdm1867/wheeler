@@ -1,0 +1,203 @@
+{
+  "strategy": 6,
+  "strategy_name": "batch MCP, split form: ensure_artifacts + add_* + link_nodes_batch (id round trip)",
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014729Z-s6-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014729Z-s6-r1/project",
+  "project_tag": "batchreg-20260915T014729Z-s6-r1",
+  "started_at": "2026-09-15T01:47:29+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch",
+  "seeds": {
+    "QUESTION_ID": "Q-97609993",
+    "DATASET_ID": "D-c72d9851"
+  },
+  "wall_clock_s": 76.079,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 55,
+  "unparseable_lines": 0,
+  "assistant_lines": 18,
+  "turns": 7,
+  "tokens": {
+    "input_tokens": 14,
+    "cache_creation_input_tokens": 43237,
+    "cache_read_input_tokens": 363126,
+    "output_tokens": 21,
+    "total_input_incl_cache": 406377
+  },
+  "tool_calls": {
+    "mcp__wheeler_mutations__add_finding": 6,
+    "Read": 1,
+    "ToolSearch": 1,
+    "mcp__wheeler_mutations__add_execution": 1,
+    "mcp__wheeler_mutations__ensure_artifacts": 1,
+    "mcp__wheeler_mutations__link_nodes_batch": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "ToolSearch",
+    "mcp__wheeler_mutations__add_execution",
+    "mcp__wheeler_mutations__ensure_artifacts",
+    "mcp__wheeler_mutations__add_finding",
+    "mcp__wheeler_mutations__add_finding",
+    "mcp__wheeler_mutations__add_finding",
+    "mcp__wheeler_mutations__add_finding",
+    "mcp__wheeler_mutations__add_finding",
+    "mcp__wheeler_mutations__add_finding",
+    "mcp__wheeler_mutations__link_nodes_batch"
+  ],
+  "max_consecutive_tool": {
+    "tool": "mcp__wheeler_mutations__add_finding",
+    "run": 6
+  },
+  "mutation_calls": 9,
+  "cli_register_calls": 0,
+  "cli_dry_run_calls": 0,
+  "subagent_assistant_lines": 0,
+  "subagent_usage_visible": false,
+  "result": {
+    "subtype": "success",
+    "num_turns": 12,
+    "duration_ms": 73246,
+    "duration_api_ms": 72296,
+    "total_cost_usd": 0.33167220000000003,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 43237,
+      "cache_read_input_tokens": 363126,
+      "output_tokens": 8439,
+      "output_tokens_details": {
+        "thinking_tokens": 2631
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 43237,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 28,
+          "cache_read_input_tokens": 63403,
+          "cache_creation_input_tokens": 5731,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 5731
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1626,
+        "outputTokens": 11,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001681,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 14,
+        "outputTokens": 8439,
+        "cacheReadInputTokens": 363126,
+        "cacheCreationInputTokens": 43237,
+        "webSearchRequests": 0,
+        "costUSD": 0.32999120000000004,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 2631,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "All 43 edges linked successfully, 0 failures.\n\nDONE 30 43",
+  "done_line": {
+    "nodes": 30,
+    "edges": 43
+  },
+  "finished_at": "2026-09-15T01:48:46+00:00",
+  "score": {
+    "nodes_created": 30,
+    "nodes_matched": 30,
+    "nodes_expected": 30,
+    "node_recall": 1.0,
+    "node_precision": 1.0,
+    "edges_created": 43,
+    "edges_matched": 43,
+    "edges_expected": 43,
+    "edge_recall": 1.0,
+    "edge_precision": 1.0,
+    "execution_found": true,
+    "execution_count": 1,
+    "edges_crossing_tag": 0,
+    "seeds_intact": true,
+    "unmatched_artifacts": [],
+    "label_mismatches": [],
+    "unmatched_findings": [],
+    "missed_edges": [],
+    "extra_edges": [],
+    "extra_nodes": [],
+    "shared_nodes": [],
+    "notes": [],
+    "resolved_ids": {
+      "QUESTION_ID": "Q-97609993",
+      "DATASET_ID": "D-c72d9851",
+      "exec": "X-7d78b17a",
+      "scripts/load_epochs.py": "S-ad8dcf1e",
+      "scripts/fit_lag1_history.py": "S-d29748b5",
+      "scripts/count_events.py": "S-e1970830",
+      "scripts/bootstrap_ci.py": "S-758a1fe4",
+      "scripts/make_figures.py": "S-b0e86794",
+      "data/lag1_counts_by_cell.csv": "D-5280545c",
+      "data/history_fit_params.csv": "D-126ae120",
+      "data/bootstrap_ci.csv": "D-88854a95",
+      "data/event_times_cell01.csv": "D-507f44df",
+      "data/summary_table.csv": "D-3085a805",
+      "figures/fig01_lag1_counts_hist.png": "F-4f42fce7",
+      "figures/fig02_event_raster_cell01.png": "F-ffb0c01a",
+      "figures/fig03_history_kernel.png": "F-c55cfd70",
+      "figures/fig04_fit_residuals.png": "F-717a2b1c",
+      "figures/fig05_bootstrap_ci.png": "F-5fc4d932",
+      "figures/fig06_fano_factor.png": "F-3fcd7f96",
+      "figures/fig07_count_autocorr.png": "F-626ab99d",
+      "figures/fig08_rate_vs_coef.png": "F-3f011769",
+      "figures/fig09_per_cell_params.png": "F-dcb46c4f",
+      "figures/fig10_summary_grid.png": "F-f2ec0eb7",
+      "docs/METHODS.md": "W-33bfa27f",
+      "docs/RESULTS.md": "W-7953a5f7",
+      "docs/NOTES.md": "W-8ceb6394",
+      "finding:negative in 9 of 12 cells": "F-b7a52af8",
+      "finding:decays within 150 ms": "F-5992bfa5",
+      "finding:excludes zero for the population mean": "F-2d1a9dbb",
+      "finding:exceeds Poisson expectation by 1.6x": "F-c8d954fe",
+      "finding:weaker lag-1 suppression": "F-9603e7f6",
+      "finding:improves held-out log-likelihood": "F-a12163d3"
+    }
+  },
+  "files": {
+    "knowledge_json": 32,
+    "synthesis_md": 32,
+    "repair_queue_lines": 0
+  },
+  "cleanup": {
+    "deleted": 32,
+    "remaining": 0
+  }
+}

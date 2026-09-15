@@ -1,0 +1,198 @@
+{
+  "strategy": 3,
+  "strategy_name": "manifest: Write provenance.yaml, one CLI register call",
+  "model": "sonnet",
+  "repeat_index": 1,
+  "run_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014322Z-s3-r1",
+  "project_dir": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch/evals/batch_registration/runs/20260915T014322Z-s3-r1/project",
+  "project_tag": "batchreg-20260915T014322Z-s3-r1",
+  "started_at": "2026-09-15T01:43:22+00:00",
+  "worktree": "/Users/maxwellsdm/Documents/GitHub/wheeler/.worktrees/batch",
+  "seeds": {
+    "QUESTION_ID": "Q-4d497642",
+    "DATASET_ID": "D-9232297f"
+  },
+  "wall_clock_s": 54.176,
+  "returncode": 0,
+  "timed_out": false,
+  "transcript_lines": 38,
+  "unparseable_lines": 0,
+  "assistant_lines": 15,
+  "turns": 9,
+  "tokens": {
+    "input_tokens": 18,
+    "cache_creation_input_tokens": 57430,
+    "cache_read_input_tokens": 480794,
+    "output_tokens": 59,
+    "total_input_incl_cache": 538242
+  },
+  "tool_calls": {
+    "Read": 3,
+    "Bash": 2,
+    "Grep": 2,
+    "Write": 1
+  },
+  "tool_call_sequence": [
+    "Read",
+    "Bash",
+    "Grep",
+    "Read",
+    "Read",
+    "Grep",
+    "Write",
+    "Bash"
+  ],
+  "max_consecutive_tool": {
+    "tool": "Read",
+    "run": 2
+  },
+  "mutation_calls": 1,
+  "cli_register_calls": 1,
+  "cli_dry_run_calls": 0,
+  "subagent_assistant_lines": 0,
+  "subagent_usage_visible": false,
+  "result": {
+    "subtype": "success",
+    "num_turns": 9,
+    "duration_ms": 47719,
+    "duration_api_ms": 43915,
+    "total_cost_usd": 0.3788688,
+    "is_error": false,
+    "usage": {
+      "input_tokens": 18,
+      "cache_creation_input_tokens": 57430,
+      "cache_read_input_tokens": 480794,
+      "output_tokens": 5110,
+      "output_tokens_details": {
+        "thinking_tokens": 156
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 57430,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 44,
+          "cache_read_input_tokens": 69085,
+          "cache_creation_input_tokens": 9052,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 9052
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 1784,
+        "outputTokens": 14,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001854,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-sonnet-5": {
+        "inputTokens": 18,
+        "outputTokens": 5110,
+        "cacheReadInputTokens": 480794,
+        "cacheCreationInputTokens": 57430,
+        "webSearchRequests": 0,
+        "costUSD": 0.37701480000000004,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 156,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    }
+  },
+  "final_text": "status \"ok\", 0 failures, 30 nodes (7 + 23), 43 edges, all linked.\n\nDONE 30 43",
+  "done_line": {
+    "nodes": 30,
+    "edges": 43
+  },
+  "finished_at": "2026-09-15T01:44:16+00:00",
+  "score": {
+    "nodes_created": 30,
+    "nodes_matched": 30,
+    "nodes_expected": 30,
+    "node_recall": 1.0,
+    "node_precision": 1.0,
+    "edges_created": 43,
+    "edges_matched": 43,
+    "edges_expected": 43,
+    "edge_recall": 1.0,
+    "edge_precision": 1.0,
+    "execution_found": true,
+    "execution_count": 1,
+    "edges_crossing_tag": 0,
+    "seeds_intact": true,
+    "unmatched_artifacts": [],
+    "label_mismatches": [],
+    "unmatched_findings": [],
+    "missed_edges": [],
+    "extra_edges": [],
+    "extra_nodes": [],
+    "shared_nodes": [],
+    "notes": [],
+    "resolved_ids": {
+      "QUESTION_ID": "Q-4d497642",
+      "DATASET_ID": "D-9232297f",
+      "exec": "X-c95949ce",
+      "scripts/load_epochs.py": "S-ff9e9b69",
+      "scripts/fit_lag1_history.py": "S-5965ccd7",
+      "scripts/count_events.py": "S-0ab486b2",
+      "scripts/bootstrap_ci.py": "S-d3bbe73c",
+      "scripts/make_figures.py": "S-f90dd7c0",
+      "data/lag1_counts_by_cell.csv": "D-a11f2698",
+      "data/history_fit_params.csv": "D-1394f87d",
+      "data/bootstrap_ci.csv": "D-95aa54b5",
+      "data/event_times_cell01.csv": "D-6174f496",
+      "data/summary_table.csv": "D-bbba922c",
+      "figures/fig01_lag1_counts_hist.png": "F-32725eb6",
+      "figures/fig02_event_raster_cell01.png": "F-5ec464d8",
+      "figures/fig03_history_kernel.png": "F-170b661d",
+      "figures/fig04_fit_residuals.png": "F-667ce997",
+      "figures/fig05_bootstrap_ci.png": "F-44f6e63a",
+      "figures/fig06_fano_factor.png": "F-c074b8be",
+      "figures/fig07_count_autocorr.png": "F-08b91e6f",
+      "figures/fig08_rate_vs_coef.png": "F-1df24353",
+      "figures/fig09_per_cell_params.png": "F-6236377c",
+      "figures/fig10_summary_grid.png": "F-798b32f8",
+      "docs/METHODS.md": "W-76c00975",
+      "docs/RESULTS.md": "W-1e09f7f9",
+      "docs/NOTES.md": "W-9e601d02",
+      "finding:negative in 9 of 12 cells": "F-0bf69fdd",
+      "finding:decays within 150 ms": "F-5388a9cc",
+      "finding:excludes zero for the population mean": "F-0965de1d",
+      "finding:exceeds Poisson expectation by 1.6x": "F-4d8fae1d",
+      "finding:weaker lag-1 suppression": "F-ada23e7a",
+      "finding:improves held-out log-likelihood": "F-c9aea59a"
+    }
+  },
+  "files": {
+    "knowledge_json": 32,
+    "synthesis_md": 32,
+    "repair_queue_lines": 0
+  },
+  "cleanup": {
+    "deleted": 32,
+    "remaining": 0
+  }
+}

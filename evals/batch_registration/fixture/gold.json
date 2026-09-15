@@ -1,0 +1,403 @@
+{
+  "project": "vmn_lag1_history_counts",
+  "date": "2026-09-12",
+  "seed_question": "Does spike-count history at lag 1 shape ON-parasol spike counts under white-noise stimulation?",
+  "seed_dataset": {
+    "path": "data/raw_epochs_cell01.csv",
+    "type": "csv",
+    "description": "Raw epoch table for cell 01: one row per spike (epoch, spike_time_ms)."
+  },
+  "nodes": {
+    "execution": {
+      "kind": "script_run",
+      "description": "vmn_lag1_history_counts: fit a lag-1 spike-count history model to 12 ON-parasol cells, bootstrap the population coefficient, and render the summary figures (2026-09-12)."
+    },
+    "artifacts": {
+      "scripts/load_epochs.py": {
+        "label": "Script",
+        "title": "load_epochs",
+        "description": "Load the raw epoch table and bin spikes into 20 ms count vectors per cell."
+      },
+      "scripts/fit_lag1_history.py": {
+        "label": "Script",
+        "title": "fit_lag1_history",
+        "description": "Fit the lag-1 count history model (Poisson GLM with one history term) per cell."
+      },
+      "scripts/count_events.py": {
+        "label": "Script",
+        "title": "count_events",
+        "description": "Count spike events per cell and compute the Fano factor of the 20 ms counts."
+      },
+      "scripts/bootstrap_ci.py": {
+        "label": "Script",
+        "title": "bootstrap_ci",
+        "description": "Bootstrap 95% confidence intervals for the population lag-1 coefficient."
+      },
+      "scripts/make_figures.py": {
+        "label": "Script",
+        "title": "make_figures",
+        "description": "Render the ten summary figures from the fitted parameters and count tables."
+      },
+      "data/lag1_counts_by_cell.csv": {
+        "label": "Dataset",
+        "title": "lag1_counts_by_cell",
+        "description": "Per-cell event count, mean, variance and Fano factor of the 20 ms counts."
+      },
+      "data/history_fit_params.csv": {
+        "label": "Dataset",
+        "title": "history_fit_params",
+        "description": "Fitted lag-1 history model parameters (b0, b1, log-likelihood) per cell."
+      },
+      "data/bootstrap_ci.csv": {
+        "label": "Dataset",
+        "title": "bootstrap_ci",
+        "description": "Bootstrap 95% confidence intervals for the population-level quantities."
+      },
+      "data/event_times_cell01.csv": {
+        "label": "Dataset",
+        "title": "event_times_cell01",
+        "description": "Spike event times (ms) for cell 01, one row per event, first 10 events."
+      },
+      "data/summary_table.csv": {
+        "label": "Dataset",
+        "title": "summary_table",
+        "description": "One-row-per-cell summary joining fit parameters with count statistics."
+      },
+      "figures/fig01_lag1_counts_hist.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig01_lag1_counts_hist",
+        "description": "Histogram of the fitted lag-1 coefficient b1 across the 12 cells."
+      },
+      "figures/fig02_event_raster_cell01.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig02_event_raster_cell01",
+        "description": "Spike raster for cell 01 across all epochs, 20 ms bins overlaid."
+      },
+      "figures/fig03_history_kernel.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig03_history_kernel",
+        "description": "Estimated count history kernel as a function of lag, population average."
+      },
+      "figures/fig04_fit_residuals.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig04_fit_residuals",
+        "description": "Pearson residuals of the lag-1 model versus fitted mean, all cells pooled."
+      },
+      "figures/fig05_bootstrap_ci.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig05_bootstrap_ci",
+        "description": "Bootstrap distribution of the population-mean b1 with the 95% interval marked."
+      },
+      "figures/fig06_fano_factor.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig06_fano_factor",
+        "description": "Fano factor of 20 ms counts per cell against the Poisson reference line."
+      },
+      "figures/fig07_count_autocorr.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig07_count_autocorr",
+        "description": "Autocorrelation of binned counts out to lag 10, per cell and averaged."
+      },
+      "figures/fig08_rate_vs_coef.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig08_rate_vs_coef",
+        "description": "Scatter of baseline firing rate against the fitted b1 with a linear trend."
+      },
+      "figures/fig09_per_cell_params.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig09_per_cell_params",
+        "description": "Dot plot of b0 and b1 with per-cell standard errors."
+      },
+      "figures/fig10_summary_grid.png": {
+        "label": "Finding",
+        "artifact_type": "figure",
+        "title": "fig10_summary_grid",
+        "description": "Summary grid: held-out log-likelihood gain per cell for the lag-1 model."
+      },
+      "docs/METHODS.md": {
+        "label": "Document",
+        "title": "METHODS",
+        "description": "Methods: recording, binning, the lag-1 Poisson GLM and the bootstrap."
+      },
+      "docs/RESULTS.md": {
+        "label": "Document",
+        "title": "RESULTS",
+        "description": "Results narrative referencing the ten figures and the five data tables."
+      },
+      "docs/NOTES.md": {
+        "label": "Document",
+        "title": "NOTES",
+        "description": "Working notes and caveats from the analysis session."
+      }
+    },
+    "findings": {
+      "negative in 9 of 12 cells": {
+        "key": "negative in 9 of 12 cells",
+        "text": "The fitted lag-1 history coefficient b1 is negative in 9 of 12 cells (median b1 = -0.14).",
+        "confidence": 0.8,
+        "figure": "figures/fig01_lag1_counts_hist.png"
+      },
+      "decays within 150 ms": {
+        "key": "decays within 150 ms",
+        "text": "The population-average count history kernel decays within 150 ms, so a single lag captures most of the history dependence at 20 ms binning.",
+        "confidence": 0.7,
+        "figure": "figures/fig03_history_kernel.png"
+      },
+      "excludes zero for the population mean": {
+        "key": "excludes zero for the population mean",
+        "text": "The bootstrap 95% confidence interval excludes zero for the population mean b1 (mean -0.12, CI [-0.19, -0.05], 2000 draws).",
+        "confidence": 0.85,
+        "figure": "figures/fig05_bootstrap_ci.png"
+      },
+      "exceeds Poisson expectation by 1.6x": {
+        "key": "exceeds Poisson expectation by 1.6x",
+        "text": "Spike-count variance exceeds Poisson expectation by 1.6x on average (Fano factor 1.6, range 1.2 to 2.1).",
+        "confidence": 0.75,
+        "figure": "figures/fig06_fano_factor.png"
+      },
+      "weaker lag-1 suppression": {
+        "key": "weaker lag-1 suppression",
+        "text": "Cells with higher baseline firing rate show weaker lag-1 suppression (Spearman rho = 0.58 between rate and b1).",
+        "confidence": 0.6,
+        "figure": "figures/fig08_rate_vs_coef.png"
+      },
+      "improves held-out log-likelihood": {
+        "key": "improves held-out log-likelihood",
+        "text": "The model with a lag-1 term improves held-out log-likelihood over the rate-only model in all 12 cells (median gain 0.031 bits per bin).",
+        "confidence": 0.65,
+        "figure": "figures/fig10_summary_grid.png"
+      }
+    }
+  },
+  "edges": [
+    [
+      "scripts/load_epochs.py",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "scripts/fit_lag1_history.py",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "scripts/count_events.py",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "scripts/bootstrap_ci.py",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "scripts/make_figures.py",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "data/lag1_counts_by_cell.csv",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "data/history_fit_params.csv",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "data/bootstrap_ci.csv",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "data/event_times_cell01.csv",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "data/summary_table.csv",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig01_lag1_counts_hist.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig02_event_raster_cell01.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig03_history_kernel.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig04_fit_residuals.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig05_bootstrap_ci.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig06_fano_factor.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig07_count_autocorr.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig08_rate_vs_coef.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig09_per_cell_params.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "figures/fig10_summary_grid.png",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "docs/METHODS.md",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "docs/RESULTS.md",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "docs/NOTES.md",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:negative in 9 of 12 cells",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:decays within 150 ms",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:excludes zero for the population mean",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:exceeds Poisson expectation by 1.6x",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:weaker lag-1 suppression",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:improves held-out log-likelihood",
+      "WAS_GENERATED_BY",
+      "exec"
+    ],
+    [
+      "finding:negative in 9 of 12 cells",
+      "APPEARS_IN",
+      "figures/fig01_lag1_counts_hist.png"
+    ],
+    [
+      "finding:decays within 150 ms",
+      "APPEARS_IN",
+      "figures/fig03_history_kernel.png"
+    ],
+    [
+      "finding:excludes zero for the population mean",
+      "APPEARS_IN",
+      "figures/fig05_bootstrap_ci.png"
+    ],
+    [
+      "finding:exceeds Poisson expectation by 1.6x",
+      "APPEARS_IN",
+      "figures/fig06_fano_factor.png"
+    ],
+    [
+      "finding:weaker lag-1 suppression",
+      "APPEARS_IN",
+      "figures/fig08_rate_vs_coef.png"
+    ],
+    [
+      "finding:improves held-out log-likelihood",
+      "APPEARS_IN",
+      "figures/fig10_summary_grid.png"
+    ],
+    [
+      "finding:negative in 9 of 12 cells",
+      "RELEVANT_TO",
+      "QUESTION_ID"
+    ],
+    [
+      "finding:decays within 150 ms",
+      "RELEVANT_TO",
+      "QUESTION_ID"
+    ],
+    [
+      "finding:excludes zero for the population mean",
+      "RELEVANT_TO",
+      "QUESTION_ID"
+    ],
+    [
+      "finding:exceeds Poisson expectation by 1.6x",
+      "RELEVANT_TO",
+      "QUESTION_ID"
+    ],
+    [
+      "finding:weaker lag-1 suppression",
+      "RELEVANT_TO",
+      "QUESTION_ID"
+    ],
+    [
+      "finding:improves held-out log-likelihood",
+      "RELEVANT_TO",
+      "QUESTION_ID"
+    ],
+    [
+      "exec",
+      "USED",
+      "DATASET_ID"
+    ],
+    [
+      "exec",
+      "USED",
+      "QUESTION_ID"
+    ]
+  ],
+  "counts": {
+    "artifacts": 23,
+    "findings": 6,
+    "edges": 43
+  }
+}
