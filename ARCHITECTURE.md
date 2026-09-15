@@ -819,6 +819,11 @@ What the versions buy:
 The name is `content_version` rather than `version` because `Script.version` is
 already a scientist-facing string.
 
+The snapshot directory is append-only in the strict sense: `delete_node` removes
+the current file, graph node and synthesis page but leaves `knowledge/versions/<id>/`
+in place, so a deleted node's history is still readable. The consistency checker
+globs `knowledge/*.json` non-recursively and does not treat it as an orphan.
+
 ## Disclosure levels (listings are pointers)
 
 `WHEELER_DISCLOSURE` (env, read by the MCP servers) sets what `query_*`,

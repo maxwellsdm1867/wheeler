@@ -293,10 +293,15 @@ def _update_knowledge_node(
             logger.debug("update_node: no knowledge file for %s, skipping", node_id)
             return (json_ok, synthesis_ok, new_version, new_hash)
 
-        # Append-only history: keep the state we are about to replace.
+        # Append-only history: keep the state we are about to replace. Only
+        # CONTENT changes make a version; a stale flag, stale_since or a
+        # stability rescore is metadata and must not move pinned citations
+        # or edges to "outdated".
         from wheeler.knowledge import versions as _versions
 
-        _versions.snapshot(knowledge_dir, node)
+        content_changed = any(k not in _versions.VOLATILE_FIELDS for k in changes)
+        if content_changed:
+            _versions.snapshot(knowledge_dir, node)
 
         # Apply field changes to the model
         now = _now()
@@ -331,8 +336,9 @@ def _update_knowledge_node(
             actor=args.get("session_id", "system"),
         )
         node.change_log.append(change_log_entry)
-        _versions.bump(node)
-        new_version, new_hash = node.content_version, node.content_hash
+        if content_changed:
+            _versions.bump(node)
+            new_version, new_hash = node.content_version, node.content_hash
 
         write_node(knowledge_dir, node)
         json_ok = True

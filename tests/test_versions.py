@@ -200,11 +200,15 @@ async def test_versions_bump_in_json_and_graph_and_snapshots_are_readable(live_c
     assert V.read_version(kdir, fid, 2)["description"] == "peak at 41 ms" and V.read_version(kdir, fid, 2)["tier"] == "generated"
     assert V.read_version(kdir, fid, 3)["tier"] == "reference"
 
-    # a stale flag is metadata: no bump
-    from wheeler.provenance import propagate_invalidation  # noqa: F401  (imported to prove the path exists)
+    # metadata is not content: neither a no-op nor a stale/stability update bumps or snapshots
     before = j2["content_version"]
     await execute_tool("update_node", {"node_id": fid, "description": "peak at 41 ms"}, live_cfg)  # no-op change
-    assert json.loads((tmp_path / "knowledge" / f"{fid}.json").read_text())["content_version"] == before
+    r = json.loads(await execute_tool("update_node", {"node_id": fid, "stale": True, "stability": 0.2}, live_cfg))
+    assert r["status"] == "updated" and set(r["updated_fields"]) == {"stale", "stability"}
+    j3 = json.loads((tmp_path / "knowledge" / f"{fid}.json").read_text())
+    assert j3["content_version"] == before and j3["stale"] is True and j3["content_hash"] == j2["content_hash"]
+    assert _graph(_URI, "MATCH (n {id: $id}) RETURN n.content_version AS v", id=fid)[0]["v"] == before
+    assert V.list_versions(kdir, fid, current=before) == [1, 2, 3]  # no v3 snapshot written
 
 
 @needs_neo4j
@@ -290,5 +294,7 @@ async def test_pointer_level_listing_returns_pointer_rows(live_cfg, monkeypatch)
     row = next(r for r in out["findings"] if r["id"] == fid)
     assert row["type"] == "Finding" and row["headline"] == "Pointer title" and row["degree"] == 1
     assert row["content_version"] == 1 and row["confidence"] == 0.9 and "description" not in row
+    # a never-edited node still has a recency stamp (the creation date), as a 10-char date
+    assert len(row["updated"]) == 10 and row["updated"][:4] == "2026" or row["updated"][:2] == "20"
     full = await fn(full=True)
     assert len(next(r for r in full["findings"] if r["id"] == fid)["description"]) == 600

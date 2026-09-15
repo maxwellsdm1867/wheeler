@@ -674,6 +674,7 @@ async def search_context(
     hops: int = 2,
     label: str = "",
     max_related: int = 20,
+    full: bool = False,
 ) -> dict:
     """Search the knowledge graph and expand results via graph traversal.
 
@@ -694,6 +695,8 @@ async def search_context(
             When the neighbourhood is larger the result carries
             truncated_related=true and total_related still reports the full
             count; relationships are filtered to the nodes kept.
+        full: return summaries instead of pointer rows when the disclosure
+            level is pointer.
     """
     from wheeler.search.retrieval import multi_search, expand_search_results
 
@@ -714,7 +717,7 @@ async def search_context(
                 if r.get("source") in keep_ids and r.get("target") in keep_ids
             ]
             expanded["truncated_related"] = True
-        if DISCLOSURE == "pointer":
+        if DISCLOSURE == "pointer" and not full:
             return await _pointerize(expanded, _config)
         return expanded
     except Exception as exc:

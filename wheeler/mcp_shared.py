@@ -287,7 +287,8 @@ async def _node_meta(ids: list[str], config) -> dict[str, dict]:
         rows = await backend.run_cypher(
             "MATCH (n) WHERE n.id IN $ids" + where + " "
             "RETURN n.id AS id, labels(n)[0] AS type, COUNT { (n)--() } AS degree, "
-            "n.updated AS updated, coalesce(n.content_version, 1) AS content_version, "
+            "coalesce(n.updated, n.date, n.date_added, n.created) AS updated, "
+            "coalesce(n.content_version, 1) AS content_version, "
             "coalesce(n.title, '') AS title",
             params,
         )
