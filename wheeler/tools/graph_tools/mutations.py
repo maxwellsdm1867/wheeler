@@ -375,7 +375,7 @@ async def add_document(backend, args: dict) -> str:
     now = _now()
     title = args["title"]
     display_name = title[:40] if title else os.path.basename(path) if path else ""
-    await backend.create_node("Document", {
+    props = {
         "id": node_id,
         "service": args.get("service", ""),
         "title": title,
@@ -389,7 +389,17 @@ async def add_document(backend, args: dict) -> str:
         "stability": default_stability("Document", args.get("tier", "generated")),
         "session_id": args.get("session_id", ""),
         "display_name": display_name,
-    })
+    }
+    for field in (
+        "skill_name", "skill_description", "skill_version", "skill_state",
+        "skill_supersedes", "skill_source_ids", "skill_target_ids", "skill_capture_key",
+        "skill_problem", "skill_benchmark_task", "skill_harness_ids", "skill_harness_snapshot", "skill_retired_reason",
+        "skill_author_model", "skill_author_environment", "skill_tested_model",
+        "skill_tested_environment", "skill_benchmark_result_ids",
+    ):
+        if field in args:
+            props[field] = args[field]
+    await backend.create_node("Document", props)
     logger.info("Created Document %s: %s", node_id, args["title"][:60])
     result = {"node_id": node_id, "label": "Document", "status": "created"}
     prov = await _complete_provenance(backend, node_id, "Document", args)
@@ -1119,7 +1129,8 @@ async def update_node(backend, args: dict) -> str:
         return json.dumps({"error": f"Node not found: {node_id}"})
 
     # Extract fields to update (exclude internal/meta keys)
-    exclude_keys = {"node_id", "session_id", "_config", "allow_provenance"}
+    exclude_keys = {"node_id", "session_id", "_config", "allow_provenance",
+                    "_refresh_files", "_require_complete_write"}
     allow_provenance = bool(args.get("allow_provenance", False))
     allowed_fields = _updatable_fields(label, allow_provenance)
     updates: dict = {}
@@ -1178,6 +1189,8 @@ async def update_node(backend, args: dict) -> str:
         }
         if rejected:
             no_change_result["rejected_fields"] = rejected
+        if args.get("_refresh_files"):
+            no_change_result["snapshot"] = current
         return json.dumps(no_change_result)
 
     # Update display_name if a primary content field changed
@@ -1217,4 +1230,6 @@ async def update_node(backend, args: dict) -> str:
     }
     if rejected:
         update_result["rejected_fields"] = rejected
+    if args.get("_refresh_files"):
+        update_result["snapshot"] = {**current, **updates}
     return json.dumps(update_result)

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wheeler is a Python package that turns Claude Code into a provenance-tracked research assistant. It is not an agent framework: there is no orchestration layer. Claude Code is the orchestrator; Wheeler provides (a) MCP tools that mutate a Neo4j knowledge graph, and (b) `/wh:*` slash commands that act as mode-restricted system prompts. Everything runs locally on a Max subscription via `claude -p` subprocess. No API keys are used, ever.
 
-Version is `0.16.0`. 3160 tests (see the suite for the current count), 54 MCP tools across the four split servers. The legacy monolith has been removed.
+Version is `0.16.0`. 3423 passing tests plus 3 optional Torch checks (see the suite for the current count), 57 MCP tools across the four split servers. The legacy monolith has been removed.
 
 Wheeler now runs on **two agent hosts**, Claude Code and OpenAI Codex, and ships as a **plugin** named `wh` rather than by copying files into `~/.claude/`. The act bodies are served over MCP (`get_act`) so they exist in exactly one place; each host gets generated `SKILL.md` stubs. See "Multi-host distribution" below.
 
@@ -68,9 +68,9 @@ wh quick "prompt"   # haiku, 3 turns, one-shot
 wh dream            # graph consolidation (promotes tiers, detects communities, flags stale)
 
 # MCP servers (launched by Claude Code via .mcp.json — not typically invoked by hand)
-python -m wheeler.mcp_core         # split: health/context/search/cypher/schema (12)
+python -m wheeler.mcp_core         # split: health/context/search/cypher/schema (14)
 python -m wheeler.mcp_query        # split: read-only query_* (11)
-python -m wheeler.mcp_mutations    # split: add_*, link, unlink, delete, merge, update, register_batch (19)
+python -m wheeler.mcp_mutations    # split: add_*, link, unlink, delete, merge, update, register_batch, lessons (22)
 python -m wheeler.mcp_ops          # split: staleness, citations, consistency, ops (10)
 ```
 
@@ -145,7 +145,7 @@ All share `mcp_shared.py` for trace ID generation, the `@_logged` decorator, con
 **When you add a new MCP tool, register it in the split server that matches its role.** Do not add it to any other server. The role map is: read-only listings → `mcp_query`; writes that change graph nodes → `mcp_mutations`; validators / scanners / consistency operations → `mcp_ops`; everything else (search, raw cypher, schema, health) → `mcp_core`.
 
 The legacy `wheeler/mcp_server.py` monolith **has been deleted** (v0.14.0+). Its 50 tools were all
-already covered by the four split servers, which carry 54. `tests/test_mcp_surface.py` now guards the
+already covered by the four split servers, which carry 57. `tests/test_mcp_surface.py` now guards the
 surface directly: per-server tool counts, no duplicate names across servers, every tool described,
 and a `test_monolith_is_gone` check so it cannot be reintroduced. Each server also has its own test
 file (`tests/test_mcp_{core,query,mutations,ops,shared}.py`).
@@ -195,7 +195,7 @@ Seven patterns you may see referenced across the code. The first six shipped in 
 
 Each `.claude/commands/wh/*.md` file is a Claude Code slash command. YAML frontmatter sets `allowed-tools` (which enforces per-mode tool access); the markdown body IS the system prompt. Mode enforcement (CHAT read-only, WRITE strict citations, EXECUTE full access) is entirely in the frontmatter.
 
-**`wheeler/acts.py` now reads these files at runtime** (from the `_data/commands/` mirror) and serves them over MCP via `list_acts` / `get_act` in `mcp_core`, so the bodies exist in exactly one place across both hosts. `mode` and `orchestration` are **derived** from `allowed-tools` rather than declared, so the two can never disagree: ops grant -> execute, mutations grant -> write, else chat; `Agent`/`Task*`/`Team*` -> subagents, `Skill` -> skill-dispatch. `get_act(name, host=...)` returns the body byte-identical plus a host-specific `orchestration_note` (Claude Code gets `Agent`/`TeamCreate`; Codex gets `spawn_agent`/`send_input` and is told the note supersedes any Claude tool the body names). `_data/commands/` holds 40 `.md` files but `CLAUDE.md` is the authoring guide, so there are **39 acts**.
+**`wheeler/acts.py` now reads these files at runtime** (from the `_data/commands/` mirror) and serves them over MCP via `list_acts` / `get_act` in `mcp_core`, so the bodies exist in exactly one place across both hosts. `mode` and `orchestration` are **derived** from `allowed-tools` rather than declared, so the two can never disagree: ops grant -> execute, mutations grant -> write, else chat; `Agent`/`Task*`/`Team*` -> subagents, `Skill` -> skill-dispatch. `get_act(name, host=...)` returns the body byte-identical plus a host-specific `orchestration_note` (Claude Code gets `Agent`/`TeamCreate`; Codex gets `spawn_agent`/`send_input` and is told the note supersedes any Claude tool the body names). `_data/commands/` holds 41 `.md` files but `CLAUDE.md` is the authoring guide, so there are **40 acts**.
 
 `/wh:start` is a user-invoked router: it analyzes task intent and invokes the best `/wh:*` command via the Skill tool. Individual commands have narrow trigger descriptions requiring Wheeler/knowledge-graph vocabulary, so they auto-fire for unambiguous research actions but not for general coding.
 
@@ -216,7 +216,7 @@ codex plugin marketplace add maxwellsdm1867/wheeler && codex plugin add wh@wheel
 **`wheeler/build_plugin.py` generates the whole tree** from `wheeler/_data/commands/` and
 `_data/agents/`. Regenerate with `python -m wheeler.build_plugin`; never hand-edit the output.
 `tests/test_build_plugin.py::test_committed_tree_matches_generator` is the drift guard. Emitted:
-`.claude-plugin/`, `.codex-plugin/`, `skills/<act>/SKILL.md` (39), `agents/`, `hooks/`,
+`.claude-plugin/`, `.codex-plugin/`, `skills/<act>/SKILL.md` (40), `agents/`, `hooks/`,
 `codex-profiles/`, and `.mcp-plugin.json`.
 
 Five host facts that are load-bearing, all established by canary against the real CLIs rather than

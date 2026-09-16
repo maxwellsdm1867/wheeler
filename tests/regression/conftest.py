@@ -13,6 +13,8 @@ neo4j_available, cleanup_*) pick up this one automatically.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 # Import e2e fixtures so regression e2e tests can use them. `e2e_config` is
@@ -46,6 +48,10 @@ def _local_test_uri() -> str:
     Falls back to the stock address, where the caller's own probe will skip
     cleanly if nothing is there.
     """
+    # Explicit isolated test servers take precedence over desktop discovery.
+    # This keeps a full-package run from selecting another local project.
+    if uri := os.environ.get("WHEELER_TEST_NEO4J_URI"):
+        return uri
     try:
         from neo4j import GraphDatabase
 

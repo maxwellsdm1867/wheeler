@@ -17,6 +17,8 @@ allowed-tools:
   - mcp__wheeler_ops__detect_stale
   - mcp__wheeler_query__query_plans
   - mcp__wheeler_query__query_notes
+  - Skill
+  - mcp__wheeler_core__show_node
   - mcp__wheeler_core__get_act
   - mcp__plugin_wh_wheeler_core__graph_context
   - mcp__plugin_wh_wheeler_core__graph_gaps
@@ -27,6 +29,7 @@ allowed-tools:
   - mcp__plugin_wh_wheeler_ops__detect_stale
   - mcp__plugin_wh_wheeler_query__query_plans
   - mcp__plugin_wh_wheeler_query__query_notes
+  - mcp__plugin_wh_wheeler_core__show_node
   - mcp__plugin_wh_wheeler_core__get_act
 ---
 

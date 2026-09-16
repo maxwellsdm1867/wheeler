@@ -1,18 +1,30 @@
 """Size-limited graph context injection for pre-query enrichment.
 
 Fetches recent findings, open questions, and active hypotheses from
-Neo4j and formats them into a compact context block (< 500 tokens).
+Neo4j and formats them into a compact context block with bounded skill summaries.
 This is injected before the user's prompt in CHAT and PLANNING modes.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from wheeler.config import WheelerConfig
 
 logger = logging.getLogger(__name__)
 from wheeler.graph.driver import get_async_driver  # noqa: E402
+
+
+class _ContextSkillReader:
+    """Use the existing read session for the final sequential discovery query."""
+
+    def __init__(self, session: Any) -> None:
+        self.session = session
+
+    async def run_cypher(self, query: str, params: dict | None = None) -> list[dict]:
+        result = await self.session.run(query, parameters=params or {})
+        return [dict(record) async for record in result]
 
 
 def _project_filter(alias: str, project_tag: str) -> str:
@@ -122,6 +134,16 @@ async def fetch_context(config: WheelerConfig, topic: str = "") -> str:
             if hypotheses:
                 lines = [f"- [{r['id']}] {r['stmt']}" for r in hypotheses]
                 sections.append("### Active Hypotheses\n" + "\n".join(lines))
+            if sections:
+                from wheeler.skill_discovery import discover_skills, format_skill_context
+
+                # Use identities from selected records, never citations or IDs
+                # embedded in their prose. No full graph scan or recursive hop.
+                encountered = [r["id"] for r in ref_findings + gen_findings + questions + hypotheses]
+                skills = await discover_skills(encountered, config, _ContextSkillReader(session), limit=5)
+                skill_context = format_skill_context(skills)
+                if skill_context:
+                    sections.append(skill_context)
     except Exception as exc:
         logger.warning("fetch_context failed (Neo4j offline?): %s", exc)
         return ""

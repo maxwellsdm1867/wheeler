@@ -214,7 +214,7 @@ For each node:
 - Type-specific fields: `path`, `artifact_type`, `source` (Finding), `hash` (Script), `kind` (Execution)
 - Relationships to other nodes
 
-For relationships (14 types):
+For relationships (15 types):
 ```
 PROV (W3C standard):
   USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
@@ -222,7 +222,7 @@ PROV (W3C standard):
 
 Semantic (Wheeler-specific):
   SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO,
-  AROSE_FROM, DEPENDS_ON, CONTAINS
+  AROSE_FROM, DEPENDS_ON, CONTAINS, APPLIES_TO
 ```
 
 ### What the Graph Does NOT Store
@@ -778,7 +778,7 @@ Wheeler uses lazy imports (inside functions) in four situations:
 |-------------|--------|---------|
 | `wheeler-core-mcp` | `wheeler.mcp_core:main` | Split server: reads + search + cypher + schema + acts (14) |
 | `wheeler-query-mcp` | `wheeler.mcp_query:main` | Split server: read-only `query_*` tools (11) |
-| `wheeler-mutations-mcp` | `wheeler.mcp_mutations:main` | Split server: add_*, link, unlink, delete, merge, register_batch (19) |
+| `wheeler-mutations-mcp` | `wheeler.mcp_mutations:main` | Split server: add_*, link, unlink, delete, merge, register_batch, lessons (22) |
 | `wheeler-ops-mcp` | `wheeler.mcp_ops:main` | Split server: staleness, citations, consistency, ops (10) |
 | `wheeler` | `wheeler.tools.cli:app` | Typer CLI (show, graph, validate, install) |
 | `wheeler-tools` | `wheeler.tools.cli:app` | Alias for CLI |
@@ -893,7 +893,7 @@ warns when a query does not filter on `_wheeler_project`; in a shared database a
 unscoped MATCH reads every project's nodes (the disclosure experiment hit exactly
 this when five runs shared one database).
 
-## MCP Tools (54 total, 4 servers)
+## MCP Tools (57 total, 4 servers)
 
 Result shaping: every MCP wrapper returns what the caller acts on (ids, statuses,
 failures, headlines) and keeps the full payload one flag away (`verbose=true` on
@@ -908,7 +908,7 @@ The MCP surface is four role-scoped servers, all wrapping the same underlying im
 |--------|--------|-------|-------|
 | `wheeler_core` | `wheeler/mcp_core.py` | 14 | Reads + search + raw cypher + schema + acts |
 | `wheeler_query` | `wheeler/mcp_query.py` | 11 | Read-only `query_*` tools |
-| `wheeler_mutations` | `wheeler/mcp_mutations.py` | 19 | Writes: add_*, link, unlink, delete, merge, set_tier, update_node, register_batch (bulk) |
+| `wheeler_mutations` | `wheeler/mcp_mutations.py` | 22 | Writes: add_*, link, unlink, delete, merge, set_tier, update_node, register_batch (bulk), lessons |
 | `wheeler_ops` | `wheeler/mcp_ops.py` | 10 | Ops: staleness, citations, consistency, communities, contracts |
 
 Shared request logging, trace ID generation, and backend access live in `wheeler/mcp_shared.py` so all four servers emit a uniform log stream to `.wheeler/request_log.jsonl`.
@@ -942,11 +942,12 @@ land more nodes in one harvest than a scientist can rule on in one sitting, so
 the decision-bearing ones are marked `undiscussed` and this answers "what came
 back that nobody has looked at yet". Project-tag scoped, unlike `run_cypher`.
 
-### wheeler_mutations (14)
+### wheeler_mutations (22)
 `add_finding`, `add_hypothesis`, `add_question`, `add_dataset`, `add_paper`,
 `add_document`, `add_note`, `add_analysis` (legacy alias for `add_script`),
 `link_nodes`, `unlink_nodes`, `delete_node`, `execute_merge`, `set_tier`,
-`update_node`
+`update_node`, `add_execution`, `add_plan`, `add_script`, `register_batch`,
+`capture_lesson`, `accept_skill`, `retire_skill`
 
 ### wheeler_ops (10)
 `detect_stale`, `hash_file`, `scan_dependencies`, `scan_workspace`,
@@ -1033,7 +1034,7 @@ wheeler/
 +-- acts.py                      # Act corpus reader: parses _data/commands/*.md, derives mode + orchestration
 +-- mcp_core.py                  # Split server: reads + search + cypher + schema + acts (14 tools)
 +-- mcp_query.py                 # Split server: query_* read-only tools (11 tools)
-+-- mcp_mutations.py             # Split server: add_*, link, unlink, delete, merge, register_batch (19 tools)
++-- mcp_mutations.py             # Split server: add_*, link, unlink, delete, merge, register_batch, lessons (22 tools)
 +-- mcp_ops.py                   # Split server: staleness, citations, consistency, ops (10 tools)
 +-- knowledge/
 |   +-- __init__.py              # Re-exports: write_node, read_node, render_node

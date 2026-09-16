@@ -145,6 +145,25 @@ class DocumentModel(NodeBase):
     section: str = ""
     status: str = "draft"
     hash: str = ""
+    # Optional node-linked skill metadata. Ordinary documents keep empty defaults.
+    skill_name: str = ""
+    skill_description: str = ""
+    skill_version: int = 0
+    skill_state: Literal["", "incomplete", "candidate", "accepted", "retracted"] = ""
+    skill_supersedes: str = ""
+    skill_source_ids: list[str] = []
+    skill_target_ids: list[str] = []
+    skill_capture_key: str = ""
+    skill_problem: str = ""
+    skill_benchmark_task: str = ""
+    skill_harness_ids: list[str] = []
+    skill_harness_snapshot: str = ""
+    skill_retired_reason: str = ""
+    skill_author_model: str = "unknown"
+    skill_author_environment: str = "unknown"
+    skill_tested_model: str = ""
+    skill_tested_environment: str = ""
+    skill_benchmark_result_ids: list[str] = []
 
 
 class ScriptModel(NodeBase):

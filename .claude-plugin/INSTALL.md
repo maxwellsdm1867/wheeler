@@ -4,7 +4,7 @@
 
 # Wheeler as a plugin
 
-39 research acts and the four Wheeler MCP servers, for Claude Code and
+40 research acts and the four Wheeler MCP servers, for Claude Code and
 OpenAI Codex. Pinned to Wheeler `0.16.0`.
 
 > **The pinned version must be on PyPI before this plugin works.** The skills fetch
@@ -120,7 +120,8 @@ For finer control than whole servers, Codex also accepts `enabled_tools` /
 ## Regenerating
 
 Everything here is generated from `wheeler/_data/commands/*.md` and
-`wheeler/_data/agents/*.md`:
+`wheeler/_data/agents/*.md`, plus self-contained skills under
+`wheeler/_data/plugin_skills/`:
 
 ```bash
 python -m wheeler.build_plugin           # write

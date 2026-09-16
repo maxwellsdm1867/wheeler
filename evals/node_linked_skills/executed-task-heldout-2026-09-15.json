@@ -1,0 +1,585 @@
+{
+  "recorded_at": "2026-09-16T01:50:39.345565+00:00",
+  "runtime": {
+    "host": "Codex local desktop subagents",
+    "python": "3.14.3",
+    "platform": "macOS-14.2-arm64-arm-64bit-Mach-O",
+    "sqlite": "3.53.0",
+    "graph": "Isolated loopback Neo4j; production Wheeler discovery; no research graph"
+  },
+  "method": "Fresh-context subagents, one case per agent. Actual isolated Neo4j capture and production discovery, audited skill reads and read-only SQLite execution. Expected choices and numerical results withheld from agent task prompts. Original fixture matches skill benchmark examples; heldout variant changes task data while keeping those examples unchanged.",
+  "limitations": "One run per case; synthetic tasks and explicit applicability descriptions. No reliability estimate or model comparison. Seed node supplied to graph expansion, so search ranking and voice routing are not tested. Exact evaluator model IDs unavailable. SQL fixture controls are deterministic wrong implementations, not agent baselines. The CLI audit relies on agents following their tool-use contract; it is not an OS sandbox.",
+  "preflight": "Original fixture only: first join context event was evaluator preflight before the agent's own context read. All heldout events are agent actions.",
+  "agent_protocol": "Use context first. Compare linked resource, operation and applicability with current intent. Skip clear mismatches without opening bodies; read candidates if uncertainty matters; apply relevant guidance. Use only audited context/read/sql/stat/finish CLI actions. Do not inspect other cases, manifests, evaluator files or repository code. Execute task and record answer, selected/skipped IDs, rationale, exact model ID if exposed and environment.",
+  "fixture": [
+    {
+      "capture": {
+        "node_id": "W-9898a0d0",
+        "label": "Document",
+        "status": "created",
+        "skill_state": "accepted",
+        "path": "/private/tmp/wheeler-node-heldout-probe-20260915b/.notes/lessons/recording-joins/9898a0d0c67ca6e827e18aab/SKILL.md",
+        "version": 1,
+        "source_id": "W-89810e0d",
+        "execution_id": "X-9898a0d0",
+        "target_ids": [
+          "D-probe-db"
+        ]
+      },
+      "arguments": {
+        "name": "recording-joins",
+        "description": "Join recording metadata to measured responses, including selecting measurements by cell type. Not for file size, schema inspection, or summaries of measurements alone.",
+        "instructions": "When joining recordings and measurements, use recording_id, never basename: filenames repeat across cells. Filter cell type on recordings. Multiple measurements per recording are valid. Verify the joined row count equals the measurement count for the selected recording IDs before interpreting results.",
+        "target_ids": [
+          "D-probe-db"
+        ],
+        "source_excerpt": "A basename join contaminated parasol results with midget responses.",
+        "problem_statement": "A basename join contaminated parasol results with midget responses.",
+        "benchmark_task": "Select parasol measurements and return p1:10, p1:20, p2:40, without midget values; check cardinality.",
+        "accepted": true,
+        "author_model": "unknown",
+        "author_environment": "Codex local checkout; synthetic evaluator fixture"
+      },
+      "body": "---\nname: recording-joins\ndescription: Join recording metadata to measured responses, including selecting measurements\n  by cell type. Not for file size, schema inspection, or summaries of measurements\n  alone.\n---\n\nWhen joining recordings and measurements, use recording_id, never basename: filenames repeat across cells. Filter cell type on recordings. Multiple measurements per recording are valid. Verify the joined row count equals the measurement count for the selected recording IDs before interpreting results.\n\n## Problem this skill addresses\n\nA basename join contaminated parasol results with midget responses.\n\n## Benchmark task\n\nSelect parasol measurements and return p1:10, p1:20, p2:40, without midget values; check cardinality.\n\n## Model and run context\n\nAuthored with: unknown\n\nAuthoring environment: Codex local checkout; synthetic evaluator fixture\n\nTested with: not recorded\n\nTest environment: not recorded\n\nBenchmark result nodes: none recorded\n\nThe saved task alone is not evidence of a passing benchmark. Read the result nodes and this skill's Wheeler Document for source and harness versions. Results on one model/environment do not establish portability to another.\n",
+      "sha256": "7b00197c8f7abab00ced0267d2dd16bbaeba91c640cd081d75a05cc827016326"
+    },
+    {
+      "capture": {
+        "node_id": "W-1469a3fa",
+        "label": "Document",
+        "status": "created",
+        "skill_state": "accepted",
+        "path": "/private/tmp/wheeler-node-heldout-probe-20260915b/.notes/lessons/population-response/1469a3fa83fe92c034b65581/SKILL.md",
+        "version": 1,
+        "source_id": "W-0199c11c",
+        "execution_id": "X-1469a3fa",
+        "target_ids": [
+          "D-probe-db"
+        ]
+      },
+      "arguments": {
+        "name": "population-response",
+        "description": "Compute the population response summary from the measurements table in this analysis. Applies to aggregation, not metadata joins, individual response retrieval, schema inspection, or file size.",
+        "instructions": "For the population response summary, first average value within each recording_id in measurements. Then average those per-recording means with equal weight per recording. Report per-recording means, recording count, and the equal-weight population mean. Do not average all measurement rows directly; that overweights recordings with more measurements. This operation does not need a recordings metadata join.",
+        "target_ids": [
+          "D-probe-db"
+        ],
+        "source_excerpt": "Recordings with unequal measurement counts received unequal weight in the population summary.",
+        "problem_statement": "Recordings with unequal measurement counts received unequal weight in the population summary.",
+        "benchmark_task": "For p1=[10,20], p2=[40], m1=[99,101], report means 15,40,100 and population mean 155/3 for three recordings.",
+        "accepted": true,
+        "author_model": "unknown",
+        "author_environment": "Codex local checkout; synthetic evaluator fixture"
+      },
+      "body": "---\nname: population-response\ndescription: Compute the population response summary from the measurements table in\n  this analysis. Applies to aggregation, not metadata joins, individual response retrieval,\n  schema inspection, or file size.\n---\n\nFor the population response summary, first average value within each recording_id in measurements. Then average those per-recording means with equal weight per recording. Report per-recording means, recording count, and the equal-weight population mean. Do not average all measurement rows directly; that overweights recordings with more measurements. This operation does not need a recordings metadata join.\n\n## Problem this skill addresses\n\nRecordings with unequal measurement counts received unequal weight in the population summary.\n\n## Benchmark task\n\nFor p1=[10,20], p2=[40], m1=[99,101], report means 15,40,100 and population mean 155/3 for three recordings.\n\n## Model and run context\n\nAuthored with: unknown\n\nAuthoring environment: Codex local checkout; synthetic evaluator fixture\n\nTested with: not recorded\n\nTest environment: not recorded\n\nBenchmark result nodes: none recorded\n\nThe saved task alone is not evidence of a passing benchmark. Read the result nodes and this skill's Wheeler Document for source and harness versions. Results on one model/environment do not establish portability to another.\n",
+      "sha256": "dbb0697041c86762138ed4726f224f8b097efb1e7f628f3132d053d10daec4ab"
+    }
+  ],
+  "controls": {
+    "variant": "heldout",
+    "wrong_basename_join": [
+      [
+        "p1",
+        12.0
+      ],
+      [
+        "p1",
+        24.0
+      ],
+      [
+        "p1",
+        80.0
+      ],
+      [
+        "p1",
+        100.0
+      ],
+      [
+        "p2",
+        45.0
+      ]
+    ],
+    "wrong_row_mean": 52.2
+  },
+  "cases": [
+    {
+      "case": "join",
+      "task": "Return the parasol recording IDs and their measured response values from this database, ordered by recording ID and value.",
+      "seed_id": "D-probe-db",
+      "expected_read_ids": [
+        "W-9898a0d0"
+      ],
+      "observed_read_ids": [
+        "W-9898a0d0"
+      ],
+      "checks": {
+        "discovery_scoped_correctly": true,
+        "discovery_complete": true,
+        "only_relevant_bodies_read": true,
+        "reported_selection_matches_reads": true,
+        "full_instructions_not_in_context": true,
+        "executed_result_correct": true,
+        "used_stable_join_key": true,
+        "no_basename_join": true
+      },
+      "passed": true,
+      "events": [
+        {
+          "at": "2026-09-16T01:49:09.825995+00:00",
+          "action": "context",
+          "request": "",
+          "response": {
+            "seed_nodes": [
+              {
+                "id": "D-probe-db",
+                "type": "Dataset",
+                "tier": "generated",
+                "summary": "Recording metadata and measured responses for the primary retinal analysis",
+                "score": 0
+              }
+            ],
+            "related_nodes": [
+              {
+                "id": "D-probe-dataset",
+                "type": "Dataset",
+                "relationship": "RELEVANT_TO",
+                "summary": "Midget dataset linked to its source recordings database",
+                "tier": "generated"
+              }
+            ],
+            "relationships": [
+              {
+                "source": "D-probe-dataset",
+                "target": "D-probe-db",
+                "relationship": "RELEVANT_TO"
+              }
+            ],
+            "total_related": 1,
+            "linked_skills": [
+              {
+                "id": "W-1469a3fa",
+                "name": "population-response",
+                "description": "Compute the population response summary from the measurements table in this analysis. Applies to aggregation, not metadata joins, individual response retrieval, schema inspection, or file size.",
+                "version": 1,
+                "path": "/private/tmp/wheeler-node-heldout-probe-20260915b/.notes/lessons/population-response/1469a3fa83fe92c034b65581/SKILL.md",
+                "target_ids": [
+                  "D-probe-db"
+                ],
+                "author_model": "unknown",
+                "tested_model": "",
+                "matched_target_ids": [
+                  "D-probe-db"
+                ]
+              },
+              {
+                "id": "W-9898a0d0",
+                "name": "recording-joins",
+                "description": "Join recording metadata to measured responses, including selecting measurements by cell type. Not for file size, schema inspection, or summaries of measurements alone.",
+                "version": 1,
+                "path": "/private/tmp/wheeler-node-heldout-probe-20260915b/.notes/lessons/recording-joins/9898a0d0c67ca6e827e18aab/SKILL.md",
+                "target_ids": [
+                  "D-probe-db"
+                ],
+                "author_model": "unknown",
+                "tested_model": "",
+                "matched_target_ids": [
+                  "D-probe-db"
+                ]
+              }
+            ],
+            "linked_skills_status": "complete"
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:19.162820+00:00",
+          "action": "read",
+          "request": "W-9898a0d0",
+          "response": {
+            "id": "W-9898a0d0",
+            "name": "recording-joins",
+            "body": "---\nname: recording-joins\ndescription: Join recording metadata to measured responses, including selecting measurements\n  by cell type. Not for file size, schema inspection, or summaries of measurements\n  alone.\n---\n\nWhen joining recordings and measurements, use recording_id, never basename: filenames repeat across cells. Filter cell type on recordings. Multiple measurements per recording are valid. Verify the joined row count equals the measurement count for the selected recording IDs before interpreting results.\n\n## Problem this skill addresses\n\nA basename join contaminated parasol results with midget responses.\n\n## Benchmark task\n\nSelect parasol measurements and return p1:10, p1:20, p2:40, without midget values; check cardinality.\n\n## Model and run context\n\nAuthored with: unknown\n\nAuthoring environment: Codex local checkout; synthetic evaluator fixture\n\nTested with: not recorded\n\nTest environment: not recorded\n\nBenchmark result nodes: none recorded\n\nThe saved task alone is not evidence of a passing benchmark. Read the result nodes and this skill's Wheeler Document for source and harness versions. Results on one model/environment do not establish portability to another.\n"
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:24.569844+00:00",
+          "action": "sql",
+          "request": "SELECT name, sql FROM sqlite_master WHERE type = \"table\" ORDER BY name;",
+          "response": {
+            "columns": [
+              "name",
+              "sql"
+            ],
+            "rows": [
+              [
+                "measurements",
+                "CREATE TABLE measurements(recording_id TEXT, basename TEXT, value REAL)"
+              ],
+              [
+                "recordings",
+                "CREATE TABLE recordings(recording_id TEXT PRIMARY KEY, basename TEXT, cell_type TEXT)"
+              ]
+            ]
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:36.501045+00:00",
+          "action": "sql",
+          "request": "SELECT r.recording_id, m.value FROM recordings AS r JOIN measurements AS m ON r.recording_id = m.recording_id WHERE r.cell_type = \"parasol\" ORDER BY r.recording_id, m.value;",
+          "response": {
+            "columns": [
+              "recording_id",
+              "value"
+            ],
+            "rows": [
+              [
+                "p1",
+                12.0
+              ],
+              [
+                "p1",
+                24.0
+              ],
+              [
+                "p2",
+                45.0
+              ]
+            ]
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:36.822355+00:00",
+          "action": "sql",
+          "request": "SELECT (SELECT COUNT(*) FROM recordings AS r JOIN measurements AS m ON r.recording_id = m.recording_id WHERE r.cell_type = \"parasol\") AS joined_count, (SELECT COUNT(*) FROM measurements WHERE recording_id IN (SELECT recording_id FROM recordings WHERE cell_type = \"parasol\")) AS selected_measurement_count;",
+          "response": {
+            "columns": [
+              "joined_count",
+              "selected_measurement_count"
+            ],
+            "rows": [
+              [
+                3,
+                3
+              ]
+            ]
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:48.368880+00:00",
+          "action": "finish",
+          "request": "{\"answer\":[{\"recording_id\":\"p1\",\"value\":12.0},{\"recording_id\":\"p1\",\"value\":24.0},{\"recording_id\":\"p2\",\"value\":45.0}],\"selected_skill_ids\":[\"W-9898a0d0\"],\"skipped_skill_ids\":[\"W-1469a3fa\"],\"brief_reasoning\":\"Selected recording-joins because retrieving parasol responses requires filtering recording metadata and joining measurements. Skipped population-response because no aggregation was requested. Joined on recording_id, filtered recordings.cell_type, preserved multiple measurements, ordered by recording_id and value, and verified joined count equals selected measurement count (3 = 3). Values came from the live SQL result, not the skill example.\",\"exact_model_id\":\"unknown\",\"environment\":\"Codex desktop local checkout at /Users/maxwellsdm/Documents/GitHub/wheeler; zsh; all task reads and actions used the authorized task_probe.py CLI against /private/tmp/wheeler-node-heldout-probe-20260915b.\"}",
+          "response": {
+            "answer": [
+              {
+                "recording_id": "p1",
+                "value": 12.0
+              },
+              {
+                "recording_id": "p1",
+                "value": 24.0
+              },
+              {
+                "recording_id": "p2",
+                "value": 45.0
+              }
+            ],
+            "selected_skill_ids": [
+              "W-9898a0d0"
+            ],
+            "skipped_skill_ids": [
+              "W-1469a3fa"
+            ],
+            "brief_reasoning": "Selected recording-joins because retrieving parasol responses requires filtering recording metadata and joining measurements. Skipped population-response because no aggregation was requested. Joined on recording_id, filtered recordings.cell_type, preserved multiple measurements, ordered by recording_id and value, and verified joined count equals selected measurement count (3 = 3). Values came from the live SQL result, not the skill example.",
+            "exact_model_id": "unknown",
+            "environment": "Codex desktop local checkout at /Users/maxwellsdm/Documents/GitHub/wheeler; zsh; all task reads and actions used the authorized task_probe.py CLI against /private/tmp/wheeler-node-heldout-probe-20260915b."
+          }
+        }
+      ],
+      "answer": {
+        "answer": [
+          {
+            "recording_id": "p1",
+            "value": 12.0
+          },
+          {
+            "recording_id": "p1",
+            "value": 24.0
+          },
+          {
+            "recording_id": "p2",
+            "value": 45.0
+          }
+        ],
+        "selected_skill_ids": [
+          "W-9898a0d0"
+        ],
+        "skipped_skill_ids": [
+          "W-1469a3fa"
+        ],
+        "brief_reasoning": "Selected recording-joins because retrieving parasol responses requires filtering recording metadata and joining measurements. Skipped population-response because no aggregation was requested. Joined on recording_id, filtered recordings.cell_type, preserved multiple measurements, ordered by recording_id and value, and verified joined count equals selected measurement count (3 = 3). Values came from the live SQL result, not the skill example.",
+        "exact_model_id": "unknown",
+        "environment": "Codex desktop local checkout at /Users/maxwellsdm/Documents/GitHub/wheeler; zsh; all task reads and actions used the authorized task_probe.py CLI against /private/tmp/wheeler-node-heldout-probe-20260915b."
+      }
+    },
+    {
+      "case": "summary",
+      "task": "Compute the population response summary from this database's measurements, following this analysis's conventions.",
+      "seed_id": "D-probe-db",
+      "expected_read_ids": [
+        "W-1469a3fa"
+      ],
+      "observed_read_ids": [
+        "W-1469a3fa"
+      ],
+      "checks": {
+        "discovery_scoped_correctly": true,
+        "discovery_complete": true,
+        "only_relevant_bodies_read": true,
+        "reported_selection_matches_reads": true,
+        "full_instructions_not_in_context": true,
+        "executed_result_correct": true,
+        "no_unnecessary_metadata_join": true,
+        "grouped_by_recording": true
+      },
+      "passed": true,
+      "events": [
+        {
+          "at": "2026-09-16T01:49:23.881572+00:00",
+          "action": "context",
+          "request": "",
+          "response": {
+            "seed_nodes": [
+              {
+                "id": "D-probe-db",
+                "type": "Dataset",
+                "tier": "generated",
+                "summary": "Recording metadata and measured responses for the primary retinal analysis",
+                "score": 0
+              }
+            ],
+            "related_nodes": [
+              {
+                "id": "D-probe-dataset",
+                "type": "Dataset",
+                "relationship": "RELEVANT_TO",
+                "summary": "Midget dataset linked to its source recordings database",
+                "tier": "generated"
+              }
+            ],
+            "relationships": [
+              {
+                "source": "D-probe-dataset",
+                "target": "D-probe-db",
+                "relationship": "RELEVANT_TO"
+              }
+            ],
+            "total_related": 1,
+            "linked_skills": [
+              {
+                "id": "W-1469a3fa",
+                "name": "population-response",
+                "description": "Compute the population response summary from the measurements table in this analysis. Applies to aggregation, not metadata joins, individual response retrieval, schema inspection, or file size.",
+                "version": 1,
+                "path": "/private/tmp/wheeler-node-heldout-probe-20260915b/.notes/lessons/population-response/1469a3fa83fe92c034b65581/SKILL.md",
+                "target_ids": [
+                  "D-probe-db"
+                ],
+                "author_model": "unknown",
+                "tested_model": "",
+                "matched_target_ids": [
+                  "D-probe-db"
+                ]
+              },
+              {
+                "id": "W-9898a0d0",
+                "name": "recording-joins",
+                "description": "Join recording metadata to measured responses, including selecting measurements by cell type. Not for file size, schema inspection, or summaries of measurements alone.",
+                "version": 1,
+                "path": "/private/tmp/wheeler-node-heldout-probe-20260915b/.notes/lessons/recording-joins/9898a0d0c67ca6e827e18aab/SKILL.md",
+                "target_ids": [
+                  "D-probe-db"
+                ],
+                "author_model": "unknown",
+                "tested_model": "",
+                "matched_target_ids": [
+                  "D-probe-db"
+                ]
+              }
+            ],
+            "linked_skills_status": "complete"
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:30.612334+00:00",
+          "action": "read",
+          "request": "W-1469a3fa",
+          "response": {
+            "id": "W-1469a3fa",
+            "name": "population-response",
+            "body": "---\nname: population-response\ndescription: Compute the population response summary from the measurements table in\n  this analysis. Applies to aggregation, not metadata joins, individual response retrieval,\n  schema inspection, or file size.\n---\n\nFor the population response summary, first average value within each recording_id in measurements. Then average those per-recording means with equal weight per recording. Report per-recording means, recording count, and the equal-weight population mean. Do not average all measurement rows directly; that overweights recordings with more measurements. This operation does not need a recordings metadata join.\n\n## Problem this skill addresses\n\nRecordings with unequal measurement counts received unequal weight in the population summary.\n\n## Benchmark task\n\nFor p1=[10,20], p2=[40], m1=[99,101], report means 15,40,100 and population mean 155/3 for three recordings.\n\n## Model and run context\n\nAuthored with: unknown\n\nAuthoring environment: Codex local checkout; synthetic evaluator fixture\n\nTested with: not recorded\n\nTest environment: not recorded\n\nBenchmark result nodes: none recorded\n\nThe saved task alone is not evidence of a passing benchmark. Read the result nodes and this skill's Wheeler Document for source and harness versions. Results on one model/environment do not establish portability to another.\n"
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:36.049261+00:00",
+          "action": "sql",
+          "request": "PRAGMA table_info(measurements)",
+          "response": {
+            "columns": [
+              "cid",
+              "name",
+              "type",
+              "notnull",
+              "dflt_value",
+              "pk"
+            ],
+            "rows": [
+              [
+                0,
+                "recording_id",
+                "TEXT",
+                0,
+                null,
+                0
+              ],
+              [
+                1,
+                "basename",
+                "TEXT",
+                0,
+                null,
+                0
+              ],
+              [
+                2,
+                "value",
+                "REAL",
+                0,
+                null,
+                0
+              ]
+            ]
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:42.719339+00:00",
+          "action": "sql",
+          "request": "WITH recording_means AS (SELECT recording_id, COUNT(*) AS measurement_count, AVG(value) AS recording_mean FROM measurements GROUP BY recording_id) SELECT recording_id, measurement_count, recording_mean, COUNT(*) OVER () AS recording_count, AVG(recording_mean) OVER () AS population_mean FROM recording_means ORDER BY recording_id",
+          "response": {
+            "columns": [
+              "recording_id",
+              "measurement_count",
+              "recording_mean",
+              "recording_count",
+              "population_mean"
+            ],
+            "rows": [
+              [
+                "m1",
+                2,
+                90.0,
+                3,
+                51.0
+              ],
+              [
+                "p1",
+                2,
+                18.0,
+                3,
+                51.0
+              ],
+              [
+                "p2",
+                1,
+                45.0,
+                3,
+                51.0
+              ]
+            ]
+          }
+        },
+        {
+          "at": "2026-09-16T01:49:54.567877+00:00",
+          "action": "finish",
+          "request": "{\"answer\":{\"per_recording_means\":{\"m1\":90.0,\"p1\":18.0,\"p2\":45.0},\"recording_count\":3,\"equal_weight_population_mean\":51.0},\"selected_skill_ids\":[\"W-1469a3fa\"],\"skipped_skill_ids\":[\"W-9898a0d0\"],\"brief_reasoning\":\"Population-response applies to aggregation of measurements for this database. Averaged value within recording_id, then averaged the three recording means with equal weight: (90+18+45)/3=51. Recording-joins explicitly excludes summaries of measurements alone, so skipped it without opening its body.\",\"exact_model_id\":\"unknown\",\"environment\":{\"application\":\"Codex desktop\",\"cwd\":\"/Users/maxwellsdm/Documents/GitHub/wheeler\",\"shell\":\"zsh\",\"access\":\"Audited task_probe.py CLI only\",\"resource\":\"/private/tmp/wheeler-node-heldout-probe-20260915b\",\"task\":\"summary\"}}",
+          "response": {
+            "answer": {
+              "per_recording_means": {
+                "m1": 90.0,
+                "p1": 18.0,
+                "p2": 45.0
+              },
+              "recording_count": 3,
+              "equal_weight_population_mean": 51.0
+            },
+            "selected_skill_ids": [
+              "W-1469a3fa"
+            ],
+            "skipped_skill_ids": [
+              "W-9898a0d0"
+            ],
+            "brief_reasoning": "Population-response applies to aggregation of measurements for this database. Averaged value within recording_id, then averaged the three recording means with equal weight: (90+18+45)/3=51. Recording-joins explicitly excludes summaries of measurements alone, so skipped it without opening its body.",
+            "exact_model_id": "unknown",
+            "environment": {
+              "application": "Codex desktop",
+              "cwd": "/Users/maxwellsdm/Documents/GitHub/wheeler",
+              "shell": "zsh",
+              "access": "Audited task_probe.py CLI only",
+              "resource": "/private/tmp/wheeler-node-heldout-probe-20260915b",
+              "task": "summary"
+            }
+          }
+        }
+      ],
+      "answer": {
+        "answer": {
+          "per_recording_means": {
+            "m1": 90.0,
+            "p1": 18.0,
+            "p2": 45.0
+          },
+          "recording_count": 3,
+          "equal_weight_population_mean": 51.0
+        },
+        "selected_skill_ids": [
+          "W-1469a3fa"
+        ],
+        "skipped_skill_ids": [
+          "W-9898a0d0"
+        ],
+        "brief_reasoning": "Population-response applies to aggregation of measurements for this database. Averaged value within recording_id, then averaged the three recording means with equal weight: (90+18+45)/3=51. Recording-joins explicitly excludes summaries of measurements alone, so skipped it without opening its body.",
+        "exact_model_id": "unknown",
+        "environment": {
+          "application": "Codex desktop",
+          "cwd": "/Users/maxwellsdm/Documents/GitHub/wheeler",
+          "shell": "zsh",
+          "access": "Audited task_probe.py CLI only",
+          "resource": "/private/tmp/wheeler-node-heldout-probe-20260915b",
+          "task": "summary"
+        }
+      }
+    }
+  ],
+  "passed": 2,
+  "total": 2,
+  "source_snapshots": {
+    "evals/node_linked_skills/task_probe.py": {
+      "sha256": "bd8178c260ef6bc84884461c380ba6a2f7d9dbb39b34108af743b0adbbdeaf5c",
+      "content": "\"\"\"Audited, isolated graph-discovery -> agent task execution probe.\n\nRun with the checkout's Python. Setup requires an explicitly isolated Neo4j URI.\nAgents get only the CLI action contract, one case ID, and its task. The evaluator\nretains the oracle separately. No production project config is loaded here.\n\"\"\"\nfrom __future__ import annotations\n\nimport argparse\nimport asyncio\nimport hashlib\nimport json\nimport sqlite3\nimport sys\nfrom datetime import datetime, timezone\nfrom pathlib import Path\nfrom uuid import uuid4\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[2]))\n\nfrom wheeler.config import WheelerConfig\nfrom wheeler.graph.driver import close_async_driver\nfrom wheeler.search.retrieval import expand_search_results\nfrom wheeler.tools.graph_tools import _get_backend, execute_tool\n\n\nCASES = {\n    \"join\": (\"D-probe-db\", \"Return the parasol recording IDs and their measured response values from this database, ordered by recording ID and value.\"),\n    \"neighbor\": (\"D-probe-dataset\", \"Find this dataset's database and return the midget recording IDs and measured response values, ordered by recording ID and value.\"),\n    \"summary\": (\"D-probe-db\", \"Compute the population response summary from this database's measurements, following this analysis's conventions.\"),\n    \"size\": (\"D-probe-db\", \"Report this database file's size in bytes. Do not query its contents.\"),\n    \"schema\": (\"D-probe-db\", \"List the names of the tables in this database. Do not analyze or join any records.\"),\n    \"other\": (\"D-probe-other\", \"List the names of the tables in this database. Do not analyze or join any records.\"),\n}\n\n\ndef record(root, case, action, request, response):\n    event = {\"at\": datetime.now(timezone.utc).isoformat(), \"action\": action,\n             \"request\": request, \"response\": response}\n    with (root / f\"{case}.events.jsonl\").open(\"a\") as handle:\n        handle.write(json.dumps(event, default=str) + \"\\n\")\n\n\nasync def setup(root, uri, variant=\"\"):\n    root.mkdir(parents=True, exist_ok=True)\n    if (root / \"config.json\").exists():\n        raise ValueError(\"Use a new probe root\")\n    config = WheelerConfig(project_root=str(root), neo4j={\n        \"uri\": uri, \"username\": \"neo4j\", \"password\": \"\", \"database\": \"neo4j\",\n        \"project_tag\": \"skill-task-probe-\" + uuid4().hex,\n    })\n    (root / \"config.json\").write_text(config.model_dump_json(indent=2))\n    paths = {}\n    for name in (\"primary\", \"other\"):\n        folder = root / name\n        folder.mkdir()\n        path = folder / \"recordings.sqlite\"\n        with sqlite3.connect(path) as db:\n            db.executescript(\"\"\"\n                CREATE TABLE recordings(recording_id TEXT PRIMARY KEY, basename TEXT, cell_type TEXT);\n                CREATE TABLE measurements(recording_id TEXT, basename TEXT, value REAL);\n                INSERT INTO recordings VALUES\n                    ('p1', 'trace.dat', 'parasol'), ('p2', 'other.dat', 'parasol'),\n                    ('m1', 'trace.dat', 'midget');\n                INSERT INTO measurements VALUES\n                    ('p1', 'trace.dat', 10), ('p1', 'trace.dat', 20),\n                    ('p2', 'other.dat', 40), ('m1', 'trace.dat', 99), ('m1', 'trace.dat', 101);\n            \"\"\")\n            if variant == \"heldout\":\n                # Keep skill examples unchanged, but vary task data so copying\n                # a benchmark answer cannot produce the correct task result.\n                db.executescript(\"\"\"\n                    UPDATE measurements SET value = CASE\n                        WHEN recording_id = 'p1' AND value = 10 THEN 12\n                        WHEN recording_id = 'p1' AND value = 20 THEN 24\n                        WHEN recording_id = 'p2' THEN 45\n                        WHEN recording_id = 'm1' AND value = 99 THEN 80\n                        WHEN recording_id = 'm1' AND value = 101 THEN 100\n                    END;\n                \"\"\")\n        paths[name] = path\n    (root / \"dataset.csv\").write_text(\"cell_type\\nmidget\\n\")\n    for node_id, path, desc in (\n        (\"D-probe-db\", paths[\"primary\"], \"Recording metadata and measured responses for the primary retinal analysis\"),\n        (\"D-probe-other\", paths[\"other\"], \"Separate recordings database for another analysis\"),\n        (\"D-probe-dataset\", root / \"dataset.csv\", \"Midget dataset linked to its source recordings database\"),\n    ):\n        result = json.loads(await execute_tool(\"add_dataset\", {\n            \"id\": node_id, \"path\": str(path), \"type\": path.suffix.lstrip(\".\"), \"description\": desc,\n        }, config))\n        assert \"error\" not in result, result\n    await execute_tool(\"link_nodes\", {\"source_id\": \"D-probe-dataset\", \"target_id\": \"D-probe-db\",\n                                      \"relationship\": \"RELEVANT_TO\"}, config)\n    specs = [\n        (\"recording-joins\", \"Join recording metadata to measured responses, including selecting measurements by cell type. Not for file size, schema inspection, or summaries of measurements alone.\",\n         \"When joining recordings and measurements, use recording_id, never basename: filenames repeat across cells. Filter cell type on recordings. Multiple measurements per recording are valid. Verify the joined row count equals the measurement count for the selected recording IDs before interpreting results.\",\n         \"A basename join contaminated parasol results with midget responses.\",\n         \"Select parasol measurements and return p1:10, p1:20, p2:40, without midget values; check cardinality.\"),\n        (\"population-response\", \"Compute the population response summary from the measurements table in this analysis. Applies to aggregation, not metadata joins, individual response retrieval, schema inspection, or file size.\",\n         \"For the population response summary, first average value within each recording_id in measurements. Then average those per-recording means with equal weight per recording. Report per-recording means, recording count, and the equal-weight population mean. Do not average all measurement rows directly; that overweights recordings with more measurements. This operation does not need a recordings metadata join.\",\n         \"Recordings with unequal measurement counts received unequal weight in the population summary.\",\n         \"For p1=[10,20], p2=[40], m1=[99,101], report means 15,40,100 and population mean 155/3 for three recordings.\"),\n    ]\n    manifest = []\n    for name, description, instructions, problem, benchmark in specs:\n        args = {\"name\": name, \"description\": description, \"instructions\": instructions,\n                \"target_ids\": [\"D-probe-db\"], \"source_excerpt\": problem,\n                \"problem_statement\": problem, \"benchmark_task\": benchmark, \"accepted\": True,\n                \"author_model\": \"unknown\", \"author_environment\": \"Codex local checkout; synthetic evaluator fixture\"}\n        result = json.loads(await execute_tool(\"capture_lesson\", args, config))\n        assert result.get(\"status\") not in {None, \"incomplete\"} and \"error\" not in result, result\n        content = Path(result[\"path\"]).read_text()\n        manifest.append({\"capture\": result, \"arguments\": args, \"body\": content,\n                         \"sha256\": hashlib.sha256(content.encode()).hexdigest()})\n    (root / \"fixture-manifest.json\").write_text(json.dumps(manifest, indent=2))\n    with sqlite3.connect(paths[\"primary\"]) as db:\n        wrong_join = db.execute(\"SELECT r.recording_id,m.value FROM recordings r JOIN measurements m ON r.basename=m.basename WHERE r.cell_type='parasol' ORDER BY r.recording_id,m.value\").fetchall()\n        wrong_mean = db.execute(\"SELECT AVG(value) FROM measurements\").fetchone()[0]\n    (root / \"controls.json\").write_text(json.dumps({\"variant\": variant, \"wrong_basename_join\": wrong_join, \"wrong_row_mean\": wrong_mean}, indent=2))\n    print(json.dumps({\"root\": str(root), \"cases\": {k: v[1] for k, v in CASES.items()}}, indent=2))\n\n\nasync def act(root, action, case, argument):\n    config = WheelerConfig.model_validate_json((root / \"config.json\").read_text())\n    if action == \"cleanup\":\n        backend = await _get_backend(config)\n        await backend.run_cypher(\"MATCH (n {_wheeler_project: $tag}) DETACH DELETE n\",\n                                 {\"tag\": config.neo4j.project_tag})\n        return {\"cleaned_namespace\": config.neo4j.project_tag}\n    node_id, task = CASES[case]\n    if action == \"context\":\n        # This is the production graph expansion/discovery implementation.\n        # Seed selection is fixed to isolate selection from search ranking.\n        result = await expand_search_results([{\"id\": node_id, \"type\": \"Dataset\"}], config, max_hops_prov=1)\n        (root / f\"{case}.context.json\").write_text(json.dumps(result, indent=2, default=str))\n    elif action == \"read\":\n        context = json.loads((root / f\"{case}.context.json\").read_text())\n        skill = next(s for s in context[\"linked_skills\"] if s[\"id\"] == argument)\n        result = {\"id\": argument, \"name\": skill[\"name\"], \"body\": Path(skill[\"path\"]).read_text()}\n    elif action in {\"sql\", \"stat\"}:\n        path = root / (\"other\" if case == \"other\" else \"primary\") / \"recordings.sqlite\"\n        if action == \"stat\":\n            result = {\"path\": str(path), \"size_bytes\": path.stat().st_size}\n        else:\n            with sqlite3.connect(path.as_uri() + \"?mode=ro\", uri=True) as db:\n                db.execute(\"PRAGMA query_only=ON\")\n                cursor = db.execute(argument)\n                result = {\"columns\": [c[0] for c in cursor.description], \"rows\": cursor.fetchall()}\n    elif action == \"finish\":\n        result = json.loads(argument)\n        (root / f\"{case}.answer.json\").write_text(json.dumps(result, indent=2))\n    else:\n        raise ValueError(action)\n    record(root, case, action, argument, result)\n    return result\n\n\nasync def main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"root\", type=Path)\n    parser.add_argument(\"action\", choices=[\"setup\", \"context\", \"read\", \"sql\", \"stat\", \"finish\", \"cleanup\"])\n    parser.add_argument(\"case\", nargs=\"?\", default=\"\")\n    parser.add_argument(\"argument\", nargs=\"?\", default=\"\")\n    args = parser.parse_args()\n    try:\n        if args.action == \"setup\":\n            await setup(args.root.resolve(), args.case, args.argument)\n        else:\n            result = await act(args.root.resolve(), args.action, args.case, args.argument)\n            print(json.dumps(result, default=str))\n    finally:\n        await close_async_driver()\n\n\nif __name__ == \"__main__\":\n    asyncio.run(main())\n"
+    },
+    "evals/node_linked_skills/score_task_probe.py": {
+      "sha256": "c5b7814fa72dcb8e3f5d229b772a8a231842bc07ca3632efd6d336fd580d1395",
+      "content": "\"\"\"Score observed reads and SQLite results, then preserve a self-contained record.\"\"\"\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport math\nimport platform\nimport sqlite3\nimport sys\nfrom datetime import datetime, timezone\nfrom pathlib import Path\n\nfrom task_probe import CASES\n\n\ndef score(root: Path, output: Path, case_names: list[str] | None = None) -> None:\n    manifest = json.loads((root / \"fixture-manifest.json\").read_text())\n    controls = json.loads((root / \"controls.json\").read_text())\n    heldout = controls.get(\"variant\") == \"heldout\"\n    skill_ids = {s[\"arguments\"][\"name\"]: s[\"capture\"][\"node_id\"] for s in manifest}\n    expected_reads = {\"join\": [skill_ids[\"recording-joins\"]],\n                      \"neighbor\": [skill_ids[\"recording-joins\"]],\n                      \"summary\": [skill_ids[\"population-response\"]],\n                      \"size\": [], \"schema\": [], \"other\": []}\n    cases = []\n    for name, (node_id, task) in CASES.items():\n        if case_names and name not in case_names:\n            continue\n        events = [json.loads(line) for line in (root / f\"{name}.events.jsonl\").read_text().splitlines()]\n        context = json.loads((root / f\"{name}.context.json\").read_text())\n        answer = json.loads((root / f\"{name}.answer.json\").read_text())\n        actual_reads = [e[\"request\"] for e in events if e[\"action\"] == \"read\"]\n        queries = [e for e in events if e[\"action\"] == \"sql\"]\n        rowsets = [e[\"response\"][\"rows\"] for e in queries]\n        discovered = [s[\"id\"] for s in context[\"linked_skills\"]]\n        expected_discovered = sorted(skill_ids.values()) if name != \"other\" else []\n        checks = {\n            \"discovery_scoped_correctly\": sorted(discovered) == expected_discovered,\n            \"discovery_complete\": context[\"linked_skills_status\"] == \"complete\",\n            \"only_relevant_bodies_read\": actual_reads == expected_reads[name],\n            \"reported_selection_matches_reads\": sorted(answer[\"selected_skill_ids\"]) == sorted(actual_reads),\n            \"full_instructions_not_in_context\": all(s[\"arguments\"][\"instructions\"] not in json.dumps(context) for s in manifest),\n        }\n        if name in {\"join\", \"neighbor\"}:\n            expected_rows = [[\"p1\", 10.0], [\"p1\", 20.0], [\"p2\", 40.0]] if name == \"join\" else [[\"m1\", 99.0], [\"m1\", 101.0]]\n            if heldout:\n                expected_rows = [[\"p1\", 12.0], [\"p1\", 24.0], [\"p2\", 45.0]] if name == \"join\" else [[\"m1\", 80.0], [\"m1\", 100.0]]\n            checks[\"executed_result_correct\"] = expected_rows in rowsets\n            checks[\"used_stable_join_key\"] = any(\"join\" in e[\"request\"].lower() and \"recording_id\" in e[\"request\"].lower() for e in queries)\n            checks[\"no_basename_join\"] = all(\"basename\" not in e[\"request\"].lower() for e in queries if \"join\" in e[\"request\"].lower())\n            if name == \"neighbor\":\n                checks[\"target_encountered_as_neighbor\"] = (\n                    [n[\"id\"] for n in context[\"seed_nodes\"]] == [\"D-probe-dataset\"]\n                    and \"D-probe-db\" in [n[\"id\"] for n in context[\"related_nodes\"]]\n                )\n        elif name == \"summary\":\n            checks[\"executed_result_correct\"] = any(\n                any(isinstance(v, (int, float)) and math.isclose(v, 51 if heldout else 155 / 3) for row in rows for v in row)\n                for rows in rowsets\n            )\n            checks[\"no_unnecessary_metadata_join\"] = all(\"join\" not in e[\"request\"].lower() for e in queries)\n            checks[\"grouped_by_recording\"] = any(\"group by recording_id\" in e[\"request\"].lower() for e in queries)\n        elif name == \"size\":\n            size = (root / \"primary\" / \"recordings.sqlite\").stat().st_size\n            checks[\"executed_result_correct\"] = any(e[\"action\"] == \"stat\" and e[\"response\"][\"size_bytes\"] == size for e in events)\n            checks[\"no_content_query\"] = not queries\n        else:\n            checks[\"executed_result_correct\"] = any(sorted(rows) == [[\"measurements\"], [\"recordings\"]] for rows in rowsets)\n            checks[\"schema_queries_only\"] = bool(queries) and all(\"sqlite_master\" in e[\"request\"].lower() or \"sqlite_schema\" in e[\"request\"].lower() for e in queries)\n        cases.append({\"case\": name, \"task\": task, \"seed_id\": node_id,\n                      \"expected_read_ids\": expected_reads[name], \"observed_read_ids\": actual_reads,\n                      \"checks\": checks, \"passed\": all(checks.values()), \"events\": events,\n                      \"answer\": answer})\n    repo = Path(__file__).resolve().parents[2]\n    snapshots = {}\n    for relative in [\"evals/node_linked_skills/task_probe.py\", \"evals/node_linked_skills/score_task_probe.py\",\n                     \"wheeler/skill_discovery.py\", \"wheeler/search/retrieval.py\", \"wheeler/_data/commands/ask.md\"]:\n        content = (repo / relative).read_text()\n        snapshots[relative] = {\"sha256\": hashlib.sha256(content.encode()).hexdigest(), \"content\": content}\n    result = {\n        \"recorded_at\": datetime.now(timezone.utc).isoformat(),\n        \"runtime\": {\"host\": \"Codex local desktop subagents\", \"python\": platform.python_version(),\n                    \"platform\": platform.platform(), \"sqlite\": sqlite3.sqlite_version,\n                    \"graph\": \"Isolated loopback Neo4j; production Wheeler discovery; no research graph\"},\n        \"method\": \"Fresh-context subagents, one case per agent. Actual isolated Neo4j capture and production discovery, audited skill reads and read-only SQLite execution. Expected choices and numerical results withheld from agent task prompts. Original fixture matches skill benchmark examples; heldout variant changes task data while keeping those examples unchanged.\",\n        \"limitations\": \"One run per case; synthetic tasks and explicit applicability descriptions. No reliability estimate or model comparison. Seed node supplied to graph expansion, so search ranking and voice routing are not tested. Exact evaluator model IDs unavailable. SQL fixture controls are deterministic wrong implementations, not agent baselines. The CLI audit relies on agents following their tool-use contract; it is not an OS sandbox.\",\n        \"preflight\": \"Original fixture only: first join context event was evaluator preflight before the agent's own context read. All heldout events are agent actions.\",\n        \"agent_protocol\": \"Use context first. Compare linked resource, operation and applicability with current intent. Skip clear mismatches without opening bodies; read candidates if uncertainty matters; apply relevant guidance. Use only audited context/read/sql/stat/finish CLI actions. Do not inspect other cases, manifests, evaluator files or repository code. Execute task and record answer, selected/skipped IDs, rationale, exact model ID if exposed and environment.\",\n        \"fixture\": manifest, \"controls\": controls,\n        \"cases\": cases, \"passed\": sum(c[\"passed\"] for c in cases), \"total\": len(cases),\n        \"source_snapshots\": snapshots,\n    }\n    output.write_text(json.dumps(result, indent=2))\n    print(json.dumps({\"passed\": result[\"passed\"], \"total\": result[\"total\"],\n                      \"checks\": {c[\"case\"]: c[\"checks\"] for c in cases}}, indent=2))\n    if result[\"passed\"] != result[\"total\"]:\n        raise SystemExit(1)\n\n\nif __name__ == \"__main__\":\n    score(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3:] or None)\n"
+    },
+    "wheeler/skill_discovery.py": {
+      "sha256": "c9284d3962cac00f99f398405fe955864d5294235adaa41e16a0d50b98c8a1d3",
+      "content": "\"\"\"Progressive disclosure of accepted skills attached to encountered nodes.\n\nGraph links establish relevance; canonical JSON and artifact hashes establish\nthat a completed, usable revision exists on this machine. Reads never activate\ncandidate lessons or silently fall back to superseded instructions.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport asyncio\nimport hashlib\nimport json\nimport logging\nfrom typing import TYPE_CHECKING, Protocol\n\nfrom wheeler.config import project_knowledge_dir\n\nif TYPE_CHECKING:\n    from wheeler.config import WheelerConfig\n\n\nclass SkillReadBackend(Protocol):\n    async def run_cypher(self, query: str, params: dict | None = None) -> list[dict]: ...\n\n\n# Only these structured result rows carry encountered node identities. Never\n# infer triggers from citations in prose, roll-ups, or arbitrary nested metadata.\nQUERY_RESULT_KEYS = {\n    \"query_findings\": \"findings\", \"query_hypotheses\": \"hypotheses\",\n    \"query_open_questions\": \"questions\", \"query_datasets\": \"datasets\",\n    \"query_papers\": \"papers\", \"query_documents\": \"documents\",\n    \"query_plans\": \"plans\", \"query_notes\": \"notes\", \"query_scripts\": \"scripts\",\n    \"query_executions\": \"executions\", \"query_review_queue\": \"items\",\n}\n\nlogger = logging.getLogger(__name__)\n\n_CONSISTENT_FIELDS = (\n    \"skill_name\", \"skill_description\", \"skill_version\", \"skill_state\",\n    \"skill_supersedes\", \"skill_source_ids\", \"skill_target_ids\", \"path\", \"hash\",\n    \"skill_capture_key\",\n)\n\n_MODEL_CONTEXT_DEFAULTS = {\n    \"skill_author_model\": \"unknown\", \"skill_author_environment\": \"unknown\",\n    \"skill_tested_model\": \"\", \"skill_tested_environment\": \"\",\n    \"skill_benchmark_result_ids\": [],\n}\n\n\ndef _usable_skill(skill: dict, config: WheelerConfig) -> tuple[dict | None, str]:\n    \"\"\"Check the canonical copy and bounded artifact without disclosing its body.\"\"\"\n    from wheeler.knowledge.store import read_node\n    from wheeler.portability import resolve\n\n    try:\n        canonical = read_node(project_knowledge_dir(config), skill[\"id\"]).model_dump()\n        if canonical.get(\"type\") != \"Document\" or any(\n            canonical.get(key) != skill.get(key) for key in _CONSISTENT_FIELDS\n        ):\n            return None, \"canonical_metadata_mismatch\"\n        if any(canonical.get(key, default) != skill.get(key, default)\n               for key, default in _MODEL_CONTEXT_DEFAULTS.items()):\n            return None, \"canonical_metadata_mismatch\"\n        if canonical.get(\"stale\") or skill.get(\"stale\"):\n            return None, \"stale\"\n        if not skill.get(\"path\") or not skill.get(\"hash\"):\n            return None, \"missing_artifact_metadata\"\n        path = resolve(skill[\"path\"], config.resolved_roots)\n        if path is None:\n            return None, \"unresolved_artifact_root\"\n        if not path.is_absolute():\n            path = config.resolved_project_root / path\n        # Graph acceptance alone cannot certify all local writes succeeded.\n        # Capture publishes this receipt last, after its required links and\n        # graph/JSON/synthesis writes have completed successfully.\n        try:\n            with path.with_name(\"capture-complete.json\").open(\"rb\") as handle:\n                receipt = json.loads(handle.read(4097))\n            if not skill.get(\"skill_capture_key\") or receipt != {\n                \"node_id\": skill[\"id\"],\n                \"capture_key\": skill[\"skill_capture_key\"],\n                \"hash\": skill[\"hash\"],\n            }:\n                return None, \"incomplete_capture\"\n        except (OSError, ValueError, TypeError):\n            return None, \"incomplete_capture\"\n        # Capture produces small SKILL.md files. Bound reads even if a path is\n        # later replaced with a huge file; failed validation is visible.\n        with path.open(\"rb\") as handle:\n            body = handle.read(256 * 1024 + 1)\n        if len(body) > 256 * 1024:\n            return None, \"artifact_too_large\"\n        expected = skill[\"hash\"].removeprefix(\"sha256:\")\n        if hashlib.sha256(body).hexdigest() != expected:\n            return None, \"artifact_hash_mismatch\"\n        return {\n            \"id\": skill[\"id\"],\n            \"name\": skill[\"skill_name\"],\n            \"description\": skill[\"skill_description\"],\n            \"version\": skill[\"skill_version\"],\n            \"path\": str(path.resolve()),\n            \"target_ids\": skill[\"skill_target_ids\"],\n            \"author_model\": skill.get(\"skill_author_model\", \"unknown\"),\n            \"tested_model\": skill.get(\"skill_tested_model\", \"\"),\n        }, \"\"\n    except FileNotFoundError:\n        return None, \"missing_local_copy\"\n    except (OSError, ValueError, KeyError, TypeError, AttributeError):\n        logger.debug(\"Linked skill validation failed\", exc_info=True)\n        return None, \"invalid_local_copy\"\n\n\nasync def discover_skills(\n    node_ids: list[str],\n    config: WheelerConfig,\n    backend: SkillReadBackend | None = None,\n    *,\n    limit: int = 20,\n    node_limit: int = 200,\n) -> dict:\n    \"\"\"Return descriptions of active skills linked to a batch of encountered IDs.\n\n    Full instructions stay in the returned SKILL.md paths. An empty complete\n    result means no linked accepted skills; unavailable and truncated explicitly\n    distinguish failures or partial discovery from that absence.\n    \"\"\"\n    ids = list(dict.fromkeys(nid for nid in node_ids if isinstance(nid, str) and nid))\n    result: dict = {\"linked_skills\": [], \"linked_skills_status\": \"complete\"}\n    if not ids:\n        return result\n    limit = max(1, min(limit, 100))\n    node_limit = max(1, min(node_limit, 1000))\n    truncated = len(ids) > node_limit\n    try:\n        if backend is None:\n            from wheeler.tools.graph_tools import _get_backend\n\n            backend = await _get_backend(config)\n        params: dict = {\"node_ids\": ids[:node_limit], \"limit\": limit + 1}\n        project_tag = config.neo4j.project_tag\n        scoped = isinstance(project_tag, str) and bool(project_tag)\n        skill_scope = \" AND skill._wheeler_project = $ptag AND target._wheeler_project = $ptag\" if scoped else \"\"\n        successor_scope = \" AND successor._wheeler_project = $ptag\" if scoped else \"\"\n        if scoped:\n            params[\"ptag\"] = project_tag\n        records = await backend.run_cypher(\n            \"MATCH (skill:Document)-[:APPLIES_TO]->(target) \"\n            \"WHERE (target.id IN $node_ids OR skill.id IN $node_ids) \"\n            \"AND skill.skill_state = 'accepted' AND skill.skill_name <> ''\"\n            + skill_scope\n            + \" AND NOT EXISTS { MATCH (successor:Document) \"\n            \"WHERE successor.skill_supersedes = skill.id \"\n            \"AND successor.skill_state IN ['accepted', 'retracted']\"\n            + successor_scope\n            + \" } RETURN skill, collect(DISTINCT target.id) AS matched_target_ids \"\n            \"ORDER BY skill.id LIMIT $limit\",\n            params,\n        )\n        truncated = truncated or len(records) > limit\n        unavailable: list[dict] = []\n        for record in records[:limit]:\n            skill = dict(record[\"skill\"])\n            item, reason = await asyncio.to_thread(_usable_skill, skill, config)\n            if item is None:\n                unavailable.append({\"id\": skill.get(\"id\", \"\"), \"reason\": reason})\n            else:\n                item[\"matched_target_ids\"] = record.get(\"matched_target_ids\", [])\n                result[\"linked_skills\"].append(item)\n        if unavailable:\n            result[\"linked_skills_unavailable\"] = unavailable\n            result[\"linked_skills_status\"] = \"unavailable\"\n        if truncated:\n            result[\"linked_skills_truncated\"] = True\n            result[\"linked_skills_status\"] = \"truncated\"\n        return result\n    except Exception:\n        logger.debug(\"Linked skill discovery unavailable\", exc_info=True)\n        return {**result, \"linked_skills_status\": \"unavailable\"}\n\n\nasync def enrich_query_result(\n    payload: dict, result_key: str, config: WheelerConfig,\n    backend: SkillReadBackend | None = None, *, id_key: str = \"id\",\n) -> dict:\n    \"\"\"Enrich a known node-bearing response without walking arbitrary content.\"\"\"\n    if payload.get(\"error\"):\n        return payload\n    rows = payload.get(result_key)\n    if not isinstance(rows, list):\n        return {**payload, \"linked_skills\": [], \"linked_skills_status\": \"unavailable\"}\n    ids = [row[id_key] for row in rows if isinstance(row, dict)\n           and isinstance(row.get(id_key), str) and row[id_key]]\n    discovery = await discover_skills(ids, config, backend)\n    if len(ids) != len(rows):\n        discovery[\"linked_skills_status\"] = \"unavailable\"\n        discovery[\"linked_skills_coverage\"] = \"Some returned rows lack a usable node identity.\"\n    return {**payload, **discovery}\n\n\ndef format_skill_context(discovery: dict, *, max_chars: int = 2400) -> str:\n    \"\"\"Compact descriptions for text context. Full bodies are never injected.\"\"\"\n    skills = discovery.get(\"linked_skills\", [])\n    status = discovery.get(\"linked_skills_status\", \"unavailable\")\n    if not skills and status == \"complete\":\n        return \"\"\n    lines = [\"### Linked skills (consider applicability; read only when relevant)\"]\n    for skill in skills:\n        line = f\"- [{skill['id']}] {skill['name']}: {skill['description'][:240]}\"\n        if sum(len(s) + 1 for s in lines) + len(line) > max_chars - 180:\n            status = \"truncated\"\n            break\n        lines.append(line)\n    lines.append(\"Use show_node on a selected skill ID to find its full file and version context.\")\n    if status != \"complete\":\n        lines.append(f\"Skill discovery is {status}; this is not evidence that no other skills apply.\")\n    return \"\\n\".join(lines)\n"
+    },
+    "wheeler/search/retrieval.py": {
+      "sha256": "b01cf98d265740a09a9b8a0f99a8b57c09f9bd76b531284b2f688a71a17b8c64",
+      "content": "\"\"\"Multi-channel retrieval with Reciprocal Rank Fusion.\n\nCombines up to three retrieval channels \u2014 semantic (embeddings), keyword\n(graph queries), and temporal (recency) \u2014 and fuses their ranked results\nusing RRF.  Gracefully degrades when individual channels are unavailable.\n\nReference: Cormack, Clarke & Buettcher (2009) \u2014 Reciprocal Rank Fusion.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport asyncio\nimport json\nimport logging\nfrom pathlib import Path\nfrom typing import TYPE_CHECKING\n\n# config.py is a documented zero-dependency leaf, so a runtime import here cannot\n# create a cycle. The helper resolves against the discovered project root instead\n# of the CWD: a server spawned in a subdirectory used to look for knowledge/ in\n# the wrong place and surface it as \"search returns no results\".\nfrom wheeler.config import project_knowledge_dir\n\nif TYPE_CHECKING:\n    from wheeler.config import WheelerConfig\n\nlogger = logging.getLogger(__name__)\n\n# Maps node labels to the text field used by the keyword channel.\n# Must stay in sync with backfill.TEXT_FIELDS.\n_LABEL_TEXT_FIELDS: dict[str, str] = {\n    \"Finding\": \"description\",\n    \"Hypothesis\": \"statement\",\n    \"OpenQuestion\": \"question\",\n    \"Paper\": \"title\",\n    \"Dataset\": \"description\",\n    \"Document\": \"title\",\n    \"ResearchNote\": \"content\",\n}\n\n\n# ---------------------------------------------------------------------------\n# Reciprocal Rank Fusion\n# ---------------------------------------------------------------------------\n\n\ndef reciprocal_rank_fusion(\n    ranked_lists: list[list[str]],\n    k: int = 60,\n    limit: int = 10,\n) -> list[tuple[str, float]]:\n    \"\"\"Combine multiple ranked lists using Reciprocal Rank Fusion.\n\n    Each input list contains node IDs ordered from most to least relevant.\n    The fused score for a document is::\n\n        score(doc) = sum(1 / (k + rank_in_list + 1))  for each list containing doc\n\n    Args:\n        ranked_lists: Ordered lists of node IDs from each retrieval channel.\n        k: RRF constant (default 60, per the original paper).\n        limit: Maximum number of results to return.\n\n    Returns:\n        ``(node_id, score)`` tuples sorted by fused score descending.\n    \"\"\"\n    scores: dict[str, float] = {}\n    for ranked in ranked_lists:\n        for rank, doc_id in enumerate(ranked):\n            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)\n    return sorted(scores.items(), key=lambda x: -x[1])[:limit]\n\n\n# ---------------------------------------------------------------------------\n# Individual retrieval channels\n# ---------------------------------------------------------------------------\n\n\nasync def _semantic_channel(\n    query: str,\n    config: WheelerConfig,\n    limit: int,\n    label: str,\n) -> list[str]:\n    \"\"\"Retrieve node IDs via cosine-similarity search over embeddings.\"\"\"\n    try:\n        from wheeler.search.embeddings import EmbeddingStore\n    except ImportError:\n        logger.debug(\"Semantic channel unavailable: wheeler[search] not installed\")\n        return []\n\n    # Project-root anchored, not cwd-relative: with the raw string, a server\n    # started outside the project root read a DIFFERENT embeddings file than\n    # mcp_shared's singleton wrote, so search and index_node silently disagreed.\n    from wheeler.config import project_search_store_dir\n\n    store = EmbeddingStore(str(project_search_store_dir(config)))\n    store.load()\n    results = store.search(query, limit=limit, label_filter=label or None)\n    return [r.node_id for r in results]\n\n\nasync def _keyword_channel(\n    query: str,\n    config: WheelerConfig,\n    limit: int,\n    label: str,\n) -> list[str]:\n    \"\"\"Retrieve node IDs via keyword-filtered graph queries.\"\"\"\n    from wheeler.tools import graph_tools\n    from wheeler.skill_discovery import QUERY_RESULT_KEYS\n\n    # Determine which query tools to run based on label filter\n    if label:\n        targets = _label_to_query_targets(label)\n    else:\n        # Query the broad set: findings, hypotheses, questions, notes, papers\n        targets = [\n            (\"query_findings\", \"keyword\"),\n            (\"query_hypotheses\", None),  # hypotheses has no keyword param\n            (\"query_open_questions\", None),\n            (\"query_notes\", \"keyword\"),\n            (\"query_papers\", \"keyword\"),\n        ]\n\n    node_ids: list[str] = []\n    for tool_name, kw_param in targets:\n        try:\n            args: dict = {\"limit\": limit, \"_skip_skill_discovery\": True}\n            if kw_param:\n                args[kw_param] = query\n            result_str = await graph_tools.execute_tool(tool_name, args, config)\n            parsed = json.loads(result_str)\n            # All query tools return a dict with a list keyed by plural label\n            rows = parsed.get(QUERY_RESULT_KEYS[tool_name], [])\n            for item in rows if isinstance(rows, list) else []:\n                nid = item.get(\"id\", \"\") if isinstance(item, dict) else \"\"\n                if isinstance(nid, str) and nid and nid not in node_ids:\n                    node_ids.append(nid)\n        except Exception:\n            logger.debug(\"Keyword channel %s failed\", tool_name, exc_info=True)\n\n    return node_ids[:limit]\n\n\nasync def _temporal_channel(\n    config: WheelerConfig,\n    limit: int,\n    label: str,\n) -> list[str]:\n    \"\"\"Retrieve the most recently created node IDs.\"\"\"\n    knowledge_path = project_knowledge_dir(config)\n    if not knowledge_path.is_dir():\n        return []\n\n    try:\n        from wheeler.knowledge.store import list_nodes\n\n        nodes = list_nodes(knowledge_path, type_filter=label or None)\n\n        # Sort by created timestamp descending (most recent first)\n        def _sort_key(n):\n            return getattr(n, \"created\", \"\") or \"\"\n\n        nodes.sort(key=_sort_key, reverse=True)\n        return [n.id for n in nodes[:limit]]\n    except Exception:\n        logger.debug(\"Temporal channel failed\", exc_info=True)\n        return []\n\n\nasync def _fulltext_channel(\n    query: str,\n    config: WheelerConfig,\n    limit: int,\n    label: str,\n) -> list[str]:\n    \"\"\"Retrieve node IDs via Neo4j fulltext index search (RRF channel 4).\"\"\"\n    from wheeler.tools.graph_tools import _get_backend\n\n    try:\n        backend = await _get_backend(config)\n\n        # Build query with optional namespace filter\n        cypher = (\n            \"CALL db.index.fulltext.queryNodes('wheeler_fulltext', $query) \"\n            \"YIELD node, score \"\n            \"WHERE node.id IS NOT NULL\"\n        )\n        params: dict = {\"query\": query}\n\n        if config.neo4j.project_tag:\n            cypher += \" AND node._wheeler_project = $ptag\"\n            params[\"ptag\"] = config.neo4j.project_tag\n\n        if label:\n            cypher += f\" AND '{label}' IN labels(node)\"\n\n        cypher += (\n            \" RETURN node.id AS id, labels(node)[0] AS type, score\"\n            \" ORDER BY score DESC LIMIT $limit\"\n        )\n        params[\"limit\"] = limit\n\n        records = await backend.run_cypher(cypher, params)\n        return [rec.get(\"id\", \"\") for rec in records if rec.get(\"id\")]\n    except Exception:\n        logger.debug(\"Fulltext channel failed\", exc_info=True)\n        return []  # graceful degradation if fulltext index doesn't exist yet\n\n\ndef _label_to_query_targets(label: str) -> list[tuple[str, str | None]]:\n    \"\"\"Map a node label to the (tool_name, keyword_param) pairs to query.\"\"\"\n    mapping: dict[str, tuple[str, str | None]] = {\n        \"Finding\": (\"query_findings\", \"keyword\"),\n        \"Hypothesis\": (\"query_hypotheses\", None),\n        \"OpenQuestion\": (\"query_open_questions\", None),\n        \"Paper\": (\"query_papers\", \"keyword\"),\n        \"Dataset\": (\"query_datasets\", \"keyword\"),\n        \"Document\": (\"query_documents\", \"keyword\"),\n        \"ResearchNote\": (\"query_notes\", \"keyword\"),\n    }\n    target = mapping.get(label)\n    return [target] if target else []\n\n\n# ---------------------------------------------------------------------------\n# Node enrichment\n# ---------------------------------------------------------------------------\n\n\ndef _enrich_node(node_id: str, knowledge_path: Path) -> dict:\n    \"\"\"Load full node data from the knowledge JSON file.\n\n    Returns a dict with at least ``{\"id\": node_id}``.  On failure, returns\n    a minimal stub so that results are never dropped.\n    \"\"\"\n    try:\n        from wheeler.knowledge.store import read_node\n\n        model = read_node(knowledge_path, node_id)\n        return model.model_dump()\n    except Exception:\n        return {\"id\": node_id}\n\n\ndef _summarize_node(node_id: str, knowledge_path: Path) -> dict:\n    \"\"\"Load a short summary of a node for glanceable related-node context.\n\n    Returns ``id``, ``type``, ``tier``, ``tags``, ``stale``, plus the\n    type-specific gist fields (e.g. ``description`` for Finding,\n    ``title`` for Paper).  Falls back to ``{\"id\": node_id}`` on error.\n    \"\"\"\n    try:\n        from wheeler.knowledge.store import read_node\n\n        model = read_node(knowledge_path, node_id)\n        data = model.model_dump()\n    except Exception:\n        return {\"id\": node_id}\n\n    summary: dict = {\n        \"id\": data[\"id\"],\n        \"type\": data.get(\"type\", \"\"),\n        \"tier\": data.get(\"tier\", \"\"),\n    }\n    if data.get(\"tags\"):\n        summary[\"tags\"] = data[\"tags\"]\n    if data.get(\"stale\"):\n        summary[\"stale\"] = True\n    if data.get(\"skill_name\"):\n        # Mark skill Documents explicitly even when they occur as ordinary\n        # search results. Accepted guidance is separately verified below.\n        for key in (\"skill_name\", \"skill_description\", \"skill_version\", \"skill_state\"):\n            summary[key] = data.get(key)\n\n    # One-sentence human-readable summary for LLM context\n    summary[\"summary\"] = _one_line_summary(data)\n\n    return summary\n\n\ndef _one_line_summary(data: dict) -> str:\n    \"\"\"Build a one-sentence summary from type-specific fields.\"\"\"\n    t = data.get(\"type\", \"\")\n    if t == \"Finding\":\n        desc = data.get(\"description\", \"\")\n        conf = data.get(\"confidence\", 0)\n        if desc:\n            s = desc[:200]\n            return f\"{s} (confidence: {conf})\" if conf else s\n    elif t == \"Hypothesis\":\n        stmt = data.get(\"statement\", \"\")\n        status = data.get(\"status\", \"open\")\n        if stmt:\n            return f\"{stmt[:200]} [{status}]\"\n    elif t == \"OpenQuestion\":\n        q = data.get(\"question\", \"\")\n        if q:\n            return q[:200]\n    elif t == \"Paper\":\n        title = data.get(\"title\", \"\")\n        authors = data.get(\"authors\", \"\")\n        year = data.get(\"year\", 0)\n        parts = [p for p in [title, authors, str(year) if year else \"\"] if p]\n        if parts:\n            return \", \".join(parts)\n    elif t == \"Dataset\":\n        desc = data.get(\"description\", \"\")\n        path = data.get(\"path\", \"\")\n        return desc[:200] if desc else path\n    elif t == \"Script\":\n        path = data.get(\"path\", \"\")\n        lang = data.get(\"language\", \"\")\n        return f\"{path} ({lang})\" if lang else path\n    elif t == \"Execution\":\n        desc = data.get(\"description\", \"\")\n        kind = data.get(\"kind\", \"\")\n        return desc[:200] if desc else kind\n    elif t == \"Document\":\n        title = data.get(\"title\", \"\")\n        return title[:200] if title else data.get(\"path\", \"\")\n    elif t == \"ResearchNote\":\n        title = data.get(\"title\", \"\")\n        return title[:200] if title else \"\"\n    return data.get(\"id\", \"\")\n\n\n# ---------------------------------------------------------------------------\n# Public API\n# ---------------------------------------------------------------------------\n\n\n# ---------------------------------------------------------------------------\n# Graph expansion\n# ---------------------------------------------------------------------------\n\n\nasync def expand_search_results(\n    seeds: list[dict],\n    config: WheelerConfig,\n    max_hops_prov: int = 2,\n    max_hops_semantic: int = 1,\n) -> dict:\n    \"\"\"Expand search seeds via graph traversal, returning provenance chains.\n\n    Starting from the seed nodes returned by ``multi_search``, traverses the\n    graph to collect:\n\n    - 1-hop neighbors via any relationship type\n    - 2-hop neighbors via PROV relationships only (provenance chains)\n\n    Results are deduplicated, scored by relationship type and distance,\n    and returned alongside the relationship edges found.\n\n    Args:\n        seeds: List of enriched node dicts from ``multi_search`` (must have\n               ``id`` and ``type`` keys).\n        config: Wheeler configuration.\n        max_hops_prov: Maximum depth for provenance chain traversal (default 2).\n        max_hops_semantic: Maximum depth for semantic link traversal (default 1).\n\n    Returns:\n        Dict with ``seed_nodes``, ``related_nodes``, ``relationships``,\n        and ``total_related``.\n    \"\"\"\n    from wheeler.tools.graph_tools import _get_backend\n    from wheeler.models import PREFIX_TO_LABEL\n\n    try:\n        backend = await _get_backend(config)\n    except Exception:\n        logger.debug(\"Graph expansion unavailable\", exc_info=True)\n        return {\n            \"seed_nodes\": [\n                {**_summarize_node(s.get(\"id\", \"\"), project_knowledge_dir(config)),\n                 \"score\": s.get(\"rrf_score\", 0)}\n                for s in seeds\n            ],\n            \"related_nodes\": [],\n            \"relationships\": [],\n            \"total_related\": 0,\n            \"linked_skills\": [],\n            \"linked_skills_status\": \"unavailable\",\n        }\n    all_related: list[dict] = []\n    all_relationships: list[dict] = []\n    expansion_failed = False\n    project_tag = config.neo4j.project_tag\n    scoped = isinstance(project_tag, str) and bool(project_tag)\n\n    for seed in seeds:\n        node_id = seed.get(\"id\", \"\")\n        prefix = node_id.split(\"-\", 1)[0] if \"-\" in node_id else \"\"\n        label = PREFIX_TO_LABEL.get(prefix, \"\")\n        if not label or not node_id:\n            continue\n\n        # 1-hop: all relationship types\n        try:\n            params = {\"id\": node_id}\n            # Learned skills are disclosed through the bounded active-skill\n            # resolver below, not as an unbounded pile of historical neighbors.\n            hop1_scope = \"WHERE NOT (n:Document AND coalesce(n.skill_name, '') <> '') \"\n            hop2_scope = \"\"\n            if scoped:\n                params[\"ptag\"] = project_tag\n                hop1_scope += \"AND seed._wheeler_project = $ptag AND n._wheeler_project = $ptag \"\n                hop2_scope = (\n                    \"AND seed._wheeler_project = $ptag AND h1._wheeler_project = $ptag \"\n                    \"AND h2._wheeler_project = $ptag \"\n                )\n            hop1 = await backend.run_cypher(\n                f\"MATCH (seed:{label} {{id: $id}})-[r]-(n) \"\n                + hop1_scope\n                + \"RETURN n.id AS nid, labels(n)[0] AS nlabel, \"\n                \"type(r) AS rel, \"\n                \"CASE WHEN startNode(r).id = $id THEN 'out' ELSE 'in' END AS dir\",\n                params,\n            )\n            for rec in hop1:\n                all_related.append({\n                    \"node_id\": rec[\"nid\"],\n                    \"label\": rec[\"nlabel\"],\n                    \"relationship\": rec[\"rel\"],\n                    \"direction\": rec[\"dir\"],\n                    \"from_seed\": node_id,\n                    \"hops\": 1,\n                })\n                all_relationships.append({\n                    \"source\": node_id if rec[\"dir\"] == \"out\" else rec[\"nid\"],\n                    \"target\": rec[\"nid\"] if rec[\"dir\"] == \"out\" else node_id,\n                    \"relationship\": rec[\"rel\"],\n                })\n        except Exception:\n            expansion_failed = True\n            logger.debug(\"1-hop expansion failed for %s\", node_id, exc_info=True)\n\n        # 2-hop: PROV relationships only (provenance chains)\n        if max_hops_prov >= 2:\n            try:\n                hop2 = await backend.run_cypher(\n                    f\"MATCH (seed:{label} {{id: $id}})\"\n                    \"-[:USED|WAS_GENERATED_BY|WAS_DERIVED_FROM|WAS_INFORMED_BY]-(h1)\"\n                    \"-[r2:USED|WAS_GENERATED_BY|WAS_DERIVED_FROM|WAS_INFORMED_BY]-(h2) \"\n                    \"WHERE h2.id <> $id \"\n                    + hop2_scope\n                    + \"RETURN DISTINCT h2.id AS nid, labels(h2)[0] AS nlabel, \"\n                    \"type(r2) AS rel, h1.id AS via\",\n                    params,\n                )\n                for rec in hop2:\n                    all_related.append({\n                        \"node_id\": rec[\"nid\"],\n                        \"label\": rec[\"nlabel\"],\n                        \"relationship\": rec[\"rel\"],\n                        \"from_seed\": node_id,\n                        \"via\": rec[\"via\"],\n                        \"hops\": 2,\n                    })\n            except Exception:\n                expansion_failed = True\n                logger.debug(\n                    \"2-hop prov expansion failed for %s\", node_id, exc_info=True,\n                )\n\n    # Deduplicate related nodes (keep closest hop)\n    seen: dict[str, dict] = {}\n    for rel in all_related:\n        nid = rel[\"node_id\"]\n        if nid not in seen or rel[\"hops\"] < seen[nid][\"hops\"]:\n            seen[nid] = rel\n    # Remove seeds from related\n    seed_ids = {s.get(\"id\") for s in seeds}\n    unique_related = [v for k, v in sorted(seen.items()) if k not in seed_ids]\n\n    # Rank: PROV relationships score higher than semantic\n    prov_rels = {\"USED\", \"WAS_GENERATED_BY\", \"WAS_DERIVED_FROM\", \"WAS_INFORMED_BY\"}\n    semantic_rels = {\"SUPPORTS\", \"CONTRADICTS\"}\n    for node in unique_related:\n        rel = node.get(\"relationship\", \"\")\n        hops = node.get(\"hops\", 1)\n        if rel in prov_rels:\n            node[\"relevance_score\"] = 1.0 / hops\n        elif rel in semantic_rels:\n            node[\"relevance_score\"] = 0.8 / hops\n        else:\n            node[\"relevance_score\"] = 0.5 / hops\n    unique_related.sort(key=lambda x: x.get(\"relevance_score\", 0), reverse=True)\n\n    # Enrich related nodes with glanceable summary from knowledge JSON\n    knowledge_path = project_knowledge_dir(config)\n    clean_related: list[dict] = []\n    hidden_skill_ids: set[str] = set()\n    for node in unique_related:\n        summary = _summarize_node(node[\"node_id\"], knowledge_path)\n        if summary.get(\"skill_name\"):\n            hidden_skill_ids.add(node[\"node_id\"])\n            continue\n        entry: dict = {\n            \"id\": node[\"node_id\"],\n            \"type\": summary.get(\"type\", node.get(\"label\", \"\")),\n            \"relationship\": node[\"relationship\"],\n            \"summary\": summary.get(\"summary\", \"\"),\n        }\n        if summary.get(\"tier\"):\n            entry[\"tier\"] = summary[\"tier\"]\n        if summary.get(\"tags\"):\n            entry[\"tags\"] = summary[\"tags\"]\n        if summary.get(\"stale\"):\n            entry[\"stale\"] = True\n        if summary.get(\"skill_name\"):\n            for field in (\"skill_name\", \"skill_description\", \"skill_version\", \"skill_state\"):\n                entry[field] = summary.get(field)\n        clean_related.append(entry)\n\n    # Deduplicate relationships\n    unique_rels: list[dict] = []\n    rel_seen: set[tuple[str, str, str]] = set()\n    for r in all_relationships:\n        if r[\"source\"] in hidden_skill_ids or r[\"target\"] in hidden_skill_ids:\n            continue\n        key = (r[\"source\"], r[\"target\"], r[\"relationship\"])\n        if key not in rel_seen:\n            rel_seen.add(key)\n            unique_rels.append(r)\n\n    # Build clean seed nodes: summary + score, no internal fields\n    clean_seeds: list[dict] = []\n    for s in seeds:\n        node_id = s.get(\"id\", \"\")\n        seed_summary = _summarize_node(node_id, knowledge_path)\n        entry = {**seed_summary, \"score\": s.get(\"rrf_score\", 0)}\n        clean_seeds.append(entry)\n\n    from wheeler.skill_discovery import discover_skills\n\n    # Include returned neighbors: a dataset can expose its database at hop 1,\n    # whose attached procedure otherwise sits beyond semantic traversal depth.\n    linked = await discover_skills(\n        [node[\"id\"] for node in clean_seeds + clean_related], config, backend,\n    )\n    if expansion_failed:\n        linked[\"graph_expansion_status\"] = \"unavailable\"\n        linked[\"linked_skills_status\"] = \"unavailable\"\n    return {\n        \"seed_nodes\": clean_seeds,\n        \"related_nodes\": clean_related,\n        \"relationships\": unique_rels,\n        \"total_related\": len(clean_related),\n        **linked,\n    }\n\n\nasync def multi_search(\n    query: str,\n    config: WheelerConfig,\n    limit: int = 10,\n    label: str = \"\",\n    mode: str = \"multi\",\n) -> list[dict]:\n    \"\"\"Run multi-channel retrieval and fuse results with RRF.\n\n    Runs up to four channels (semantic, keyword, temporal, fulltext) in\n    parallel, fuses their ranked ID lists with Reciprocal Rank Fusion,\n    then enriches the top results from knowledge JSON files.\n\n    Args:\n        query: Natural language search query.\n        config: Wheeler configuration.\n        limit: Maximum results to return.\n        label: Optional node-type filter (e.g. ``\"Finding\"``).\n        mode: Retrieval mode: ``\"multi\"`` (default, all channels),\n              ``\"semantic\"`` (embeddings only), ``\"keyword\"``\n              (graph keyword only), ``\"temporal\"`` (most recent only),\n              ``\"fulltext\"`` (Neo4j fulltext index only).\n\n    Returns:\n        List of enriched node dicts, each with at least ``id`` and\n        ``rrf_score`` keys.\n    \"\"\"\n    # Fetch a wider candidate pool per channel so RRF has material to work with\n    per_channel = max(limit * 3, 30)\n\n    if mode == \"semantic\":\n        ranked_lists = [await _semantic_channel(query, config, per_channel, label)]\n    elif mode == \"keyword\":\n        ranked_lists = [await _keyword_channel(query, config, per_channel, label)]\n    elif mode == \"temporal\":\n        ranked_lists = [await _temporal_channel(config, per_channel, label)]\n    elif mode == \"fulltext\":\n        ranked_lists = [await _fulltext_channel(query, config, per_channel, label)]\n    else:\n        # Multi: run all channels concurrently\n        results = await asyncio.gather(\n            _semantic_channel(query, config, per_channel, label),\n            _keyword_channel(query, config, per_channel, label),\n            _temporal_channel(config, per_channel, label),\n            _fulltext_channel(query, config, per_channel, label),\n            return_exceptions=True,\n        )\n        ranked_lists = []\n        for i, r in enumerate(results):\n            channel_name = [\"semantic\", \"keyword\", \"temporal\", \"fulltext\"][i]\n            if isinstance(r, BaseException):\n                logger.warning(\"Channel %s raised: %s\", channel_name, r)\n            elif r:\n                ranked_lists.append(r)\n\n    if not ranked_lists:\n        return []\n\n    fused = reciprocal_rank_fusion(ranked_lists, limit=limit)\n\n    # Enrich each result with full node data\n    knowledge_path = project_knowledge_dir(config)\n    enriched: list[dict] = []\n    for node_id, score in fused:\n        node_data = _enrich_node(node_id, knowledge_path)\n        node_data[\"rrf_score\"] = round(score, 6)\n        enriched.append(node_data)\n\n    return enriched\n"
+    },
+    "wheeler/_data/commands/ask.md": {
+      "sha256": "61318f41a056a560532e4d6d48de3420bd1e4203ca27c26fe44a67af938bee5c",
+      "content": "---\nname: wh:ask\ndescription: Use when the user queries the Wheeler knowledge graph for node lookups, provenance traces, or connections\nargument-hint: \"<question about the graph>\"\nallowed-tools:\n  - Read\n  - Glob\n  - Grep\n  - mcp__wheeler_core__graph_health\n  - mcp__wheeler_core__graph_status\n  - mcp__wheeler_core__graph_context\n  - mcp__wheeler_core__graph_gaps\n  - mcp__wheeler_core__run_cypher\n  - mcp__wheeler_query__query_findings\n  - mcp__wheeler_query__query_hypotheses\n  - mcp__wheeler_query__query_open_questions\n  - mcp__wheeler_query__query_datasets\n  - mcp__wheeler_query__query_papers\n  - mcp__wheeler_query__query_documents\n  - mcp__wheeler_ops__validate_citations\n  - mcp__wheeler_ops__extract_citations\n  - mcp__wheeler_ops__detect_stale\n  - Skill\n  - mcp__wheeler_core__show_node\n---\n\n## Connectivity Check\nBefore proceeding: call `graph_health`. If it returns `\"status\": \"offline\"`,\nSTOP. Tell the user Neo4j is not running and provide the remediation steps\nfrom the error response. Offer to retry after they start it. Do not continue\nwith other work.\n\nYou are Wheeler, answering a question about the knowledge graph. Query the graph, trace provenance, and answer with [NODE_ID] citations.\n\n## Your Job\nAnswer the scientist's question using the graph. No execution, no planning \u2014 just look things up and explain.\n\n## How to Answer\n\n1. **Parse the question** \u2014 what are they asking about? A specific node? A relationship? An overview? A comparison?\n\n2. **Query the graph** \u2014 use the right tool:\n   - \"What do we know about X?\" \u2192 `query_findings` with keyword, then `query_hypotheses`, `query_papers`\n   - \"What's in the graph?\" \u2192 `graph_status` + `graph_context`\n   - \"Where did this come from?\" \u2192 `run_cypher` to trace provenance:\n     ```cypher\n     MATCH path = (n {id: $id})<-[*1..5]-(upstream)\n     RETURN [node in nodes(path) | {id: node.id, labels: labels(node)}] AS chain\n     ```\n   - \"What's missing?\" \u2192 `graph_gaps`\n   - \"Is anything stale?\" \u2192 `detect_stale`\n   - \"What cites this?\" / \"What does this cite?\" \u2192 raw Cypher:\n     ```cypher\n     MATCH (n {id: $id})-[r]->(m) RETURN type(r), m.id, labels(m)\n     MATCH (n {id: $id})<-[r]-(m) RETURN type(r), m.id, labels(m)\n     ```\n   - \"What's the difference between X and Y?\" \u2192 query both, compare\n   - \"What papers informed this execution?\" \u2192 raw Cypher:\n     ```cypher\n     MATCH (x:Execution {id: $id})-[:USED]->(p:Paper) RETURN p\n     ```\n   - \"What went into this document?\" \u2192 raw Cypher:\n     ```cypher\n     MATCH (n)-[:APPEARS_IN]->(w:Document {id: $id}) RETURN n\n     ```\n   - \"Show me reference vs generated\" \u2192 raw Cypher:\n     ```cypher\n     MATCH (f:Finding) RETURN f.tier, count(f)\n     ```\n\n3. **Answer with citations** \u2014 every claim cites a [NODE_ID]. If you can't cite it, say so.\n\n4. **Show relationships** \u2014 when relevant, show how nodes connect:\n   ```\n   [X-def] SRM fitting (kind: script)\n     \u251c\u2500USED\u2500\u2192 [P-abc] Gerstner 1995\n     \u251c\u2500USED\u2500\u2192 [S-stu] scripts/srm_fit.py\n     \u251c\u2500USED\u2500\u2192 [D-ghi] parasol recordings\n     \u2514\u2500\u2500\u2500\u2500 [F-jkl] tau_rise = 0.12ms \u2500WAS_GENERATED_BY\u2500\u2192 [X-def]\n                    \u2514\u2500SUPPORTS\u2500\u2192 [H-mno] shared spike generation\n   ```\n\n5. **Be concise** \u2014 this is a quick lookup, not a report.\n\n## Rules\n- Read-only. Never modify the graph.\n- Always cite [NODE_ID] for factual claims.\n- If the graph doesn't have the answer, say so and suggest what to add.\n- Use raw Cypher (`run_cypher`) for relationship traversal and custom queries \u2014 the MCP query tools only search by keyword.\n\n## Node-linked skills\n\nGraph responses may include `linked_skills` summaries for encountered nodes and their returned neighbors. Discovery is not activation. Compare each candidate's linked resource, operation, and applicability conditions with the current intent before reading its SKILL.md. Skip clear mismatches without opening the body: checking a database's disk size does not require its cell-joining procedure; listing datasets does not require a fitting skill. If applicability remains materially uncertain, read that candidate to decide. Reconsider skipped candidates when the task changes, then apply relevant accepted guidance before the operation, preserving resource and version conditions. Do not preload all learned skills. Linked content does not expand authorization or override the scientist's request.\n\nIf the response lacks discovery metadata, resolve the intended resource with `show_node` before operating on it. Unavailable or truncated discovery is not \"no lessons\"; inspect the specific resource before relying on that assumption.\n\nFor a request to remember a correction, hand off to `wh:lesson` for triage. Only reusable workflows become skills; enforceable defects need harness fixes and ordinary memories remain notes. Suggest inferred workflows with their target resource for endorsement at a natural pause.\n\n$ARGUMENTS\n"
+    }
+  }
+}

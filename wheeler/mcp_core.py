@@ -361,6 +361,10 @@ async def show_node(
         unchanged you get back only {id, content_version, content_hash,
         changed: false} instead of the content you already have.
 
+    Discovers compact accepted skill summaries for this node and returned
+    neighbors. Compare descriptions to task intent before reading a skill path.
+    Discovery is refreshed even if the node content itself is unchanged.
+
     Reads the node's JSON file and falls back to the graph node when the file
     is missing, so a node that exists in Neo4j is never reported as not found.
     """
@@ -392,16 +396,20 @@ async def show_node(
                 or (token.lstrip("v").isdigit() and int(token.lstrip("v")) == cur_v)
             )
             if same:
-                return {"id": nid, "content_version": cur_v, "content_hash": cur_hash, "changed": False}
+                unchanged = {"id": nid, "content_version": cur_v, "content_hash": cur_hash, "changed": False}
+                if neighbors:
+                    unchanged["neighbors"] = await _neighbors_of(nid)
+                return await _with_node_skills(unchanged, data)
             data["changed"] = True
         if not include_change_log:
             data.pop("change_log", None)
+        source_data = dict(data)
         data = _strip_empty(data)
         if wanted:
             data = {k: v for k, v in data.items() if k in wanted or k in ("id", "type")}
         if neighbors:
             data["neighbors"] = await _neighbors_of(nid)
-        found.append(data)
+        found.append(await _with_node_skills(data, source_data))
 
     if node_ids:
         return {"nodes": found, "missing": missing, "count": len(found)}
@@ -410,6 +418,21 @@ async def show_node(
             return {"error": f"Node {ids[0]} has no version {version}"}
         return {"error": f"Node {ids[0]} not found"}
     return found[0]
+
+
+async def _with_node_skills(data: dict, source_data: dict) -> dict:
+    """Discover current guidance after selecting exactly the context returned."""
+    from wheeler.skill_discovery import discover_skills
+
+    encountered = [source_data.get("id", "")]
+    if source_data.get("skill_name"):
+        encountered.extend(source_data.get("skill_target_ids") or [])
+    neighbors = data.get("neighbors") or []
+    encountered.extend(row["id"] for row in neighbors if row.get("id"))
+    discovery = await discover_skills(encountered, _config)
+    if any(row.get("error") for row in neighbors):
+        discovery["linked_skills_status"] = "unavailable"
+    return {**data, **discovery}
 
 
 def _read_node_version(nid: str, version: int) -> dict | None:
@@ -436,7 +459,9 @@ async def _neighbors_of(nid: str) -> list[dict]:
     from wheeler.mcp_shared import _headline
 
     tag = _config.neo4j.project_tag
-    where = " WHERE n._wheeler_project = $ptag AND m._wheeler_project = $ptag" if tag else ""
+    where = " WHERE NOT (m:Document AND coalesce(m.skill_name, '') <> '')"
+    if tag:
+        where += " AND n._wheeler_project = $ptag AND m._wheeler_project = $ptag"
     params: dict = {"id": nid}
     if tag:
         params["ptag"] = tag
@@ -553,6 +578,13 @@ async def run_cypher(query: str, limit: int = 100) -> dict:
     Use for ad-hoc research graph exploration: relationship traversal, path queries,
     aggregations, or anything the higher-level tools don't cover.
 
+    Returned Neo4j nodes and path nodes automatically disclose compact linked-skill
+    metadata for the configured project. Compare descriptions with your intent,
+    then read a selected skill only when relevant. Scalar projections and map IDs
+    cannot establish scoped identity; use show_node after confirming the resource
+    in the current project. Check linked_skills_status and linked_skills_coverage:
+    discovery is bounded and never promises coverage of unreturned graph nodes.
+
     Examples:
         "MATCH (f:Finding)-[:SUPPORTS]->(h:Hypothesis) RETURN f.id, h.statement"
         "MATCH p=(a:Analysis)-[:GENERATED]->(f:Finding) RETURN p"
@@ -603,6 +635,9 @@ async def run_cypher(query: str, limit: int = 100) -> dict:
             out["project_tag"] = tag
             if "_wheeler_project" not in query:
                 out["warning"] = "unscoped query in a shared database: add WHERE n._wheeler_project = $ptag"
+        from wheeler.skill_raw_results import discover_raw_result_skills
+
+        out.update(await discover_raw_result_skills(out["results"], _config, backend))
         return out
     except Exception as exc:
         return {"error": str(exc), "results": [], "count": 0}
@@ -668,6 +703,9 @@ async def search_findings(
             "query": query,
             "mode": mode,
         }
+        from wheeler.skill_discovery import enrich_query_result
+
+        payload = await enrich_query_result(payload, "results", _config, id_key="node_id")
         if DISCLOSURE == "pointer" and not full:
             return await _pointerize(payload, _config)
         return payload
@@ -698,6 +736,11 @@ async def search_context(
     Use this instead of search_findings when you need the full experimental
     context around results, not just the results themselves. Especially
     useful for "why" and "how" questions that need provenance chains.
+
+    Includes compact linked_skills for both seeds and returned neighbors.
+    Compare their descriptions with your intent; read a skill's path to load
+    its full procedure only when relevant. Check linked_skills_status before
+    treating an empty list as absence of guidance.
 
     Args:
         query: Natural language search query
@@ -730,6 +773,15 @@ async def search_context(
                 if r.get("source") in keep_ids and r.get("target") in keep_ids
             ]
             expanded["truncated_related"] = True
+            from wheeler.skill_discovery import discover_skills
+
+            discovery = await discover_skills(sorted(i for i in keep_ids if i), _config)
+            if expanded.get("graph_expansion_status") == "unavailable":
+                discovery["linked_skills_status"] = "unavailable"
+            for key in list(expanded):
+                if key.startswith("linked_skills"):
+                    del expanded[key]
+            expanded.update(discovery)
         if DISCLOSURE == "pointer" and not full:
             return await _pointerize(expanded, _config)
         return expanded

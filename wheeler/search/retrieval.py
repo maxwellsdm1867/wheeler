@@ -108,6 +108,7 @@ async def _keyword_channel(
 ) -> list[str]:
     """Retrieve node IDs via keyword-filtered graph queries."""
     from wheeler.tools import graph_tools
+    from wheeler.skill_discovery import QUERY_RESULT_KEYS
 
     # Determine which query tools to run based on label filter
     if label:
@@ -125,18 +126,17 @@ async def _keyword_channel(
     node_ids: list[str] = []
     for tool_name, kw_param in targets:
         try:
-            args: dict = {"limit": limit}
+            args: dict = {"limit": limit, "_skip_skill_discovery": True}
             if kw_param:
                 args[kw_param] = query
             result_str = await graph_tools.execute_tool(tool_name, args, config)
             parsed = json.loads(result_str)
             # All query tools return a dict with a list keyed by plural label
-            for key, val in parsed.items():
-                if isinstance(val, list):
-                    for item in val:
-                        nid = item.get("id", "")
-                        if nid and nid not in node_ids:
-                            node_ids.append(nid)
+            rows = parsed.get(QUERY_RESULT_KEYS[tool_name], [])
+            for item in rows if isinstance(rows, list) else []:
+                nid = item.get("id", "") if isinstance(item, dict) else ""
+                if isinstance(nid, str) and nid and nid not in node_ids:
+                    node_ids.append(nid)
         except Exception:
             logger.debug("Keyword channel %s failed", tool_name, exc_info=True)
 
@@ -268,6 +268,11 @@ def _summarize_node(node_id: str, knowledge_path: Path) -> dict:
         summary["tags"] = data["tags"]
     if data.get("stale"):
         summary["stale"] = True
+    if data.get("skill_name"):
+        # Mark skill Documents explicitly even when they occur as ordinary
+        # search results. Accepted guidance is separately verified below.
+        for key in ("skill_name", "skill_description", "skill_version", "skill_state"):
+            summary[key] = data.get(key)
 
     # One-sentence human-readable summary for LLM context
     summary["summary"] = _one_line_summary(data)
@@ -362,9 +367,27 @@ async def expand_search_results(
     from wheeler.tools.graph_tools import _get_backend
     from wheeler.models import PREFIX_TO_LABEL
 
-    backend = await _get_backend(config)
+    try:
+        backend = await _get_backend(config)
+    except Exception:
+        logger.debug("Graph expansion unavailable", exc_info=True)
+        return {
+            "seed_nodes": [
+                {**_summarize_node(s.get("id", ""), project_knowledge_dir(config)),
+                 "score": s.get("rrf_score", 0)}
+                for s in seeds
+            ],
+            "related_nodes": [],
+            "relationships": [],
+            "total_related": 0,
+            "linked_skills": [],
+            "linked_skills_status": "unavailable",
+        }
     all_related: list[dict] = []
     all_relationships: list[dict] = []
+    expansion_failed = False
+    project_tag = config.neo4j.project_tag
+    scoped = isinstance(project_tag, str) and bool(project_tag)
 
     for seed in seeds:
         node_id = seed.get("id", "")
@@ -375,12 +398,25 @@ async def expand_search_results(
 
         # 1-hop: all relationship types
         try:
+            params = {"id": node_id}
+            # Learned skills are disclosed through the bounded active-skill
+            # resolver below, not as an unbounded pile of historical neighbors.
+            hop1_scope = "WHERE NOT (n:Document AND coalesce(n.skill_name, '') <> '') "
+            hop2_scope = ""
+            if scoped:
+                params["ptag"] = project_tag
+                hop1_scope += "AND seed._wheeler_project = $ptag AND n._wheeler_project = $ptag "
+                hop2_scope = (
+                    "AND seed._wheeler_project = $ptag AND h1._wheeler_project = $ptag "
+                    "AND h2._wheeler_project = $ptag "
+                )
             hop1 = await backend.run_cypher(
                 f"MATCH (seed:{label} {{id: $id}})-[r]-(n) "
-                "RETURN n.id AS nid, labels(n)[0] AS nlabel, "
+                + hop1_scope
+                + "RETURN n.id AS nid, labels(n)[0] AS nlabel, "
                 "type(r) AS rel, "
                 "CASE WHEN startNode(r).id = $id THEN 'out' ELSE 'in' END AS dir",
-                {"id": node_id},
+                params,
             )
             for rec in hop1:
                 all_related.append({
@@ -397,6 +433,7 @@ async def expand_search_results(
                     "relationship": rec["rel"],
                 })
         except Exception:
+            expansion_failed = True
             logger.debug("1-hop expansion failed for %s", node_id, exc_info=True)
 
         # 2-hop: PROV relationships only (provenance chains)
@@ -407,9 +444,10 @@ async def expand_search_results(
                     "-[:USED|WAS_GENERATED_BY|WAS_DERIVED_FROM|WAS_INFORMED_BY]-(h1)"
                     "-[r2:USED|WAS_GENERATED_BY|WAS_DERIVED_FROM|WAS_INFORMED_BY]-(h2) "
                     "WHERE h2.id <> $id "
-                    "RETURN DISTINCT h2.id AS nid, labels(h2)[0] AS nlabel, "
+                    + hop2_scope
+                    + "RETURN DISTINCT h2.id AS nid, labels(h2)[0] AS nlabel, "
                     "type(r2) AS rel, h1.id AS via",
-                    {"id": node_id},
+                    params,
                 )
                 for rec in hop2:
                     all_related.append({
@@ -421,6 +459,7 @@ async def expand_search_results(
                         "hops": 2,
                     })
             except Exception:
+                expansion_failed = True
                 logger.debug(
                     "2-hop prov expansion failed for %s", node_id, exc_info=True,
                 )
@@ -452,8 +491,12 @@ async def expand_search_results(
     # Enrich related nodes with glanceable summary from knowledge JSON
     knowledge_path = project_knowledge_dir(config)
     clean_related: list[dict] = []
+    hidden_skill_ids: set[str] = set()
     for node in unique_related:
         summary = _summarize_node(node["node_id"], knowledge_path)
+        if summary.get("skill_name"):
+            hidden_skill_ids.add(node["node_id"])
+            continue
         entry: dict = {
             "id": node["node_id"],
             "type": summary.get("type", node.get("label", "")),
@@ -466,12 +509,17 @@ async def expand_search_results(
             entry["tags"] = summary["tags"]
         if summary.get("stale"):
             entry["stale"] = True
+        if summary.get("skill_name"):
+            for field in ("skill_name", "skill_description", "skill_version", "skill_state"):
+                entry[field] = summary.get(field)
         clean_related.append(entry)
 
     # Deduplicate relationships
     unique_rels: list[dict] = []
     rel_seen: set[tuple[str, str, str]] = set()
     for r in all_relationships:
+        if r["source"] in hidden_skill_ids or r["target"] in hidden_skill_ids:
+            continue
         key = (r["source"], r["target"], r["relationship"])
         if key not in rel_seen:
             rel_seen.add(key)
@@ -485,11 +533,22 @@ async def expand_search_results(
         entry = {**seed_summary, "score": s.get("rrf_score", 0)}
         clean_seeds.append(entry)
 
+    from wheeler.skill_discovery import discover_skills
+
+    # Include returned neighbors: a dataset can expose its database at hop 1,
+    # whose attached procedure otherwise sits beyond semantic traversal depth.
+    linked = await discover_skills(
+        [node["id"] for node in clean_seeds + clean_related], config, backend,
+    )
+    if expansion_failed:
+        linked["graph_expansion_status"] = "unavailable"
+        linked["linked_skills_status"] = "unavailable"
     return {
         "seed_nodes": clean_seeds,
         "related_nodes": clean_related,
         "relationships": unique_rels,
         "total_related": len(clean_related),
+        **linked,
     }
 
 

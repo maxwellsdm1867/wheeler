@@ -2,7 +2,7 @@
 
 Why this exists
 ---------------
-Wheeler ships 39 acts. Historically they were installed by copying markdown into
+Wheeler ships 40 acts. Historically they were installed by copying markdown into
 `~/.claude/commands/wh/`, which only Claude Code can read. Supporting a second host
 (OpenAI Codex) by copying them again would mean maintaining act content twice, so
 instead:
@@ -11,8 +11,9 @@ instead:
 * each host gets a thin generated SKILL.md stub that calls it.
 
 Everything here is generated from `wheeler/_data/commands/*.md` and
-`wheeler/_data/agents/*.md`. Nothing is authored twice, and nothing in the emitted
-tree should ever be hand-edited.
+`wheeler/_data/agents/*.md`, plus self-contained plugin skills under
+`wheeler/_data/plugin_skills/`. Nothing is authored twice, and nothing in the
+emitted tree should ever be hand-edited.
 
 The plugin is named `wh`, and that is load-bearing
 --------------------------------------------------
@@ -94,6 +95,7 @@ MCP_JSON_NAME = ".mcp-plugin.json"
 
 SKILLS_DIR = "skills"
 AGENTS_DIR = "agents"
+PLUGIN_SKILLS_DATA_DIR = "plugin_skills"
 HOOKS_DIR = "hooks"
 PROFILES_DIR = "codex-profiles"
 
@@ -186,6 +188,23 @@ def package_version(root: Path | None = None) -> str:
 def agent_data_dir() -> Path:
     """Return the packaged subagent directory, `wheeler/_data/agents/`."""
     return Path(str(resources.files("wheeler") / "_data" / AGENTS_DIR))
+
+
+def plugin_skill_data_dir() -> Path:
+    """Return self-contained skills packaged for both plugin hosts."""
+    return Path(str(resources.files("wheeler") / "_data" / PLUGIN_SKILLS_DATA_DIR))
+
+
+def plugin_skill_files() -> dict[str, str]:
+    """Return packaged skill resources mapped to generated plugin paths."""
+    base = plugin_skill_data_dir()
+    if not base.is_dir():
+        return {}
+    return {
+        f"{SKILLS_DIR}/{path.relative_to(base).as_posix()}": path.read_text()
+        for path in sorted(base.rglob("*"))
+        if path.is_file()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +354,7 @@ def render_claude_plugin(version: str) -> dict:
         "version": version,
         "description": (
             "Provenance-tracked research assistant: a Neo4j knowledge graph over your "
-            "files, with 39 research acts and 51 MCP tools."
+            "files, with 40 research acts and a role-separated MCP tool surface."
         ),
         "author": {"name": AUTHOR},
         "homepage": f"https://github.com/{REPO}",
@@ -439,7 +458,7 @@ def render_openai_yaml() -> str:
         f"  display_name: {DISPLAY_NAME}",
         "  short_description: Provenance-tracked research assistant",
         "  long_description: >-",
-        "    A Neo4j knowledge graph indexed over your research files, with 39 acts",
+        "    A Neo4j knowledge graph indexed over your research files, with 40 acts",
         "    covering the research loop (discuss, plan, execute, write) and 51 MCP",
         "    tools. Every claim traces to a node; every artifact carries provenance.",
         "policy:",
@@ -727,7 +746,8 @@ For finer control than whole servers, Codex also accepts `enabled_tools` /
 ## Regenerating
 
 Everything here is generated from `wheeler/_data/commands/*.md` and
-`wheeler/_data/agents/*.md`:
+`wheeler/_data/agents/*.md`, plus self-contained skills under
+`wheeler/_data/plugin_skills/`:
 
 ```bash
 {REGEN_CMD}           # write
@@ -768,6 +788,14 @@ def build_plugin_files(root: Path | None = None) -> dict[str, str]:
 
     for act in acts:
         files[f"{SKILLS_DIR}/{act.act_id}/SKILL.md"] = render_skill(act)
+
+    # A small number of host-neutral skills are workflows rather than graph acts.
+    # They ship verbatim instead of becoming get_act stubs, but still live in the
+    # same generated skills/ tree so Claude Code and Codex receive them together.
+    for rel, content in plugin_skill_files().items():
+        if rel in files:
+            raise ValueError(f"packaged skill collides with generated act: {rel}")
+        files[rel] = content
 
     # Subagents ship verbatim. Unlike acts they are not fetched over MCP: the host
     # reads their frontmatter directly to decide what to spawn. Read through the

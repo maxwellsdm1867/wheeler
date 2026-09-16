@@ -20,6 +20,8 @@ allowed-tools:
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__extract_citations
   - mcp__wheeler_ops__detect_stale
+  - Skill
+  - mcp__wheeler_core__show_node
   - mcp__wheeler_core__get_act
   - mcp__plugin_wh_wheeler_core__graph_health
   - mcp__plugin_wh_wheeler_core__graph_status
@@ -35,6 +37,7 @@ allowed-tools:
   - mcp__plugin_wh_wheeler_ops__validate_citations
   - mcp__plugin_wh_wheeler_ops__extract_citations
   - mcp__plugin_wh_wheeler_ops__detect_stale
+  - mcp__plugin_wh_wheeler_core__show_node
   - mcp__plugin_wh_wheeler_core__get_act
 ---
 
@@ -52,7 +55,7 @@ plan for it.
 Pass `host="codex"` when running under Codex so the orchestration guidance
 matches the tools this host actually has.
 
-Mode: `execute`. Orchestration: `none`.
+Mode: `execute`. Orchestration: `skill-dispatch`.
 
 If `get_act` is unavailable, the Wheeler MCP servers are not connected. Say so
 rather than guessing at the workflow: acting without the act text is how

@@ -29,6 +29,10 @@ _TEST_PASSWORD = "research-graph"
 
 
 def _local_uri() -> str | None:
+    import os
+
+    if uri := os.environ.get("WHEELER_TEST_NEO4J_URI"):
+        return uri
     from neo4j import GraphDatabase
 
     for port in (7717, 7687, 7697, 7707):
@@ -334,12 +338,16 @@ async def test_show_node_batch_change_log_fields_and_graph_fallback(live_cfg, tm
 
     one = await fn(ids[0])
     assert one["id"] == ids[0] and "change_log" not in one and one["description"].startswith("edited")
-    assert "" not in one.values() and [] not in one.values()
+    node_fields = {k: v for k, v in one.items() if not k.startswith("linked_skills")}
+    assert "" not in node_fields.values() and [] not in node_fields.values()
+    assert one["linked_skills"] == [] and one["linked_skills_status"] == "complete"
     with_log = await fn(ids[0], include_change_log=True)
     assert len(with_log["change_log"]) >= 2
 
     picked = await fn(ids[0], fields="confidence")
-    assert set(picked) <= {"id", "type", "confidence"} and picked["confidence"] == 0.6
+    assert set(picked) <= {"id", "type", "confidence", "linked_skills", "linked_skills_status"}
+    assert picked["confidence"] == 0.6
+    assert picked["linked_skills"] == [] and picked["linked_skills_status"] == "complete"
 
     # JSON layer gone for one node: the graph still has it, so show_node must too.
     (tmp_path / "knowledge" / f"{ids[1]}.json").unlink()

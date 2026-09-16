@@ -43,7 +43,7 @@ class TestWheelerConfig:
         config = load_config(Path("/nonexistent/wheeler.yaml"))
         assert config == WheelerConfig()
 
-    def test_load_config_from_yaml(self, tmp_path):
+    def test_load_config_from_yaml(self, tmp_path, clean_neo4j_env):
         yaml_path = tmp_path / "wheeler.yaml"
         data = {
             "neo4j": {"uri": "bolt://custom:7687", "password": "custom-pass"},

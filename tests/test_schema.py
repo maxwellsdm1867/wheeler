@@ -68,6 +68,6 @@ class TestSchema:
             "USED", "WAS_GENERATED_BY", "WAS_DERIVED_FROM",
             "WAS_INFORMED_BY", "WAS_ATTRIBUTED_TO", "WAS_ASSOCIATED_WITH",
             "SUPPORTS", "CONTRADICTS", "CITES", "APPEARS_IN",
-            "RELEVANT_TO", "AROSE_FROM", "DEPENDS_ON", "CONTAINS",
+            "RELEVANT_TO", "AROSE_FROM", "DEPENDS_ON", "CONTAINS", "APPLIES_TO",
         }
         assert set(ALLOWED_RELATIONSHIPS) == expected

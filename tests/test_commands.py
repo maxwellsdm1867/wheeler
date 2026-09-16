@@ -15,6 +15,7 @@ EXPECTED_COMMANDS = [
     "execute",
     "handoff",
     "ingest",
+    "lesson",
     "pair",
     "pause",
     "plan",

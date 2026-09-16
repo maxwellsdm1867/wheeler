@@ -16,10 +16,10 @@ from wheeler import acts
 
 DATA_DIR = Path(__file__).parent.parent / "wheeler" / "_data" / "commands"
 
-# `_data/commands/` ships 40 .md files: 39 acts plus CLAUDE.md, the
+# `_data/commands/` ships 41 .md files: 40 acts plus CLAUDE.md, the
 # act-authoring guide. Off by one here is exactly the failure that would ship
 # silently, so it is pinned.
-NUM_ACTS = 39
+NUM_ACTS = 40
 
 
 def _frontmatter(path: Path) -> dict:
@@ -104,7 +104,7 @@ class TestParsing:
 
 class TestDerivedMode:
     def test_mode_matches_allowed_tools_for_every_act(self):
-        """Compute the mode independently and compare, for all 39 acts."""
+        """Compute the mode independently and compare, for all 40 acts."""
         for act in acts.load_acts():
             tools = _frontmatter(DATA_DIR / act.filename)["allowed-tools"]
             grants_ops = any(t.startswith("mcp__wheeler_ops__") for t in tools)
@@ -337,3 +337,35 @@ class TestGetActTool:
         assert result["orchestration"] == "subagents"
         assert result["host"] == "claude"
         assert "Read" in result["allowed_tools"]
+
+
+class TestLessonSurface:
+    def test_lesson_is_reachable_with_capture_and_resolution_capabilities(self):
+        act = acts.find_act("wh:lesson")
+        assert act is not None
+        assert act.mode == "write"
+        assert act.orchestration == "skill-dispatch"
+        assert {
+            "Read", "Skill",
+            "mcp__wheeler_core__search_context",
+            "mcp__wheeler_core__show_node",
+            "mcp__wheeler_mutations__capture_lesson",
+            "mcp__wheeler_mutations__retire_skill",
+        } <= set(act.allowed_tools)
+        # The dedicated capture tool owns file materialization and provenance.
+        assert not {"Write", "Bash", "mcp__wheeler_mutations__add_document"} & set(act.allowed_tools)
+
+    def test_close_can_use_the_same_capture_path(self):
+        assert "mcp__wheeler_mutations__capture_lesson" in acts.find_act("close").allowed_tools
+
+    @pytest.mark.parametrize("act_id", ["ask", "chat", "pair", "execute", "discuss", "plan", "resume", "write", "compile"])
+    def test_skill_consumers_can_read_and_resolve_target_nodes(self, act_id):
+        from fnmatch import fnmatchcase
+
+        tools = acts.find_act(act_id).allowed_tools
+        assert "Read" in tools
+        assert "Skill" in tools
+        assert any(fnmatchcase("mcp__wheeler_core__show_node", grant) for grant in tools)
+
+    def test_read_only_ask_does_not_gain_capture_permission(self):
+        assert not any(t.startswith("mcp__wheeler_mutations__") for t in acts.find_act("ask").allowed_tools)

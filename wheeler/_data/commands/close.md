@@ -30,6 +30,8 @@ allowed-tools:
   - mcp__wheeler_mutations__add_document
   - mcp__wheeler_mutations__add_finding
   - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__capture_lesson
+  - Skill
   - mcp__wheeler_mutations__add_question
   - mcp__wheeler_mutations__update_node
   - mcp__wheeler_ops__detect_stale
@@ -126,18 +128,18 @@ If the Cypher errors OR returns 0 rows on a session that should have activity, i
 
 ### 1.3b Conversation sweep (mandatory, before orphan grouping)
 
-Phase 1's existing orphan sweep finds *already-created graph nodes* that lack provenance. It does NOT catch *conversational artifacts* — decisions, rationales, and unresolved sub-questions that emerged during the session but never made it to the graph at all. Ask the scientist:
+Review the available conversation and session artifacts yourself for decisions, rationales, unanswered sub-questions, and reusable corrections missing from the graph. Present concrete candidates with their source context instead of asking the scientist to reconstruct the session. Do not claim to have reviewed unavailable turns.
 
-> Before I sweep orphans, anything from this session that isn't in the graph yet? Decisions you made, results you reached, sub-questions you opened, paths you decided not to pursue?
-
-For each item the scientist surfaces, register and link:
+For ordinary uncaptured items, propose the appropriate registration:
 - Endorsed result → `add_finding(description=..., confidence=...)`
 - Decision or rationale → `add_note(content=..., context=<topic>)`
 - Unresolved sub-question or deferred fork → `add_question(question=..., priority=N)`
 
-These nodes will then appear in Phase 1.3's orphan sweep below and get grouped into the session Execution along with everything else. The orphan sweep is now operating on a complete record, not a partial one.
+Triage corrections using `wh:lesson` before proposing skills. Enforceable invariants (such as reading a file before editing) and code defects belong in a hook, tool, or harness fix; surface unresolved implementation work without claiming that a memory entry fixes it. Ordinary facts, decisions, and preferences remain notes; scientific claims retain their evidence requirements. Only reusable workflows requiring judgment, such as fitting procedures or plotting standards, proceed to skill capture.
 
-If the scientist says "nothing", proceed to 1.4. Do not press.
+For such a reusable workflow, follow `wh:lesson`: resolve the affected resource node IDs, inspect existing linked skills, and prepare the applicability description, skill body, and source excerpt. Show the lesson and labeled target nodes together. A lesson already explicitly requested or endorsed can be captured with `accepted=true` without another approval. For a newly inferred candidate, present it for endorsement before capture with `accepted=true`; `accepted=false` may stage the proposal. Use `capture_lesson` for deduplication and linked provenance, including `supersedes` for a revision. Never create a second copy through `add_document` or group its existing provenance into another orphan Execution.
+
+Register newly approved ordinary items, then repeat the recent-entity/orphan queries so these nodes enter the sweep. Ask whether anything material is missing only after presenting the candidate list. If there are no candidates, continue without a mandatory memory interview.
 
 ### 1.3c UPDATE existing graph state (mandatory)
 
@@ -397,7 +399,7 @@ As the final step, call `graph_consistency_check(repair=False)` to detect any dr
 ---
 
 ## Rules
-- **NEVER auto-create without user approval in Phase 1.** The orphan-sweep batch is always presented and waited on. The synthesis (Phase 2) does NOT need explicit approval per node — but it must cite only nodes that exist in the graph.
+- **Do not activate inferred lessons or create orphan-sweep Executions without user approval in Phase 1.** Present the orphan-sweep batch and wait. An earlier explicit request to remember a lesson already supplies its capture authorization; do not ask again. The synthesis (Phase 2) does NOT need explicit approval per node — but it must cite only nodes that exist in the graph.
 - **Papers are never orphans.** They are reference entities, not produced by Wheeler.
 - **Executions are never orphans.** They ARE the provenance.
 - **Group related orphans.** Multiple findings from one analysis = one Execution.

@@ -29,6 +29,8 @@ allowed-tools:
   - mcp__wheeler_mutations__add_document
   - mcp__wheeler_mutations__add_finding
   - mcp__wheeler_mutations__add_note
+  - mcp__wheeler_mutations__capture_lesson
+  - Skill
   - mcp__wheeler_mutations__add_question
   - mcp__wheeler_mutations__update_node
   - mcp__wheeler_ops__detect_stale
@@ -58,6 +60,7 @@ allowed-tools:
   - mcp__plugin_wh_wheeler_mutations__add_document
   - mcp__plugin_wh_wheeler_mutations__add_finding
   - mcp__plugin_wh_wheeler_mutations__add_note
+  - mcp__plugin_wh_wheeler_mutations__capture_lesson
   - mcp__plugin_wh_wheeler_mutations__add_question
   - mcp__plugin_wh_wheeler_mutations__update_node
   - mcp__plugin_wh_wheeler_ops__detect_stale

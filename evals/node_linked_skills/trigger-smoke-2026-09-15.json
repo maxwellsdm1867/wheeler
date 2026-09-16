@@ -1,0 +1,370 @@
+{
+  "recorded_at": "2026-09-15T18:19:10.851849-07:00",
+  "base_commit": "9965f0af13d1ae66fa92282e6ebd2e8845b30e0b",
+  "working_tree": "modified; lesson act content snapshot included",
+  "method": "Two independent subagents without prior conversation; one six-case selection batch, one six-case triage batch. Expected answers withheld. Decisions only, no study tasks executed.",
+  "limitation": "Small synthetic smoke test, not a statistical reliability or model-comparison benchmark. Cases within each batch share one agent context. Exact runtime model IDs were not exposed.",
+  "use_cases": [
+    {
+      "id": "A1",
+      "kind": "use",
+      "intent": "Fetch the parasol recordings with their measured responses from this database.",
+      "linked_skills": [
+        {
+          "id": "W-00000001",
+          "name": "recording-joins",
+          "description": "Use when selecting cell types by joining recording metadata and measurements in the recordings database. Not for storage size checks or fitting.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/recording-joins/SKILL.md",
+          "version": 1
+        },
+        {
+          "id": "W-00000002",
+          "name": "fit-per-cell",
+          "description": "Use when estimating adaptation parameters from recordings with the linked fitting script. Fit each cell separately before population summaries. Not for inspecting files or querying metadata.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/fit-per-cell/SKILL.md",
+          "version": 1
+        },
+        {
+          "id": "W-00000003",
+          "name": "plot-response-curves",
+          "description": "Use when drawing response-versus-time figures for this analysis. Applies to units, uncertainty and panel consistency. Not for fitting or metadata lookup.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/plot-response-curves/SKILL.md",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "kind": "use",
+      "intent": "Check the size on disk of this database file. Do not query its contents.",
+      "linked_skills": [
+        {
+          "id": "W-00000001",
+          "name": "recording-joins",
+          "description": "Use when selecting cell types by joining recording metadata and measurements in the recordings database. Not for storage size checks or fitting.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/recording-joins/SKILL.md",
+          "version": 1
+        },
+        {
+          "id": "W-00000002",
+          "name": "fit-per-cell",
+          "description": "Use when estimating adaptation parameters from recordings with the linked fitting script. Fit each cell separately before population summaries. Not for inspecting files or querying metadata.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/fit-per-cell/SKILL.md",
+          "version": 1
+        },
+        {
+          "id": "W-00000003",
+          "name": "plot-response-curves",
+          "description": "Use when drawing response-versus-time figures for this analysis. Applies to units, uncertainty and panel consistency. Not for fitting or metadata lookup.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/plot-response-curves/SKILL.md",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "A3",
+      "kind": "use",
+      "intent": "Use this fitting script to estimate the adaptation parameters for each cell.",
+      "linked_skills": [
+        {
+          "id": "W-00000002",
+          "name": "fit-per-cell",
+          "description": "Use when estimating adaptation parameters from recordings with the linked fitting script. Fit each cell separately before population summaries. Not for inspecting files or querying metadata.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/fit-per-cell/SKILL.md",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "kind": "use",
+      "intent": "List the filename and modification time of this fitting script. Do not run it.",
+      "linked_skills": [
+        {
+          "id": "W-00000002",
+          "name": "fit-per-cell",
+          "description": "Use when estimating adaptation parameters from recordings with the linked fitting script. Fit each cell separately before population summaries. Not for inspecting files or querying metadata.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/fit-per-cell/SKILL.md",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "kind": "use",
+      "intent": "Query a different database that happens to also be named recordings.sqlite.",
+      "linked_skills": []
+    },
+    {
+      "id": "A6",
+      "kind": "use",
+      "intent": "Plot the response curves over time for this analysis.",
+      "linked_skills": [
+        {
+          "id": "W-00000002",
+          "name": "fit-per-cell",
+          "description": "Use when estimating adaptation parameters from recordings with the linked fitting script. Fit each cell separately before population summaries. Not for inspecting files or querying metadata.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/fit-per-cell/SKILL.md",
+          "version": 1
+        },
+        {
+          "id": "W-00000003",
+          "name": "plot-response-curves",
+          "description": "Use when drawing response-versus-time figures for this analysis. Applies to units, uncertainty and panel consistency. Not for fitting or metadata lookup.",
+          "path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/plot-response-curves/SKILL.md",
+          "version": 1
+        }
+      ]
+    }
+  ],
+  "capture_cases": [
+    {
+      "id": "B1",
+      "kind": "capture",
+      "request": "Wheeler, remember: never edit a file you have not read first.",
+      "context": "The edit tool can reject writes unless the current file has been read."
+    },
+    {
+      "id": "B2",
+      "kind": "capture",
+      "request": "Remember our fitting workflow for this script: separate parameter estimates per cell, diagnose residuals, then summarize uncertainty across cells.",
+      "context": "The graph uniquely identifies S-fitcell as the script used in this discussion."
+    },
+    {
+      "id": "B3",
+      "kind": "capture",
+      "request": "Remember: use blue for this one figure.",
+      "context": "A one-off presentation preference for figure W-figure1; no reusable workflow requested."
+    },
+    {
+      "id": "B4",
+      "kind": "capture",
+      "request": "Remember this fitting procedure for later.",
+      "context": "Two resources were discussed: the calcium-decay script and the spike-response script. The procedure could apply to either, and its intended scope was not established."
+    },
+    {
+      "id": "B5",
+      "kind": "capture",
+      "request": "Remember that temperature is probably the cause of this firing-rate change.",
+      "context": "This is an untested explanation, with no control experiment yet."
+    },
+    {
+      "id": "B6",
+      "kind": "capture",
+      "request": "Remember this plotting standard: keep units explicit, use the agreed uncertainty estimator, align axes across conditions, and document deviations.",
+      "context": "Repeated figure preparation for the uniquely identified project dataset D-response. Some estimator choices still require scientific judgment."
+    }
+  ],
+  "skill_snapshots": [
+    {
+      "original_path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/fit-per-cell/SKILL.md",
+      "sha256": "93a40b882808f9b253819c44543a35ddfb1a22ba896b56f78a305e16b1a7ab31",
+      "content": "---\nname: fit-per-cell\ndescription: Use when estimating adaptation parameters from recordings with the linked fitting script. Fit each cell separately before population summaries. Not for inspecting files or querying metadata.\n---\n\nFit one parameter vector per cell. Preserve trial IDs within each cell. Check residuals per cell and report cell-level uncertainty before summarizing the population.\n"
+    },
+    {
+      "original_path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/plot-response-curves/SKILL.md",
+      "sha256": "1bf8c4584381ce4713d0c8ee12e1f79b7ae214986af2d5f18da42bb4d90f58ff",
+      "content": "---\nname: plot-response-curves\ndescription: Use when drawing response-versus-time figures for this analysis. Applies to units, uncertainty and panel consistency. Not for fitting or metadata lookup.\n---\n\nLabel time in milliseconds and response in spikes/s. Show uncertainty from the specified estimator. Preserve comparable axis limits across conditions; disclose any per-panel changes.\n"
+    },
+    {
+      "original_path": "/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-trigger-forward-uhl1yawc/recording-joins/SKILL.md",
+      "sha256": "f1de1c47897ef26e85a9424d6661f6aade3eb26a5815ebcd49c67cf9a4a7fd39",
+      "content": "---\nname: recording-joins\ndescription: Use when selecting cell types by joining recording metadata and measurements in the recordings database. Not for storage size checks or fitting.\n---\n\nJoin recordings.recording_id to measurements.recording_id. Filter the annotation on recordings.cell_type. Basenames are not unique. Verify one row per requested measurement.\n"
+    }
+  ],
+  "lesson_act": {
+    "path": "wheeler/_data/commands/lesson.md",
+    "sha256": "938e4a56025dfdee4dfb4ee2aaeb91fe87ba353c6fec1ea4da12253fa283ecb9",
+    "content": "---\nname: wh:lesson\ndescription: Triage a correction to the right durable fix; save, update, or retire reusable workflows linked to graph resources\nargument-hint: \"[what to remember or update]\"\nallowed-tools:\n  - Read\n  - AskUserQuestion\n  - Skill\n  - mcp__wheeler_core__graph_health\n  - mcp__wheeler_core__search_context\n  - mcp__wheeler_core__show_node\n  - mcp__wheeler_query__query_documents\n  - mcp__wheeler_mutations__capture_lesson\n  - mcp__wheeler_mutations__accept_skill\n  - mcp__wheeler_mutations__retire_skill\n---\n\nYou are Wheeler, deciding how a correction should persist and preserving reusable workflows as skills linked to the resources they concern. Resolve \"this\" and \"how we fixed that\" from the available conversation. The scientist should not need to remember a command, choose a slug, or reconstruct the correction.\n\n## Choose the durable fix first\n\nA request to \"remember this\" does not make every correction a skill. Classify from the actual failure and intended future behavior:\n\n- **Enforceable invariant or implementation defect:** fix the responsible hook, tool, script, validation, or database constraint within the authorized implementation workflow. \"Read the current file before editing\" belongs in a file-access hook or tool precondition. A broken query builder needs a code fix. This act has no implementation capability: hand the concrete problem back to the implementation workflow, or report the unresolved fix if no such workflow is available. Do not claim it was enforced, invent a hook command, or substitute a note or skill for the fix.\n- **Reusable workflow requiring judgment:** capture a node-linked skill. Examples include selecting and validating a fitting procedure, applying plotting standards for a particular analysis, or choosing joins for a database whose schema permits multiple valid interpretations. A preference can be part of such a workflow when it specifies how repeated work should be performed.\n- **Fact, decision, or preference without a workflow:** use `wh:note`, resolving its context and provenance there. \"Use blue for this figure\" is a preference; it does not by itself justify a plotting skill.\n- **Scientific claim or unresolved explanation:** use the appropriate evidence or investigation workflow. A correction is not automatically an established Finding; preserve its evidential status rather than encoding it as procedural authority.\n\nMixed corrections may need both a harness fix and a skill for the remaining judgment. Keep their scope separate. Continue below only for that reusable workflow; `capture_lesson` stores skills, not a generic classification of everything learned.\n\n## Resolve and scope\n\n1. Identify the corrected workflow, when it applies, and the affected resource. Keep only the procedure remaining after enforceable defects are addressed.\n2. Use `search_context` and `show_node` to resolve existing target node IDs. A dataset, database, script, or document can be a target. Resolve identity from graph context and resource location, not a repeated filename or topical similarity. Use the conversation and graph to resolve an obvious target without an extra approval. If the intended resource or scope remains ambiguous, ask one focused question using concrete resource labels, such as \"Does this fitting procedure belong to the calcium analysis script or all recordings in this dataset?\" Do not ask the scientist to supply graph IDs or choose a command. If it is unregistered, use `wh:add` to register the real resource before capture; do not invent an ID or save an unlinked lesson.\n3. Inspect existing `linked_skills` summaries on those nodes, then read a relevant skill's returned path. Reuse the existing name for the same procedure; supply its Document ID as `supersedes` when revising. Preserve conditions and corrections that still apply. Separate different procedures rather than replacing a neighboring skill.\n4. Derive a concise name and a description stating applicability, such as \"Query recording metadata in this database; match cells by stable ID and check join cardinality.\" State the matching operation and meaningful exclusions in the description so irrelevant tasks can skip the body. Write a short skill body with the correct steps, conditions, and a concrete check for success. Keep schema/version qualifications from the correction; do not generalize one incident into a global rule.\n\n## Capture or suggest\n\nCall `capture_lesson` with:\n\n- `name`: a lowercase hyphenated slug for the procedure.\n- `description`: the resource and operations for which it applies.\n- `instructions`: the Markdown skill body, without YAML frontmatter.\n- `problem_statement`: the original failure or need this procedure addresses, retaining relevant resource and schema conditions.\n- `benchmark_task`: a concrete task with a checkable expected outcome that distinguishes following this lesson from repeating the mistake. Include applicability checks: a fresh session should discover and read the skill for a relevant task at the linked resource, skip it for an unrelated operation at that same resource, and not discover it through an unrelated resource. Describe expected behavior before running the evaluation.\n- `target_ids`: the resolved existing resource node IDs.\n- `source_excerpt`: the actual correction or endorsement from the available conversation, with enough surrounding context to understand it. Do not invent quotations or claim access to an unavailable transcript.\n- `source_ids`: relevant existing evidence node IDs, when available.\n- `harness_ids`: existing Script or other artifact IDs for an executable check, when available. Record which version/hash was actually exercised; a linked harness is not evidence that it passed.\n- `supersedes`: the prior skill Document ID for a revision, otherwise an empty string.\n- `author_model` and `author_environment`: exact authoring model identifier and host/runtime/location when available. Use `unknown` when unavailable; do not infer a model from a product name or generic assistant identity. Keep credentials out of environment descriptions.\n- `tested_model`, `tested_environment`, and `benchmark_result_ids`: provide these together only for an actual evaluation with existing result artifacts. Identify the exact evaluated model and execution environment. Authorship does not establish that this model was tested. If no evaluation ran, leave these fields empty.\n- `accepted`: true for an explicit request to remember/save this procedure or an explicitly endorsed proposed lesson. Such a request already authorizes capture; do not request the same approval again. For an assistant-inferred suggestion, use false and present the proposed procedure and named targets for endorsement before activating it.\n\nFor an endorsed saved candidate, call `accept_skill(node_id=...)`; do not reconstruct its original capture arguments. Repeating the same capture with `accepted=true` is also idempotent. Do not manually create the Document, source Note, provenance Execution, or APPLIES_TO links alongside the tool. Do not manually overwrite a prior SKILL.md. Learned skills stay in the project's `.notes/lessons/` artifacts and are discovered through graph links; never copy or register them into the global, repo-native, or plugin skill catalog. Only this capture act is an installed skill. The tool owns materialization, linking, and version history.\n\nConfirm the returned status, skill ID/version, linked resource labels, and file path. A partial or failed result is not a saved lesson: report the incomplete step and follow the tool's retry guidance. A proposed candidate is not yet active guidance.\n\n## Reuse and validation\n\nThe next graph encounter exposes only linked skill metadata. Discovery is not activation: compare the linked target, operation, and applicability conditions with the current intent before reading the body. A database joining skill is relevant to joining cell records, not checking that database's disk size; a fitting skill is relevant when preparing that fit, not merely listing datasets. Skip clear mismatches without reading the full skill. Reconsider when the intended operation changes. If the description leaves a material ambiguity, read that candidate to resolve it, then apply only the applicable steps before the operation. A skill does not enlarge task authorization. Unavailable or truncated discovery is not evidence that no lesson exists.\n\nEvery skill version retains its problem statement, benchmark task, authoring model/environment, and separately recorded evaluation model/environment with result evidence. Model identifiers are also exposed in discovery metadata so compatibility can be assessed before opening the full skill. A result on one model or environment does not establish that the skill was validated on another. Read the full skill Document for its model, environment, harness snapshot and source/result links when updating or benchmarking it.\n\nEvery skill retains its problem statement and benchmark task. When a relevant small check can run safely within the authorized task, inspect its harness, run it through the appropriate execution workflow, and preserve the actual inputs, version, result, and provenance. This capture act does not gain shell execution permission. Otherwise record the benchmark as unrun. Do not claim a benchmark passed because capture or retrieval succeeded. Large automated behavioral evaluations remain a separate later workflow.\n\n## Retire obsolete guidance\n\nFor an explicit request to stop using a lesson, identify the current skill Document and call `retire_skill(node_id=..., reason=...)`. Resolve ambiguous targets first. Retirement deactivates discovery while preserving the artifact and provenance; do not delete the skill or unlink its history. If a harness now enforces the rule, state the tested harness version and evidence in the retirement reason. If retirement is only your suggestion, present the concrete lesson and rationale for endorsement first.\n\n$ARGUMENTS\n"
+  },
+  "use_result": {
+    "model_id": "unknown",
+    "environment": "Codex subagent on local host; synthetic decision-only exercise",
+    "decisions": [
+      {
+        "case_id": "A1",
+        "read_skills": [
+          "recording-joins"
+        ],
+        "apply_skills": [
+          "recording-joins"
+        ],
+        "reason": "Fetching parasol recordings with measured responses requires cell-type selection and joining recording metadata to measurements. The skill body specifies the join and annotation fields. Fitting and plotting are outside this intent."
+      },
+      {
+        "case_id": "A2",
+        "read_skills": [],
+        "apply_skills": [],
+        "reason": "Checking file size without querying contents is filesystem inspection. All linked descriptions are clear mismatches; recording-joins explicitly excludes storage size checks."
+      },
+      {
+        "case_id": "A3",
+        "read_skills": [
+          "fit-per-cell"
+        ],
+        "apply_skills": [
+          "fit-per-cell"
+        ],
+        "reason": "Estimating adaptation parameters for each cell with the linked script directly matches fit-per-cell. Its body supplies per-cell fitting, trial preservation, residual checks, and uncertainty guidance."
+      },
+      {
+        "case_id": "A4",
+        "read_skills": [],
+        "apply_skills": [],
+        "reason": "Listing a script's filename and modification time is file inspection, explicitly excluded by fit-per-cell. The request prohibits running the script and does not ask for fitting."
+      },
+      {
+        "case_id": "A5",
+        "read_skills": [],
+        "apply_skills": [],
+        "reason": "No skills are linked to this different database. A shared basename does not establish that another database's skill applies."
+      },
+      {
+        "case_id": "A6",
+        "read_skills": [
+          "plot-response-curves"
+        ],
+        "apply_skills": [
+          "plot-response-curves"
+        ],
+        "reason": "Plotting response curves over time directly matches plot-response-curves and its units, uncertainty, and comparable-axis guidance. Plotting alone does not call for fitting."
+      }
+    ]
+  },
+  "triage_result": {
+    "model_id": "unknown",
+    "environment": "Codex subagent on local host; synthetic decision-only exercise",
+    "decisions": [
+      {
+        "case_id": "B1",
+        "classification": "harness",
+        "needs_clarification": false,
+        "question": "",
+        "reason": "Reading the current file before editing is an enforceable tool precondition. The edit tool should reject writes without that read; a saved skill or note would not enforce it."
+      },
+      {
+        "case_id": "B2",
+        "classification": "skill",
+        "needs_clarification": false,
+        "question": "",
+        "reason": "Cellwise fitting, residual diagnosis, and uncertainty summarization form a reusable workflow requiring judgment. The discussion uniquely resolves its intended script to S-fitcell."
+      },
+      {
+        "case_id": "B3",
+        "classification": "note",
+        "needs_clarification": false,
+        "question": "",
+        "reason": "Blue is a one-off preference for the identified figure W-figure1, without a reusable procedure."
+      },
+      {
+        "case_id": "B4",
+        "classification": "skill",
+        "needs_clarification": true,
+        "question": "Should this fitting procedure apply to the calcium-decay script, the spike-response script, or both?",
+        "reason": "The fitting procedure is reusable, but two plausible resource targets were discussed and its intended scope remains unresolved."
+      },
+      {
+        "case_id": "B5",
+        "classification": "evidence",
+        "needs_clarification": false,
+        "question": "",
+        "reason": "Temperature as the cause is an untested scientific explanation. Preserve it as a hypothesis for investigation with its uncertainty, rather than as an established finding or procedural instruction."
+      },
+      {
+        "case_id": "B6",
+        "classification": "skill",
+        "needs_clarification": false,
+        "question": "",
+        "reason": "The plotting standard specifies repeated figure preparation and requires judgment about uncertainty estimators. Its dataset target D-response is uniquely identified, so no target or scope clarification is needed."
+      }
+    ]
+  },
+  "checks": [
+    {
+      "case_id": "A1",
+      "expected": [
+        "recording-joins"
+      ],
+      "actual": [
+        "recording-joins"
+      ],
+      "passed": true
+    },
+    {
+      "case_id": "A2",
+      "expected": [],
+      "actual": [],
+      "passed": true
+    },
+    {
+      "case_id": "A3",
+      "expected": [
+        "fit-per-cell"
+      ],
+      "actual": [
+        "fit-per-cell"
+      ],
+      "passed": true
+    },
+    {
+      "case_id": "A4",
+      "expected": [],
+      "actual": [],
+      "passed": true
+    },
+    {
+      "case_id": "A5",
+      "expected": [],
+      "actual": [],
+      "passed": true
+    },
+    {
+      "case_id": "A6",
+      "expected": [
+        "plot-response-curves"
+      ],
+      "actual": [
+        "plot-response-curves"
+      ],
+      "passed": true
+    },
+    {
+      "case_id": "B1",
+      "expected": "harness",
+      "actual": "harness",
+      "passed": true
+    },
+    {
+      "case_id": "B2",
+      "expected": "skill",
+      "actual": "skill",
+      "passed": true
+    },
+    {
+      "case_id": "B3",
+      "expected": "note",
+      "actual": "note",
+      "passed": true
+    },
+    {
+      "case_id": "B4",
+      "expected": "skill+clarify",
+      "actual": "skill+clarify",
+      "passed": true
+    },
+    {
+      "case_id": "B5",
+      "expected": "evidence",
+      "actual": "evidence",
+      "passed": true
+    },
+    {
+      "case_id": "B6",
+      "expected": "skill",
+      "actual": "skill",
+      "passed": true
+    }
+  ],
+  "passed": 12,
+  "total": 12
+}

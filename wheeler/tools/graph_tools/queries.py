@@ -386,7 +386,8 @@ async def query_documents(backend, args: dict) -> str:
             "AND toLower(w.title) CONTAINS toLower($kw)"
             f"{pw} "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
-            "w.section AS section, w.status AS status, w.date AS date "
+            "w.section AS section, w.status AS status, w.date AS date, "
+            "w.skill_name AS skill_name, w.skill_state AS skill_state "
             "ORDER BY w.date DESC LIMIT $limit",
             _inject_ptag({"kw": keyword, "status": status, "limit": limit}, ctx.project_tag),
         )
@@ -397,7 +398,8 @@ async def query_documents(backend, args: dict) -> str:
             "WHERE toLower(w.title) CONTAINS toLower($kw)"
             f"{pw} "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
-            "w.section AS section, w.status AS status, w.date AS date "
+            "w.section AS section, w.status AS status, w.date AS date, "
+            "w.skill_name AS skill_name, w.skill_state AS skill_state "
             "ORDER BY w.date DESC LIMIT $limit",
             _inject_ptag({"kw": keyword, "limit": limit}, ctx.project_tag),
         )
@@ -407,7 +409,8 @@ async def query_documents(backend, args: dict) -> str:
             "MATCH (w:Document) WHERE w.status = $status"
             f"{pw} "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
-            "w.section AS section, w.status AS status, w.date AS date "
+            "w.section AS section, w.status AS status, w.date AS date, "
+            "w.skill_name AS skill_name, w.skill_state AS skill_state "
             "ORDER BY w.date DESC LIMIT $limit",
             _inject_ptag({"status": status, "limit": limit}, ctx.project_tag),
         )
@@ -416,7 +419,8 @@ async def query_documents(backend, args: dict) -> str:
             "MATCH (w:Document)"
             f"{_project_where('w', ctx.project_tag, has_existing_where=False)} "
             "RETURN w.id AS id, w.title AS title, w.path AS path, "
-            "w.section AS section, w.status AS status, w.date AS date "
+            "w.section AS section, w.status AS status, w.date AS date, "
+            "w.skill_name AS skill_name, w.skill_state AS skill_state "
             "ORDER BY w.date DESC LIMIT $limit",
             _inject_ptag({"limit": limit}, ctx.project_tag),
         )
@@ -446,6 +450,13 @@ async def query_documents(backend, args: dict) -> str:
                 "status": r["status"],
                 "date": r["date"],
             })
+
+        skill_name = getattr(model, "skill_name", "") if model is not None else r.get("skill_name", "")
+        if skill_name:
+            documents[-1].update(
+                skill_name=skill_name,
+                skill_state=getattr(model, "skill_state", "") if model is not None else r.get("skill_state", ""),
+            )
 
     return json.dumps({"documents": documents, "count": len(documents)})
 

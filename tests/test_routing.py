@@ -28,6 +28,7 @@ TRIGGER_COMMANDS = [
     "graph-link",
     "graph-review",
     "handoff",
+    "lesson",
     "note",
     "pair",
     "pause",

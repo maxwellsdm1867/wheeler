@@ -21,6 +21,10 @@ _TEST_PASSWORD = "research-graph"
 
 
 def _local_uri() -> str | None:
+    import os
+
+    if uri := os.environ.get("WHEELER_TEST_NEO4J_URI"):
+        return uri
     from neo4j import GraphDatabase
 
     for port in (7717, 7687, 7697, 7707):

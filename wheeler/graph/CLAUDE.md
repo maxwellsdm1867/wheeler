@@ -29,7 +29,7 @@ W=Document, S=Script, X=Execution, PL=Plan, N=ResearchNote, L=Ledger
 
 Finding has additional fields: path, artifact_type, source.
 
-## Relationships (14 types)
+## Relationships (15 types)
 
 PROV (W3C standard):
   USED, WAS_GENERATED_BY, WAS_DERIVED_FROM, WAS_INFORMED_BY,
@@ -37,7 +37,7 @@ PROV (W3C standard):
 
 Semantic (Wheeler-specific):
   SUPPORTS, CONTRADICTS, CITES, APPEARS_IN, RELEVANT_TO,
-  AROSE_FROM, DEPENDS_ON, CONTAINS
+  AROSE_FROM, DEPENDS_ON, CONTAINS, APPLIES_TO
 
 ## Key Modules
 

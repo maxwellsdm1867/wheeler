@@ -198,7 +198,8 @@ def _trim_rows(obj, max_chars: int = DEFAULT_TEXT_CHARS):
     """Recursively trim the long text fields inside lists and dicts of rows."""
     if isinstance(obj, dict):
         return {
-            k: (_trim_text(v, max_chars) if k in TEXT_KEYS else _trim_rows(v, max_chars))
+            k: (v if k.startswith("linked_skills") else
+                _trim_text(v, max_chars) if k in TEXT_KEYS else _trim_rows(v, max_chars))
             for k, v in obj.items()
         }
     if isinstance(obj, list):
@@ -249,7 +250,7 @@ if DISCLOSURE not in DISCLOSURE_LEVELS:
 HEADLINE_CHARS = 100
 # Row keys carried into a pointer row unchanged: they are what a caller ranks
 # or filters on, and each is a few tokens.
-POINTER_KEEP = ("score", "relationship", "direction", "priority", "status", "confidence", "tier", "stale", "kind", "year")
+POINTER_KEEP = ("score", "relationship", "direction", "priority", "status", "confidence", "tier", "stale", "kind", "year", "skill_name", "skill_state")
 
 
 def _headline(row: dict, n: int = HEADLINE_CHARS) -> str:
@@ -326,7 +327,8 @@ async def _pointerize(result, config):
         return result
     lists = {
         k: v for k, v in result.items()
-        if isinstance(v, list) and v and all(isinstance(x, dict) and _row_id(x) for x in v)
+        if not k.startswith("linked_skills")
+        and isinstance(v, list) and v and all(isinstance(x, dict) and _row_id(x) for x in v)
     }
     if not lists:
         return result

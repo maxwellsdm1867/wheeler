@@ -25,6 +25,10 @@ _TEST_PASSWORD = "research-graph"
 
 
 def _local_uri() -> str | None:
+    import os
+
+    if uri := os.environ.get("WHEELER_TEST_NEO4J_URI"):
+        return uri
     from neo4j import GraphDatabase
 
     for port in (7717, 7687, 7697, 7707):
@@ -248,7 +252,8 @@ async def test_show_node_version_read_and_if_changed_since(live_cfg, tmp_path, m
     first = await fn(fid)
     assert first["content_version"] == 1
     unchanged = await fn(fid, if_changed_since=first["content_hash"])
-    assert unchanged == {"id": fid, "content_version": 1, "content_hash": first["content_hash"], "changed": False}
+    assert {k: v for k, v in unchanged.items() if not k.startswith("linked_skills")} == {"id": fid, "content_version": 1, "content_hash": first["content_hash"], "changed": False}
+    assert unchanged["linked_skills_status"] == "complete"
     assert (await fn(fid, if_changed_since="v1"))["changed"] is False
 
     await execute_tool("update_node", {"node_id": fid, "description": "v two text"}, live_cfg)

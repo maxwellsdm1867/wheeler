@@ -3,7 +3,7 @@ interface:
   display_name: Wheeler
   short_description: Provenance-tracked research assistant
   long_description: >-
-    A Neo4j knowledge graph indexed over your research files, with 39 acts
+    A Neo4j knowledge graph indexed over your research files, with 40 acts
     covering the research loop (discuss, plan, execute, write) and 51 MCP
     tools. Every claim traces to a node; every artifact carries provenance.
 policy:

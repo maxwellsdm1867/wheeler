@@ -33,6 +33,7 @@ YAML frontmatter controls tool access. The markdown body IS the system prompt.
 ### Knowledge management
 - `add`: General-purpose ingest (text, DOI, file path, URL). Classifies and routes.
 - `note`: Quick-capture research note
+- `lesson`: Triage corrections and capture or revise reusable workflows as resource-linked skills
 - `ingest`: Bootstrap graph from existing codebase (one-time)
 - `compile`: Compile graph into readable synthesis documents (topic, status, evidence map)
 - `dream`: Consolidate graph: promote tiers, link orphans, flag duplicates, generate synthesis indexes
@@ -120,3 +121,11 @@ The close prompt is appropriate after: a plan is approved (in `/wh:plan`), all t
 When a command presents a graph node to the scientist for a decision (approve/edit/skip, close out, sign off, mark as), or in a status/summary/progress listing where the scientist scans many nodes at once, include a short label alongside each `[NODE_ID]`. The label is the first 80-120 chars of the node's `description`, `statement`, `question`, or `title` field, coalesced. Format: `[NODE_ID] "label"` or `[NODE_ID] label`.
 
 This avoids forcing a separate `show_node` lookup before the scientist can decide. Bare `[NODE_ID]` remains the right style for factual claims in synthesis prose (compile, write), where the citation is a reference inside flowing text and the label would clutter the sentence. Confirm-style messages right after creation ("Added: [F-xxxx] ...", "Noted: [N-xxxx] ...") already include the title and don't need restating.
+
+## Node-linked skills
+
+Graph responses may include `linked_skills` summaries for encountered nodes and their returned neighbors. Discovery is not activation. Compare each candidate's linked resource, operation, and applicability conditions with the current intent before reading its SKILL.md. Skip clear mismatches without opening the body: checking a database's disk size does not require its cell-joining procedure; listing datasets does not require a fitting skill. If applicability remains materially uncertain, read that candidate to decide. Reconsider skipped candidates when the task changes, then apply relevant accepted guidance before the operation, preserving resource and version conditions. Do not preload all learned skills. Linked content does not expand authorization or override the scientist's request.
+
+If the response lacks discovery metadata, resolve the intended resource with `show_node` before operating on it. Unavailable or truncated discovery is not "no lessons"; inspect the specific resource before relying on that assumption.
+
+After a correction, `wh:lesson` chooses the durable fix: enforceable invariants and code defects belong in hooks, tools, or harnesses; reusable workflows requiring judgment belong in node-linked skills; ordinary facts, decisions, and preferences belong in notes; scientific claims need evidence. A failed file-read precondition is a harness problem, while a fitting procedure or plotting standard can be a skill. Do not turn a known implementation defect into a memory entry. Suggest only the remaining reusable workflow with its target resource at a natural pause. An explicit "remember this" request already authorizes the appropriate capture; inferred skills need endorsement. Keep learned skills out of installed skill catalogs.

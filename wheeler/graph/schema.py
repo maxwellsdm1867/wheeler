@@ -90,6 +90,7 @@ ALLOWED_RELATIONSHIPS: list[str] = [
     "AROSE_FROM",
     "DEPENDS_ON",
     "CONTAINS",
+    "APPLIES_TO",
 ]
 
 

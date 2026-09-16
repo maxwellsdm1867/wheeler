@@ -34,7 +34,7 @@ from wheeler.config import (
 from wheeler.graph.circuit_breaker import CircuitOpenError
 from wheeler.write_receipt import RepairQueue, WriteReceipt
 
-from . import mutations, queries
+from . import mutations, queries, lessons
 from ._common import _now
 
 # Signature shared by every graph-tool handler: an async function that
@@ -74,6 +74,9 @@ _MUTATION_TOOLS = frozenset({
 # --- Tool registry: maps tool names to handler functions ---
 
 _TOOL_REGISTRY: dict[str, _ToolHandler] = {
+    "capture_lesson": lessons.capture_lesson,
+    "retire_skill": lessons.retire_skill,
+    "accept_skill": lessons.accept_skill,
     # Mutations
     "add_finding": mutations.add_finding,
     "add_hypothesis": mutations.add_hypothesis,
@@ -223,7 +226,6 @@ def _update_knowledge_tier(
         new_tier: str = args["tier"]
 
         from wheeler.knowledge.store import read_node, write_node
-
         knowledge_dir = project_knowledge_dir(config)
 
         try:
@@ -284,28 +286,48 @@ def _update_knowledge_node(
         node_id: str = parsed["node_id"]
         changes: dict = parsed.get("changes", {})
 
-        if not changes:
+        refreshing = bool(args.get("_refresh_files"))
+        if not changes and not refreshing:
             return (True, True, new_version, new_hash, new_tokens)  # nothing to update
 
         from wheeler.knowledge.store import read_node, write_node
+        from wheeler.models import NodeBase
 
         knowledge_dir = project_knowledge_dir(config)
+        node: NodeBase
 
         try:
             node = read_node(knowledge_dir, node_id)
         except FileNotFoundError:
-            logger.debug("update_node: no knowledge file for %s, skipping", node_id)
-            return (json_ok, synthesis_ok, new_version, new_hash, new_tokens)
+            if not refreshing:
+                logger.debug("update_node: no knowledge file for %s, skipping", node_id)
+                return (json_ok, synthesis_ok, new_version, new_hash, new_tokens)
+            from wheeler.models import model_for_label
+            snapshot = parsed["snapshot"]
+            node = model_for_label(parsed["label"]).model_validate({
+                **snapshot, "type": parsed["label"],
+                "created": snapshot.get("created") or snapshot.get("date", ""),
+            })
 
-        # Append-only history: keep the state we are about to replace. Only
-        # CONTENT changes make a version; a stale flag, stale_since or a
-        # stability rescore is metadata and must not move pinned citations
-        # or edges to "outdated".
         from wheeler.knowledge import versions as _versions
 
+        # Keep the canonical pre-change state before restoring graph fields.
+        # A retry may have no graph diff after the graph leg already committed.
+        # Compare content to detect that repair, but do not make another version
+        # when only the synthesis mirror needs to be rewritten.
+        previous = node.model_copy(deep=True)
+        if refreshing:
+            from wheeler.models import model_for_label
+            node = model_for_label(parsed["label"]).model_validate({
+                **node.model_dump(), **parsed["snapshot"], "type": parsed["label"],
+            })
         content_changed = any(k not in _versions.VOLATILE_FIELDS for k in changes)
+        if refreshing:
+            content_changed = content_changed or (
+                _versions.content_hash_of(previous) != _versions.content_hash_of(node)
+            )
         if content_changed:
-            _versions.snapshot(knowledge_dir, node)
+            _versions.snapshot(knowledge_dir, previous)
 
         # Apply field changes to the model
         now = _now()
@@ -339,9 +361,17 @@ def _update_knowledge_node(
             changes={k: [v["old"], v["new"]] for k, v in changes.items()},
             actor=args.get("session_id", "system"),
         )
-        node.change_log.append(change_log_entry)
+        if changes:
+            node.change_log.append(change_log_entry)
         if content_changed:
+            # The graph snapshot can carry a newer stamp after a partial write.
+            # Never advance twice when restoring that already-recorded version.
+            node.content_version = max(previous.content_version, node.content_version - 1)
             _versions.bump(node)
+        elif refreshing:
+            node.content_hash = _versions.content_hash_of(node)
+            node.content_tokens = _versions.content_tokens_of(node)
+        if content_changed or refreshing:
             new_version, new_hash, new_tokens = node.content_version, node.content_hash, node.content_tokens
 
         write_node(knowledge_dir, node)
@@ -793,6 +823,9 @@ async def execute_tool(
         logger.debug("execute_tool: %s", tool_name)
         backend = await _get_backend(config)
 
+        if tool_name in {"capture_lesson", "retire_skill", "accept_skill"}:
+            return await handler(backend, {**args, "_config": config})
+
         # ensure_artifact handles its own dispatch (calls execute_tool internally)
         if tool_name == "ensure_artifact":
             from ._field_specs import validate_and_normalize
@@ -1011,6 +1044,18 @@ async def execute_tool(
                 _delete_knowledge_and_synthesis(args, config)
 
         logger.debug("execute_tool: %s completed", tool_name)
+        if tool_name.startswith("query_") and not args.get("_skip_skill_discovery"):
+            from wheeler.skill_discovery import QUERY_RESULT_KEYS, enrich_query_result
+
+            result_key = QUERY_RESULT_KEYS.get(tool_name)
+            if result_key:
+                result = json.dumps(await enrich_query_result(json.loads(result), result_key, config, backend))
+        if args.get("_require_complete_write") and (
+            tool_name in _MUTATION_TOOLS or tool_name == "update_node"
+        ):
+            payload = json.loads(result)
+            payload["storage"] = {"json": json_ok, "synthesis": synthesis_ok}
+            result = json.dumps(payload)
         return result
     except CircuitOpenError as exc:
         logger.warning("execute_tool %s: %s", tool_name, exc)

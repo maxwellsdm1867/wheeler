@@ -23,6 +23,7 @@ allowed-tools:
   - mcp__wheeler_mutations__update_node
   - mcp__wheeler_ops__validate_citations
   - mcp__wheeler_ops__graph_consistency_check
+  - mcp__wheeler_core__show_node
   - mcp__wheeler_core__get_act
   - mcp__plugin_wh_wheeler_core__graph_context
   - mcp__plugin_wh_wheeler_core__graph_gaps
@@ -37,6 +38,7 @@ allowed-tools:
   - mcp__plugin_wh_wheeler_mutations__update_node
   - mcp__plugin_wh_wheeler_ops__validate_citations
   - mcp__plugin_wh_wheeler_ops__graph_consistency_check
+  - mcp__plugin_wh_wheeler_core__show_node
   - mcp__plugin_wh_wheeler_core__get_act
 ---
 

@@ -22,14 +22,15 @@ Route the user to the right `/wh:*` command. Do not ask which command to use: an
 2. If `$ARGUMENTS` is empty:
    - Check `.plans/STATE.md` and `.wheeler/` for session context.
    - Ask the user what they're working on via AskUserQuestion with 2-4 options covering the most likely intents (e.g., "starting a new investigation", "adding data to the knowledge graph", "continuing prior work", "writing up results").
-3. Match intent to a `/wh:*` command using this priority:
+3. Do not dispatch quoted, hypothetical, negated, or historical command examples. For an actual request, match intent to a `/wh:*` command using this priority:
    - **Session lifecycle**: `status`/`resume` at session start; `pause`/`close` at session end; `chat` for casual discussion
+   - **Correction capture**: `lesson` for an ambiguous "remember this", "remember how we fixed this", "remember to query this database this way", or updating/retiring a resource-linked workflow. The lesson act decides whether a correction needs a harness fix, reusable skill, note, or evidence workflow. Clear factual memories and preferences without a workflow remain `note`; a direct request to implement a hook or fix code stays in the implementation workflow, not a memory route.
    - **Data capture** (concrete artifacts provided): `add` (DOI, paper, dataset, file) over `note` (insight, observation)
    - **Investigation workflow** (progressive): `discuss` -> `plan` -> `execute` -> `write`
    - **Graph operations**: `ask` (query), `compile` (synthesis), `dream` (maintenance), `graph-link` (batch orphan provenance), `graph-review` (quality audit)
    - **Collaboration**: `pair` (interactive), `handoff` (background), `reconvene` (review)
    - **Meta**: `report` (time window), `triage` (GitHub issues), `dev-feedback` (Wheeler bugs)
-4. Invoke the chosen command via the Skill tool. Prefix with a one-line explanation of the routing choice.
+4. Invoke the chosen command via the Skill tool, passing the user's original request verbatim. The selected act resolves references from the conversation and graph; do not substitute a router-authored summary. Prefix with a one-line explanation of the routing choice.
 5. Never route to `queue`, `init`, `ingest`, or `update`: those require explicit user invocation.
 6. If the task is not Wheeler-related, say so plainly and let the user decide whether to proceed.
 

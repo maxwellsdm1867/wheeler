@@ -1,6 +1,6 @@
 """Wheeler Mutations MCP Server: all graph write operations.
 
-19 tools for creating, modifying, and deleting graph nodes and relationships.
+22 tools for creating, modifying, and deleting graph nodes and relationships.
 Run: python -m wheeler.mcp_mutations
 
 register_batch is the bulk path: a whole execution's provenance (nodes, files,
@@ -29,11 +29,89 @@ from wheeler.mcp_shared import (
 
 mcp = FastMCP(
     "wheeler_mutations",
-    instructions="Create, update, link, unlink, and delete graph nodes: add_finding, add_hypothesis, add_question, add_dataset, add_paper, add_document, add_note, add_plan, add_execution, ensure_artifact, link_nodes, unlink_nodes, update_node, set_tier, delete_node, register_batch. Prefer ensure_artifact for registering any file artifact (script/dataset/figure/plan/document); it hashes and creates-or-updates in one call. To register a whole execution (its Execution, findings, files and all their edges) use register_batch: one call instead of one per item.",
+    instructions="Create, update, link, unlink, and delete graph nodes: add_finding, add_hypothesis, add_question, add_dataset, add_paper, add_document, add_note, add_plan, add_execution, ensure_artifact, link_nodes, unlink_nodes, update_node, set_tier, delete_node, register_batch, capture_lesson, accept_skill, retire_skill. Prefer ensure_artifact for registering any file artifact (script/dataset/figure/plan/document); it hashes and creates-or-updates in one call. To register a whole execution (its Execution, findings, files and all their edges) use register_batch: one call instead of one per item.",
 )
 
 
 # --- Graph mutations ---
+
+
+@mcp.tool()
+@_logged
+async def capture_lesson(
+    name: str,
+    description: str,
+    instructions: str,
+    target_ids: list[str],
+    source_excerpt: str,
+    problem_statement: str,
+    benchmark_task: str,
+    source_ids: list[str] | None = None,
+    harness_ids: list[str] | None = None,
+    supersedes: str = "",
+    accepted: bool = False,
+    author_model: str = "unknown",
+    author_environment: str = "unknown",
+    tested_model: str = "",
+    tested_environment: str = "",
+    benchmark_result_ids: list[str] | None = None,
+) -> dict:
+    """Save a node-linked SKILL.md with its problem, benchmark task and source.
+
+    Target IDs identify existing artifacts or context nodes. Description states
+    when to read the skill; instructions are its full body and are not preloaded.
+    Source excerpt must faithfully record the correction (label summaries).
+    Problem statement explains the failure; benchmark task describes a concrete
+    validation case and expected outcome. This tool records, not runs, the case.
+    Harness IDs identify scripts/data used to develop the skill for staleness.
+    Set accepted only for scientist-authorized guidance; otherwise save a candidate.
+    Repeating identical input is idempotent. Pass supersedes to revise a skill;
+    repeat a candidate with accepted=true to activate it. Files stay outside
+    native skill catalogs. Incomplete captures are repairable by the same call.
+
+    Record the exact author model ID and host/runtime/location in author_model
+    and author_environment when known; never infer a model ID. Actual evaluation
+    metadata is separate: tested_model and tested_environment require existing
+    benchmark_result_ids as evidence. Empty tested fields mean not recorded,
+    not a successful run. A benchmark on one model does not establish portability.
+    """
+    return json.loads(await graph_tools.execute_tool("capture_lesson", {
+        "name": name, "description": description, "instructions": instructions,
+        "target_ids": target_ids, "source_excerpt": source_excerpt,
+        "problem_statement": problem_statement, "benchmark_task": benchmark_task,
+        "source_ids": source_ids or [], "harness_ids": harness_ids or [],
+        "supersedes": supersedes, "accepted": accepted, "session_id": _SESSION_ID,
+        "author_model": author_model, "author_environment": author_environment,
+        "tested_model": tested_model, "tested_environment": tested_environment,
+        "benchmark_result_ids": benchmark_result_ids or [],
+    }, _config))
+
+
+@mcp.tool()
+@_logged
+async def accept_skill(node_id: str) -> dict:
+    """Activate a scientist-endorsed saved skill candidate by its Document ID.
+
+    Reuses the original immutable capture, checks its sources and required links,
+    and publishes only after successful persistence. Requires explicit scientist
+    endorsement. Use capture_lesson with supersedes for changed instructions.
+    """
+    return json.loads(await graph_tools.execute_tool("accept_skill", {
+        "node_id": node_id, "session_id": _SESSION_ID,
+    }, _config))
+
+
+@mcp.tool()
+@_logged
+async def retire_skill(node_id: str, reason: str) -> dict:
+    """Remove a learned skill from active discovery, preserving its provenance.
+
+    Supply the skill Document ID and why it is being retired. Superseded history
+    remains inactive; retiring a newer version does not revive an older version.
+    """
+    return json.loads(await graph_tools.execute_tool("retire_skill", {
+        "node_id": node_id, "reason": reason, "session_id": _SESSION_ID,
+    }, _config))
 
 
 @mcp.tool()
