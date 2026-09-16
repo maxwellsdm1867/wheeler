@@ -1,6 +1,6 @@
 {
   "name": "wh",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "description": "Provenance-tracked research assistant: a Neo4j knowledge graph over your files.",
   "author": {
     "name": "Arthur Hong",

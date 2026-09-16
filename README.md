@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/v0.16.0-blue" alt="v0.16.0">
+  <img src="https://img.shields.io/badge/v0.16.1-blue" alt="v0.16.1">
   <img src="https://img.shields.io/badge/status-beta-yellow" alt="Status: Beta">
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-native-orange" alt="Claude Code Native"></a>
   <a href="https://learn.chatgpt.com/docs/codex/cli"><img src="https://img.shields.io/badge/OpenAI%20Codex-native-000000?logo=openai&logoColor=white" alt="OpenAI Codex Native"></a>
@@ -69,7 +69,7 @@ Run `wheeler doctor` to verify the Wheeler runtime, Neo4j connectivity and TLS, 
 
 ### Plugin details
 
-Wheeler's 39 research acts, Wheeler Voice router, and four MCP servers ship together in one plugin. Claude Code invokes an act as `/wh:<act>`; Codex invokes the same act as `$<act>`. For example, planning is `/wh:plan` in Claude Code and `$plan` in Codex.
+Wheeler's 40 research acts, Wheeler Voice router, and four MCP servers ship together in one plugin. Claude Code invokes an act as `/wh:<act>`; Codex invokes the same act as `$<act>`. For example, planning is `/wh:plan` in Claude Code and `$plan` in Codex.
 
 Claude Code installation:
 
@@ -276,6 +276,17 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 ## What's New
 
 <details open>
+<summary><b>v0.16.1</b> (2026-09-15): lessons follow their artifacts</summary>
+
+- **Artifact-linked lessons**: Save reusable procedures with their target database, script, or dataset, retaining the original problem, benchmark task, revision history, and author/model provenance.
+- **Mandatory duplicate checks**: The lesson writer inventories linked workflows and drafts before saving, updates matching procedures with minimal edits, and creates a separate skill only for a distinct workflow.
+- **Lazy, scoped discovery**: Graph reads expose applicability summaries without preloading learned skills, skip unrelated operations, and offer scoped pagination when more descriptions remain.
+- **Reliable native routing**: Read-only MCP annotations unblock Codex discovery, while revision and state checks prevent superseded or inactive procedures from becoming guidance, with native-host evaluation results documented in the repository.
+- **Lighter, resilient sessions**: Projects can disable unused Obsidian synthesis, and an empty timestamp no longer aborts the session-close sweep.
+
+</details>
+
+<details>
 <summary><b>v0.16.0</b> (2026-09-15): pointers, versions, and one call to register</summary>
 
 - **Register a whole execution in one call**: `register_batch` takes the Execution, its findings, every produced file and every edge at once, with `@alias` references so no id has to round-trip through the model. Chosen by measurement over five alternatives: 3 turns instead of 75 on a 43-edge execution.
@@ -294,17 +305,6 @@ Adding a new service is its own loop: the **`wheeler-service-creator`** skill sc
 - **A project names its own database, and its credential names only the server.** `neo4j.profile` in `wheeler.yaml` selects a keychain slot per project, so one project can move to a cloud instance without touching any other on the machine. An explicit `database:` beats the credential's, which is what lets several projects share one server and each keep its own graph.
 - **Several local Neo4j instances at once.** Neo4j Desktop starts one; the `bin/neo4j` inside each instance has no such limit. `wheeler db instances / start / stop / assign-ports` find them (including the JRE Desktop hides), give each its own **seven** ports (bolt, http, routing, backup, cluster, raft, discovery, not just bolt), and refuse to rewrite ports under a running server.
 - **Failures name the fix.** `wheeler db check` separates the three identical-looking local failures: the instance is stopped, no instance serves that port, or it is up but has no such database. `wheeler init` walks you onto a local instance or an Aura one, and `wheeler keepalive` stops a free cloud instance from being deleted after 90 days idle.
-
-</details>
-
-<details>
-<summary><b>v0.14.0</b> (2026-08-07): two hosts, one plugin, no install step</summary>
-
-- **Wheeler runs in OpenAI Codex as well as Claude Code.** The 39 acts exist in exactly one place: their bodies are served over MCP by `get_act`, and each host gets a generated `SKILL.md` stub that fetches them. No act content is authored twice, and mode plus orchestration are derived from each act's existing `allowed-tools` rather than declared, so the two can never disagree.
-- **Install is two commands, and nothing Python-shaped.** `/plugin marketplace add maxwellsdm1867/wheeler` then `/plugin install wh@wheeler` (`codex plugin marketplace add` / `codex plugin add` on Codex). The MCP servers launch through `uvx`, so there is no `pip install` and no venv: 13 s once to warm the cache, then about 370 ms per launch, which matches running the console script directly. The plugin is named `wh`; planning is `/wh:plan` in Claude Code and `$plan` in Codex.
-- **Remote Neo4j, and credentials that are not your problem.** `neo4j+s://` (Aura) works, with connection pooling, timeouts and transient retry the driver previously had none of. `wheeler login --aura-file` reads the credentials file Aura hands you and stores it in the OS keychain, so nothing lands in a dotfile; `wheeler login --status` says which of env, keychain, `wheeler.yaml` or the built-in default is supplying each field.
-- **Paths anchor on the project, not the shell.** Roughly thirty call sites resolved `knowledge/`, `synthesis/` and `.wheeler/` against the current directory, so a server or CLI started in a subdirectory read and wrote the wrong tree. Most visibly: `wheeler services enable` returned exit code 0 while the router never saw the change, and search returned nothing rather than erroring.
-- **The deprecated MCP monolith is gone** (1,639 lines), with no loss of tool surface: all 50 of its tools were already covered by the four split servers, which carry 53. `wheeler install` still works but is the legacy path, and now refuses when the plugin is present rather than silently shadowing it.
 
 </details>
 
@@ -354,7 +354,7 @@ wheeler/
 ├── tools/graph_tools/       # Provenance-completing mutations + queries
 └── workspace.py             # Project file scanner
 
-tests/                        # 3160 tests
+tests/                        # 3648 tests
 docs/                         # Getting started, architecture, project spec
 ```
 
@@ -366,7 +366,7 @@ docs/                         # Getting started, architecture, project spec
 
 **Bug reports:** Use the `dev-feedback` act (`/wh:dev-feedback` in Claude Code, `$dev-feedback` in Codex) from inside a session to file structured issues, or report at [GitHub Issues](https://github.com/maxwellsdm1867/wheeler/issues).
 
-**Tests:** `python -m pytest tests/ -v` (3160 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
+**Tests:** `python -m pytest tests/ -v` (3648 tests). E2E tests require a running Neo4j: `python -m pytest tests/e2e/ -v`.
 
 **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical spec (module dependency map, PROV schema, MCP tool listing, hardening patterns).
 
