@@ -1,0 +1,1790 @@
+{
+  "schema_version": 1,
+  "purpose": "Independent pre-registered design; evaluator-only expected outcomes must not enter agent prompts.",
+  "skills": {
+    "join": {
+      "name": "recording-joins",
+      "description": "Join recording metadata to measured responses or select responses by cell type. Does not govern file metadata or table-schema inspection.",
+      "body": "Join recordings and measurements using recording_id, never basename. Basenames are not globally unique. Filter cell_type on recordings. Check the joined row count against measurements for the selected recording IDs. Return every measurement unless the current task requests aggregation.",
+      "targets": [
+        "database"
+      ]
+    },
+    "aggregate": {
+      "name": "population-response",
+      "description": "Compute an analysis population response using the project weighting convention. Does not govern retrieval of individual measurements or file inspection.",
+      "body": "For population summaries, average value within each recording_id, then average those recording means with equal weight. Report recording count and within-recording means. If the scientist explicitly requests a different estimand such as the raw row mean, honor that request and label it; do not silently apply this default.",
+      "targets": [
+        "database"
+      ]
+    },
+    "fit": {
+      "name": "per-cell-linear-fit",
+      "description": "Fit linear response coefficients per cell using this fitting script. Not applicable to inspecting, copying, or listing the script.",
+      "body": "Fit y = intercept + slope*x separately for each cell using ordinary least squares. Include an intercept. Do not pool cell observations and do not force an origin. Report each cell slope, intercept, and observation count.",
+      "targets": [
+        "fit_script"
+      ]
+    },
+    "plot": {
+      "name": "population-response-plot",
+      "description": "Plot population response curves from this dataset with the analysis averaging and display conventions. Not for fitting coefficients or file inventory.",
+      "body": "At each x, first average repeats within cell, then average cell means equally. Use a logarithmic x axis, a linear y axis, and retain the raw positive x values in the plotted coordinates. Label axes stimulus and response. Plot response curves only; do not add a fitted curve unless requested. Explicit scientist display requests override these defaults.",
+      "targets": [
+        "plot_dataset"
+      ]
+    },
+    "export": {
+      "name": "analysis-export-naming",
+      "description": "Name newly exported result artifacts for this analysis and prevent accidental overwrite. Not for reading or listing existing artifacts.",
+      "body": "Create the requested output within its designated directory using {artifact_id}__{purpose}.json. Normalize purpose to lowercase ASCII words joined by hyphens. Never overwrite an existing result: if the base filename exists use {artifact_id}__{purpose}__{run_id}.json, and fail visibly if that also exists.",
+      "targets": [
+        "export_directory"
+      ]
+    }
+  },
+  "fixtures": {
+    "database": {
+      "kind": "sqlite",
+      "basename": "recordings.sqlite",
+      "schema": [
+        "CREATE TABLE recordings(recording_id TEXT PRIMARY KEY, basename TEXT, cell_type TEXT)",
+        "CREATE TABLE measurements(recording_id TEXT, basename TEXT, value REAL)"
+      ],
+      "recordings": [
+        [
+          "p7",
+          "trace.dat",
+          "parasol"
+        ],
+        [
+          "p9",
+          "other.dat",
+          "parasol"
+        ],
+        [
+          "m4",
+          "trace.dat",
+          "midget"
+        ]
+      ],
+      "measurements": [
+        [
+          "p7",
+          "trace.dat",
+          12
+        ],
+        [
+          "p7",
+          "trace.dat",
+          24
+        ],
+        [
+          "p9",
+          "other.dat",
+          45
+        ],
+        [
+          "m4",
+          "trace.dat",
+          80
+        ],
+        [
+          "m4",
+          "trace.dat",
+          100
+        ]
+      ]
+    },
+    "other_database": {
+      "kind": "sqlite",
+      "basename": "recordings.sqlite",
+      "namespace": "other",
+      "links": [],
+      "note": "Same filename and data shape, distinct node ID and project; no skills linked."
+    },
+    "fit_script": {
+      "kind": "script",
+      "basename": "fit.py",
+      "data": [
+        {
+          "cell": "a",
+          "x": 0,
+          "y": 3
+        },
+        {
+          "cell": "a",
+          "x": 1,
+          "y": 5
+        },
+        {
+          "cell": "a",
+          "x": 3,
+          "y": 9
+        },
+        {
+          "cell": "b",
+          "x": 0,
+          "y": -2
+        },
+        {
+          "cell": "b",
+          "x": 2,
+          "y": 8
+        },
+        {
+          "cell": "b",
+          "x": 4,
+          "y": 18
+        },
+        {
+          "cell": "b",
+          "x": 6,
+          "y": 28
+        }
+      ],
+      "oracle": {
+        "a": {
+          "slope": 2,
+          "intercept": 3,
+          "n": 3
+        },
+        "b": {
+          "slope": 5,
+          "intercept": -2,
+          "n": 4
+        }
+      }
+    },
+    "plot_dataset": {
+      "kind": "csv",
+      "data": [
+        {
+          "cell": "a",
+          "x": 1,
+          "y": 2
+        },
+        {
+          "cell": "a",
+          "x": 1,
+          "y": 4
+        },
+        {
+          "cell": "a",
+          "x": 2,
+          "y": 4
+        },
+        {
+          "cell": "a",
+          "x": 2,
+          "y": 8
+        },
+        {
+          "cell": "a",
+          "x": 4,
+          "y": 8
+        },
+        {
+          "cell": "a",
+          "x": 4,
+          "y": 16
+        },
+        {
+          "cell": "b",
+          "x": 1,
+          "y": 9
+        },
+        {
+          "cell": "b",
+          "x": 2,
+          "y": 18
+        },
+        {
+          "cell": "b",
+          "x": 4,
+          "y": 36
+        }
+      ],
+      "oracle": {
+        "x": [
+          1,
+          2,
+          4
+        ],
+        "y": [
+          6,
+          12,
+          24
+        ],
+        "xscale": "log",
+        "yscale": "linear",
+        "xlabel": "stimulus",
+        "ylabel": "response"
+      }
+    },
+    "export_directory": {
+      "kind": "directory",
+      "artifact_id": "D-eval-4c9",
+      "run_id": "run-017",
+      "purpose": "Population Mean",
+      "base_filename": "D-eval-4c9__population-mean.json",
+      "collision_filename": "D-eval-4c9__population-mean__run-017.json"
+    }
+  },
+  "cases": [
+    {
+      "id": "J01",
+      "split": "development",
+      "category": "positive",
+      "task": "Return parasol recording IDs and every response value, ordered by recording ID and value.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "join"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "join"
+        ],
+        "must_not_apply": [
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "rows": [
+            [
+              "p7",
+              12
+            ],
+            [
+              "p7",
+              24
+            ],
+            [
+              "p9",
+              45
+            ]
+          ],
+          "joined_count": 3
+        },
+        "operation_checks": {
+          "join": {
+            "key": "recording_id",
+            "forbidden_key": "basename",
+            "verify_cardinality": true
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "J02",
+      "split": "heldout",
+      "category": "positive",
+      "task": "Find the source database for this dataset and return all midget measurements.",
+      "seed_resource": "dataset_neighbor",
+      "mechanism": "search_context_one_hop",
+      "setup": {
+        "edge": "dataset_neighbor RELEVANT_TO database"
+      },
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "join"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "join"
+        ],
+        "must_not_apply": [
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "rows": [
+            [
+              "m4",
+              80
+            ],
+            [
+              "m4",
+              100
+            ]
+          ],
+          "joined_count": 2
+        },
+        "operation_checks": {
+          "join": {
+            "key": "recording_id",
+            "forbidden_key": "basename",
+            "verify_cardinality": true
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "N03",
+      "split": "development",
+      "category": "same_resource_negative",
+      "task": "List the table names in this database. Do not analyze records.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "tables": [
+            "measurements",
+            "recordings"
+          ]
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "N04",
+      "split": "development",
+      "category": "same_resource_negative",
+      "task": "Report this database file size in bytes. Do not query its contents.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "stat_equals_actual_bytes": true,
+          "sql_calls": 0
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "N05",
+      "split": "heldout",
+      "category": "other_resource_negative",
+      "task": "List table names in this separate recordings database.",
+      "seed_resource": "other_database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "tables": [
+            "measurements",
+            "recordings"
+          ]
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "A06",
+      "split": "development",
+      "category": "positive",
+      "task": "Compute the population response summary using this analysis\u2019s conventions.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "aggregate"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "aggregate"
+        ],
+        "must_not_apply": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "means": {
+            "p7": 18,
+            "p9": 45,
+            "m4": 90
+          },
+          "mean": 51,
+          "recording_count": 3
+        },
+        "operation_checks": {
+          "aggregate": {
+            "group_by_first": "recording_id",
+            "final_weight": "equal_recording"
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "A07",
+      "split": "development",
+      "category": "explicit_override",
+      "task": "Compute the raw mean of all measurement rows. For this diagnostic I explicitly want each row equally weighted.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [
+          "aggregate"
+        ],
+        "must_not_read": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "mean": 52.2,
+          "label_mentions_row_weighting": true
+        },
+        "operation_checks": {}
+      },
+      "notes": "Reading a default to check exceptions is permissible. Applying equal-recording weights is an error."
+    },
+    {
+      "id": "A08",
+      "split": "heldout",
+      "category": "positive",
+      "task": "Compute the parasol population response under the analysis convention, first selecting the correct cells.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "join",
+          "aggregate"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "join",
+          "aggregate"
+        ],
+        "must_not_apply": [
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "means": {
+            "p7": 18,
+            "p9": 45
+          },
+          "mean": 31.5,
+          "recording_count": 2
+        },
+        "operation_checks": {
+          "join": {
+            "key": "recording_id",
+            "forbidden_key": "basename",
+            "verify_cardinality": true
+          },
+          "aggregate": {
+            "group_by_first": "recording_id",
+            "final_weight": "equal_recording"
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "N09",
+      "split": "development",
+      "category": "near_miss_negative",
+      "task": "Which basenames are duplicated in the recordings metadata table? Return each duplicated name and count; do not join measurements.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "rows": [
+            [
+              "trace.dat",
+              2
+            ]
+          ]
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "N10",
+      "split": "heldout",
+      "category": "identity_negative",
+      "task": "Summarize the finding in this returned text.",
+      "seed_resource": "scalar_citation",
+      "mechanism": "run_cypher_scalar",
+      "setup": {
+        "result": "A note mentioning database D-eval-db in prose; no typed node returned."
+      },
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "not_checked",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "no_artifact_access": true
+        },
+        "operation_checks": {}
+      },
+      "notes": "IDs in prose or scalar projection must not manufacture an encounter."
+    },
+    {
+      "id": "N11",
+      "split": "heldout",
+      "category": "encounter_not_intent",
+      "task": "Summarize the finding statement; do not inspect or analyze its supporting database.",
+      "seed_resource": "finding_neighbor",
+      "mechanism": "search_context_one_hop",
+      "setup": {
+        "edge": "finding_neighbor SUPPORTED_BY database"
+      },
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "no_database_query": true
+        },
+        "operation_checks": {}
+      },
+      "notes": "Neighbor skill summaries are correct discovery; reading or applying them is unnecessary for this task."
+    },
+    {
+      "id": "F12",
+      "split": "development",
+      "category": "positive",
+      "task": "Use the linked fitting script to estimate response intercept and slope separately for each cell.",
+      "seed_resource": "fit_script",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "fit"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "fit"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "fit"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "a": {
+            "slope": 2,
+            "intercept": 3,
+            "n": 3
+          },
+          "b": {
+            "slope": 5,
+            "intercept": -2,
+            "n": 4
+          }
+        },
+        "operation_checks": {
+          "fit": {
+            "group_by": "cell",
+            "model": "linear",
+            "intercept": true
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "F13",
+      "split": "heldout",
+      "category": "same_resource_negative",
+      "task": "Inspect this fitting script and report its imported modules. Do not run it.",
+      "seed_resource": "fit_script",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "fit"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "imports_equal_ast": true,
+          "script_execution_count": 0
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "P14",
+      "split": "development",
+      "category": "positive",
+      "task": "Plot the population response curve for this dataset using the saved analysis conventions.",
+      "seed_resource": "plot_dataset",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "plot"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "plot"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "export"
+        ],
+        "must_apply": [
+          "plot"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "export"
+        ],
+        "outcome": {
+          "x": [
+            1,
+            2,
+            4
+          ],
+          "y": [
+            6,
+            12,
+            24
+          ],
+          "xscale": "log",
+          "yscale": "linear",
+          "xlabel": "stimulus",
+          "ylabel": "response"
+        },
+        "operation_checks": {
+          "plot": {
+            "group_mean_order": [
+              "x,cell",
+              "x"
+            ],
+            "xscale": "log",
+            "yscale": "linear",
+            "fit_curve": false
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "N15",
+      "split": "development",
+      "category": "same_resource_negative",
+      "task": "Report this plotting dataset\u2019s filename and modification time; do not load its contents.",
+      "seed_resource": "plot_dataset",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "plot"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "metadata_equals_stat": true,
+          "data_reads": 0
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "P16",
+      "split": "heldout",
+      "category": "positive",
+      "task": "Fit a line for each cell using the fitting script, and separately plot the population response dataset using its conventions.",
+      "seed_resource": "analysis_bundle",
+      "mechanism": "search_context_one_hop",
+      "setup": {
+        "neighbors": [
+          "fit_script",
+          "plot_dataset"
+        ]
+      },
+      "oracle": {
+        "discovered_skills": [
+          "fit",
+          "plot"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "fit",
+          "plot"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "export"
+        ],
+        "must_apply": [
+          "fit",
+          "plot"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "export"
+        ],
+        "outcome": {
+          "fits": {
+            "a": {
+              "slope": 2,
+              "intercept": 3,
+              "n": 3
+            },
+            "b": {
+              "slope": 5,
+              "intercept": -2,
+              "n": 4
+            }
+          },
+          "plot": {
+            "x": [
+              1,
+              2,
+              4
+            ],
+            "y": [
+              6,
+              12,
+              24
+            ],
+            "xscale": "log",
+            "yscale": "linear",
+            "xlabel": "stimulus",
+            "ylabel": "response"
+          }
+        },
+        "operation_checks": {
+          "fit": {
+            "group_by": "cell",
+            "model": "linear",
+            "intercept": true
+          },
+          "plot": {
+            "group_mean_order": [
+              "x,cell",
+              "x"
+            ],
+            "xscale": "log",
+            "yscale": "linear",
+            "fit_curve": false
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "F17",
+      "split": "heldout",
+      "category": "same_resource_negative",
+      "task": "Copy the fitting script into the requested archive directory and verify its hash matches. Do not fit data.",
+      "seed_resource": "fit_script",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "fit"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "copied_hash_matches": true,
+          "script_execution_count": 0
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "N18",
+      "split": "heldout",
+      "category": "other_resource_negative",
+      "task": "Report imported modules for this other project\u2019s script, also named fit.py.",
+      "seed_resource": "other_fit_script",
+      "mechanism": "show_node",
+      "setup": {
+        "same_basename": "fit.py",
+        "project": "other"
+      },
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "imports_equal_ast": true
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "P19",
+      "split": "heldout",
+      "category": "partial_override",
+      "task": "Plot the population response curve with the usual averaging, but use a linear x axis for this figure.",
+      "seed_resource": "plot_dataset",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "plot"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "plot"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "export"
+        ],
+        "must_apply": [
+          "plot"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "export"
+        ],
+        "outcome": {
+          "x": [
+            1,
+            2,
+            4
+          ],
+          "y": [
+            6,
+            12,
+            24
+          ],
+          "xscale": "linear",
+          "yscale": "linear",
+          "xlabel": "stimulus",
+          "ylabel": "response"
+        },
+        "operation_checks": {
+          "plot": {
+            "group_mean_order": [
+              "x,cell",
+              "x"
+            ],
+            "xscale": "linear",
+            "yscale": "linear",
+            "fit_curve": false
+          }
+        }
+      },
+      "notes": "The averaging procedure remains relevant. Only the explicit axis override changes."
+    },
+    {
+      "id": "E20",
+      "split": "development",
+      "category": "positive",
+      "task": "Export the population mean result as a new artifact with purpose Population Mean in this analysis directory.",
+      "seed_resource": "export_directory",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "export"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "export"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot"
+        ],
+        "must_apply": [
+          "export"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot"
+        ],
+        "outcome": {
+          "created_filename": "D-eval-4c9__population-mean.json",
+          "no_overwrite": true
+        },
+        "operation_checks": {
+          "export": {
+            "path_basename": "D-eval-4c9__population-mean.json",
+            "overwrite": false
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "N21",
+      "split": "development",
+      "category": "same_resource_negative",
+      "task": "List existing JSON filenames in this analysis export directory.",
+      "seed_resource": "export_directory",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "export"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "listing_equals_filesystem": true,
+          "writes": 0
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "E22",
+      "split": "heldout",
+      "category": "positive",
+      "task": "Export the population mean result; an earlier result with the normal filename already exists. Preserve it.",
+      "seed_resource": "export_directory",
+      "mechanism": "show_node",
+      "setup": {
+        "preexisting_base_file": "sentinel-old-output"
+      },
+      "oracle": {
+        "discovered_skills": [
+          "export"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "export"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot"
+        ],
+        "must_apply": [
+          "export"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot"
+        ],
+        "outcome": {
+          "created_filename": "D-eval-4c9__population-mean__run-017.json",
+          "old_bytes_unchanged": true
+        },
+        "operation_checks": {
+          "export": {
+            "path_basename": "D-eval-4c9__population-mean__run-017.json",
+            "overwrite": false
+          }
+        }
+      },
+      "notes": ""
+    },
+    {
+      "id": "I23",
+      "split": "development",
+      "category": "ambiguous_inspection",
+      "task": "Report the number of repeat rows for each cell in this response dataset. Do not average responses or create a plot.",
+      "seed_resource": "plot_dataset",
+      "mechanism": "show_node",
+      "setup": {
+        "description_override": {
+          "plot": "Conventions for working with repeated-response curves in this dataset."
+        }
+      },
+      "oracle": {
+        "discovered_skills": [
+          "plot"
+        ],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [
+          "plot"
+        ],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "per_cell_repeat_counts": {
+            "a": 6,
+            "b": 3
+          },
+          "plot_created": false
+        },
+        "operation_checks": {}
+      },
+      "notes": "The summary is intentionally ambiguous; reading to disambiguate is allowed, but plotting or applying population averaging to individual-repeat analysis is wrong."
+    },
+    {
+      "id": "C24",
+      "split": "development",
+      "category": "positive",
+      "task": "Fit intercept and slope separately for each cell, using the linked fitting script; do not compute population summaries.",
+      "seed_resource": "fit_script",
+      "mechanism": "show_node",
+      "setup": {
+        "additional_link": "aggregate APPLIES_TO fit_script"
+      },
+      "oracle": {
+        "discovered_skills": [
+          "fit",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "fit"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "fit"
+        ],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "a": {
+            "slope": 2,
+            "intercept": 3,
+            "n": 3
+          },
+          "b": {
+            "slope": 5,
+            "intercept": -2,
+            "n": 4
+          }
+        },
+        "operation_checks": {
+          "fit": {
+            "group_by": "cell",
+            "model": "linear",
+            "intercept": true
+          }
+        }
+      },
+      "notes": "A mechanically valid link to aggregate is deliberately broad. Compare competing descriptions with intent."
+    },
+    {
+      "id": "S25",
+      "split": "heldout",
+      "category": "intent_switch",
+      "task": "Report this database file size in bytes. Do not query its contents.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "aggregate"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "aggregate"
+        ],
+        "must_not_apply": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "phase1": {
+            "stat_equals_actual_bytes": true,
+            "body_reads": 0
+          },
+          "phase2": {
+            "mean": 51,
+            "recording_count": 3
+          }
+        },
+        "operation_checks": {
+          "aggregate": {
+            "group_by_first": "recording_id",
+            "final_weight": "equal_recording"
+          }
+        }
+      },
+      "notes": "Harness sends followup only after initial finish. Require zero body reads during phase 1. This is one fresh session with two real user turns.",
+      "followup_task": "Now compute the population response summary under the project convention."
+    },
+    {
+      "id": "S26",
+      "split": "heldout",
+      "category": "intent_switch",
+      "task": "Compute the population response summary using the project convention.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {},
+      "oracle": {
+        "discovered_skills": [
+          "join",
+          "aggregate"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "aggregate"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "aggregate"
+        ],
+        "must_not_apply": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "phase1": {
+            "mean": 51
+          },
+          "phase2": {
+            "stat_equals_actual_bytes": true,
+            "sql_calls": 0,
+            "new_body_reads": 0
+          }
+        },
+        "operation_checks": {
+          "aggregate": {
+            "group_by_first": "recording_id",
+            "final_weight": "equal_recording"
+          }
+        }
+      },
+      "notes": "Harness sends followup only after initial finish. Previously read body can remain in context, but must not cause phase 2 analysis.",
+      "followup_task": "Now report only the database file size. Do not query its contents."
+    },
+    {
+      "id": "L27",
+      "split": "development",
+      "category": "lifecycle_negative",
+      "task": "List the database table names.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {
+        "all_skill_states": "candidate"
+      },
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "tables": [
+            "measurements",
+            "recordings"
+          ]
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "L28",
+      "split": "development",
+      "category": "lifecycle_negative",
+      "task": "List the database table names.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {
+        "all_skill_states": "retracted"
+      },
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "complete",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "tables": [
+            "measurements",
+            "recordings"
+          ]
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "L29",
+      "split": "heldout",
+      "category": "lifecycle_negative",
+      "task": "List the database table names and report if linked guidance is unavailable.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {
+        "all_skills_stale": true
+      },
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "unavailable",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "tables": [
+            "measurements",
+            "recordings"
+          ],
+          "acknowledges_unavailable": true
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "L30",
+      "split": "development",
+      "category": "version_positive",
+      "task": "Compute the population response using the current accepted convention.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {
+        "aggregate_v1": "accepted, superseded, wrong row mean default",
+        "aggregate_v2": "accepted, current equal-recording convention",
+        "join_state": "candidate"
+      },
+      "oracle": {
+        "discovered_skills": [
+          "aggregate_v2"
+        ],
+        "discovery_status": "complete",
+        "must_read": [
+          "aggregate"
+        ],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [
+          "aggregate"
+        ],
+        "must_not_apply": [
+          "join",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "mean": 51,
+          "version": "v2",
+          "old_version_read_count": 0
+        },
+        "operation_checks": {
+          "aggregate": {
+            "group_by_first": "recording_id",
+            "final_weight": "equal_recording"
+          }
+        }
+      },
+      "notes": "Scorer maps aggregate family reads to exact revision IDs; never accept old body based on family alone."
+    },
+    {
+      "id": "L31",
+      "split": "heldout",
+      "category": "lifecycle_negative",
+      "task": "Inspect the database table names and tell me whether the current linked analysis guidance can be loaded.",
+      "seed_resource": "database",
+      "mechanism": "show_node",
+      "setup": {
+        "aggregate_v1": "accepted, superseded",
+        "aggregate_v2": "accepted, corrupt hash",
+        "join_state": "candidate"
+      },
+      "oracle": {
+        "discovered_skills": [],
+        "discovery_status": "unavailable",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "tables": [
+            "measurements",
+            "recordings"
+          ],
+          "reports_current_guidance_unavailable": true,
+          "old_version_reads": 0
+        },
+        "operation_checks": {}
+      },
+      "notes": ""
+    },
+    {
+      "id": "B32",
+      "split": "heldout",
+      "category": "coverage",
+      "task": "Inspect this analysis bundle and report whether all linked skill summaries were returned. Do not run an analysis.",
+      "seed_resource": "large_bundle",
+      "mechanism": "show_node",
+      "setup": {
+        "accepted_skill_count": 21,
+        "discovery_limit": 20
+      },
+      "oracle": {
+        "discovered_skills": [
+          "first_k_accepted"
+        ],
+        "discovery_status": "truncated",
+        "must_read": [],
+        "may_read": [],
+        "must_not_read": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "must_apply": [],
+        "must_not_apply": [
+          "join",
+          "aggregate",
+          "fit",
+          "plot",
+          "export"
+        ],
+        "outcome": {
+          "reports_partial_coverage": true,
+          "does_not_claim_no_other_skills": true
+        },
+        "operation_checks": {}
+      },
+      "notes": "Not eligible for simple task-skill FN metric: deliberately truncated retrieval is a separate coverage event."
+    }
+  ],
+  "metrics": {
+    "discovery_false_positive": "Returned skill revision not in eligible accepted/current/usable revisions linked to a genuinely encountered scoped node. Irrelevance to intent is not a discovery FP.",
+    "discovery_false_negative": "Eligible linked revision omitted from a complete response. Exclude and separately count unavailable/truncated/not_checked encounters.",
+    "unnecessary_read_rate": "Negative case-skill pairs read in full / all must_not_read pairs that were actually offered. may_read pairs excluded.",
+    "application_false_positive_rate": "Task-irrelevant procedure actually applied / all task-irrelevant offered procedure opportunities. Validate behavior, not just agent declaration.",
+    "application_false_negative_rate": "Required applicable procedure not applied / required applicable procedures offered successfully. Also report end-to-end misses including retrieval failures separately.",
+    "task_success_rate": "Tasks satisfying independent artifact/result oracle / attempted tasks; transport failures separately listed and retained in denominator for end-to-end reliability.",
+    "startup_leakage_rate": "Sessions whose initial model-visible request/catalog contains an individual learned skill body / sessions audited."
+  },
+  "protocol": {
+    "repetitions_per_host": {
+      "baseline_development": 1,
+      "post_fix_development": 1,
+      "heldout": 2
+    },
+    "hosts": [
+      "Claude Code native headless",
+      "Codex native headless"
+    ],
+    "fresh_process_per_case": true,
+    "case_order": "seeded random permutation per host/repetition",
+    "train_split": "16 designated development cases permit description/mechanism changes; freeze before 16 heldout cases.",
+    "holdout_split": "Never tune against heldout results, regenerate heldout values and paraphrases for confirmatory rerun after any fix.",
+    "baseline": "Matched selected positive cases with discovery absent, identical fixture and instructions; observe errors rather than presuming improvement.",
+    "oracle_separation": "Agent gets task, ordinary graph results, tool contract, fixture access, and selected skill bodies only. No this JSON, scorer, expected arrays, or other cases.",
+    "provenance": [
+      "exact model ID or unknown",
+      "host name/version",
+      "OS",
+      "Wheeler git SHA and dirty diff hash",
+      "case and fixture hashes",
+      "skill version/body hashes",
+      "initial request/context",
+      "tool trace and reads",
+      "outcome files",
+      "latency and tokens when exposed"
+    ],
+    "reporting": "Host-stratified counts and Wilson intervals; report case-cluster variability and avoid treating repetitions as independent scientific samples.",
+    "planned_sessions": 128
+  }
+}

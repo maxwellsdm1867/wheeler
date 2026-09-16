@@ -1,4 +1,45 @@
-# Node-linked skill decision smoke test
+# Node-linked skill evaluations
+
+See the [extensive evaluation report](../../docs/node-linked-skills-evaluation.md)
+and [case-level evidence](extensive-results-2026-09-15.json) for measured results,
+mechanism repairs, native routing checks, and writer iterations.
+
+The extensive native-host evaluation uses `trigger_benchmark_cases.json`,
+`benchmark.py`, `fixture_actions.py`, `host_runner.py`, and `benchmark_score.py`.
+It separates graph discovery, selective full-body reads, executed procedures,
+task outcomes, and host/permission failures. Cases include SQL joins, weighting,
+fitting, plotting, exports, unrelated operations, changed intent, lifecycle states,
+and bounded context. Expected outcomes are kept outside the model's task context.
+
+Use a disposable local Neo4j instance and a new output directory:
+
+```sh
+uv sync --extra dev --frozen
+.venv/bin/python evals/node_linked_skills/benchmark.py /private/tmp/trigger-run prepare --uri bolt://localhost:7687
+.venv/bin/python evals/node_linked_skills/benchmark.py /private/tmp/trigger-run run --phase development-v1 --split development --workers 4
+.venv/bin/python evals/node_linked_skills/benchmark_score.py /private/tmp/trigger-run /private/tmp/trigger-run/development-score.json --phase development-v1
+```
+
+Freeze guidance and scoring after development, then run `--split heldout
+--repeats 2` in a new phase. Repeats vary data values, but remain correlated
+observations of the same scenario. The scorer reports raw counts, descriptive
+Wilson intervals, and case-level rates. It retains semantic checks requiring
+human adjudication rather than assuming a nonempty answer is correct.
+
+`live_host_probe.py` tests native hosts against production MCP and actual skill
+files. `writer_probe.py` tests lesson creation/revision against isolated graph
+namespaces and snapshots before and after each task. Their `setup`, `run`, and
+`cleanup` subcommands keep fixture lifecycle explicit. Run each script with
+`--help` for arguments. These probes use native subscription authentication,
+exclude ambient API keys, and do not alter saved host configuration. Exact model
+IDs are recorded only when exposed by the runtime; `unknown` remains unknown.
+
+Keep raw native logs private: they may contain unrelated installed skill
+metadata. Publish sanitized observations and artifact hashes with the report.
+Controlled CLI task replay, live MCP transport, and native router/act selection
+are different evaluation surfaces and must be reported separately.
+
+## Earlier decision smoke test
 
 For graph discovery followed by real agent task execution, see the newer [executed-task probe](executed-task-probe.md). The earlier exercise below tested decisions only.
 

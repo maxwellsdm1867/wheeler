@@ -178,12 +178,25 @@ async def _capture_locked(backend, args, identity, node_id, source_id, execution
             raise ValueError("supersedes must identify an existing version of this named skill")
         if sorted(previous.get("skill_target_ids", [])) != targets:
             raise ValueError("A revision must retain the same target nodes; use a new skill name for a different scope")
+        if previous.get("skill_state") == "incomplete":
+            raise ValueError("Repair the incomplete capture before revising it")
         version = int(previous.get("skill_version", 0)) + 1
 
     siblings = await backend.query_nodes("Document", {"skill_name": name}, limit=1000)
     if len(siblings) >= 1000:
         raise ValueError("Too many versions for this name; narrow the skill scope before capture")
     siblings = [s for s in siblings if sorted(s.get("skill_target_ids", [])) == targets]
+    by_id = {s["id"]: s for s in siblings}
+
+    def ancestors(start: str) -> set[str]:
+        chain: set[str] = set()
+        while start:
+            if start in chain or start not in by_id:
+                raise ValueError("Skill lineage is missing or cyclic; repair it before capture")
+            chain.add(start)
+            start = by_id[start].get("skill_supersedes", "")
+        return chain
+
     if not existing:
         if supersedes:
             if any(s.get("skill_supersedes") == supersedes and s.get("skill_state") in {"accepted", "retracted"} for s in siblings):
@@ -197,6 +210,16 @@ async def _capture_locked(backend, args, identity, node_id, source_id, execution
         and s.get("skill_state") in {"accepted", "retracted"} for s in siblings
     ):
         raise ValueError("Another revision was accepted; revise that current version instead")
+    # A candidate can itself have revisions. Check the whole lineage rather
+    # than only direct siblings, or A(accepted)->B(candidate)->C(accepted)
+    # permits a conflicting branch from A and later promotion of stale B.
+    if (not existing or (args.get("accepted") and existing.get("skill_state") != "accepted")) and (supersedes or existing):
+        prior_lineage = ancestors(supersedes) if supersedes else set()
+        blockers = [s["id"] for s in siblings if s["id"] != node_id
+                    and s.get("skill_state") in {"accepted", "retracted"}
+                    and s["id"] not in prior_lineage]
+        if blockers:
+            raise ValueError("Another revision was accepted or retired; revise the current lineage instead: " + ", ".join(sorted(blockers)))
 
     directory = config.resolved_project_root / ".notes" / "lessons" / name / key
     skill_path, source_path = directory / "SKILL.md", directory / "source.md"

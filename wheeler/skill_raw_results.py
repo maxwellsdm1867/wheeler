@@ -92,6 +92,9 @@ async def discover_raw_result_skills(
         result["linked_skills_status"] = "truncated"
     if records:
         result["linked_skills_guidance"] = (
+            result.get("linked_skills_guidance", "") + " "
+            if result.get("linked_skills_guidance") else ""
+        ) + (
             "Compare linked skill descriptions with your intent; read full instructions "
             "only when relevant. For projected or omitted resources, use show_node "
             "after confirming their identity in the current project."

@@ -1050,6 +1050,10 @@ async def execute_tool(
             result_key = QUERY_RESULT_KEYS.get(tool_name)
             if result_key:
                 result = json.dumps(await enrich_query_result(json.loads(result), result_key, config, backend))
+        elif tool_name == "graph_gaps" and not args.get("_skip_skill_discovery"):
+            from wheeler.skill_discovery import enrich_gap_result
+
+            result = json.dumps(await enrich_gap_result(json.loads(result), config, backend))
         if args.get("_require_complete_write") and (
             tool_name in _MUTATION_TOOLS or tool_name == "update_node"
         ):

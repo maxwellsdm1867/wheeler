@@ -181,7 +181,7 @@ def _diagnose_health_error(error_msg: str, evidence: dict | None = None) -> dict
 # --- Graph health & status ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def graph_health() -> dict:
     """Check Wheeler knowledge graph database connectivity and report diagnostics.
@@ -255,7 +255,7 @@ async def graph_health() -> dict:
     return result
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def graph_status() -> dict:
     """Return node counts per label in the Wheeler knowledge graph."""
@@ -275,7 +275,7 @@ async def graph_status() -> dict:
     return counts
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def graph_context(topic: str = "") -> str:
     """Fetch size-limited context from the Wheeler knowledge graph (recent findings, open questions, hypotheses).
@@ -287,7 +287,7 @@ async def graph_context(topic: str = "") -> str:
     return await context.fetch_context(_config, topic=topic)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def graph_gaps(limit: int = 10, offset: int = 0, summary: bool = False) -> dict:
     """Find gaps in the Wheeler knowledge graph: unlinked questions, unsupported hypotheses, stale analyses, near-duplicates.
@@ -303,7 +303,7 @@ async def graph_gaps(limit: int = 10, offset: int = 0, summary: bool = False) ->
     """
     result = await graph_tools.execute_tool(
         "graph_gaps",
-        {"limit": limit, "offset": offset, "summary": summary},
+        {"limit": limit, "offset": offset, "summary": summary, "_skip_skill_discovery": True},
         _config,
     )
     gaps = json.loads(result)
@@ -326,13 +326,15 @@ async def graph_gaps(limit: int = 10, offset: int = 0, summary: bool = False) ->
         # Embeddings not available: skip duplicate detection silently
         pass
 
-    return gaps
+    from wheeler.skill_discovery import enrich_gap_result
+
+    return await enrich_gap_result(gaps, _config)
 
 
 # --- Node read (filesystem) ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def show_node(
     node_id: str = "",
@@ -342,6 +344,9 @@ async def show_node(
     neighbors: bool = False,
     version: int | None = None,
     if_changed_since: str = "",
+    skills_only: bool = False,
+    skill_offset: int = 0,
+    skill_inventory: bool = False,
 ) -> dict:
     """Read one or many Wheeler knowledge graph nodes with their full content.
 
@@ -360,6 +365,16 @@ async def show_node(
       if_changed_since: a content_hash or "v3" you saw earlier. If the node is
         unchanged you get back only {id, content_version, content_hash,
         changed: false} instead of the content you already have.
+      skills_only: return only accepted linked skill descriptions for the
+        explicitly supplied node_id/node_ids, without returning node contents or
+        procedure bodies. Use this to recover truncated discovery.
+      skill_offset: page offset for skills_only (default 0). Follow returned
+        linked_skills_next_page arguments until absent. Pages are ordered by
+        skill ID; restart at 0 if the linked skills change between calls.
+      skill_inventory: requires skills_only; return separate state-labeled
+        writer inventory including candidates and history, with supersedes
+        IDs. This does not activate inactive skills. Page using
+        skill_inventory_next_page. Default discovery remains accepted-only.
 
     Discovers compact accepted skill summaries for this node and returned
     neighbors. Compare descriptions to task intent before reading a skill path.
@@ -371,6 +386,14 @@ async def show_node(
     ids = [i for i in (node_ids or []) if i] or ([node_id] if node_id else [])
     if not ids:
         return {"error": "Pass node_id or node_ids"}
+    if skill_offset < 0 or (skill_offset and not skills_only):
+        return {"error": "skill_offset must be non-negative and requires skills_only=true"}
+    if skill_inventory and not skills_only:
+        return {"error": "skill_inventory requires skills_only=true"}
+    if skills_only:
+        from wheeler.skill_discovery import discover_skills
+
+        return await discover_skills(ids, _config, offset=skill_offset, inventory=skill_inventory)
     wanted = {f.strip() for f in fields.split(",") if f.strip()} if fields else None
 
     found: list[dict] = []
@@ -554,7 +577,7 @@ async def _read_node_any_layer(nid: str) -> dict | None:
 # --- Entity resolution (read-only) ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def propose_merge(node_id_a: str, node_id_b: str) -> dict:
     """Compare two knowledge graph nodes and propose a merge.
@@ -570,7 +593,7 @@ async def propose_merge(node_id_a: str, node_id_b: str) -> dict:
 # --- Raw Cypher ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def run_cypher(query: str, limit: int = 100) -> dict:
     """Run a read-only Cypher query against the Wheeler knowledge graph database.
@@ -657,7 +680,7 @@ async def init_schema() -> dict:
 # --- Semantic search ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def search_findings(
     query: str,
@@ -696,6 +719,8 @@ async def search_findings(
                     "label": r.get("type", ""),
                     "text": (_extract_display_text(r) if full else _trim_text(_extract_display_text(r))),
                     "score": r.get("rrf_score", 0.0),
+                    **({"skill_name": r["skill_name"], "skill_state": r.get("skill_state", "")}
+                       if r.get("skill_name") else {}),
                 }
                 for r in results
             ],
@@ -717,7 +742,7 @@ async def search_findings(
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def search_context(
     query: str,
@@ -825,7 +850,7 @@ async def index_node(node_id: str, label: str, text: str) -> dict:
 # without a second copy of their content.
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def list_acts() -> dict:
     """List Wheeler's /wh:* acts: the research workflows this project ships.
@@ -841,7 +866,7 @@ async def list_acts() -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def get_act(name: str, host: str = "") -> dict:
     """Fetch the full instructions for one Wheeler /wh:* act.
@@ -885,7 +910,7 @@ async def get_act(name: str, host: str = "") -> dict:
 # --- Request log ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def request_log_summary() -> dict:
     """Return summary stats of recent Wheeler MCP tool calls (latency, error rate, call counts)."""

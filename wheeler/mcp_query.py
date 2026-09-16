@@ -37,7 +37,7 @@ mcp = FastMCP(
 # --- Graph queries ---
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_findings(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Finding nodes in the Wheeler knowledge graph, optionally filtered by keyword."""
@@ -47,7 +47,7 @@ async def query_findings(keyword: str = "", limit: int = 10, full: bool = False)
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_hypotheses(status: str = "all", limit: int = 10, full: bool = False) -> dict:
     """List Hypothesis nodes in the Wheeler knowledge graph, optionally filtered by status (open/supported/rejected/all)."""
@@ -57,7 +57,7 @@ async def query_hypotheses(status: str = "all", limit: int = 10, full: bool = Fa
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_open_questions(limit: int = 10, full: bool = False) -> dict:
     """List OpenQuestion nodes in the Wheeler knowledge graph, sorted by priority."""
@@ -67,7 +67,7 @@ async def query_open_questions(limit: int = 10, full: bool = False) -> dict:
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_datasets(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Dataset nodes in the Wheeler knowledge graph."""
@@ -77,7 +77,7 @@ async def query_datasets(keyword: str = "", limit: int = 10, full: bool = False)
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_papers(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Paper nodes in the Wheeler knowledge graph by title or authors."""
@@ -87,7 +87,7 @@ async def query_papers(keyword: str = "", limit: int = 10, full: bool = False) -
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_documents(keyword: str = "", status: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Document nodes in the Wheeler knowledge graph.
@@ -102,7 +102,7 @@ async def query_documents(keyword: str = "", status: str = "", limit: int = 10, 
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_plans(keyword: str = "", status: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Plan nodes in the Wheeler knowledge graph by keyword and/or status.
@@ -116,7 +116,7 @@ async def query_plans(keyword: str = "", status: str = "", limit: int = 10, full
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_notes(keyword: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search ResearchNote nodes in the Wheeler knowledge graph."""
@@ -126,7 +126,7 @@ async def query_notes(keyword: str = "", limit: int = 10, full: bool = False) ->
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_analyses(keyword: str = "", limit: int = 20, full: bool = False) -> dict:
     """Search Script nodes in the Wheeler knowledge graph by path or language (legacy alias for query_scripts)."""
@@ -136,7 +136,7 @@ async def query_analyses(keyword: str = "", limit: int = 20, full: bool = False)
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_executions(keyword: str = "", kind: str = "", limit: int = 10, full: bool = False) -> dict:
     """Search Execution nodes in the Wheeler knowledge graph by kind or keyword."""
@@ -148,7 +148,7 @@ async def query_executions(keyword: str = "", kind: str = "", limit: int = 10, f
     return await _shape(json.loads(result), full)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False})
 @_logged
 async def query_review_queue(
     batch: str = "", state: str = "undiscussed", limit: int = 20, full: bool = False) -> dict:
