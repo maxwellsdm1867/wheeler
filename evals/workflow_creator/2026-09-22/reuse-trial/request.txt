@@ -1,0 +1,1 @@
+I want Wheeler integrated into my workflow. When I start reading a paper, I want to look up what our graph already knows about that paper and its provenance. I only want an answer in chat, no saved artifact and no graph writes. I am happy to use an existing skill if one does this already. I have given you the whole workflow; please do not interview me further.

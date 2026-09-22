@@ -1,0 +1,11 @@
+{
+  "run_id": "ca-0922",
+  "parameters": {
+    "smoothing_window": 5
+  },
+  "notebook": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/calcium.ipynb",
+  "plots": [
+    "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/response.png",
+    "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/residuals.png"
+  ]
+}

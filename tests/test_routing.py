@@ -29,6 +29,7 @@ TRIGGER_COMMANDS = [
     "graph-review",
     "handoff",
     "lesson",
+    "skill-creator",
     "note",
     "pair",
     "pause",

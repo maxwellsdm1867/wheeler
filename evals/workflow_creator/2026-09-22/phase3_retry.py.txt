@@ -1,0 +1,34 @@
+from pathlib import Path
+import json,subprocess,hashlib
+R=Path('/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1')
+M=R/'meetings/2026-09-25'; LOG=R/'phase3-results.jsonl'
+count=0
+def call(server,tool,args):
+ global count
+ count+=1;p=R/f'phase3-call-{count:02d}.json';p.write_text(json.dumps(args))
+ q=subprocess.run(['/Users/maxwellsdm/Documents/GitHub/wheeler/.venv/bin/python','/Users/maxwellsdm/Documents/GitHub/wheeler/evals/workflow_creator/graph_probe.py',str(R),'call',server,tool,str(p)],capture_output=True,text=True)
+ try: result=json.loads(q.stdout)
+ except Exception: result={'parse_failure':q.stdout,'stderr':q.stderr}
+ with LOG.open('a') as f:f.write(json.dumps({'server':server,'tool':tool,'args':args,'result':result,'returncode':q.returncode})+'\n')
+ if q.returncode or result.get('error') or 'parse_failure' in result:raise RuntimeError(result)
+ print(tool,json.dumps(result),flush=True)
+ return result
+def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+record=json.loads((M/'sources-v001.json').read_text());assert (M/'brief.md').read_bytes()==(M/'brief-v001.md').read_bytes()
+for row in record['sources']:assert sha(row['path'])==row['sha256']
+health=call('core','graph_health',{});assert health['drift']['total_divergent']==0
+found=call('query','query_documents',{'limit':100});assert found['count']<100
+receipt={'capture_key':str(M/'brief-v001.md'),'pending':[]}
+for role,name in [('brief','brief-v001.md'),('sources','sources-v001.json')]:
+ matches=[n for n in found['documents'] if n['path']==str(M/name)];assert len(matches)==1
+ n=call('core','show_node',{'node_id':matches[0]['id']});assert n['path_resolved'] and n['hash']==sha(M/name) and n['status']=='final';receipt[role+'_id']=n['id']
+x=call('query','query_executions',{'keyword':receipt['capture_key'],'kind':'write','limit':100});assert len(x['executions'])==1
+n=call('core','show_node',{'node_id':x['executions'][0]['id']});assert n['description']=='Weekly lab meeting capture: '+receipt['capture_key'];receipt['execution_id']=n['id']
+b=receipt['brief_id'];s=receipt['sources_id'];e=receipt['execution_id'];edges=[(b,e,'WAS_GENERATED_BY'),(s,e,'WAS_GENERATED_BY'),(b,s,'WAS_DERIVED_FROM')]
+for item in record['graph_inputs']:
+ nid=item['node_id'];edges.extend([(e,nid,'USED'),(b,nid,'WAS_DERIVED_FROM'),(s,nid,'WAS_DERIVED_FROM')])
+q='MATCH (a)-[r]->(b) WHERE a.id IN '+json.dumps([b,s,e])+' RETURN a.id AS source, type(r) AS relationship, b.id AS target'
+got=call('core','run_cypher',{'query':q});actual=[(a['source'],a['target'],a['relationship']) for a in got['results']];assert len(actual)==len(set(actual)) and set(actual)==set(edges)
+receipt['expected_edges']=edges;(M/'registration-v001.json').write_text(json.dumps(receipt,indent=2)+'\n')
+assert len(list(M.glob('brief-v*.md')))==1
+print('UNCHANGED RETRY VERIFIED',json.dumps(receipt))

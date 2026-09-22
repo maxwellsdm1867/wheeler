@@ -1,0 +1,56 @@
+from pathlib import Path
+import json,subprocess,hashlib
+R=Path('/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1')
+M=R/'meetings/2026-09-25'; LOG=R/'phase2-results.jsonl'
+count=0
+def call(server,tool,args):
+ global count
+ count+=1;p=R/f'phase2-call-{count:02d}.json';p.write_text(json.dumps(args))
+ q=subprocess.run(['/Users/maxwellsdm/Documents/GitHub/wheeler/.venv/bin/python','/Users/maxwellsdm/Documents/GitHub/wheeler/evals/workflow_creator/graph_probe.py',str(R),'call',server,tool,str(p)],capture_output=True,text=True)
+ try: result=json.loads(q.stdout)
+ except Exception: result={'parse_failure':q.stdout,'stderr':q.stderr}
+ with LOG.open('a') as f:f.write(json.dumps({'server':server,'tool':tool,'args':args,'result':result,'returncode':q.returncode})+'\n')
+ if q.returncode or 'error' in result or 'parse_failure' in result:raise RuntimeError(result)
+ print(tool,json.dumps(result),flush=True)
+ return result
+def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+manifest_path=R/'analysis/current/run-manifest.json';mf=json.loads(manifest_path.read_text());nb=json.loads(Path(mf['notebook']).read_text())
+assert mf['run_id']=='ca-0922' and mf['parameters']=={'smoothing_window':5} and len(mf['plots'])==2
+assert 'ca-0922' in json.dumps(nb) and 'Smoothing window 5' in json.dumps(nb)
+inputs=[('notebook',mf['notebook'],'W-9018e0ac'),('run-manifest',str(manifest_path),'W-df2602d6'),('response',mf['plots'][0],'W-c3a823d3'),('residuals',mf['plots'][1],'W-98eed042'),('prior-meeting-notes',str(R/'meetings/2026-09-18/notes.md'),'W-3c0f9608')]
+for role,path,nid in inputs:
+ n=call('core','show_node',{'node_id':nid});assert n['path']==path and n['hash']==sha(path)
+call('core','show_node',{'node_id':'N-b770080a'})
+source_rows=[{'role':role,'path':path,'sha256':sha(path),'node_id':nid} for role,path,nid in inputs]
+brief=M/'brief-v001.md';sources=M/'sources-v001.json';key=str(brief)
+assert not brief.exists() and not sources.exists()
+snapshot=(M/'brief.md').read_bytes()
+record={'meeting_date':'2026-09-25','run_id':mf['run_id'],'parameters':mf['parameters'],'snapshot_sha256':hashlib.sha256(snapshot).hexdigest(),'sources':source_rows,'graph_inputs':[{'node_id':nid,'use':role} for role,path,nid in inputs]+[{'node_id':'N-b770080a','use':'parameter rationale and open baseline-subtraction sensitivity question'}]}
+for row in source_rows:assert sha(row['path'])==row['sha256']
+with brief.open('xb') as f:f.write(snapshot)
+with sources.open('x') as f:json.dump(record,f,indent=2);f.write('\n')
+receipt={'capture_key':key,'pending':['register-documents','execution','provenance','index','readback']};receipt_path=M/'registration-v001.json'
+def save():receipt_path.write_text(json.dumps(receipt,indent=2)+'\n')
+save()
+for role,path in [('brief',brief),('sources',sources)]:
+ found=call('query','query_documents',{'keyword':str(path),'limit':100});assert not found['documents']
+ got=call('mutations','ensure_artifact',{'path':str(path),'artifact_type':'document','title':f'Lab meeting 2026-09-25 v001 {role}','description':'Scientist-approved meeting brief; interpretations remain tentative' if role=='brief' else 'Immutable source paths, SHA-256 hashes, run parameters and actual graph inputs for the meeting snapshot','status':'final'})
+ receipt[role+'_id']=got['node_id'];save()
+found=call('query','query_executions',{'keyword':key,'kind':'write','limit':100});assert not found.get('executions')
+x=call('mutations','add_execution',{'kind':'write','description':'Weekly lab meeting capture: '+key,'status':'completed'})
+receipt['execution_id']=x.get('id',x.get('node_id'));assert receipt['execution_id'];save()
+e=receipt['execution_id'];b=receipt['brief_id'];s=receipt['sources_id']
+edges=[(b,e,'WAS_GENERATED_BY'),(s,e,'WAS_GENERATED_BY'),(b,s,'WAS_DERIVED_FROM')]
+for nid in [x['node_id'] for x in record['graph_inputs']]:
+ edges.extend([(e,nid,'USED'),(b,nid,'WAS_DERIVED_FROM'),(s,nid,'WAS_DERIVED_FROM')])
+for src,tgt,rel in edges:call('mutations','link_nodes',{'source_id':src,'target_id':tgt,'relationship':rel})
+receipt['expected_edges']=edges;receipt['pending']=['index','readback'];save()
+for role in ['brief','sources']:call('core','index_node',{'node_id':receipt[role+'_id'],'label':'Document','text':f'Lab meeting 2026-09-25 v001 {role}; calcium ca-0922 smoothing window 5; baseline interpretation remains tentative'})
+for role,path in [('brief',brief),('sources',sources)]:
+ n=call('core','show_node',{'node_id':receipt[role+'_id']});assert n['type']=='Document' and n['path']==str(path) and n['hash']==sha(path) and n['status']=='final'
+q='MATCH (a)-[r]->(b) WHERE a.id IN '+json.dumps([b,s,e])+' RETURN a.id AS source, type(r) AS relationship, b.id AS target'
+result=call('core','run_cypher',{'query':q})
+receipt['relationship_readback']=result
+assert brief.read_bytes()==snapshot and json.loads(sources.read_text())==record
+receipt['pending']=[];save()
+print('SUCCESS receipt',receipt_path)

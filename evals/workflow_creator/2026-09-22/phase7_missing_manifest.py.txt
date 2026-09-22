@@ -1,0 +1,19 @@
+from pathlib import Path
+import json,hashlib
+R=Path('/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1')
+receipt=json.loads((R/'meetings/2026-09-25/registration-v003.json').read_text());assert receipt['pending']==[]
+def inventory():
+ return {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for d in ['knowledge','synthesis'] for p in (R/d).glob('*') if p.is_file()}
+before=inventory();p=R/'analysis/current/run-manifest.json';backup=p.with_name('run-manifest.missing-test.json');assert p.exists() and not backup.exists()
+original=p.read_bytes();p.rename(backup)
+try:
+ assert not p.exists()
+ question='I can’t find the run-manifest.json for this analysis. Where is the manifest you want me to use for the 2026-10-02 brief?'
+ result={'request':'Prepare a draft for the 2026-10-02 lab meeting from the current run manifest.','manifest_path':str(p),'observed':'missing','question':question,'selected_plots':[],'artifact_writes':[],'graph_calls':[],'outcome':'stopped before choosing plots or drafting'}
+ assert not (R/'meetings/2026-10-02').exists()
+finally:
+ backup.rename(p)
+assert p.read_bytes()==original and before==inventory()
+result['manifest_restored']=True;result['knowledge_synthesis_unchanged']=True
+(R/'missing-manifest-result.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

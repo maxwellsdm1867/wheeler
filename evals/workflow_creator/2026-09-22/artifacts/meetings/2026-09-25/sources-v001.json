@@ -1,0 +1,66 @@
+{
+  "meeting_date": "2026-09-25",
+  "run_id": "ca-0922",
+  "parameters": {
+    "smoothing_window": 5
+  },
+  "snapshot_sha256": "6241f1df90163f238cffea495baa7d783866677f4e482f75eff3d056dae48467",
+  "sources": [
+    {
+      "role": "notebook",
+      "path": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/calcium.ipynb",
+      "sha256": "197f4648b5028d41bc508868ee7b85c58f5c42a12fd344f8efd1f6e4926ef92a",
+      "node_id": "W-9018e0ac"
+    },
+    {
+      "role": "run-manifest",
+      "path": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/run-manifest.json",
+      "sha256": "9b7f685e6cb6094a62feb00dde5196c38957a2c48bf52022650ad4dcf1694b45",
+      "node_id": "W-df2602d6"
+    },
+    {
+      "role": "response",
+      "path": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/response.png",
+      "sha256": "c4c50630e5d0ffe36030b862333eb991fc8b524dc65e20160f65595677446cfc",
+      "node_id": "W-c3a823d3"
+    },
+    {
+      "role": "residuals",
+      "path": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/residuals.png",
+      "sha256": "ed8fa5a3a0604640b37b25de70badea0658335f5d7ac8f3ef19836f1794b3937",
+      "node_id": "W-98eed042"
+    },
+    {
+      "role": "prior-meeting-notes",
+      "path": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/meetings/2026-09-18/notes.md",
+      "sha256": "f88ad9306aaf24e5ac844255c293189af069e35f0239620e31852789db8822d6",
+      "node_id": "W-3c0f9608"
+    }
+  ],
+  "graph_inputs": [
+    {
+      "node_id": "W-9018e0ac",
+      "use": "notebook"
+    },
+    {
+      "node_id": "W-df2602d6",
+      "use": "run-manifest"
+    },
+    {
+      "node_id": "W-c3a823d3",
+      "use": "response"
+    },
+    {
+      "node_id": "W-98eed042",
+      "use": "residuals"
+    },
+    {
+      "node_id": "W-3c0f9608",
+      "use": "prior-meeting-notes"
+    },
+    {
+      "node_id": "N-b770080a",
+      "use": "parameter rationale and open baseline-subtraction sensitivity question"
+    }
+  ]
+}

@@ -55,6 +55,7 @@ YAML frontmatter controls tool access. The markdown body IS the system prompt.
 - `start`: User-invoked router. Asks for task intent (or takes $ARGUMENTS) and invokes the best /wh:* command.
 
 ### Development
+- `skill-creator`: Interview users and create personalized Wheeler workflow skills, reusing existing acts before custom graph steps
 - `triage`: Triage GitHub issues against planned work
 - `dev-feedback`: File Wheeler bugs/friction as structured GitHub issues
 

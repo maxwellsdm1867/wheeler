@@ -24,6 +24,7 @@ Route the user to the right `/wh:*` command. Do not ask which command to use: an
    - Ask the user what they're working on via AskUserQuestion with 2-4 options covering the most likely intents (e.g., "starting a new investigation", "adding data to the knowledge graph", "continuing prior work", "writing up results").
 3. Do not dispatch quoted, hypothetical, negated, or historical command examples. For an actual request, match intent to a `/wh:*` command using this priority:
    - **Session lifecycle**: `status`/`resume` at session start; `pause`/`close` at session end; `chat` for casual discussion
+   - **Personalized workflow**: `skill-creator` for interviewing the user and creating or adapting a Wheeler workflow skill. Inspect existing skills first and streamline through reuse before custom graph steps.
    - **Correction capture**: `lesson` for an ambiguous "remember this", "remember how we fixed this", "remember to query this database this way", or updating/retiring a resource-linked workflow. The lesson act decides whether a correction needs a harness fix, reusable skill, note, or evidence workflow. Clear factual memories and preferences without a workflow remain `note`; a direct request to implement a hook or fix code stays in the implementation workflow, not a memory route.
    - **Data capture** (concrete artifacts provided): `add` (DOI, paper, dataset, file) over `note` (insight, observation)
    - **Investigation workflow** (progressive): `discuss` -> `plan` -> `execute` -> `write`

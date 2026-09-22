@@ -16,10 +16,10 @@ from wheeler import acts
 
 DATA_DIR = Path(__file__).parent.parent / "wheeler" / "_data" / "commands"
 
-# `_data/commands/` ships 41 .md files: 40 acts plus CLAUDE.md, the
+# `_data/commands/` ships 42 .md files: 41 acts plus CLAUDE.md, the
 # act-authoring guide. Off by one here is exactly the failure that would ship
 # silently, so it is pinned.
-NUM_ACTS = 40
+NUM_ACTS = 41
 
 
 def _frontmatter(path: Path) -> dict:
@@ -104,7 +104,7 @@ class TestParsing:
 
 class TestDerivedMode:
     def test_mode_matches_allowed_tools_for_every_act(self):
-        """Compute the mode independently and compare, for all 40 acts."""
+        """Compute the mode independently and compare, for all 41 acts."""
         for act in acts.load_acts():
             tools = _frontmatter(DATA_DIR / act.filename)["allowed-tools"]
             grants_ops = any(t.startswith("mcp__wheeler_ops__") for t in tools)

@@ -1,0 +1,12 @@
+{
+  "request": "Prepare a draft for the 2026-10-02 lab meeting from the current run manifest.",
+  "manifest_path": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/run-manifest.json",
+  "observed": "missing",
+  "question": "I can\u2019t find the run-manifest.json for this analysis. Where is the manifest you want me to use for the 2026-10-02 brief?",
+  "selected_plots": [],
+  "artifact_writes": [],
+  "graph_calls": [],
+  "outcome": "stopped before choosing plots or drafting",
+  "manifest_restored": true,
+  "knowledge_synthesis_unchanged": true
+}

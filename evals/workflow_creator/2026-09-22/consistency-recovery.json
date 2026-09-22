@@ -1,0 +1,38 @@
+{
+  "graph_only": [],
+  "json_only": [],
+  "synthesis_missing": [],
+  "synthesis_orphaned": [],
+  "unreadable": [],
+  "total_graph": 17,
+  "total_json": 17,
+  "total_synthesis": 17,
+  "summary": {
+    "total_divergent": 0,
+    "graph_only": 0,
+    "json_only": 0,
+    "synthesis_missing": 0,
+    "synthesis_orphaned": 0,
+    "unreadable": 0,
+    "threshold": 10,
+    "exceeds_threshold": false
+  },
+  "paths": {
+    "total": 12,
+    "portable": 12,
+    "absolute": 0,
+    "resolvable": 12,
+    "present": 12,
+    "by_root": {
+      "project": 12
+    },
+    "configured_roots": [
+      "project"
+    ]
+  },
+  "repairs": {
+    "dry_run": true,
+    "actions": [],
+    "total": 0
+  }
+}

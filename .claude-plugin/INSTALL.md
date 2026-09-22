@@ -4,7 +4,7 @@
 
 # Wheeler as a plugin
 
-40 research acts and the four Wheeler MCP servers, for Claude Code and
+41 research acts and the four Wheeler MCP servers, for Claude Code and
 OpenAI Codex. Pinned to Wheeler `0.16.1`.
 
 > **The pinned version must be on PyPI before this plugin works.** The skills fetch

@@ -82,6 +82,8 @@ Invoke the selected skill without a router-authored preamble. Let that skill own
 
 ## Common intent distinctions
 
+- Create or adapt a personalized Wheeler workflow skill, or interview the user about incorporating Wheeler into their work: `wh:skill-creator`. Remembering a specific correction remains `wh:lesson`.
+
 - Find papers or discover literature: `wh:asta-lit`.
 - Produce a written multi-paper review or synthesis: `wh:asta-report`.
 - Look up a particular paper, author, citations, or snippets: `wh:asta-scholar`.

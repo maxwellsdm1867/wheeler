@@ -30,7 +30,7 @@ REPO = bp._repo_root()
 SOURCE_COMMANDS = REPO / "wheeler" / "_data" / "commands"
 SOURCE_PLUGIN_SKILLS = REPO / "wheeler" / "_data" / "plugin_skills"
 
-EXPECTED_ACT_COUNT = 40
+EXPECTED_ACT_COUNT = 41
 EXPECTED_PLUGIN_SKILLS = {"wheeler-voice"}
 
 # Reserved marketplace names the host rejects.
@@ -84,8 +84,8 @@ def _split_skill(text: str) -> tuple[dict, str]:
 # ---------------------------------------------------------------------------
 
 
-def test_source_tree_is_40_acts_plus_the_authoring_guide():
-    """_data/commands/ holds 41 .md files; CLAUDE.md is not an act."""
+def test_source_tree_is_41_acts_plus_the_authoring_guide():
+    """_data/commands/ holds 42 .md files; CLAUDE.md is not an act."""
     names = sorted(p.name for p in SOURCE_COMMANDS.glob("*.md"))
     assert "CLAUDE.md" in names
     assert len(names) == EXPECTED_ACT_COUNT + 1

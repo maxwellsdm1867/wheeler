@@ -1,0 +1,14 @@
+{
+  "ids": {
+    "notebook": "W-9018e0ac",
+    "manifest": "W-df2602d6",
+    "prior": "W-3c0f9608",
+    "response": "W-c3a823d3",
+    "residuals": "W-98eed042",
+    "distractor": "W-6b0c7075",
+    "decision": "N-b770080a"
+  },
+  "manifest": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/run-manifest.json",
+  "notebook": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/analysis/current/calcium.ipynb",
+  "prior": "/private/var/folders/41/tclkvrfs1v9386sxps6_w5t40000gn/T/wheeler-creator-test-9wdok3a1/meetings/2026-09-18/notes.md"
+}

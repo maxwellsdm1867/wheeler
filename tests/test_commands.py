@@ -16,6 +16,7 @@ EXPECTED_COMMANDS = [
     "handoff",
     "ingest",
     "lesson",
+    "skill-creator",
     "pair",
     "pause",
     "plan",
